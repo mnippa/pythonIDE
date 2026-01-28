@@ -1,13 +1,24 @@
-// ide.js
-import * as monaco from '../monaco/esm/vs/editor/editor.api.js';
-
-const editor = monaco.editor.create(document.getElementById('editor'), {
-    value: "# Python Code hier",
-    language: "python",
-    theme: "vs-dark",
-    automaticLayout: true,
+require.config({
+  paths: {
+    vs: './monaco/min/vs'
+  }
 });
 
-export function getEditor() {
-    return editor;
-}
+require(['vs/editor/editor.main'], function () {
+
+  const editor = monaco.editor.create(
+    document.getElementById('editor'),
+    {
+      value: [
+        'def hello():',
+        '    print("Hello Monaco!")',
+        '',
+        'hello()'
+      ].join('\n'),
+      language: 'python',
+      theme: 'vs-dark',
+      automaticLayout: true
+    }
+  );
+
+});

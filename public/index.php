@@ -1,33 +1,30 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Monaco AMD IDE</title>
+  <title>Monaco AMD Test</title>
+
   <style>
-    body, html { margin: 0; height: 100%; }
-    #editor { width: 100%; height: 100%; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    #editor {
+      width: 100%;
+      height: 100vh;
+    }
   </style>
-  <!-- Monaco CSS -->
-  <link rel="stylesheet" href="./monaco/min/vs/editor/editor.main.css">
 </head>
 <body>
+
   <div id="editor"></div>
 
-  <!-- AMD Loader -->
+  <!-- Monaco AMD Loader -->
   <script src="./monaco/min/vs/loader.js"></script>
-  <script>
-    // Konfiguration für AMD
-    require.config({ paths: { vs: './monaco/min/vs' }});
 
-    require(['vs/editor/editor.main'], function() {
-      // Editor erstellen
-      monaco.editor.create(document.getElementById('editor'), {
-        value: `print("Hello, Monaco!")`,
-        language: 'python',       // Sprache
-        theme: 'vs-dark',         // Theme
-        automaticLayout: true     // Auto-Resize
-      });
-    });
-  </script>
+  <!-- Deine IDE-Logik -->
+  <script src="./js/ide.js"></script>
+
 </body>
 </html>
