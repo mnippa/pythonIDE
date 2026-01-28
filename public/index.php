@@ -1,36 +1,20 @@
-<?php
-session_start();
-
-/* Login-Prüfung (vorerst optional deaktivierbar)
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
-*/
-?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Python Web IDE</title>
+    <title>Python IDE</title>
 
-    <link rel="stylesheet" href="css/ide.css">
-
-    <!-- Monaco Loader -->
-    <script src="monaco/min/vs/loader.js"></script>
+    <!-- Monaco CSS -->
+    <link rel="stylesheet" href="./monaco/min/vs/editor/editor.main.css">
+    <!-- kein import von standalone-tokens.css! -->
 </head>
+
 <body>
 
-<header>
-    <h1>Python Web IDE</h1>
-</header>
+<div id="editor" style="width:100%;height:90vh;border:1px solid grey;"></div>
 
-<main>
-    <div id="editor"></div>
-</main>
-
-<script src="js/editor.js"></script>
-<script src="js/ide.js"></script>
+<!-- ESM Script -->
+<script type="module" src="./js/ide.js"></script>
 
 </body>
 </html>

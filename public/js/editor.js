@@ -1,24 +1,19 @@
-require.config({
-    paths: { vs: 'monaco/min/vs' }
-});
+function createEditor(containerId, callback) {
+    require.config({ paths: { vs: 'monaco/min/vs' } });
+    require(['vs/editor/editor.main'], function() {
+        const editor = monaco.editor.create(
+            document.getElementById(containerId),
+            {
+                value: '# Python Web IDE\nprint("Hello World")',
+                language: 'python',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: { enabled: false }
+            }
+        );
+        callback(editor);
+    });
+}
 
-window.editor = null;
-
-require(['vs/editor/editor.main'], function () {
-    window.editor = monaco.editor.create(
-        document.getElementById('editor'),
-        {
-            value: [
-                '# Python Web IDE',
-                '# Schreibe deinen Code hier',
-                '',
-                'print("Hello, World!")'
-            ].join('\n'),
-            language: 'python',
-            theme: 'vs-dark',
-            automaticLayout: true,
-            fontSize: 14,
-            minimap: { enabled: false }
-        }
-    );
-});
+// global verfügbar machen
+window.createEditor = createEditor;

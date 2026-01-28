@@ -1,8 +1,13 @@
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('IDE geladen');
+// ide.js
+import * as monaco from '../monaco/esm/vs/editor/editor.api.js';
 
-    // Platzhalter für spätere Module:
-    // - Pyodide
-    // - Output
-    // - Autocomplete
+const editor = monaco.editor.create(document.getElementById('editor'), {
+    value: "# Python Code hier",
+    language: "python",
+    theme: "vs-dark",
+    automaticLayout: true,
 });
+
+export function getEditor() {
+    return editor;
+}
