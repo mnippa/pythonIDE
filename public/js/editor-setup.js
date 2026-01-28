@@ -41,14 +41,14 @@ async function initPyodideAndEditor() {
         let debounce;
         editor.onDidChangeModelContent(() => {
             clearTimeout(debounce);
-            debounce = setTimeout(() => {
+            debounce = setTimeout(async () => {
 
                 monaco.editor.setModelMarkers(editor.getModel(), "python", []);
                 const code = editor.getValue();
 
                 try {
                     // ✅ Nur Syntaxcheck → KEIN JSOut, kein Output
-                    pyodide.runPython(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
+                    await pyodide.runPythonAsync(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
                 } catch (e) {
                     const parsed = parsePythonError(e.message);
 
@@ -92,16 +92,14 @@ async function initPyodideAndEditor() {
 
             const code = editor.getValue();
 
-            /* 1️⃣ Syntaxcheck */
+            /* 1️⃣ Syntaxcheck vor Run */
             try {
-                pyodide.runPython(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
+                await pyodide.runPythonAsync(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
                 lintEl.innerText = "Syntax-Check ✔️";
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
-                lintEl.innerText =
-                    `Zeile ${parsed.line}: ${parsed.error}`;
-
+                lintEl.innerText = `Zeile ${parsed.line}: ${parsed.error}`;
                 monaco.editor.setModelMarkers(editor.getModel(), "python", [{
                     startLineNumber: parsed.line,
                     startColumn: 1,
@@ -116,29 +114,38 @@ async function initPyodideAndEditor() {
 
             /* 2️⃣ Ausführen → rechter Output */
             try {
+                // Lokaler stdout/stderr nur für diesen Run
                 await pyodide.runPythonAsync(`
 from js import document
 import sys
 
-# Lokales stdout nur für Run
 class JSOut:
+    def __init__(self, element_id):
+        self.el = document.getElementById(element_id)
     def write(self, s):
         if s.strip():
-            document.getElementById("output-container").innerText += s + "\\n"
+            self.el.innerText += s + "\\n"
     def flush(self): pass
 
-sys.stdout = JSOut()
-sys.stderr = JSOut()
+# Backup global streams
+old_out = sys.stdout
+old_err = sys.stderr
 
-${code}
+# Setze temporäre Streams
+sys.stdout = JSOut("output-container")
+sys.stderr = JSOut("output-container")
+
+try:
+${code.split("\n").map(l => "    " + l).join("\n")}
+finally:
+    sys.stdout = old_out
+    sys.stderr = old_err
                 `);
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
-                // Fehler weiterhin im Lintbereich unten
-                lintEl.innerText =
-                    `Zeile ${parsed.line}: ${parsed.error}`;
-
+                // Runtime-Fehler nur im Lintbereich unten
+                lintEl.innerText = `Zeile ${parsed.line}: ${parsed.error}`;
                 monaco.editor.setModelMarkers(editor.getModel(), "python", [{
                     startLineNumber: parsed.line,
                     startColumn: 1,
