@@ -1,0 +1,13 @@
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# PHP
+/vendor/
+
+# Logs
+*.log
+
+# Monaco falls extern eingebunden
+node_modules/
