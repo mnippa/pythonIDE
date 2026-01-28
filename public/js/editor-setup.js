@@ -1,23 +1,8 @@
 async function initPyodideAndEditor() {
 
     /* ---------------- Pyodide ---------------- */
-
     const pyodide = await loadPyodide({ indexURL: "pyodide/" });
     console.log("Pyodide ready");
-
-    /* stdout → rechter Output-Container (nur bei Run) */
-    await pyodide.runPythonAsync(`
-from js import document
-import sys
-
-class JSOut:
-    def write(self, s):
-        if s.strip():
-            document.getElementById("output-container").innerText += s
-    def flush(self): pass
-
-sys.stdout = JSOut()
-    `);
 
     /* -------- Hilfsfunktion: Fehler sauber parsen -------- */
     function parsePythonError(message) {
@@ -49,22 +34,21 @@ sys.stdout = JSOut()
             }
         );
 
+        const lintEl = document.getElementById("lint-container");
         const outputEl = document.getElementById("output-container");
-        const lintEl   = document.getElementById("lint-container");
 
-        /* -------- Live Syntaxcheck + Unterwellen (nur Unterwellen, kein Output) -------- */
+        /* -------- Live Syntaxcheck + Unterwellen (kein Output) -------- */
         let debounce;
         editor.onDidChangeModelContent(() => {
             clearTimeout(debounce);
-            debounce = setTimeout(async () => {
-                monaco.editor.setModelMarkers(editor.getModel(), "python", []);
+            debounce = setTimeout(() => {
 
+                monaco.editor.setModelMarkers(editor.getModel(), "python", []);
                 const code = editor.getValue();
 
                 try {
-                    await pyodide.runPythonAsync(
-                        `compile(${JSON.stringify(code)}, "<string>", "exec")`
-                    );
+                    // ✅ Nur Syntaxcheck → KEIN JSOut, kein Output
+                    pyodide.runPython(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
                 } catch (e) {
                     const parsed = parsePythonError(e.message);
 
@@ -77,19 +61,6 @@ sys.stdout = JSOut()
                         message: parsed.error,
                         severity: monaco.MarkerSeverity.Error
                     }]);
-
-                    // Bounce-Effekt Unterwellen 1 Sekunde
-                    const lineDecorations = editor.getLineDecorations(parsed.line) || [];
-                    lineDecorations.forEach(d => {
-                        const domNode = d.options.glyphMarginClassName;
-                        if(domNode) {
-                            const el = document.querySelector(`.${domNode}`);
-                            if(el) {
-                                el.classList.add("bounce");
-                                setTimeout(() => el?.classList.remove("bounce"), 1000);
-                            }
-                        }
-                    });
                 }
 
             }, 400);
@@ -114,18 +85,17 @@ sys.stdout = JSOut()
         /* ---------------- Run Button ---------------- */
         document.getElementById("run-btn").addEventListener("click", async () => {
 
+            // Rechte Ausgabe und Lintbereich leeren
             outputEl.innerText = "";
-            lintEl.innerText   = "";
+            lintEl.innerText = "";
             monaco.editor.setModelMarkers(editor.getModel(), "python", []);
 
             const code = editor.getValue();
 
             /* 1️⃣ Syntaxcheck */
             try {
-                await pyodide.runPythonAsync(
-                    `compile(${JSON.stringify(code)}, "<string>", "exec")`
-                );
-                lintEl.innerText = "Syntax-Check ✔️"; // ✔️ nur bei korrektem Code
+                pyodide.runPython(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
+                lintEl.innerText = "Syntax-Check ✔️";
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
@@ -141,15 +111,31 @@ sys.stdout = JSOut()
                     severity: monaco.MarkerSeverity.Error
                 }]);
 
-                return; // ❌ kein Run
+                return; // Kein Run bei Syntaxfehler
             }
 
-            /* 2️⃣ Ausführen */
+            /* 2️⃣ Ausführen → rechter Output */
             try {
-                await pyodide.runPythonAsync(code);
+                await pyodide.runPythonAsync(`
+from js import document
+import sys
+
+# Lokales stdout nur für Run
+class JSOut:
+    def write(self, s):
+        if s.strip():
+            document.getElementById("output-container").innerText += s + "\\n"
+    def flush(self): pass
+
+sys.stdout = JSOut()
+sys.stderr = JSOut()
+
+${code}
+                `);
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
+                // Fehler weiterhin im Lintbereich unten
                 lintEl.innerText =
                     `Zeile ${parsed.line}: ${parsed.error}`;
 
