@@ -1,1 +1,3 @@
+# ES Modules korrekt ausliefern
+AddType application/javascript .mjs
 AddType application/wasm .wasm
