@@ -5,7 +5,7 @@ async function initPyodideAndEditor() {
     const pyodide = await loadPyodide({ indexURL: "pyodide/" });
     console.log("Pyodide ready");
 
-    // stdout → rechter Output-Container
+    /* stdout → rechter Output-Container (nur bei Run) */
     await pyodide.runPythonAsync(`
 from js import document
 import sys
@@ -20,31 +20,21 @@ sys.stdout = JSOut()
     `);
 
     /* -------- Hilfsfunktion: Fehler sauber parsen -------- */
-
-function parsePythonError(message) {
-    let line = 1;
-    let error = "Python error";
-
-    const lines = message.split("\n");
-
-    for (const l of lines) {
-        // SyntaxError
-        let m = l.match(/File "<string>", line (\d+)/);
-        if (m) line = parseInt(m[1], 10);
-
-        // RuntimeError
-        m = l.match(/File "<exec>", line (\d+)/);
-        if (m) line = parseInt(m[1], 10);
-
-        if (l.includes("Error:")) error = l.trim();
+    function parsePythonError(message) {
+        let line = 1;
+        let error = "Python error";
+        const lines = message.split("\n");
+        for (const l of lines) {
+            let m = l.match(/File "<string>", line (\d+)/);
+            if (m) line = parseInt(m[1], 10);
+            m = l.match(/File "<exec>", line (\d+)/);
+            if (m) line = parseInt(m[1], 10);
+            if (l.includes("Error:") || l.includes("Exception:")) error = l.trim();
+        }
+        return { line, error };
     }
 
-    return { line, error };
-}
-
-
     /* ---------------- Monaco ---------------- */
-
     require(["vs/editor/editor.main"], function () {
 
         const editor = monaco.editor.create(
@@ -62,15 +52,12 @@ function parsePythonError(message) {
         const outputEl = document.getElementById("output-container");
         const lintEl   = document.getElementById("lint-container");
 
-        /* -------- Live Syntaxcheck (nur compile, kein Run) -------- */
-
+        /* -------- Live Syntaxcheck + Unterwellen (nur Unterwellen, kein Output) -------- */
         let debounce;
         editor.onDidChangeModelContent(() => {
             clearTimeout(debounce);
             debounce = setTimeout(async () => {
-
                 monaco.editor.setModelMarkers(editor.getModel(), "python", []);
-                lintEl.innerText = "";
 
                 const code = editor.getValue();
 
@@ -81,9 +68,7 @@ function parsePythonError(message) {
                 } catch (e) {
                     const parsed = parsePythonError(e.message);
 
-                    lintEl.innerText =
-                        `Zeile ${parsed.line}: ${parsed.error}`;
-
+                    // Unterwellen setzen
                     monaco.editor.setModelMarkers(editor.getModel(), "python", [{
                         startLineNumber: parsed.line,
                         startColumn: 1,
@@ -92,12 +77,41 @@ function parsePythonError(message) {
                         message: parsed.error,
                         severity: monaco.MarkerSeverity.Error
                     }]);
+
+                    // Bounce-Effekt Unterwellen 1 Sekunde
+                    const lineDecorations = editor.getLineDecorations(parsed.line) || [];
+                    lineDecorations.forEach(d => {
+                        const domNode = d.options.glyphMarginClassName;
+                        if(domNode) {
+                            const el = document.querySelector(`.${domNode}`);
+                            if(el) {
+                                el.classList.add("bounce");
+                                setTimeout(() => el?.classList.remove("bounce"), 1000);
+                            }
+                        }
+                    });
                 }
+
             }, 400);
         });
 
-        /* ---------------- Run Button ---------------- */
+        /* ---------------- Hover Tooltip für Unterwellen ---------------- */
+        monaco.languages.registerHoverProvider('python', {
+            provideHover: function(model, position) {
+                const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+                for (const m of markers) {
+                    if (position.lineNumber === m.startLineNumber) {
+                        return {
+                            range: new monaco.Range(m.startLineNumber, 1, m.endLineNumber, 200),
+                            contents: [{ value: m.message }]
+                        };
+                    }
+                }
+                return null;
+            }
+        });
 
+        /* ---------------- Run Button ---------------- */
         document.getElementById("run-btn").addEventListener("click", async () => {
 
             outputEl.innerText = "";
@@ -111,6 +125,7 @@ function parsePythonError(message) {
                 await pyodide.runPythonAsync(
                     `compile(${JSON.stringify(code)}, "<string>", "exec")`
                 );
+                lintEl.innerText = "Syntax-Check ✔️"; // ✔️ nur bei korrektem Code
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
@@ -147,6 +162,7 @@ function parsePythonError(message) {
                     severity: monaco.MarkerSeverity.Error
                 }]);
             }
+
         });
 
     }); // require
