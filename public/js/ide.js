@@ -1,40 +1,36 @@
-// IDE Setup
-import './editor.api.js'; // optional, falls du Funktionen aus editor.api.js brauchst
+import { createEditor } from './editor.api.js';
 
-// AMD Loader von Monaco einbinden
-import * as monacoLoader from '../monaco/min/vs/loader.js';
+const OUTPUT_ID = 'output-container';
+const EDITOR_ID = 'editor-container';
+const RUN_BTN_ID = 'run-btn';
 
-const require = monacoLoader.require;
-require.config({ paths: { 'vs': '../monaco/min/vs' } });
+let editor;
+let pyodide;
 
-require(['vs/editor/editor.main'], function () {
+async function init() {
     // Editor erstellen
-    const editor = monaco.editor.create(document.getElementById('editor'), {
-        value: `print("Hello World")`,
-        language: 'python',
-        theme: 'vs-light',
-        automaticLayout: true
+    editor = await createEditor(EDITOR_ID, 'print("Hello Pyodide")');
+
+    // Pyodide initialisieren
+    const { loadPyodide } = await import('/pythonIDE/public/pyodide/pyodide.mjs');
+    pyodide = await loadPyodide({
+        indexURL: '/pythonIDE/public/pyodide/'
     });
 
-    // Run Button
-    const outputDiv = document.getElementById('output');
-    document.getElementById('runButton').addEventListener('click', async () => {
-        outputDiv.textContent = '';
+    console.log("Pyodide ready");
+
+    // Run-Button Event
+    document.getElementById(RUN_BTN_ID).addEventListener('click', async () => {
         const code = editor.getValue();
-
-        // Pyodide wird dynamisch geladen
-        if (!window.pyodide) {
-            outputDiv.textContent = 'Lade Pyodide...';
-            window.pyodide = await import('../pyodide/pyodide.js')
-                .then(module => module.loadPyodide({ indexURL: '../pyodide/' }));
-            outputDiv.textContent = '';
-        }
-
+        const outputContainer = document.getElementById(OUTPUT_ID);
         try {
-            const result = await window.pyodide.runPythonAsync(code);
-            outputDiv.textContent = result ?? '';
+            const result = await pyodide.runPythonAsync(code);
+            outputContainer.textContent = result ?? '';
         } catch (err) {
-            outputDiv.textContent = err;
+            outputContainer.textContent = err;
         }
     });
-});
+}
+
+// Init starten
+document.addEventListener('DOMContentLoaded', init);
