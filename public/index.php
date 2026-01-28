@@ -6,6 +6,7 @@
 
     <!-- AMD-Monaco Loader -->
     <script src="monaco/min/vs/loader.js"></script>
+
     <script>
         require.config({ paths: { 'vs': 'monaco/min/vs' } });
     </script>
@@ -25,9 +26,13 @@
     <div id="editor-container"></div>
     <div id="output-container"></div>
 </div>
+<button id="format-btn">Format Code</button>
+<div id="editor" style="width:100%; height:600px;"></div>
 
 <!-- IDE-Skripte -->
 <script type="module" src="js/ide.js"></script>
+<!-- IDE-Skripte -->
 
+    <script type="module" src="js/editor-setup.js"></script>
 </body>
 </html>
