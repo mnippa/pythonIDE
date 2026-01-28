@@ -2,29 +2,39 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Monaco AMD Test</title>
-
+  <title>Python IDE</title>
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-    }
-    #editor {
-      width: 100%;
-      height: 100vh;
-    }
+    #editor { width: 100%; height: 500px; border: 1px solid #333; }
   </style>
 </head>
 <body>
-
   <div id="editor"></div>
 
-  <!-- Monaco AMD Loader -->
-  <script src="./monaco/min/vs/loader.js"></script>
+  <!-- Monaco Standalone -->
+  <script src="monaco/min/vs/loader.js"></script>
+  <script>
+    require.config({ paths: { 'vs': 'monaco/min/vs' }});
 
-  <!-- Deine IDE-Logik -->
-  <script src="./js/ide.js"></script>
+    require(['vs/editor/editor.main'], function() {
+      window.editor = monaco.editor.create(document.getElementById('editor'), {
+        value: '# Schreibe hier Python-Code',
+        language: 'python',
+        theme: 'vs-dark',
+        automaticLayout: true
+      });
+    });
+  </script>
 
+  <!-- Pyodide -->
+  <script src="pyodide/pyodide.js"></script>
+  <script>
+    async function initPyodideEnv() {
+      const pyodide = await loadPyodide({ indexURL: './pyodide/' });
+      console.log('Pyodide ready');
+      const result = await pyodide.runPythonAsync('import sys; sys.version');
+      console.log('Python version:', result);
+    }
+    initPyodideEnv();
+  </script>
 </body>
 </html>

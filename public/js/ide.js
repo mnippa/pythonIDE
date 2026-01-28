@@ -1,24 +1,13 @@
-require.config({
-  paths: {
-    vs: './monaco/min/vs'
-  }
-});
+// ide.js
+import * as monaco from '../monaco/bin/monaco.js';
 
-require(['vs/editor/editor.main'], function () {
-
-  const editor = monaco.editor.create(
-    document.getElementById('editor'),
-    {
-      value: [
-        'def hello():',
-        '    print("Hello Monaco!")',
-        '',
-        'hello()'
-      ].join('\n'),
-      language: 'python',
-      theme: 'vs-dark',
-      automaticLayout: true
-    }
-  );
-
-});
+// init Monaco Editor
+export function createEditor(containerId) {
+  const container = document.getElementById(containerId);
+  return monaco.editor.create(container, {
+    value: '# Schreibe hier Python-Code',
+    language: 'python',
+    theme: 'vs-dark',
+    automaticLayout: true,
+  });
+}
