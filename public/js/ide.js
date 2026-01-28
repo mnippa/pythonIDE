@@ -1,7 +1,7 @@
 import { createEditor } from './editor.api.js';
 
-const OUTPUT_ID = 'output-container';
 const EDITOR_ID = 'editor-container';
+const OUTPUT_ID = 'output-container';
 const RUN_BTN_ID = 'run-btn';
 
 let editor;
@@ -9,12 +9,12 @@ let pyodide;
 
 async function init() {
     // Editor erstellen
-    editor = await createEditor(EDITOR_ID, 'print("Hello Pyodide")');
+    editor = await createEditor(EDITOR_ID, 'print("Hello from Pyodide!")');
 
-    // Pyodide initialisieren
-    const { loadPyodide } = await import('/pythonIDE/public/pyodide/pyodide.mjs');
+    // Pyodide laden
+    const { loadPyodide } = await import('../pyodide/pyodide.mjs');
     pyodide = await loadPyodide({
-        indexURL: '/pythonIDE/public/pyodide/'
+        indexURL: '/pythonIDE/public/pyodide/'  // Pfad zu pyodide Verzeichnis
     });
 
     console.log("Pyodide ready");

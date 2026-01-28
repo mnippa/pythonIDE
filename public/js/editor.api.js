@@ -5,7 +5,7 @@ export function createEditor(containerId, initialCode = '') {
                 value: initialCode,
                 language: 'python',
                 automaticLayout: true,
-                theme: 'vs-light',
+                theme: 'vs-dark', // Darkmode
                 minimap: { enabled: false },
                 fontSize: 14,
             });
