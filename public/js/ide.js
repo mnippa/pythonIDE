@@ -14,20 +14,29 @@ async function init() {
     // Pyodide laden
     const { loadPyodide } = await import('../pyodide/pyodide.mjs');
     pyodide = await loadPyodide({
-        indexURL: '/pythonIDE/public/pyodide/'  // Pfad zu pyodide Verzeichnis
+        indexURL: '/pythonIDE/public/pyodide/'
     });
 
     console.log("Pyodide ready");
 
+    const outputContainer = document.getElementById(OUTPUT_ID);
+
+    // Pyodide stdout/stderr umleiten
+    pyodide.setStdout({
+        batched: (s) => { outputContainer.textContent += s; }
+    });
+    pyodide.setStderr({
+        batched: (s) => { outputContainer.textContent += s; }
+    });
+
     // Run-Button Event
     document.getElementById(RUN_BTN_ID).addEventListener('click', async () => {
+        outputContainer.textContent = ''; // vorherigen Output löschen
         const code = editor.getValue();
-        const outputContainer = document.getElementById(OUTPUT_ID);
         try {
-            const result = await pyodide.runPythonAsync(code);
-            outputContainer.textContent = result ?? '';
+            await pyodide.runPythonAsync(code);
         } catch (err) {
-            outputContainer.textContent = err;
+            outputContainer.textContent += err;
         }
     });
 }
