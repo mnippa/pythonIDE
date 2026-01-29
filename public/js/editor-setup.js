@@ -24,9 +24,13 @@ async function initPyodideAndEditor() {
         return { line, error };
     }
 
-    function extractNameErrorToken(message) {
-        const m = message.match(/name '([^']+)' is not defined/);
-        return m ? m[1] : null;
+    function extractNameError(message) {
+        const name = message.match(/name '([^']+)' is not defined/);
+        const suggestion = message.match(/Did you mean: '([^']+)'/);
+        return {
+            wrong: name ? name[1] : null,
+            suggestion: suggestion ? suggestion[1] : null
+        };
     }
 
     function findLineByToken(code, token) {
@@ -34,7 +38,7 @@ async function initPyodideAndEditor() {
         for (let i = 0; i < lines.length; i++) {
             if (lines[i].includes(token)) return i + 1;
         }
-        return 1;
+        return null;
     }
 
     /* ---------------- Monaco ---------------- */
@@ -46,27 +50,22 @@ async function initPyodideAndEditor() {
                 value: "# Python code hier\nprint('Hello World!')",
                 language: "python",
                 theme: "vs-dark",
-                automaticLayout: true,
-                tabSize: 4,
-                insertSpaces: true
+                automaticLayout: true
             }
         );
 
         const lintEl = document.getElementById("lint-container");
         const outputEl = document.getElementById("output-container");
 
-        /* -------- Live Syntaxcheck (nur compile) -------- */
+        /* -------- Live Syntaxcheck -------- */
         let debounce;
         editor.onDidChangeModelContent(() => {
             clearTimeout(debounce);
             debounce = setTimeout(async () => {
-
                 monaco.editor.setModelMarkers(editor.getModel(), "python", []);
-                const code = editor.getValue();
-
                 try {
                     await pyodide.runPythonAsync(
-                        `compile(${JSON.stringify(code)}, "<string>", "exec")`
+                        `compile(${JSON.stringify(editor.getValue())}, "<string>", "exec")`
                     );
                 } catch (e) {
                     const parsed = parsePythonError(e.message);
@@ -79,24 +78,7 @@ async function initPyodideAndEditor() {
                         severity: monaco.MarkerSeverity.Error
                     }]);
                 }
-
             }, 400);
-        });
-
-        /* -------- Hover Tooltip -------- */
-        monaco.languages.registerHoverProvider("python", {
-            provideHover(model, position) {
-                const markers = monaco.editor.getModelMarkers({ resource: model.uri });
-                const m = markers.find(x => x.startLineNumber === position.lineNumber);
-                if (!m) return null;
-
-                return {
-                    range: new monaco.Range(
-                        m.startLineNumber, 1, m.endLineNumber, 200
-                    ),
-                    contents: [{ value: m.message }]
-                };
-            }
         });
 
         /* ---------------- RUN ---------------- */
@@ -113,18 +95,9 @@ async function initPyodideAndEditor() {
                 await pyodide.runPythonAsync(
                     `compile(${JSON.stringify(code)}, "<string>", "exec")`
                 );
-                lintEl.innerText = "Syntax-Check ✔️";
             } catch (e) {
                 const parsed = parsePythonError(e.message);
                 lintEl.innerText = `Zeile ${parsed.line}: ${parsed.error}`;
-                monaco.editor.setModelMarkers(editor.getModel(), "python", [{
-                    startLineNumber: parsed.line,
-                    startColumn: 1,
-                    endLineNumber: parsed.line,
-                    endColumn: 200,
-                    message: parsed.error,
-                    severity: monaco.MarkerSeverity.Error
-                }]);
                 return;
             }
 
@@ -151,15 +124,53 @@ finally:
     sys.stdout, sys.stderr = old_out, old_err
                 `);
             } catch (e) {
-                const message = e.message;
-                const parsed = parsePythonError(message);
-                const token = extractNameErrorToken(message);
+                const parsed = parsePythonError(e.message);
+                const { wrong, suggestion } = extractNameError(e.message);
 
                 let line = parsed.line;
-                if (token) line = findLineByToken(code, token);
 
+                if (wrong) {
+                    const found = findLineByToken(code, wrong);
+                    if (found) line = found;
+                }
+
+                /* ✨ AUTOKORREKTUR */
+                if (wrong && suggestion && line) {
+                    const model = editor.getModel();
+                    const lineText = model.getLineContent(line);
+                    const col = lineText.indexOf(wrong) + 1;
+
+                    if (col > 0) {
+                        editor.executeEdits("autocorrect", [{
+                            range: new monaco.Range(
+                                line,
+                                col,
+                                line,
+                                col + wrong.length
+                            ),
+                            text: suggestion
+                        }]);
+
+                        lintEl.innerText =
+                            `Autokorrektur: ${wrong} → ${suggestion} (Zeile ${line})`;
+
+                       monaco.editor.setModelMarkers(model, "python", [{
+    startLineNumber: line,
+    startColumn: col,
+    endLineNumber: line,
+    endColumn: col + suggestion.length,
+    message: "", // 👈 leer lassen → kein doppeltes Popup
+    severity: monaco.MarkerSeverity.Info
+}]);
+
+
+                        editor.revealLineInCenter(line);
+                        return;
+                    }
+                }
+
+                /* Fallback: normaler Runtimefehler */
                 lintEl.innerText = `Zeile ${line}: ${parsed.error}`;
-
                 monaco.editor.setModelMarkers(editor.getModel(), "python", [{
                     startLineNumber: line,
                     startColumn: 1,
@@ -168,19 +179,6 @@ finally:
                     message: parsed.error,
                     severity: monaco.MarkerSeverity.Error
                 }]);
-
-                /* 🔔 Bounce */
-                setTimeout(() => {
-                    const decos = editor.getLineDecorations(line) || [];
-                    decos.forEach(d => {
-                        const cls = d.options.glyphMarginClassName;
-                        if (!cls) return;
-                        const el = document.querySelector(`.${cls}`);
-                        if (!el) return;
-                        el.classList.add("bounce");
-                        setTimeout(() => el.classList.remove("bounce"), 1000);
-                    });
-                }, 50);
             }
         });
     });
