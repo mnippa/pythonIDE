@@ -65,8 +65,10 @@
 <div id="buttons">
     <button id="run-btn">Run</button>
     <button id="format-btn">Format Code</button>
-
+    <button id="undo-btn" disabled>Undo</button>
+    <button id="redo-btn" disabled>Redo</button>
 </div>
+
 
 <div id="container">
     <div id="editor-container"></div>
