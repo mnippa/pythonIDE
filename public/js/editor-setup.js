@@ -42,12 +42,9 @@ async function initPyodideAndEditor() {
         editor.onDidChangeModelContent(() => {
             clearTimeout(debounce);
             debounce = setTimeout(async () => {
-
                 monaco.editor.setModelMarkers(editor.getModel(), "python", []);
                 const code = editor.getValue();
-
                 try {
-                    // ✅ Nur Syntaxcheck → KEIN JSOut, kein Output
                     await pyodide.runPythonAsync(`compile(${JSON.stringify(code)}, "<string>", "exec")`);
                 } catch (e) {
                     const parsed = parsePythonError(e.message);
@@ -62,7 +59,6 @@ async function initPyodideAndEditor() {
                         severity: monaco.MarkerSeverity.Error
                     }]);
                 }
-
             }, 400);
         });
 
@@ -87,7 +83,7 @@ async function initPyodideAndEditor() {
 
             // Rechte Ausgabe und Lintbereich leeren
             outputEl.innerText = "";
-            lintEl.innerText = "";
+            lintEl.innerText   = "";
             monaco.editor.setModelMarkers(editor.getModel(), "python", []);
 
             const code = editor.getValue();
@@ -114,7 +110,6 @@ async function initPyodideAndEditor() {
 
             /* 2️⃣ Ausführen → rechter Output */
             try {
-                // Lokaler stdout/stderr nur für diesen Run
                 await pyodide.runPythonAsync(`
 from js import document
 import sys
@@ -144,12 +139,25 @@ finally:
             } catch (e) {
                 const parsed = parsePythonError(e.message);
 
-                // Runtime-Fehler nur im Lintbereich unten
-                lintEl.innerText = `Zeile ${parsed.line}: ${parsed.error}`;
+                // Runtime-Fehler: Begriff aus Meldung suchen
+                let runtimeLine = parsed.line;
+                const nameMatch = parsed.error.match(/name '(.*?)' is not defined/);
+                if (nameMatch) {
+                    const errorName = nameMatch[1];
+                    const codeLines = editor.getValue().split("\n");
+                    for (let i = 0; i < codeLines.length; i++) {
+                        if (codeLines[i].includes(errorName)) {
+                            runtimeLine = i + 1; // Editor-Zeilen zählen ab 1
+                            break;
+                        }
+                    }
+                }
+
+                lintEl.innerText = `Zeile ${runtimeLine}: ${parsed.error}`;
                 monaco.editor.setModelMarkers(editor.getModel(), "python", [{
-                    startLineNumber: parsed.line,
+                    startLineNumber: runtimeLine,
                     startColumn: 1,
-                    endLineNumber: parsed.line,
+                    endLineNumber: runtimeLine,
                     endColumn: 200,
                     message: parsed.error,
                     severity: monaco.MarkerSeverity.Error
