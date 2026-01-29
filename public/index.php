@@ -4,81 +4,89 @@
     <meta charset="UTF-8">
     <title>Python IDE mit Pyodide</title>
 
-    <!-- Monaco Loader -->
     <script src="monaco/min/vs/loader.js"></script>
     <script>
         require.config({ paths: { 'vs': 'monaco/min/vs' } });
     </script>
 
-   <style>
-    html, body {
-        margin: 0;
-        height: 100%;
-        font-family: sans-serif;
-        display: flex;
-        flex-direction: column;
-    }
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
 
-    #buttons {
-        padding: 5px;
-        height: 40px;
-        flex: 0 0 auto;
-    }
+        #topbar {
+            display: flex;
+            align-items: center;
+            padding: 6px;
+            gap: 15px;
+            border-bottom: 1px solid #ccc;
+            background: #f7f7f7;
+        }
 
-    /* Hauptbereich: Editor + Output */
-    #container {
-        display: flex;
-        flex: 1 1 auto;   /* 👈 nimmt fast alles ein */
-        overflow: hidden;
-    }
+        #packages label {
+            margin-right: 10px;
+            white-space: nowrap;
+        }
 
-    #editor-container {
-        flex: 2;
-        height: 100%;
-    }
+        #container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
 
-    #output-container {
-        flex: 1;
-        padding: 10px;
-        overflow: auto;
-        font-family: monospace;
-        white-space: pre;
-        background: #f5f5f5;
-        border-left: 1px solid #ccc;
-    }
+        #editor-container {
+            flex: 2;
+        }
 
-    /* Lint-Bereich: halbiert */
-    #lint-container {
-        flex: 0 0 80px;   /* 👈 feste, kleinere Höhe */
-        padding: 10px;
-        overflow: auto;
-        font-family: monospace;
-        white-space: pre;
-        background: #f0f0f0;
-        border-top: 1px solid #ccc;
-    }
-</style>
+        #output-container {
+            flex: 1;
+            padding: 10px;
+            background: #f5f5f5;
+            border-left: 1px solid #ccc;
+            font-family: monospace;
+            white-space: pre;
+            overflow: auto;
+        }
 
+        #lint-container {
+            height: 120px;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            background: #f0f0f0;
+            font-family: monospace;
+            overflow: auto;
+        }
+    </style>
 </head>
 <body>
 
-<div id="buttons">
+<div id="topbar">
     <button id="run-btn">Run</button>
-    <button id="format-btn">Format Code</button>
-    <button id="undo-btn" disabled>Undo</button>
-    <button id="redo-btn" disabled>Redo</button>
-</div>
+    <button id="undo-btn">Undo</button>
+    <button id="redo-btn">Redo</button>
 
+    <div id="packages">
+        <strong>Pakete:</strong>
+        <label><input type="checkbox" value="numpy"> NumPy</label>
+        <label><input type="checkbox" value="pandas"> Pandas</label>
+        <label><input type="checkbox" value="matplotlib"> Matplotlib</label>
+        <label><input type="checkbox" value="plotly"> Plotly</label>
+        <label><input type="checkbox" value="math" checked> math</label>
+    </div>
+</div>
 
 <div id="container">
     <div id="editor-container"></div>
     <div id="output-container"></div>
 </div>
+
 <div id="lint-container"></div>
 
-<!-- Pyodide lokal -->
 <script src="pyodide/pyodide.js"></script>
-<!-- Editor Setup -->
 <script type="module" src="js/editor-setup.js"></script>
 
 </body>
