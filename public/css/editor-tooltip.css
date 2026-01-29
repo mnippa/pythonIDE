@@ -1,0 +1,17 @@
+/* Tooltip leicht transparent */
+.monaco-editor .monaco-hover {
+    background: rgba(50, 50, 50, 0.9) !important;
+    border: 1px solid #888 !important;
+    color: #fff !important;
+}
+
+/* Bounce-Animation für Unterwellen */
+@keyframes bounceEffect {
+    0%   { transform: translateY(0); }
+    50%  { transform: translateY(-4px); }
+    100% { transform: translateY(0); }
+}
+
+.bounce {
+    animation: bounceEffect 1s ease;
+}
