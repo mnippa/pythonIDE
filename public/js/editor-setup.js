@@ -4,41 +4,10 @@ async function initPyodideAndEditor() {
     const pyodide = await loadPyodide({ indexURL: "pyodide/" });
     console.log("Pyodide ready");
 
-    const loadedPackages = new Set();
+    // Benötigte Pakete laden
+    await pyodide.loadPackage(["numpy", "matplotlib"]);
 
-    const RUNTIME_PACKAGES = new Set([
-        "numpy",
-        "pandas",
-        "matplotlib",
-        "plotly"
-    ]);
-
-    async function loadSelectedPackages() {
-        const checkboxes = document.querySelectorAll(
-            "#packages input[type=checkbox]"
-        );
-
-        const toLoad = [];
-
-        checkboxes.forEach(cb => {
-            if (
-                cb.checked &&
-                RUNTIME_PACKAGES.has(cb.value) &&
-                !loadedPackages.has(cb.value)
-            ) {
-                toLoad.push(cb.value);
-            }
-        });
-
-        if (toLoad.length === 0) return;
-
-        console.log("Loading packages:", toLoad);
-        await pyodide.loadPackage(toLoad);
-
-        toLoad.forEach(p => loadedPackages.add(p));
-    }
-
-    /* ---------------- Fehlerparser ---------------- */
+    /* -------- Fehlerparser -------- */
     function parsePythonError(message) {
         let line = 1;
         let error = "Python error";
@@ -47,7 +16,10 @@ async function initPyodideAndEditor() {
             let m = l.match(/File "<string>", line (\d+)/);
             if (m) line = parseInt(m[1], 10);
 
-            if (l.includes("Error:") || l.includes("Exception:")) {
+            m = l.match(/File "<exec>", line (\d+)/);
+            if (m) line = parseInt(m[1], 10);
+
+            if (l.includes("Error") || l.includes("Exception")) {
                 error = l.trim();
             }
         });
@@ -62,13 +34,15 @@ async function initPyodideAndEditor() {
             document.getElementById("editor-container"),
             {
                 value:
-`# Beispiele:
-import math
-import numpy as np
+`import numpy as np
+import matplotlib.pyplot as plt
 
-print(math.sqrt(16))
-print(np.array([1,2,3]) * 2)
-`,
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+plt.plot(x, y)
+plt.title("Beispielplot")
+plt.show()`,
                 language: "python",
                 theme: "vs-dark",
                 automaticLayout: true
@@ -77,113 +51,20 @@ print(np.array([1,2,3]) * 2)
 
         const outputEl = document.getElementById("output-container");
         const lintEl   = document.getElementById("lint-container");
+        const plotEl   = document.getElementById("plot-container");
 
-        /* ---------------- Live Syntaxcheck ---------------- */
-        let debounce;
-        editor.onDidChangeModelContent(() => {
-            clearTimeout(debounce);
-            debounce = setTimeout(async () => {
-                monaco.editor.setModelMarkers(editor.getModel(), "python", []);
-                try {
-                    await pyodide.runPythonAsync(
-                        `compile(${JSON.stringify(editor.getValue())}, "<string>", "exec")`
-                    );
-                } catch (e) {
-                    const parsed = parsePythonError(e.message);
-                    monaco.editor.setModelMarkers(editor.getModel(), "python", [{
-                        startLineNumber: parsed.line,
-                        startColumn: 1,
-                        endLineNumber: parsed.line,
-                        endColumn: 200,
-                        message: parsed.error,
-                        severity: monaco.MarkerSeverity.Error
-                    }]);
-                }
-            }, 400);
-        });
-
-        /* ---------------- Numpy Introspection ---------------- */
-        let npMethods = [];
-        async function refreshNumpyMethods() {
-            if (!loadedPackages.has("numpy")) return;
-            try {
-                npMethods = await pyodide.runPythonAsync(`
-import numpy as np
-dir(np)
-                `);
-            } catch(e) {
-                console.error("Fehler beim Abrufen von np dir():", e);
-            }
-        }
-
-        /* ---------------- Autocomplete ---------------- */
-        monaco.languages.registerCompletionItemProvider("python", {
-            triggerCharacters: [".", " "],
-            provideCompletionItems: async (model, position) => {
-                const text = model.getValueInRange({
-                    startLineNumber: position.lineNumber,
-                    startColumn: 1,
-                    endLineNumber: position.lineNumber,
-                    endColumn: position.column
-                });
-
-                const suggestions = [];
-
-                // import math
-                if (/import\s+ma?$/.test(text)) {
-                    suggestions.push({
-                        label: "math",
-                        kind: monaco.languages.CompletionItemKind.Module,
-                        insertText: "math"
-                    });
-                }
-
-                // import numpy
-                if (/import\s+num?$/.test(text)) {
-                    suggestions.push({
-                        label: "numpy",
-                        kind: monaco.languages.CompletionItemKind.Module,
-                        insertText: "numpy as np"
-                    });
-                }
-
-                // math.
-                if (/math\.$/.test(text)) {
-                    ["sqrt","sin","cos","pi","log"].forEach(fn=>{
-                        suggestions.push({
-                            label: fn,
-                            kind: monaco.languages.CompletionItemKind.Function,
-                            insertText: fn
-                        });
-                    });
-                }
-
-                // np.
-                if (/np\.$/.test(text)) {
-                    await refreshNumpyMethods();
-                    npMethods.forEach(fn=>{
-                        suggestions.push({
-                            label: fn,
-                            kind: monaco.languages.CompletionItemKind.Function,
-                            insertText: fn
-                        });
-                    });
-                }
-
-                return { suggestions };
-            }
-        });
-
-        /* ---------------- RUN ---------------- */
+        /* -------- RUN -------- */
         document.getElementById("run-btn").addEventListener("click", async () => {
 
             outputEl.innerText = "";
             lintEl.innerText = "";
+            plotEl.innerHTML = "";
+
             monaco.editor.setModelMarkers(editor.getModel(), "python", []);
 
             const code = editor.getValue();
 
-            /* Syntaxcheck */
+            /* 1️⃣ Syntaxcheck */
             try {
                 await pyodide.runPythonAsync(
                     `compile(${JSON.stringify(code)}, "<string>", "exec")`
@@ -194,19 +75,25 @@ dir(np)
                 return;
             }
 
-            /* Pakete laden */
-            try {
-                await loadSelectedPackages();
-            } catch (e) {
-                lintEl.innerText = "Fehler beim Laden der Pakete:\n" + e.message;
-                return;
-            }
-
-            /* Ausführen */
+            /* 2️⃣ Ausführen */
             try {
                 await pyodide.runPythonAsync(`
 from js import document
 import sys
+import warnings
+
+# 🔕 Nur diese Matplotlib-Warnung unterdrücken
+warnings.filterwarnings(
+    "ignore",
+    message="FigureCanvasAgg is non-interactive"
+)
+
+# matplotlib auf Agg festnageln
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
 
 class JSOut:
     def __init__(self, el):
@@ -217,29 +104,34 @@ class JSOut:
     def flush(self): pass
 
 old_out, old_err = sys.stdout, sys.stderr
-sys.stdout = sys.stderr = JSOut("output-container")
+sys.stdout = JSOut("output-container")
+sys.stderr = JSOut("lint-container")
 
 try:
 ${code.split("\n").map(l => "    " + l).join("\n")}
+
+    # 👉 Falls ein Plot existiert: rendern
+    if plt.get_fignums():
+        buf = BytesIO()
+        plt.savefig(buf, format="png", bbox_inches="tight")
+        plt.close("all")
+        buf.seek(0)
+
+        img = document.createElement("img")
+        img.src = "data:image/png;base64," + base64.b64encode(buf.read()).decode("ascii")
+        img.style.maxWidth = "100%"
+        document.getElementById("plot-container").appendChild(img)
+
 finally:
     sys.stdout, sys.stderr = old_out, old_err
                 `);
+
             } catch (e) {
                 const parsed = parsePythonError(e.message);
                 lintEl.innerText = `Zeile ${parsed.line}: ${parsed.error}`;
             }
+
         });
-
-        /* ---------------- Undo/Redo Buttons ---------------- */
-        const undoBtn = document.getElementById("undo-btn");
-        const redoBtn = document.getElementById("redo-btn");
-
-        if (undoBtn) {
-            undoBtn.addEventListener("click", () => editor.trigger("keyboard", "undo", null));
-        }
-        if (redoBtn) {
-            redoBtn.addEventListener("click", () => editor.trigger("keyboard", "redo", null));
-        }
 
     });
 }
