@@ -107,6 +107,15 @@
             border: 1px solid #ddd;
             background: #fff;
         }
+        .lint-ok {
+  color: #000;
+  font-weight: 600;
+}
+
+.lint-ok-check {
+  color: #22c55e !important; /* erzwingt grün */
+}
+
     </style>
 </head>
 
