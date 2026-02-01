@@ -165,214 +165,8 @@ async function initPyodideAndEditor() {
       .replace(/'/g, "&#039;");
   }
 
-  /* ============================================================
-     ✨ Static Context Suggestions + Snippets (np. / plt. / ax. / builtins)
-     ============================================================ */
-
-  // Basic method lists (non-snippet)
-  const NUMPY_COMPLETIONS = [
-    "array",
-    "arange",
-    "zeros",
-    "ones",
-    "empty",
-    "eye",
-    "linspace",
-    "logspace",
-    "reshape",
-    "transpose",
-    "concatenate",
-    "sin",
-    "cos",
-    "exp",
-    "log",
-    "sqrt",
-    "abs",
-    "sum",
-    "mean",
-    "min",
-    "max",
-    "std",
-    "var",
-    "where",
-    "clip",
-    "unique",
-    "argsort",
-    "random",
-  ];
-
-  const PLT_COMPLETIONS = [
-    "figure",
-    "subplots",
-    "plot",
-    "scatter",
-    "bar",
-    "hist",
-    "imshow",
-    "title",
-    "xlabel",
-    "ylabel",
-    "legend",
-    "grid",
-    "xlim",
-    "ylim",
-    "tight_layout",
-    "savefig",
-    "show",
-    "close",
-    "clf",
-    "cla",
-    "colorbar",
-  ];
-
-  const AX_COMPLETIONS = [
-    "plot",
-    "scatter",
-    "bar",
-    "hist",
-    "imshow",
-    "set_title",
-    "set_xlabel",
-    "set_ylabel",
-    "legend",
-    "grid",
-    "set_xlim",
-    "set_ylim",
-  ];
-
-  const BUILTIN_COMPLETIONS = [
-    "print",
-    "len",
-    "range",
-    "enumerate",
-    "zip",
-    "list",
-    "dict",
-    "set",
-    "tuple",
-    "int",
-    "float",
-    "str",
-    "bool",
-    "sum",
-    "min",
-    "max",
-    "abs",
-    "round",
-    "sorted",
-    "map",
-    "filter",
-    "any",
-    "all",
-  ];
-
-  // Snippet entries
-  const NP_SNIPPETS = [
-    { label: "linspace(start, stop, num)", insert: "linspace(${1:start}, ${2:stop}, ${3:num})", doc: "Evenly spaced numbers." },
-    { label: "arange(start, stop, step)", insert: "arange(${1:start}, ${2:stop}, ${3:step})", doc: "Evenly spaced values." },
-    { label: "zeros(shape)", insert: "zeros(${1:shape})", doc: "Array of zeros." },
-    { label: "ones(shape)", insert: "ones(${1:shape})", doc: "Array of ones." },
-    { label: "array(obj)", insert: "array(${1:obj})", doc: "Create an array." },
-    { label: "where(condition, x, y)", insert: "where(${1:condition}, ${2:x}, ${3:y})", doc: "Choose x/y by condition." },
-  ];
-
-  const PLT_SNIPPETS = [
-    { label: "plot(x, y)", insert: "plot(${1:x}, ${2:y})", doc: "Plot y versus x." },
-    { label: "scatter(x, y)", insert: "scatter(${1:x}, ${2:y})", doc: "Scatter plot." },
-    { label: "subplots(nrows, ncols)", insert: "subplots(${1:nrows}, ${2:ncols})", doc: "Create figure + axes." },
-    { label: "figure()", insert: "figure()", doc: "Create a new figure." },
-    { label: "title(text)", insert: 'title("${1:title}")', doc: "Set title." },
-    { label: "xlabel(text)", insert: 'xlabel("${1:xlabel}")', doc: "Set x label." },
-    { label: "ylabel(text)", insert: 'ylabel("${1:ylabel}")', doc: "Set y label." },
-    { label: "savefig(filename)", insert: 'savefig("${1:figure}.png")', doc: "Save current figure." },
-    { label: "show()", insert: "show()", doc: "Display figures." },
-  ];
-
-  // ✅ NEW: ax-snippets (most useful patterns)
-  const AX_SNIPPETS = [
-    {
-      label: "fig, ax = plt.subplots()",
-      insert: "fig, ax = plt.subplots(${1:nrows}, ${2:ncols})",
-      doc: "Create fig/ax with subplots.",
-    },
-    {
-      label: "ax.plot(x, y)",
-      insert: "ax.plot(${1:x}, ${2:y})",
-      doc: "Plot on axes.",
-    },
-    {
-      label: "ax.scatter(x, y)",
-      insert: "ax.scatter(${1:x}, ${2:y})",
-      doc: "Scatter on axes.",
-    },
-    {
-      label: "ax.set_title(text)",
-      insert: 'ax.set_title("${1:title}")',
-      doc: "Set axes title.",
-    },
-    {
-      label: "ax.set_xlabel(text)",
-      insert: 'ax.set_xlabel("${1:xlabel}")',
-      doc: "Set x label.",
-    },
-    {
-      label: "ax.set_ylabel(text)",
-      insert: 'ax.set_ylabel("${1:ylabel}")',
-      doc: "Set y label.",
-    },
-    {
-      label: "ax.grid(True)",
-      insert: "ax.grid(True)",
-      doc: "Enable grid.",
-    },
-    {
-      label: "ax.legend()",
-      insert: "ax.legend()",
-      doc: "Show legend.",
-    },
-    {
-      label: "fig.tight_layout()",
-      insert: "fig.tight_layout()",
-      doc: "Tight layout on figure.",
-    },
-    {
-      label: "fig.savefig(filename)",
-      insert: 'fig.savefig("${1:figure}.png", dpi=${2:150}, bbox_inches="tight")',
-      doc: "Save figure with dpi and tight bbox.",
-    },
-    {
-      label: "ax.set_xlim(min, max)",
-      insert: "ax.set_xlim(${1:xmin}, ${2:xmax})",
-      doc: "Set x limits.",
-    },
-    {
-      label: "ax.set_ylim(min, max)",
-      insert: "ax.set_ylim(${1:ymin}, ${2:ymax})",
-      doc: "Set y limits.",
-    },
-    {
-      label: "ax.axhline(y=...)",
-      insert: "ax.axhline(y=${1:y}, linestyle='${2:--}', linewidth=${3:1})",
-      doc: "Horizontal reference line.",
-    },
-    {
-      label: "ax.axvline(x=...)",
-      insert: "ax.axvline(x=${1:x}, linestyle='${2:--}', linewidth=${3:1})",
-      doc: "Vertical reference line.",
-    },
-  ];
-
-  const BUILTIN_SNIPPETS = [
-    { label: "print(x)", insert: "print(${1:x})", doc: "Print objects." },
-    { label: "len(obj)", insert: "len(${1:obj})", doc: "Length." },
-    { label: "range(stop)", insert: "range(${1:stop})", doc: "Range iterator." },
-    { label: "for i in range(n)", insert: "for ${1:i} in range(${2:n}):\n\t${3:pass}", doc: "For-loop." },
-    { label: "if condition:", insert: "if ${1:condition}:\n\t${2:pass}", doc: "If statement." },
-    { label: "def func():", insert: "def ${1:func}(${2:args}):\n\t${3:pass}", doc: "Function definition." },
-  ];
-
   /* ---------------- Monaco ---------------- */
-  require(["vs/editor/editor.main"], function () {
+  require(["vs/editor/editor.main"], async function () {
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
       value: `import numpy as np
 import matplotlib.pyplot as plt
@@ -396,13 +190,25 @@ print("done")
       language: "python",
       theme: "vs-dark",
       automaticLayout: true,
-      lightbulb: { enabled: false },
+      lightbulb: { enabled: false }, // kein "No quick fixes available"
     });
 
     const outputEl = document.getElementById("output-container");
     const lintEl = document.getElementById("lint-container");
     const plotEl = document.getElementById("plot-container");
 
+    /* ============================================================
+       ✅ Autocomplete / Snippets ausgelagert
+       Datei: public/js/editor-completions.js
+       ============================================================ */
+    try {
+      const mod = await import("./editor-completions.js");
+      mod.registerPythonCompletions(monaco, editor);
+    } catch (e) {
+      console.error("Failed to load ./editor-completions.js", e);
+    }
+
+    /* ---------------- Markers / helpers ---------------- */
     function clearMarkers() {
       monaco.editor.setModelMarkers(editor.getModel(), "python", []);
     }
@@ -423,76 +229,6 @@ print("done")
       const end = start + token.length;
       return new monaco.Range(lineNumber, start, lineNumber, end);
     }
-
-    /* ============================================================
-       ✅ Context Suggestions Provider (with Snippets + ax.)
-       ============================================================ */
-    const InsertAsSnippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
-
-    function mkMethodSuggestion(name, detail) {
-      return {
-        label: name,
-        kind: monaco.languages.CompletionItemKind.Function,
-        insertText: name,
-        detail,
-      };
-    }
-
-    function mkSnippetSuggestion(label, snippet, detail, documentation) {
-      return {
-        label,
-        kind: monaco.languages.CompletionItemKind.Snippet,
-        insertText: snippet,
-        insertTextRules: InsertAsSnippet,
-        detail,
-        documentation: documentation ? { value: documentation } : undefined,
-      };
-    }
-
-    monaco.languages.registerCompletionItemProvider("python", {
-      triggerCharacters: [".", "_", "("],
-
-      provideCompletionItems(model, position) {
-        const line = model.getLineContent(position.lineNumber);
-        const prefix = line.slice(0, position.column - 1);
-
-        const fullText = model.getValue();
-        const hasNp = /\bimport\s+numpy\s+as\s+np\b/.test(fullText);
-        const hasPlt = /\bimport\s+matplotlib\.pyplot\s+as\s+plt\b/.test(fullText);
-
-        // "ax-aware": offer ax completions if user uses ax variable (common)
-        const hasAx =
-          /\bax\s*=\s*plt\.subplots\b/.test(fullText) ||
-          /\bfig\s*,\s*ax\s*=\s*plt\.subplots\b/.test(fullText) ||
-          /\bax\b/.test(fullText);
-
-        let suggestions = [];
-
-        if (hasNp && /\bnp\.\w*$/.test(prefix)) {
-          suggestions = [
-            ...NP_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "NumPy (snippet)", s.doc)),
-            ...NUMPY_COMPLETIONS.map((n) => mkMethodSuggestion(n, "NumPy")),
-          ];
-        } else if (hasPlt && /\bplt\.\w*$/.test(prefix)) {
-          suggestions = [
-            ...PLT_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "matplotlib.pyplot (snippet)", s.doc)),
-            ...PLT_COMPLETIONS.map((n) => mkMethodSuggestion(n, "matplotlib.pyplot")),
-          ];
-        } else if (hasAx && /\bax\.\w*$/.test(prefix)) {
-          suggestions = [
-            ...AX_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Axes (snippet)", s.doc)),
-            ...AX_COMPLETIONS.map((n) => mkMethodSuggestion(n, "Axes")),
-          ];
-        } else {
-          suggestions = [
-            ...BUILTIN_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Python (snippet)", s.doc)),
-            ...BUILTIN_COMPLETIONS.map((n) => mkMethodSuggestion(n, "Python builtin")),
-          ];
-        }
-
-        return { suggestions };
-      },
-    });
 
     /* ---------------- QuickFix cache (Lint click + Ctrl+.) ---------------- */
     const quickFixState = { line: null, token: null, suggestion: null };
@@ -588,6 +324,7 @@ print("done")
       }
     });
 
+    // Klick & Doppelklick im Lint
     lintEl.addEventListener("click", (ev) => {
       const t = ev.target;
       if (t && t.id === "lint-fix" && quickFixState.suggestion) applyQuickFix();
@@ -648,6 +385,7 @@ compile(code, "<usercode>", "exec")
       liveSeq++;
       clearTimeout(liveTimer);
 
+      // harte Syntaxprüfung
       const syntax = await runLiveSyntaxCheck({ quietOk: false });
       if (!syntax.ok || hasAnyMarkers()) return;
 
