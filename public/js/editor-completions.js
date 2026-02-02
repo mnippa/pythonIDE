@@ -9,6 +9,10 @@ import {
   PLT_SNIPPETS,
   AX_SNIPPETS,
   BUILTIN_SNIPPETS,
+  // Hover docs (Markdown)
+  STRING_HOVER_DOCS,
+  LIST_HOVER_DOCS,
+  DICT_HOVER_DOCS,
 } from "./editor-completions.config.js";
 
 /**
@@ -19,18 +23,26 @@ import {
  * - ax.  -> matplotlib Axes (only if ax was actually defined via plt.subplots)
  * - <var>. -> heuristic type inference (str + list + dict)
  * - global -> Python builtins + common snippets
+ * - hover -> Markdown docs for str/list/dict methods (heuristic)
+ *
+ * @param {any} monaco
+ * @param {any} editor
+ * @returns {any} disposable from monaco.languages.registerCompletionItemProvider
  */
 export function registerPythonCompletions(monaco, editor) {
   /* ============================================================
      Built-in object methods (static lists)
      ============================================================ */
   const STRING_METHODS = [
+    // casing
     "lower",
     "upper",
     "title",
     "capitalize",
     "swapcase",
     "casefold",
+
+    // trimming / padding
     "strip",
     "lstrip",
     "rstrip",
@@ -40,6 +52,8 @@ export function registerPythonCompletions(monaco, editor) {
     "rjust",
     "center",
     "zfill",
+
+    // search / test
     "find",
     "rfind",
     "index",
@@ -56,17 +70,25 @@ export function registerPythonCompletions(monaco, editor) {
     "islower",
     "isupper",
     "istitle",
+
+    // split / join
     "split",
     "rsplit",
     "splitlines",
     "join",
     "partition",
     "rpartition",
+
+    // replace / translate
     "replace",
     "translate",
     "maketrans",
+
+    // formatting
     "format",
     "format_map",
+
+    // encoding
     "encode",
   ];
 
@@ -138,7 +160,7 @@ export function registerPythonCompletions(monaco, editor) {
    * Heuristic inference: determine "str" | "list" | "dict" (or null)
    * based on the most recent assignment to varName in textUpToCursor.
    *
-   * We intentionally keep this simple, fast, and predictable.
+   * Kept intentionally simple, fast, predictable.
    */
   function inferVarType(varName, textUpToCursor) {
     const reAssign = new RegExp(`\\b${escapeRegExp(varName)}\\s*=`);
@@ -151,19 +173,14 @@ export function registerPythonCompletions(monaco, editor) {
 
       if (!reAssign.test(line)) continue;
 
-      // only look at RHS
       const rhs = line.split("=", 2)[1] ?? "";
       const rhsTrim = rhs.trim();
 
       // ---- str rules ----
       // direct literal: "..." / '...' / f"..." / r"..." etc (best effort)
-      if (/^(?:[rubf]|rb|br|rf|fr|urf|fur|r|u|b|f){0,3}(['"])/i.test(rhsTrim)) {
-        return "str";
-      }
+      if (/^(?:[rubf]|rb|br|rf|fr|urf|fur|r|u|b|f){0,3}(['"])/i.test(rhsTrim)) return "str";
       // triple quotes one-liner
-      if (/^(?:[rubf]|rb|br|rf|fr){0,3}("""|''')/i.test(rhsTrim)) {
-        return "str";
-      }
+      if (/^(?:[rubf]|rb|br|rf|fr){0,3}("""|''')/i.test(rhsTrim)) return "str";
       // constructors / sources
       if (/^str\s*\(/.test(rhsTrim)) return "str";
       if (/^input\s*\(/.test(rhsTrim)) return "str";
@@ -171,16 +188,12 @@ export function registerPythonCompletions(monaco, editor) {
       // ---- list rules ----
       // list literal (including [1,2,3] one-liner)
       if (/^\[\s*.*\s*\]$/.test(rhsTrim)) return "list";
-      // empty list literal
-      if (/^\[\s*\]$/.test(rhsTrim)) return "list";
       // constructor
       if (/^list\s*\(/.test(rhsTrim)) return "list";
 
       // ---- dict rules ----
       // dict literal (including {"a":1} one-liner)
       if (/^\{\s*.*\s*\}$/.test(rhsTrim)) return "dict";
-      // empty dict literal
-      if (/^\{\s*\}$/.test(rhsTrim)) return "dict";
       // constructor
       if (/^dict\s*\(/.test(rhsTrim)) return "dict";
 
@@ -200,7 +213,10 @@ export function registerPythonCompletions(monaco, editor) {
     return m ? m[1] : null;
   }
 
-  const disposable = monaco.languages.registerCompletionItemProvider("python", {
+  /* ============================================================
+     Completion Provider
+     ============================================================ */
+  const completionDisposable = monaco.languages.registerCompletionItemProvider("python", {
     triggerCharacters: [".", "_", "("],
 
     provideCompletionItems(model, position) {
@@ -257,17 +273,23 @@ export function registerPythonCompletions(monaco, editor) {
 
         if (t === "str") {
           return {
-            suggestions: STRING_METHODS.map((m) => mkMethodSuggestion(m, "str", `**str.${m}**\n\nString method.`)),
+            suggestions: STRING_METHODS.map((m) =>
+              mkMethodSuggestion(m, "str", STRING_HOVER_DOCS?.[m] || `**str.${m}()**`)
+            ),
           };
         }
         if (t === "list") {
           return {
-            suggestions: LIST_METHODS.map((m) => mkMethodSuggestion(m, "list", `**list.${m}**\n\nList method.`)),
+            suggestions: LIST_METHODS.map((m) =>
+              mkMethodSuggestion(m, "list", LIST_HOVER_DOCS?.[m] || `**list.${m}()**`)
+            ),
           };
         }
         if (t === "dict") {
           return {
-            suggestions: DICT_METHODS.map((m) => mkMethodSuggestion(m, "dict", `**dict.${m}**\n\nDict method.`)),
+            suggestions: DICT_METHODS.map((m) =>
+              mkMethodSuggestion(m, "dict", DICT_HOVER_DOCS?.[m] || `**dict.${m}()**`)
+            ),
           };
         }
       }
@@ -282,5 +304,72 @@ export function registerPythonCompletions(monaco, editor) {
     },
   });
 
-  return disposable;
+  /* ============================================================
+     Hover Provider (Markdown docs)
+     - Shows docs when hovering over "<var>.<method>" where var type is inferred.
+     ============================================================ */
+
+  // best-effort: returns {varName, method} if the position sits on/near the method token
+  function getDotCallAtPosition(model, position) {
+    const line = model.getLineContent(position.lineNumber);
+
+    // Find dot patterns in line, then check if cursor is within the method token
+    const re = /\b([A-Za-z_]\w*)\.(\w+)/g;
+    let m;
+    while ((m = re.exec(line)) !== null) {
+      const varName = m[1];
+      const method = m[2];
+
+      // m.index points to start of varName
+      const dotIndex = m.index + varName.length; // position of '.'
+      const methodStartCol = dotIndex + 2; // 1-based columns: +1 for '.', +1 to convert index->col
+      const methodEndCol = methodStartCol + method.length;
+
+      const col = position.column;
+      if (col >= methodStartCol && col <= methodEndCol) {
+        return { varName, method };
+      }
+    }
+    return null;
+  }
+
+  const hoverDisposable = monaco.languages.registerHoverProvider("python", {
+    provideHover(model, position) {
+      const hit = getDotCallAtPosition(model, position);
+      if (!hit) return null;
+
+      // Scan only up to current line for assignment inference
+      const upToLine = model.getValueInRange({
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: model.getLineMaxColumn(position.lineNumber),
+      });
+
+      const t = inferVarType(hit.varName, upToLine);
+
+      let doc = null;
+      if (t === "str") doc = STRING_HOVER_DOCS?.[hit.method];
+      else if (t === "list") doc = LIST_HOVER_DOCS?.[hit.method];
+      else if (t === "dict") doc = DICT_HOVER_DOCS?.[hit.method];
+
+      if (!doc) return null;
+
+      return {
+        contents: [{ value: doc }],
+      };
+    },
+  });
+
+  // Return a disposable that cleans up both providers if needed
+  return {
+    dispose() {
+      try {
+        completionDisposable?.dispose?.();
+      } catch {}
+      try {
+        hoverDisposable?.dispose?.();
+      } catch {}
+    },
+  };
 }

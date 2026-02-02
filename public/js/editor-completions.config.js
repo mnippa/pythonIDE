@@ -1,4 +1,5 @@
 // public/js/editor-completions.config.js
+// Pure configuration (arrays + snippet definitions + hover docs). No Monaco logic.
 
 /* ============================================================
    METHOD COMPLETIONS (no snippets)
@@ -352,16 +353,10 @@ export const AX_SNIPPETS = [
 
 Plot data on a specific Axes object.
 
-**Why use this?**
-- explicit control over figures
-- required for multi-subplot layouts
-- recommended Matplotlib style
-
 **Example**
 \`\`\`python
 fig, ax = plt.subplots()
-ax.plot(x, y, label="signal")
-ax.legend()
+ax.plot(x, y)
 \`\`\`
 `,
   },
@@ -410,11 +405,6 @@ Includes:
 **ax.set_title(text)**
 
 Set the title for this axes.
-
-**Example**
-\`\`\`python
-ax.set_title("My axes title")
-\`\`\`
 `,
   },
   {
@@ -424,11 +414,6 @@ ax.set_title("My axes title")
 **ax.set_xlabel(text)**
 
 Set x-axis label on this axes.
-
-**Example**
-\`\`\`python
-ax.set_xlabel("time (s)")
-\`\`\`
 `,
   },
   {
@@ -438,11 +423,6 @@ ax.set_xlabel("time (s)")
 **ax.set_ylabel(text)**
 
 Set y-axis label on this axes.
-
-**Example**
-\`\`\`python
-ax.set_ylabel("amplitude")
-\`\`\`
 `,
   },
   {
@@ -460,7 +440,7 @@ Enable grid for this axes.
     doc: `
 **ax.legend()**
 
-Show legend for labeled artists (lines, scatter, ...).
+Show legend for labeled artists.
 `,
   },
   {
@@ -469,7 +449,7 @@ Show legend for labeled artists (lines, scatter, ...).
     doc: `
 **fig.tight_layout()**
 
-Automatically adjust subplot parameters to give specified padding.
+Automatically adjust subplot parameters.
 `,
   },
   {
@@ -560,12 +540,6 @@ n = len([1, 2, 3])
 **range(stop)**
 
 Create an iterator of integers from 0 up to \`stop\`.
-
-**Example**
-\`\`\`python
-for i in range(10):
-    print(i)
-\`\`\`
 `,
   },
   {
@@ -598,3 +572,201 @@ Function template.
 `,
   },
 ];
+
+/* ============================================================
+   HOVER DOCS (Markdown)
+   Used by hover provider and also as fallback docs for method completions.
+   ============================================================ */
+
+export const STRING_HOVER_DOCS = {
+  upper: `
+**str.upper()**
+
+Return a copy of the string converted to uppercase.
+
+**Example**
+\`\`\`python
+"hello".upper()  # "HELLO"
+\`\`\`
+`,
+  lower: `
+**str.lower()**
+
+Return a copy of the string converted to lowercase.
+
+**Example**
+\`\`\`python
+"Hello".lower()  # "hello"
+\`\`\`
+`,
+  strip: `
+**str.strip()**
+
+Return a copy of the string with leading and trailing whitespace removed.
+
+**Example**
+\`\`\`python
+"  hi  ".strip()  # "hi"
+\`\`\`
+`,
+  split: `
+**str.split(sep=None)**
+
+Split the string into a list of substrings.
+
+**Example**
+\`\`\`python
+"a,b,c".split(",")  # ["a","b","c"]
+\`\`\`
+`,
+  replace: `
+**str.replace(old, new)**
+
+Return a copy of the string with all occurrences of \`old\` replaced by \`new\`.
+
+**Example**
+\`\`\`python
+"aa".replace("a","b")  # "bb"
+\`\`\`
+`,
+  join: `
+**str.join(iterable)**
+
+Join an iterable of strings into one string, using this string as separator.
+
+**Example**
+\`\`\`python
+",".join(["a","b","c"])  # "a,b,c"
+\`\`\`
+`,
+  startswith: `
+**str.startswith(prefix)**
+
+Return True if the string starts with the specified prefix.
+`,
+  endswith: `
+**str.endswith(suffix)**
+
+Return True if the string ends with the specified suffix.
+`,
+  find: `
+**str.find(sub)**
+
+Return the lowest index of \`sub\` or -1 if not found.
+`,
+  format: `
+**str.format(...)**
+
+Format the string using replacement fields.
+
+**Example**
+\`\`\`python
+"{} + {}".format(1,2)  # "1 + 2"
+\`\`\`
+`,
+};
+
+export const LIST_HOVER_DOCS = {
+  append: `
+**list.append(x)**
+
+Add an item to the end of the list.
+
+**Example**
+\`\`\`python
+a = []
+a.append(1)
+\`\`\`
+`,
+  extend: `
+**list.extend(iterable)**
+
+Extend the list by appending all items from the iterable.
+
+**Example**
+\`\`\`python
+a = [1]
+a.extend([2,3])  # [1,2,3]
+\`\`\`
+`,
+  insert: `
+**list.insert(i, x)**
+
+Insert an item at a given position.
+`,
+  pop: `
+**list.pop([i])**
+
+Remove and return item at position \`i\` (default last).
+`,
+  remove: `
+**list.remove(x)**
+
+Remove first occurrence of \`x\`.
+`,
+  sort: `
+**list.sort(...)**
+
+Sort the list in place.
+`,
+  reverse: `
+**list.reverse()**
+
+Reverse the list in place.
+`,
+  clear: `
+**list.clear()**
+
+Remove all items from the list.
+`,
+};
+
+export const DICT_HOVER_DOCS = {
+  get: `
+**dict.get(key, default=None)**
+
+Return the value for \`key\` if key is in the dictionary, else \`default\`.
+
+**Example**
+\`\`\`python
+d = {"a": 1}
+d.get("a")      # 1
+d.get("b", 0)   # 0
+\`\`\`
+`,
+  keys: `
+**dict.keys()**
+
+Return a view of the dictionary’s keys.
+`,
+  values: `
+**dict.values()**
+
+Return a view of the dictionary’s values.
+`,
+  items: `
+**dict.items()**
+
+Return a view of the dictionary’s items.
+`,
+  update: `
+**dict.update(other)**
+
+Update the dictionary with key/value pairs from \`other\`.
+`,
+  pop: `
+**dict.pop(key[, default])**
+
+Remove specified key and return the corresponding value.
+`,
+  setdefault: `
+**dict.setdefault(key, default=None)**
+
+Get value for \`key\`; if missing, insert \`default\` and return it.
+`,
+  clear: `
+**dict.clear()**
+
+Remove all items from the dictionary.
+`,
+};
