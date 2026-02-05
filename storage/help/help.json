@@ -1,0 +1,266 @@
+{
+    "str.split": {
+        "title": "Python String split() Method",
+        "md": "**Python String split() Method**\n\nThe split() method splits a string into a list.\n\n**Syntax**\n\n`string.split(separator, maxsplit)`\n\n**Example**\n\n```python\ntxt = \"welcome to the jungle\"x = txt.split()\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_split.asp",
+        "source": "https://www.w3schools.com/python/ref_string_split.asp",
+        "fetched_at": "2026-02-05T15:55:04+00:00"
+    },
+    "str.strip": {
+        "title": "Python String strip() Method",
+        "md": "**Python String strip() Method**\n\nThe strip() method removes any leading, and trailing whitespaces.\n\n**Syntax**\n\n`string.strip(characters)`\n\n**Example**\n\n```python\ntxt = \"     banana     \"x = \n    txt.strip()\n    print(\"of all fruits\", x, \"is my favorite\")\n```\n\nSource: https://www.w3schools.com/python/ref_string_strip.asp",
+        "source": "https://www.w3schools.com/python/ref_string_strip.asp",
+        "fetched_at": "2026-02-05T15:55:04+00:00"
+    },
+    "str.replace": {
+        "title": "Python String replace() Method",
+        "md": "**Python String replace() Method**\n\nThe replace() method replaces a specified phrase with another specified phrase.\n\n**Syntax**\n\n`string.replace(oldvalue, newvalue, count)`\n\n**Example**\n\n```python\ntxt = \"I like bananas\"x = txt.replace(\"bananas\", \"apples\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_replace.asp",
+        "source": "https://www.w3schools.com/python/ref_string_replace.asp",
+        "fetched_at": "2026-02-05T15:55:05+00:00"
+    },
+    "str.splitlines": {
+        "title": "Python String splitlines() Method",
+        "md": "**Python String splitlines() Method**\n\nThe splitlines() method splits a string into a list. The splitting is done at line breaks.\n\n**Syntax**\n\n`string.splitlines(keeplinebreaks)`\n\n**Example**\n\n```python\ntxt = \"Thank \n    you for the music\\nWelcome to the jungle\"x = txt.splitlines()\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_splitlines.asp",
+        "source": "https://www.w3schools.com/python/ref_string_splitlines.asp",
+        "fetched_at": "2026-02-05T15:55:05+00:00"
+    },
+    "str.startswith": {
+        "title": "Python String startswith() Method",
+        "md": "**Python String startswith() Method**\n\nThe startswith() method returns True if the string starts with the specified value, otherwise False.\n\n**Syntax**\n\n`string.startswith(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Hello, welcome to my world.\"x = txt.startswith(\"Hello\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_startswith.asp",
+        "source": "https://www.w3schools.com/python/ref_string_startswith.asp",
+        "fetched_at": "2026-02-05T15:55:06+00:00"
+    },
+    "str.endswith": {
+        "title": "Python String endswith() Method",
+        "md": "**Python String endswith() Method**\n\nThe endswith() method returns True if the string ends with the specified value, otherwise False.\n\n**Syntax**\n\n`string.endswith(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Hello, welcome to my world.\"x = txt.endswith(\".\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_endswith.asp",
+        "source": "https://www.w3schools.com/python/ref_string_endswith.asp",
+        "fetched_at": "2026-02-05T15:55:07+00:00"
+    },
+    "str.find": {
+        "title": "Python String find() Method",
+        "md": "**Python String find() Method**\n\nThe find() method finds the first occurrence of the specified value.\n\n**Syntax**\n\n`string.find(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Hello, welcome to my world.\"x = txt.find(\"welcome\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_find.asp",
+        "source": "https://www.w3schools.com/python/ref_string_find.asp",
+        "fetched_at": "2026-02-05T15:55:07+00:00"
+    },
+    "str.join": {
+        "title": "Python String join() Method",
+        "md": "**Python String join() Method**\n\nThe join() method takes all items in an iterable and joins them into one string.\n\n**Syntax**\n\n`string.join(iterable)`\n\n**Example**\n\n```python\nmyTuple = (\"John\", \"Peter\", \"Vicky\")x = \"#\".join(myTuple)\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_join.asp",
+        "source": "https://www.w3schools.com/python/ref_string_join.asp",
+        "fetched_at": "2026-02-05T15:55:08+00:00"
+    },
+    "str.upper": {
+        "title": "Python String upper() Method",
+        "md": "**Python String upper() Method**\n\nThe upper() method returns a string where all characters are in upper case.\n\n**Syntax**\n\n`string.upper()`\n\n**Example**\n\n```python\ntxt = \"Hello my friends\"x = txt.upper()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_upper.asp",
+        "source": "https://www.w3schools.com/python/ref_string_upper.asp",
+        "fetched_at": "2026-02-05T15:55:09+00:00"
+    },
+    "str.lower": {
+        "title": "Python String lower() Method",
+        "md": "**Python String lower() Method**\n\nThe lower() method returns a string where all characters are lower case.\n\n**Syntax**\n\n`string.lower()`\n\n**Example**\n\n```python\ntxt = \"Hello my FRIENDS\"x = txt.lower()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_lower.asp",
+        "source": "https://www.w3schools.com/python/ref_string_lower.asp",
+        "fetched_at": "2026-02-05T15:55:09+00:00"
+    },
+    "str.format": {
+        "title": "Python String format() Method",
+        "md": "**Python String format() Method**\n\nThe format() method formats the specified value(s) and insert them inside the string's placeholder.\n\n**Syntax**\n\n`string.format(value1, value2...)`\n\n**Example**\n\n```python\ntxt = \"For only {price:.2f} dollars!\"print(txt.format(price = 49))\n```\n\nSource: https://www.w3schools.com/python/ref_string_format.asp",
+        "source": "https://www.w3schools.com/python/ref_string_format.asp",
+        "fetched_at": "2026-02-05T15:55:10+00:00"
+    },
+    "str.capitalize": {
+        "title": "Python String capitalize() Method",
+        "md": "**Python String capitalize() Method**\n\nThe capitalize() method returns a string where the first character is upper case, and the rest is lower case.\n\n**Syntax**\n\n`string.capitalize()`\n\n**Example**\n\n```python\ntxt = \"hello, and welcome to my world.\"x = txt.capitalize()\n    print (x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_capitalize.asp",
+        "source": "https://www.w3schools.com/python/ref_string_capitalize.asp",
+        "fetched_at": "2026-02-05T15:55:11+00:00"
+    },
+    "str.title": {
+        "title": "Python String title() Method",
+        "md": "**Python String title() Method**\n\nThe title() method returns a string where the first character in every word is upper case. Like a header, or a title.\n\n**Syntax**\n\n`string.title()`\n\n**Example**\n\n```python\ntxt = \"Welcome to my world\"x = txt.title()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_title.asp",
+        "source": "https://www.w3schools.com/python/ref_string_title.asp",
+        "fetched_at": "2026-02-05T15:55:11+00:00"
+    },
+    "str.swapcase": {
+        "title": "Python String swapcase() Method",
+        "md": "**Python String swapcase() Method**\n\nThe swapcase() method returns a string where all the upper case letters are lower case and vice versa.\n\n**Syntax**\n\n`string.swapcase()`\n\n**Example**\n\n```python\ntxt = \"Hello My Name Is PETER\"x = txt.swapcase()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_swapcase.asp",
+        "source": "https://www.w3schools.com/python/ref_string_swapcase.asp",
+        "fetched_at": "2026-02-05T15:55:12+00:00"
+    },
+    "str.casefold": {
+        "title": "Python String casefold() Method",
+        "md": "**Python String casefold() Method**\n\nThe casefold() method returns a string where all the characters are lower case.\n\n**Syntax**\n\n`string.casefold()`\n\n**Example**\n\n```python\ntxt = \"Hello, And Welcome To My World!\"x = txt.casefold()\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_casefold.asp",
+        "source": "https://www.w3schools.com/python/ref_string_casefold.asp",
+        "fetched_at": "2026-02-05T15:55:13+00:00"
+    },
+    "str.lstrip": {
+        "title": "Python String lstrip() Method",
+        "md": "**Python String lstrip() Method**\n\nThe lstrip() method removes any leading characters (space is the default leading character to remove)\n\n**Syntax**\n\n`string.lstrip(characters)`\n\n**Example**\n\n```python\ntxt = \"     banana     \"x = \n    txt.lstrip()\n    print(\"of all fruits\", x, \"is my favorite\")\n```\n\nSource: https://www.w3schools.com/python/ref_string_lstrip.asp",
+        "source": "https://www.w3schools.com/python/ref_string_lstrip.asp",
+        "fetched_at": "2026-02-05T15:55:13+00:00"
+    },
+    "str.rstrip": {
+        "title": "Python String rstrip() Method",
+        "md": "**Python String rstrip() Method**\n\nThe rstrip() method removes any trailing characters (characters at the end a string), space is the default trailing character to remove.\n\n**Syntax**\n\n`string.rstrip(characters)`\n\n**Example**\n\n```python\ntxt = \"     banana     \"x = \n    txt.rstrip()\n    print(\"of all fruits\", x, \"is my favorite\")\n```\n\nSource: https://www.w3schools.com/python/ref_string_rstrip.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rstrip.asp",
+        "fetched_at": "2026-02-05T15:55:14+00:00"
+    },
+    "str.center": {
+        "title": "Python String center() Method",
+        "md": "**Python String center() Method**\n\nThe center() method will center align the string, using a specified character (space is default) as the fill character.\n\n**Syntax**\n\n`string.center(length, character)`\n\n**Example**\n\n```python\ntxt = \"banana\"x = txt.center(20)print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_center.asp",
+        "source": "https://www.w3schools.com/python/ref_string_center.asp",
+        "fetched_at": "2026-02-05T15:55:14+00:00"
+    },
+    "str.ljust": {
+        "title": "Python String ljust() Method",
+        "md": "**Python String ljust() Method**\n\nThe ljust() method will left align the string, using a specified character (space is default) as the fill character.\n\n**Syntax**\n\n`string.ljust(length, character)`\n\n**Example**\n\n```python\ntxt = \"banana\"x = txt.ljust(20)print(x, \"is my \n    favorite fruit.\")\n```\n\nSource: https://www.w3schools.com/python/ref_string_ljust.asp",
+        "source": "https://www.w3schools.com/python/ref_string_ljust.asp",
+        "fetched_at": "2026-02-05T15:55:15+00:00"
+    },
+    "str.rjust": {
+        "title": "Python String rjust() Method",
+        "md": "**Python String rjust() Method**\n\nThe rjust() method will right align the string, using a specified character (space is default) as the fill character.\n\n**Syntax**\n\n`string.rjust(length, character)`\n\n**Example**\n\n```python\ntxt = \"banana\"x = txt.rjust(20)print(x, \"is my \n    favorite fruit.\")\n```\n\nSource: https://www.w3schools.com/python/ref_string_rjust.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rjust.asp",
+        "fetched_at": "2026-02-05T15:55:16+00:00"
+    },
+    "str.zfill": {
+        "title": "Python String zfill() Method",
+        "md": "**Python String zfill() Method**\n\nThe zfill() method adds zeros (0) at the beginning of the string, until it reaches the specified length.\n\n**Syntax**\n\n`string.zfill(len)`\n\n**Example**\n\n```python\ntxt = \"50\"x = txt.zfill(10)print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_zfill.asp",
+        "source": "https://www.w3schools.com/python/ref_string_zfill.asp",
+        "fetched_at": "2026-02-05T15:55:17+00:00"
+    },
+    "str.count": {
+        "title": "Python String count() Method",
+        "md": "**Python String count() Method**\n\nThe count() method returns the number of times a specified value appears in the string.\n\n**Syntax**\n\n`string.count(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"I love apples, apple are my favorite fruit\"x = txt.count(\"apple\")\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_count.asp",
+        "source": "https://www.w3schools.com/python/ref_string_count.asp",
+        "fetched_at": "2026-02-05T15:55:17+00:00"
+    },
+    "str.index": {
+        "title": "Python String index() Method",
+        "md": "**Python String index() Method**\n\nThe index() method finds the first occurrence of the specified value.\n\n**Syntax**\n\n`string.index(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Hello, welcome to my world.\"x = txt.index(\"welcome\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_index.asp",
+        "source": "https://www.w3schools.com/python/ref_string_index.asp",
+        "fetched_at": "2026-02-05T15:55:18+00:00"
+    },
+    "str.rindex": {
+        "title": "Python String rindex() Method",
+        "md": "**Python String rindex() Method**\n\nThe rindex() method finds the last occurrence of the specified value.\n\n**Syntax**\n\n`string.rindex(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Mi \n    casa, su casa.\"x = txt.rindex(\"casa\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_rindex.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rindex.asp",
+        "fetched_at": "2026-02-05T15:55:19+00:00"
+    },
+    "str.rfind": {
+        "title": "Python String rfind() Method",
+        "md": "**Python String rfind() Method**\n\nThe rfind() method finds the last occurrence of the specified value.\n\n**Syntax**\n\n`string.rfind(value, start, end)`\n\n**Example**\n\n```python\ntxt = \"Mi \n    casa, su casa.\"x = txt.rfind(\"casa\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_rfind.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rfind.asp",
+        "fetched_at": "2026-02-05T15:55:19+00:00"
+    },
+    "str.partition": {
+        "title": "Python String partition() Method",
+        "md": "**Python String partition() Method**\n\nThe partition() method searches for a specified string, and splits the string into a tuple containing three elements.\n\n**Syntax**\n\n`string.partition(value)`\n\n**Example**\n\n```python\ntxt = \"I could eat bananas all day\"x = txt.partition(\"bananas\")\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_partition.asp",
+        "source": "https://www.w3schools.com/python/ref_string_partition.asp",
+        "fetched_at": "2026-02-05T15:55:20+00:00"
+    },
+    "str.rpartition": {
+        "title": "Python String rpartition() Method",
+        "md": "**Python String rpartition() Method**\n\nThe rpartition() method searches for the last occurrence of a specified string, and splits the string into a tuple containing three elements.\n\n**Syntax**\n\n`string.rpartition(value)`\n\n**Example**\n\n```python\ntxt = \"I could eat bananas all day, bananas are my favorite fruit\"x = txt.rpartition(\"bananas\")\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_rpartition.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rpartition.asp",
+        "fetched_at": "2026-02-05T15:55:20+00:00"
+    },
+    "str.rsplit": {
+        "title": "Python String rsplit() Method",
+        "md": "**Python String rsplit() Method**\n\nThe rsplit() method splits a string into a list, starting from the right.\n\n**Syntax**\n\n`string.rsplit(separator, maxsplit)`\n\n**Example**\n\n```python\ntxt = \"apple, banana, cherry\"x = txt.rsplit(\", \")\n    print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_string_rsplit.asp",
+        "source": "https://www.w3schools.com/python/ref_string_rsplit.asp",
+        "fetched_at": "2026-02-05T15:55:21+00:00"
+    },
+    "list.append": {
+        "title": "Python List append() Method",
+        "md": "**Python List append() Method**\n\nThe append() method appends an element to the end of the list.\n\n**Syntax**\n\n`list.append(elmnt)`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']fruits.append(\"orange\")\n```\n\nSource: https://www.w3schools.com/python/ref_list_append.asp",
+        "source": "https://www.w3schools.com/python/ref_list_append.asp",
+        "fetched_at": "2026-02-05T15:55:22+00:00"
+    },
+    "list.extend": {
+        "title": "Python List extend() Method",
+        "md": "**Python List extend() Method**\n\nThe extend() method adds the specified list elements (or any iterable) to the end of the current list.\n\n**Syntax**\n\n`list.extend(iterable)`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']\n    cars = ['Ford', 'BMW', 'Volvo']\n    fruits.extend(cars)\n```\n\nSource: https://www.w3schools.com/python/ref_list_extend.asp",
+        "source": "https://www.w3schools.com/python/ref_list_extend.asp",
+        "fetched_at": "2026-02-05T15:55:22+00:00"
+    },
+    "list.insert": {
+        "title": "Python List insert() Method",
+        "md": "**Python List insert() Method**\n\nThe insert() method inserts the specified value at the specified position.\n\n**Syntax**\n\n`list.insert(pos, elmnt)`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']\n    fruits.insert(1, \"orange\")\n```\n\nSource: https://www.w3schools.com/python/ref_list_insert.asp",
+        "source": "https://www.w3schools.com/python/ref_list_insert.asp",
+        "fetched_at": "2026-02-05T15:55:23+00:00"
+    },
+    "list.pop": {
+        "title": "Python List pop() Method",
+        "md": "**Python List pop() Method**\n\nThe pop() method removes the element at the specified position.\n\n**Syntax**\n\n`list.pop(pos)`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']\n    fruits.pop(1)\n```\n\nSource: https://www.w3schools.com/python/ref_list_pop.asp",
+        "source": "https://www.w3schools.com/python/ref_list_pop.asp",
+        "fetched_at": "2026-02-05T15:55:24+00:00"
+    },
+    "list.remove": {
+        "title": "Python List remove() Method",
+        "md": "**Python List remove() Method**\n\nThe remove() method removes the first occurrence of the element with the specified value.\n\n**Syntax**\n\n`list.remove(elmnt)`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']\n    fruits.remove(\"banana\")\n```\n\nSource: https://www.w3schools.com/python/ref_list_remove.asp",
+        "source": "https://www.w3schools.com/python/ref_list_remove.asp",
+        "fetched_at": "2026-02-05T15:55:25+00:00"
+    },
+    "list.sort": {
+        "title": "Python List sort() Method",
+        "md": "**Python List sort() Method**\n\nThe sort() method sorts the list ascending by default.\n\n**Syntax**\n\n`list.sort(reverse=True|False, key=myFunc)`\n\n**Example**\n\n```python\ncars = ['Ford', 'BMW', 'Volvo']\n    cars.sort()\n```\n\nSource: https://www.w3schools.com/python/ref_list_sort.asp",
+        "source": "https://www.w3schools.com/python/ref_list_sort.asp",
+        "fetched_at": "2026-02-05T15:55:25+00:00"
+    },
+    "list.reverse": {
+        "title": "Python List reverse() Method",
+        "md": "**Python List reverse() Method**\n\nThe reverse() method reverses the sorting order of the elements.\n\n**Syntax**\n\n`list.reverse()`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry']\n    fruits.reverse()\n```\n\nSource: https://www.w3schools.com/python/ref_list_reverse.asp",
+        "source": "https://www.w3schools.com/python/ref_list_reverse.asp",
+        "fetched_at": "2026-02-05T15:55:26+00:00"
+    },
+    "list.clear": {
+        "title": "Python List clear() Method",
+        "md": "**Python List clear() Method**\n\nThe clear() method removes all the elements from a list.\n\n**Syntax**\n\n`list.clear()`\n\n**Example**\n\n```python\nfruits = ['apple', 'banana', 'cherry', 'orange']fruits.clear()\n```\n\nSource: https://www.w3schools.com/python/ref_list_clear.asp",
+        "source": "https://www.w3schools.com/python/ref_list_clear.asp",
+        "fetched_at": "2026-02-05T15:55:27+00:00"
+    },
+    "dict.get": {
+        "title": "Python Dictionary get() Method",
+        "md": "**Python Dictionary get() Method**\n\nThe get() method returns the value of the item with the specified key.\n\n**Syntax**\n\n`dictionary.get(keyname, value)`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}\n    x = car.get(\"model\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_get.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_get.asp",
+        "fetched_at": "2026-02-05T15:55:28+00:00"
+    },
+    "dict.keys": {
+        "title": "Python Dictionary keys() Method",
+        "md": "**Python Dictionary keys() Method**\n\nThe keys() method returns a view object. The view object contains the keys of the dictionary, as a list.\n\n**Syntax**\n\n`dictionary.keys()`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}x = car.keys()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_keys.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_keys.asp",
+        "fetched_at": "2026-02-05T15:55:28+00:00"
+    },
+    "dict.values": {
+        "title": "Python Dictionary values() Method",
+        "md": "**Python Dictionary values() Method**\n\nThe values() method returns a view object. The view object contains the values of the dictionary, as a list.\n\n**Syntax**\n\n`dictionary.values()`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}x = car.values()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_values.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_values.asp",
+        "fetched_at": "2026-02-05T15:55:29+00:00"
+    },
+    "dict.items": {
+        "title": "Python Dictionary items() Method",
+        "md": "**Python Dictionary items() Method**\n\nThe items() method returns a view object. The view object contains the key-value pairs of the dictionary, as tuples in a list.\n\n**Syntax**\n\n`dictionary.items()`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}x = car.items()print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_items.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_items.asp",
+        "fetched_at": "2026-02-05T15:55:30+00:00"
+    },
+    "dict.update": {
+        "title": "Python Dictionary update() Method",
+        "md": "**Python Dictionary update() Method**\n\nThe update() method inserts the specified items to the dictionary.\n\n**Syntax**\n\n`dictionary.update(iterable)`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}\n    car.update({\"color\": \"White\"})print(car)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_update.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_update.asp",
+        "fetched_at": "2026-02-05T15:55:30+00:00"
+    },
+    "dict.pop": {
+        "title": "Python Dictionary pop() Method",
+        "md": "**Python Dictionary pop() Method**\n\nThe pop() method removes the specified item from the dictionary.\n\n**Syntax**\n\n`dictionary.pop(keyname, defaultvalue)`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}\n    car.pop(\"model\")print(car)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_pop.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_pop.asp",
+        "fetched_at": "2026-02-05T15:55:31+00:00"
+    },
+    "dict.setdefault": {
+        "title": "Python Dictionary setdefault() Method",
+        "md": "**Python Dictionary setdefault() Method**\n\nThe setdefault() method returns the value of the item with the specified key.\n\n**Syntax**\n\n`dictionary.setdefault(keyname, value)`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}\n    x = car.setdefault(\"model\", \"Bronco\")print(x)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_setdefault.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_setdefault.asp",
+        "fetched_at": "2026-02-05T15:55:31+00:00"
+    },
+    "dict.clear": {
+        "title": "Python Dictionary clear() Method",
+        "md": "**Python Dictionary clear() Method**\n\nThe clear() method removes all the elements from a dictionary.\n\n**Syntax**\n\n`dictionary.clear()`\n\n**Example**\n\n```python\ncar = {  \"brand\": \"Ford\",  \"model\": \"Mustang\",  \n    \"year\": 1964}car.clear()print(car)\n```\n\nSource: https://www.w3schools.com/python/ref_dictionary_clear.asp",
+        "source": "https://www.w3schools.com/python/ref_dictionary_clear.asp",
+        "fetched_at": "2026-02-05T15:55:32+00:00"
+    }
+}
