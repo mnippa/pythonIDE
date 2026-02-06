@@ -167,6 +167,10 @@ async function initPyodideAndEditor() {
 
   /* ---------------- Monaco ---------------- */
   require(["vs/editor/editor.main"], async function () {
+    // Detect initial theme
+    const isDarkMode = () => document.documentElement.classList.contains('dark-mode');
+    const getEditorTheme = () => isDarkMode() ? 'vs-dark' : 'vs';
+    
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
       value: `import numpy as np
 import matplotlib.pyplot as plt
@@ -188,9 +192,17 @@ print("done")
 # pint("hello")
 `,
       language: "python",
-      theme: "vs-dark",
+      theme: getEditorTheme(),
       automaticLayout: true,
       lightbulb: { enabled: false }, // kein "No quick fixes available"
+    });
+    
+    // Listen for theme changes
+    const themeBtn = document.getElementById('theme-toggle');
+    themeBtn?.addEventListener('click', () => {
+      setTimeout(() => {
+        editor.setTheme(getEditorTheme());
+      }, 0);
     });
 
     const outputEl = document.getElementById("output-container");
@@ -202,7 +214,8 @@ print("done")
        Datei: public/js/editor-completions.js
        ============================================================ */
     try {
-      const mod = await import("./editor-completions.js");
+      const ts = new Date().getTime();
+      const mod = await import(`./editor-completions.js?t=${ts}`);
       mod.registerPythonCompletions(monaco, editor);
     } catch (e) {
       console.error("Failed to load ./editor-completions.js", e);

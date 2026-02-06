@@ -1,26 +1,34 @@
 <?php
 // scripts/scrape_w3schools.php (Browser-compatible, PHP 7.4)
 //
-// Open in browser:
-//   /scripts/scrape_w3schools.php
+// Run in browser:
 //   /scripts/scrape_w3schools.php?force=1
 //
-// Writes output to:
+// Writes:
 //   storage/help/help.json
 //
-// Tries to scrape W3Schools Python reference pages:
-// - str.<method>  -> https://www.w3schools.com/python/ref_string_<method>.asp
-// - list.<method> -> https://www.w3schools.com/python/ref_list_<method>.asp
-// - dict.<method> -> https://www.w3schools.com/python/ref_dictionary_<method>.asp
+// Strategy:
+// - Build a big target list from method/function name lists
+// - Generate W3Schools reference URLs
+// - Fetch + parse if page exists (HTTP < 400), otherwise SKIP
 //
-// Missing pages are skipped (logged).
+// Types supported:
+// - str.<method>  -> ref_string_<method>.asp
+// - list.<method> -> ref_list_<method>.asp
+// - dict.<method> -> ref_dictionary_<method>.asp
+// - set.<method>  -> ref_set_<method>.asp
+// - tuple.<method>-> ref_tuple_<method>.asp
+// - math.<func>   -> ref_math_<func>.asp  (best-effort, many exist)
+// - builtins.<fn> -> ref_func_<fn>.asp or ref_func_<fn>_function.asp (best-effort)
+//
+// Missing pages are skipped.
 
 declare(strict_types=1);
 
 const OUT_DIR  = __DIR__ . '/../storage/help';
 const OUT_FILE = __DIR__ . '/../storage/help/help.json';
 
-const USER_AGENT = 'pythonIDE-local-help-scraper/1.0 (+local use)';
+const USER_AGENT = 'pythonIDE-local-help-scraper/1.1 (+local use)';
 const TIMEOUT_S  = 20;
 
 const DELAY_MIN_MS = 200;
@@ -72,7 +80,7 @@ function ensureDir(string $dir): void {
 }
 
 function randDelayMs(): int {
-  return random_int(constant('DELAY_MIN_MS'), constant('DELAY_MAX_MS'));
+  return random_int(DELAY_MIN_MS, DELAY_MAX_MS);
 }
 
 function httpGet(string $url, int &$httpCode = 0): string {
@@ -163,8 +171,18 @@ function parseW3Reference(string $html, string $fallbackTitle, string $url): arr
   ];
 }
 
+function addTargets(array &$targets, string $prefix, array $names, callable $urlFn): void {
+  foreach ($names as $name) {
+    $name = trim((string)$name);
+    if ($name === '') continue;
+    $targets["{$prefix}.{$name}"] = $urlFn($name);
+  }
+}
+
 function buildTargets(): array {
-  // Keep these in sync with your JS method lists
+  $targets = [];
+
+  // Keep these aligned with your JS completion lists
   $stringMethods = [
     "lower","upper","title","capitalize","swapcase","casefold",
     "strip","lstrip","rstrip","removeprefix","removesuffix",
@@ -180,17 +198,42 @@ function buildTargets(): array {
 
   $dictMethods = ["get","setdefault","update","pop","popitem","clear","keys","values","items","copy","fromkeys"];
 
-  $targets = [];
+  // NEW: set + tuple methods
+  $setMethods = [
+    "add","clear","copy","difference","difference_update","discard",
+    "intersection","intersection_update","isdisjoint","issubset","issuperset",
+    "pop","remove","symmetric_difference","symmetric_difference_update","union","update"
+  ];
 
-  foreach ($stringMethods as $m) {
-    $targets["str.$m"] = "https://www.w3schools.com/python/ref_string_{$m}.asp";
-  }
-  foreach ($listMethods as $m) {
-    $targets["list.$m"] = "https://www.w3schools.com/python/ref_list_{$m}.asp";
-  }
-  foreach ($dictMethods as $m) {
-    $targets["dict.$m"] = "https://www.w3schools.com/python/ref_dictionary_{$m}.asp";
-  }
+  $tupleMethods = ["count","index"];
+
+  // NEW: math functions (best-effort: many exist on w3schools as ref_math_*.asp)
+  $mathFuncs = [
+    "ceil","floor","fabs","factorial","fmod","frexp","fsum","gcd","isfinite","isinf","isnan",
+    "ldexp","modf","prod","remainder","trunc",
+    "exp","expm1","log","log1p","log2","log10","pow","sqrt",
+    "acos","asin","atan","atan2","cos","sin","tan","degrees","radians","hypot",
+    "copysign","isclose"
+  ];
+
+  // OPTIONAL: builtins (best-effort; pages may not exist)
+  $builtins = [
+    "print","len","range","enumerate","sum","min","max","sorted","reversed",
+    "list","dict","set","tuple","str","int","float","bool",
+    "abs","all","any","bin","chr","ord","hex","oct","pow","round","zip","map","filter","input"
+  ];
+
+  addTargets($targets, "str",  $stringMethods, fn($m) => "https://www.w3schools.com/python/ref_string_{$m}.asp");
+  addTargets($targets, "list", $listMethods,   fn($m) => "https://www.w3schools.com/python/ref_list_{$m}.asp");
+  addTargets($targets, "dict", $dictMethods,   fn($m) => "https://www.w3schools.com/python/ref_dictionary_{$m}.asp");
+
+  addTargets($targets, "set",  $setMethods,    fn($m) => "https://www.w3schools.com/python/ref_set_{$m}.asp");
+  addTargets($targets, "tuple",$tupleMethods,  fn($m) => "https://www.w3schools.com/python/ref_tuple_{$m}.asp");
+
+  addTargets($targets, "math", $mathFuncs,     fn($m) => "https://www.w3schools.com/python/ref_math_{$m}.asp");
+
+  // builtins: try common patterns
+  addTargets($targets, "builtins", $builtins, fn($f) => "https://www.w3schools.com/python/ref_func_{$f}.asp");
 
   return $targets;
 }
@@ -205,7 +248,6 @@ try {
 }
 
 $force = isset($_GET['force']) && $_GET['force'] === '1';
-
 if (!$force && is_file(OUT_FILE)) {
   logLine("Hinweis: help.json existiert bereits. Mit ?force=1 neu erzeugen.", "warn");
 }
@@ -238,8 +280,7 @@ foreach ($targets as $key => $url) {
     logLine("  SKIP (error): " . $e->getMessage(), "warn");
   }
 
-  $delay = randDelayMs();
-  usleep($delay * 1000);
+  usleep(randDelayMs() * 1000);
 }
 
 $json = json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -258,6 +299,8 @@ logLine("DONE ✅", "ok");
 logLine("Wrote: " . OUT_FILE, "ok");
 logLine("Entries saved: " . count($result) . " / $total", "ok");
 logLine("Skipped: $skipped (no ref page / error)", "warn");
-logLine("Test: /public/index.php?api=help&key=str.split");
+logLine("Test: /public/index.php?api=help&key=set.add", "ok");
+logLine("Test: /public/index.php?api=help&key=math.sqrt", "ok");
+logLine("Test: /public/index.php?api=help&key=builtins.print", "ok");
 
 htmlFooter();

@@ -2,6 +2,7 @@
 import * as C from "./editor-completions.config.js";
 
 export function registerPythonCompletions(monaco, editor) {
+  // Safe config reads
   const NUMPY_COMPLETIONS   = Array.isArray(C.NUMPY_COMPLETIONS) ? C.NUMPY_COMPLETIONS : [];
   const PLT_COMPLETIONS     = Array.isArray(C.PLT_COMPLETIONS) ? C.PLT_COMPLETIONS : [];
   const AX_COMPLETIONS      = Array.isArray(C.AX_COMPLETIONS) ? C.AX_COMPLETIONS : [];
@@ -16,6 +17,16 @@ export function registerPythonCompletions(monaco, editor) {
   const LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
   const DICT_HOVER_DOCS     = C.DICT_HOVER_DOCS && typeof C.DICT_HOVER_DOCS === "object" ? C.DICT_HOVER_DOCS : {};
 
+  // Math function list (matches scraper targets)
+  const MATH_FUNCS = [
+    "ceil","floor","fabs","factorial","fmod","frexp","fsum","gcd","isfinite","isinf","isnan",
+    "ldexp","modf","prod","remainder","trunc",
+    "exp","expm1","log","log1p","log2","log10","pow","sqrt",
+    "acos","asin","atan","atan2","cos","sin","tan","degrees","radians","hypot",
+    "copysign","isclose"
+  ];
+
+  // Method lists (str/list/dict)
   const STRING_METHODS = [
     "lower","upper","title","capitalize","swapcase","casefold",
     "strip","lstrip","rstrip","removeprefix","removesuffix",
@@ -33,6 +44,9 @@ export function registerPythonCompletions(monaco, editor) {
 
   function mkMethodSuggestion(name, detail) {
     return { label: name, kind: monaco.languages.CompletionItemKind.Method, insertText: name, detail };
+  }
+  function mkFunctionSuggestion(name, detail) {
+    return { label: name, kind: monaco.languages.CompletionItemKind.Function, insertText: name, detail };
   }
   function mkSnippetSuggestion(label, snippet, detail, documentation) {
     return {
@@ -83,7 +97,36 @@ export function registerPythonCompletions(monaco, editor) {
     });
   }
 
+  // Aliases: also recognize "from math import ..."
+  function parseModuleAliases(fullText) {
+    const map = new Map();
+
+    const lines = String(fullText).split("\n");
+    for (const ln of lines) {
+      const s = ln.trim();
+      if (!s || s.startsWith("#")) continue;
+
+      // import math / import math as m
+      let m = s.match(/^import\s+math(?:\s+as\s+([A-Za-z_]\w*))?\b/);
+      if (m) { map.set(m[1] || "math", "math"); continue; }
+
+      // from math import sqrt, sin ...
+      m = s.match(/^from\s+math\s+import\b/);
+      if (m) { map.set("math", "math"); continue; }
+
+      // import numpy as np
+      m = s.match(/^import\s+numpy\s+as\s+([A-Za-z_]\w*)\b/);
+      if (m) { map.set(m[1], "numpy"); continue; }
+
+      // import matplotlib.pyplot as plt
+      m = s.match(/^import\s+matplotlib\.pyplot\s+as\s+([A-Za-z_]\w*)\b/);
+      if (m) { map.set(m[1], "matplotlib.pyplot"); continue; }
+    }
+    return map;
+  }
+
   // ---------------- Completion Provider ----------------
+  console.log("[editor-completions] Registering completion provider for python...");
   const completionDisposable = monaco.languages.registerCompletionItemProvider("python", {
     triggerCharacters: [".", "_", "("],
     provideCompletionItems(model, position) {
@@ -91,31 +134,30 @@ export function registerPythonCompletions(monaco, editor) {
       const prefix = line.slice(0, position.column - 1);
       const fullText = model.getValue();
 
-      const hasNp = /\bimport\s+numpy\s+as\s+np\b/.test(fullText);
-      const hasPlt = /\bimport\s+matplotlib\.pyplot\s+as\s+plt\b/.test(fullText);
-      const hasAx =
-        /\bfig\s*,\s*ax\s*=\s*plt\.subplots\s*\(/.test(fullText) ||
-        /\bax\s*=\s*plt\.subplots\s*\(/.test(fullText);
+      const aliases = parseModuleAliases(fullText);
 
-      if (hasNp && /\bnp\.\w*$/.test(prefix)) {
+      // NP completions (like before)
+      if (/\bnp\.\w*$/.test(prefix)) {
         return {
           suggestions: [
             ...NP_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "NumPy (snippet)", s.doc)),
-            ...NUMPY_COMPLETIONS.map((n) => mkMethodSuggestion(n, "NumPy")),
+            ...NUMPY_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "NumPy")),
           ],
         };
       }
 
-      if (hasPlt && /\bplt\.\w*$/.test(prefix)) {
+      // PLT completions
+      if (/\bplt\.\w*$/.test(prefix)) {
         return {
           suggestions: [
             ...PLT_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "matplotlib.pyplot (snippet)", s.doc)),
-            ...PLT_COMPLETIONS.map((n) => mkMethodSuggestion(n, "matplotlib.pyplot")),
+            ...PLT_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "matplotlib.pyplot")),
           ],
         };
       }
 
-      if (hasAx && /\bax\.\w*$/.test(prefix)) {
+      // AX completions
+      if (/\bax\.\w*$/.test(prefix)) {
         return {
           suggestions: [
             ...AX_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Axes (snippet)", s.doc)),
@@ -124,8 +166,27 @@ export function registerPythonCompletions(monaco, editor) {
         };
       }
 
-      const m = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
-      const varName = m ? m[1] : null;
+      // ✅ MATH completions: DO NOT depend on import
+      // - match "math." always
+      // - match alias if "import math as m"
+      // Fast path: explicit `math.` typed -> always suggest math functions
+      if (/\bmath\.\w*$/.test(prefix)) {
+        return { suggestions: MATH_FUNCS.map((fn) => mkFunctionSuggestion(fn, "math")) };
+      }
+
+      // Also accept aliases or other left-hand identifiers that map to math
+      const dm = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
+      if (dm) {
+        const left = dm[1];
+        const canon = aliases.get(left) || left;
+        if (canon === "math" || left === "math") {
+          return { suggestions: MATH_FUNCS.map((fn) => mkFunctionSuggestion(fn, "math")) };
+        }
+      }
+
+      // <var>. context (str/list/dict)
+      const vm = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
+      const varName = vm ? vm[1] : null;
       if (varName) {
         const upToCursor = model.getValueInRange({
           startLineNumber: 1,
@@ -142,7 +203,7 @@ export function registerPythonCompletions(monaco, editor) {
       return {
         suggestions: [
           ...BUILTIN_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Python (snippet)", s.doc)),
-          ...BUILTIN_COMPLETIONS.map((n) => mkMethodSuggestion(n, "Python builtin")),
+          ...BUILTIN_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "Python builtin")),
         ],
       };
     },
@@ -150,8 +211,11 @@ export function registerPythonCompletions(monaco, editor) {
 
   // ---------------- Help rendering ----------------
   function escapeHtml(s) {
-    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+    return String(s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#039;");
   }
+
   function mdToHtml(md) {
     const src = String(md || "");
     const parts = src.split(/```/);
@@ -159,38 +223,56 @@ export function registerPythonCompletions(monaco, editor) {
     for (let i = 0; i < parts.length; i++) {
       const chunk = parts[i];
       if (i % 2 === 1) {
+        // Code block: remove lang identifier and format
         const cleaned = chunk.replace(/^\s*\w+\s*\n/, "");
         out += `<pre><code>${escapeHtml(cleaned.trim())}</code></pre>`;
       } else {
+        // Regular text
         let html = escapeHtml(chunk);
+        // Inline code (backticks)
         html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+        // Bold (**text**)
         html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        // Line breaks
         html = html.replace(/\n/g, "<br>");
         out += html;
       }
     }
     return out;
   }
+
   function setHelpPanel(content, { isMd = true } = {}) {
     const el = document.getElementById("help-container");
     if (!el) return;
     el.innerHTML = isMd ? mdToHtml(content) : String(content);
   }
 
-  // ---------------- Local help fetch ----------------
+  // Local help fetch
   const helpCache = new Map();
   let lastKey = null;
 
-  function buildHelpKey(type, method) {
-    if (!type || !method) return null;
-    if (type === "str") return `str.${method}`;
-    if (type === "list") return `list.${method}`;
-    if (type === "dict") return `dict.${method}`;
-    return null;
+  // Build set of known help keys to avoid 404 spam
+  const knownHelpKeys = new Set();
+  MATH_FUNCS.forEach(fn => knownHelpKeys.add(`math.${fn}`));
+  NUMPY_COMPLETIONS.forEach(fn => knownHelpKeys.add(`np.${fn}`));
+  PLT_COMPLETIONS.forEach(fn => knownHelpKeys.add(`plt.${fn}`));
+  AX_COMPLETIONS.forEach(fn => knownHelpKeys.add(`ax.${fn}`));
+  STRING_METHODS.forEach(m => knownHelpKeys.add(`str.${m}`));
+  LIST_METHODS.forEach(m => knownHelpKeys.add(`list.${m}`));
+  DICT_METHODS.forEach(m => knownHelpKeys.add(`dict.${m}`));
+
+  function isKnownHelpKey(key) {
+    return knownHelpKeys.has(key);
   }
 
   async function fetchHelp(key) {
     if (!key) return null;
+    // Skip API call if key is not in our known list
+    if (!isKnownHelpKey(key)) {
+      const miss = { ok: false, md: null };
+      helpCache.set(key, miss);
+      return miss;
+    }
     if (helpCache.has(key)) return helpCache.get(key);
     try {
       const res = await fetch(`index.php?api=help&key=${encodeURIComponent(key)}`, { cache: "no-store" });
@@ -204,23 +286,53 @@ export function registerPythonCompletions(monaco, editor) {
     }
   }
 
-  function getVarMethodNearCursor(model, position) {
+  function buildHelpKey(ctx) {
+    if (!ctx) return null;
+    if (ctx.kind === "method") {
+      if (ctx.type === "str") return `str.${ctx.name}`;
+      if (ctx.type === "list") return `list.${ctx.name}`;
+      if (ctx.type === "dict") return `dict.${ctx.name}`;
+    }
+    if (ctx.kind === "module") {
+      return `${ctx.module}.${ctx.name}`;
+    }
+    return null;
+  }
+
+  // Detect dotted expression near cursor: var.method OR module.func (math + alias)
+  function getContextNearCursor(model, position) {
+    const fullText = model.getValue();
+    const aliases = parseModuleAliases(fullText);
+
     const line = model.getLineContent(position.lineNumber);
     const col0 = Math.max(0, position.column - 1);
-    const start = Math.max(0, col0 - 80);
-    const end = Math.min(line.length, col0 + 80);
+    const start = Math.max(0, col0 - 120);
+    const end = Math.min(line.length, col0 + 120);
     const windowText = line.slice(start, end);
 
     const re = /\b([A-Za-z_]\w*)\.(\w+)\b/g;
     let best = null;
     let m;
     while ((m = re.exec(windowText)) !== null) {
+      const left = m[1];
+      const name = m[2];
       const absStart = start + m.index;
       const absEnd = absStart + m[0].length;
       const dist = Math.min(Math.abs(col0 - absStart), Math.abs(col0 - absEnd));
-      if (!best || dist < best.dist) best = { varName: m[1], method: m[2], dist };
+      if (!best || dist < best.dist) best = { left, name, dist };
     }
-    return best ? { varName: best.varName, method: best.method } : null;
+    if (!best) return null;
+
+    const canon = aliases.get(best.left) || best.left;
+
+    if (canon === "math" || best.left === "math") {
+      return { kind: "module", module: "math", name: best.name };
+    }
+
+    const upToLine = getTextUpToLine(model, position.lineNumber);
+    const t = inferVarType(best.left, upToLine);
+    if (!t) return null;
+    return { kind: "method", type: t, name: best.name };
   }
 
   function debounce(fn, ms) {
@@ -233,30 +345,29 @@ export function registerPythonCompletions(monaco, editor) {
     const pos = editor?.getPosition?.();
     if (!model || !pos) return;
 
-    const hit = getVarMethodNearCursor(model, pos);
-    if (!hit) return;
+    const ctx = getContextNearCursor(model, pos);
+    if (!ctx) return;
 
-    const upToLine = getTextUpToLine(model, pos.lineNumber);
-    const t = inferVarType(hit.varName, upToLine);
-    const key = buildHelpKey(t, hit.method);
+    const key = buildHelpKey(ctx);
     if (!key || key === lastKey) return;
 
     const remote = await fetchHelp(key);
     if (remote?.ok && remote.md) {
       lastKey = key;
-      setHelpPanel(remote.md, { isMd: true });
+      setHelpPanel(remote.md, { isMd:true });
       return;
     }
 
-    let doc = null;
-    if (t === "str") doc = STRING_HOVER_DOCS?.[hit.method];
-    else if (t === "list") doc = LIST_HOVER_DOCS?.[hit.method];
-    else if (t === "dict") doc = DICT_HOVER_DOCS?.[hit.method];
-
-    if (doc) {
-      lastKey = key;
-      setHelpPanel(doc, { isMd: true });
-      return;
+    if (ctx.kind === "method") {
+      let doc = null;
+      if (ctx.type === "str") doc = STRING_HOVER_DOCS?.[ctx.name];
+      else if (ctx.type === "list") doc = LIST_HOVER_DOCS?.[ctx.name];
+      else if (ctx.type === "dict") doc = DICT_HOVER_DOCS?.[ctx.name];
+      if (doc) {
+        lastKey = key;
+        setHelpPanel(doc, { isMd:true });
+        return;
+      }
     }
 
     lastKey = key;
@@ -266,7 +377,7 @@ export function registerPythonCompletions(monaco, editor) {
   const cursorDisposable = editor.onDidChangeCursorPosition(() => updateHelp());
   const changeDisposable = editor.onDidChangeModelContent(() => updateHelp());
 
-  // Suggest-widget navigation (ArrowUp/Down)
+  // Suggest-widget navigation: also update help for current selection
   function getFocusedSuggestLabel() {
     const widget = document.querySelector(".suggest-widget");
     if (!widget) return null;
@@ -279,13 +390,17 @@ export function registerPythonCompletions(monaco, editor) {
       widget.querySelector(".monaco-list-row[aria-selected='true']");
     if (!focusedRow) return null;
 
-    const nameEl = focusedRow.querySelector(".label-name") || focusedRow.querySelector(".monaco-highlighted-label") || focusedRow;
+    const nameEl =
+      focusedRow.querySelector(".label-name") ||
+      focusedRow.querySelector(".monaco-highlighted-label") ||
+      focusedRow;
+
     const txt = (nameEl.textContent || "").trim();
     const m = txt.match(/[A-Za-z_]\w*/);
     return m ? m[0] : null;
   }
 
-  function getVarNameBeforeDot(model, position) {
+  function getLeftBeforeDot(model, position) {
     const line = model.getLineContent(position.lineNumber);
     const col0 = Math.max(0, position.column - 1);
     const left = line.slice(0, col0);
@@ -298,37 +413,40 @@ export function registerPythonCompletions(monaco, editor) {
     const pos = editor?.getPosition?.();
     if (!model || !pos) return;
 
-    const method = getFocusedSuggestLabel();
-    if (!method) return;
+    const name = getFocusedSuggestLabel();
+    if (!name) return;
 
-    const varName = getVarNameBeforeDot(model, pos);
-    if (!varName) return;
+    const left = getLeftBeforeDot(model, pos);
+    if (!left) return;
 
+    const fullText = model.getValue();
+    const aliases = parseModuleAliases(fullText);
+    const canon = aliases.get(left) || left;
+
+    // module math
+    if (canon === "math" || left === "math") {
+      const key = `math.${name}`;
+      if (key === lastKey) return;
+
+      const remote = await fetchHelp(key);
+      lastKey = key;
+      if (remote?.ok && remote.md) setHelpPanel(remote.md, { isMd:true });
+      else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+      return;
+    }
+
+    // var method
     const upToLine = getTextUpToLine(model, pos.lineNumber);
-    const t = inferVarType(varName, upToLine);
-    const key = buildHelpKey(t, method);
+    const t = inferVarType(left, upToLine);
+    if (!t) return;
+
+    const key = (t === "str") ? `str.${name}` : (t === "list") ? `list.${name}` : (t === "dict") ? `dict.${name}` : null;
     if (!key || key === lastKey) return;
 
     const remote = await fetchHelp(key);
-    if (remote?.ok && remote.md) {
-      lastKey = key;
-      setHelpPanel(remote.md, { isMd:true });
-      return;
-    }
-
-    let doc = null;
-    if (t === "str") doc = STRING_HOVER_DOCS?.[method];
-    else if (t === "list") doc = LIST_HOVER_DOCS?.[method];
-    else if (t === "dict") doc = DICT_HOVER_DOCS?.[method];
-
-    if (doc) {
-      lastKey = key;
-      setHelpPanel(doc, { isMd:true });
-      return;
-    }
-
     lastKey = key;
-    setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+    if (remote?.ok && remote.md) setHelpPanel(remote.md, { isMd:true });
+    else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
   }
 
   const keyDisposable = editor.onKeyDown((e) => {
@@ -337,9 +455,25 @@ export function registerPythonCompletions(monaco, editor) {
     setTimeout(() => { updateHelpFromSuggestSelection(); }, 0);
   });
 
-  // Disable overloaded hover
+  // Minimal tooltip: show title only (avoid overload) BUT now exists for math too
   const hoverDisposable = monaco.languages.registerHoverProvider("python", {
-    provideHover() { return null; }
+    provideHover: async (model, position) => {
+      const ctx = getContextNearCursor(model, position);
+      if (!ctx) return null;
+
+      const key = buildHelpKey(ctx);
+      if (!key) return null;
+
+      const remote = await fetchHelp(key);
+      const title = remote?.ok && remote.md
+        ? (String(remote.md).split("\n").map(x => x.trim()).filter(Boolean)[0] || key)
+        : key;
+
+      return {
+        range: new monaco.Range(position.lineNumber, Math.max(1, position.column - 1), position.lineNumber, position.column + 1),
+        contents: [{ value: `**${title}**` }],
+      };
+    }
   });
 
   updateHelp();

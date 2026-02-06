@@ -46,16 +46,42 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
   <title>Python IDE</title>
 
   <style>
-    :root { --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb; }
+    :root {
+      --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --code-bg: #f3f4f6;
+      --code-color: #1f2937;
+      --inline-code-bg: #e5e7eb;
+      --help-bg: #ffffff;
+      --help-text: #1f2937;
+    }
+    
+    html.dark-mode {
+      --border:#374151; --muted:#9ca3af; --bg:#1e1e1e; --panel:#252526;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --code-bg: #0d1117;
+      --code-color: #e6edf3;
+      --inline-code-bg: #161b22;
+      --help-bg: #1e1e1e;
+      --help-text: #e6edf3;
+    }
+    
     *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); }
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text-primary); transition:background 0.2s, color 0.2s; }
 
     .toolbar{
       display:flex; gap:12px; align-items:center; flex-wrap:wrap;
       padding:10px; border-bottom:1px solid var(--border);
+      background:var(--bg);
     }
-    .toolbar button{ padding:8px 12px; cursor:pointer; }
-    .toolcheck{ display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:#fff; }
+    .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
+    .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
+    #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
+    #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
+    html.dark-mode #theme-toggle::after{ content:'☀️'; }
+    .toolcheck{ display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:var(--panel); color:var(--text-primary); }
     .toolcheck input{ transform: translateY(0.5px); }
 
     /* MASTER GRID: 75% left / 25% right */
@@ -84,7 +110,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     }
     #lint-container{
       border-right:1px solid var(--border);
-      background:var(--panel);
+      background:var(--bg);
+      color:var(--text-primary);
       padding:10px;
       overflow:auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -95,20 +122,43 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     #help-container{
       padding:10px;
       overflow:auto;
-      background:#fff;
+      background:var(--help-bg);
+      color:var(--help-text);
       font-size:14px;
-      line-height:1.35;
+      line-height:1.6;
       min-width:0; min-height:0;
     }
-    #help-container .help-muted{ color:var(--muted); }
+    #help-container .help-muted{ color:var(--text-secondary); }
     #help-container pre{
-      background:#0b1020; color:#e5e7eb;
-      padding:10px; border-radius:10px; overflow:auto;
+      background:var(--code-bg);
+      color:var(--code-color);
+      padding:12px;
+      border-radius:6px;
+      overflow-x:auto;
+      margin:10px 0;
+      border-left:3px solid var(--border);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:0.9em;
+      line-height:1.5;
     }
     #help-container code{
-      background:#f3f4f6; padding:2px 4px; border-radius:6px;
+      background:var(--inline-code-bg);
+      color:var(--code-color);
+      padding:2px 6px;
+      border-radius:4px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:0.95em;
+      font-size:0.9em;
+    }
+    #help-container strong{
+      color:var(--text-primary);
+      font-weight:600;
+    }
+    #help-container a{
+      color:#3b82f6;
+      text-decoration:none;
+    }
+    #help-container a:hover{
+      text-decoration:underline;
     }
 
     /* RIGHT COLUMN: output top + plot bottom (full height) */
@@ -120,7 +170,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     #output-container{
       padding:10px;
       overflow:auto;
-      background:#fff;
+      background:var(--bg);
+      color:var(--text-primary);
       border-bottom:1px solid var(--border);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size:13px;
@@ -130,12 +181,13 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     #plot-container{
       padding:10px;
       overflow:auto;
-      background:#fff;
+      background:var(--bg);
+      color:var(--text-primary);
       min-width:0; min-height:0;
     }
 
     .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
-    .plot-card-header{ padding:8px 10px; background:#f3f4f6; font-weight:700; border-bottom:1px solid var(--border); }
+    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:700; border-bottom:1px solid var(--border); }
     .plot-img{ width:100%; height:auto; display:block; }
   </style>
 
@@ -166,6 +218,9 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     </label>
 
     <span style="opacity:.7">Links: Editor + Lint/Hilfe | Rechts: Output + Plot</span>
+    
+    <div style="flex:1"></div>
+    <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
   </div>
 
   <div class="app">
@@ -191,5 +246,26 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
       <div id="plot-container"></div>
     </div>
   </div>
+
+  <script>
+    // Theme Toggle
+    (function() {
+      const html = document.documentElement;
+      const themeBtn = document.getElementById('theme-toggle');
+      
+      // Load saved theme from localStorage
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      if (savedTheme === 'dark') {
+        html.classList.add('dark-mode');
+      }
+      
+      // Toggle theme
+      themeBtn?.addEventListener('click', () => {
+        html.classList.toggle('dark-mode');
+        const isDark = html.classList.contains('dark-mode');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      });
+    })();
+  </script>
 </body>
 </html>
