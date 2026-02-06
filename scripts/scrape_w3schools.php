@@ -3,13 +3,17 @@
 //
 // Open in browser:
 //   /scripts/scrape_w3schools.php
+//   /scripts/scrape_w3schools.php?force=1
 //
 // Writes output to:
 //   storage/help/help.json
 //
-// IMPORTANT:
-// - Keep storage/help out of git
-// - This is intended for local use (not public server)
+// Tries to scrape W3Schools Python reference pages:
+// - str.<method>  -> https://www.w3schools.com/python/ref_string_<method>.asp
+// - list.<method> -> https://www.w3schools.com/python/ref_list_<method>.asp
+// - dict.<method> -> https://www.w3schools.com/python/ref_dictionary_<method>.asp
+//
+// Missing pages are skipped (logged).
 
 declare(strict_types=1);
 
@@ -19,70 +23,9 @@ const OUT_FILE = __DIR__ . '/../storage/help/help.json';
 const USER_AGENT = 'pythonIDE-local-help-scraper/1.0 (+local use)';
 const TIMEOUT_S  = 20;
 
-// polite delay between requests (ms)
-const DELAY_MIN_MS = 250;
-const DELAY_MAX_MS = 650;
+const DELAY_MIN_MS = 200;
+const DELAY_MAX_MS = 550;
 
-// -----------------------------
-// What we want to scrape
-// -----------------------------
-$targets = [
-  // String methods
-  'str.split'       => 'https://www.w3schools.com/python/ref_string_split.asp',
-  'str.strip'       => 'https://www.w3schools.com/python/ref_string_strip.asp',
-  'str.replace'     => 'https://www.w3schools.com/python/ref_string_replace.asp',
-  'str.splitlines'  => 'https://www.w3schools.com/python/ref_string_splitlines.asp',
-  'str.startswith'  => 'https://www.w3schools.com/python/ref_string_startswith.asp',
-  'str.endswith'    => 'https://www.w3schools.com/python/ref_string_endswith.asp',
-  'str.find'        => 'https://www.w3schools.com/python/ref_string_find.asp',
-  'str.join'        => 'https://www.w3schools.com/python/ref_string_join.asp',
-  'str.upper'       => 'https://www.w3schools.com/python/ref_string_upper.asp',
-  'str.lower'       => 'https://www.w3schools.com/python/ref_string_lower.asp',
-  'str.format'      => 'https://www.w3schools.com/python/ref_string_format.asp',
-    // more string methods
-'str.capitalize' => 'https://www.w3schools.com/python/ref_string_capitalize.asp',
-'str.title'      => 'https://www.w3schools.com/python/ref_string_title.asp',
-'str.swapcase'   => 'https://www.w3schools.com/python/ref_string_swapcase.asp',
-'str.casefold'   => 'https://www.w3schools.com/python/ref_string_casefold.asp',
-'str.lstrip'     => 'https://www.w3schools.com/python/ref_string_lstrip.asp',
-'str.rstrip'     => 'https://www.w3schools.com/python/ref_string_rstrip.asp',
-'str.center'     => 'https://www.w3schools.com/python/ref_string_center.asp',
-'str.ljust'      => 'https://www.w3schools.com/python/ref_string_ljust.asp',
-'str.rjust'      => 'https://www.w3schools.com/python/ref_string_rjust.asp',
-'str.zfill'      => 'https://www.w3schools.com/python/ref_string_zfill.asp',
-'str.count'      => 'https://www.w3schools.com/python/ref_string_count.asp',
-'str.index'      => 'https://www.w3schools.com/python/ref_string_index.asp',
-'str.rindex'     => 'https://www.w3schools.com/python/ref_string_rindex.asp',
-'str.rfind'      => 'https://www.w3schools.com/python/ref_string_rfind.asp',
-'str.partition'  => 'https://www.w3schools.com/python/ref_string_partition.asp',
-'str.rpartition' => 'https://www.w3schools.com/python/ref_string_rpartition.asp',
-'str.rsplit'     => 'https://www.w3schools.com/python/ref_string_rsplit.asp',
-
-
-  // List methods
-  'list.append'     => 'https://www.w3schools.com/python/ref_list_append.asp',
-  'list.extend'     => 'https://www.w3schools.com/python/ref_list_extend.asp',
-  'list.insert'     => 'https://www.w3schools.com/python/ref_list_insert.asp',
-  'list.pop'        => 'https://www.w3schools.com/python/ref_list_pop.asp',
-  'list.remove'     => 'https://www.w3schools.com/python/ref_list_remove.asp',
-  'list.sort'       => 'https://www.w3schools.com/python/ref_list_sort.asp',
-  'list.reverse'    => 'https://www.w3schools.com/python/ref_list_reverse.asp',
-  'list.clear'      => 'https://www.w3schools.com/python/ref_list_clear.asp',
-
-  // Dict methods
-  'dict.get'        => 'https://www.w3schools.com/python/ref_dictionary_get.asp',
-  'dict.keys'       => 'https://www.w3schools.com/python/ref_dictionary_keys.asp',
-  'dict.values'     => 'https://www.w3schools.com/python/ref_dictionary_values.asp',
-  'dict.items'      => 'https://www.w3schools.com/python/ref_dictionary_items.asp',
-  'dict.update'     => 'https://www.w3schools.com/python/ref_dictionary_update.asp',
-  'dict.pop'        => 'https://www.w3schools.com/python/ref_dictionary_pop.asp',
-  'dict.setdefault' => 'https://www.w3schools.com/python/ref_dictionary_setdefault.asp',
-  'dict.clear'      => 'https://www.w3schools.com/python/ref_dictionary_clear.asp',
-];
-
-// -----------------------------
-// HTML helpers
-// -----------------------------
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -100,6 +43,7 @@ function htmlHeader(): void {
     .warn{color:#b45309;font-weight:700}
     .err{color:#dc2626;font-weight:700}
     .meta{color:#6b7280;font-size:13px}
+    code{background:#f3f4f6;padding:2px 4px;border-radius:6px}
   </style></head><body>";
   echo "<h2>W3Schools Scraper (lokal)</h2>";
   echo "<div class='meta'>Output: <code>" . h(OUT_FILE) . "</code></div>";
@@ -119,9 +63,6 @@ function logLine(string $msg, string $cls = ''): void {
   @ob_flush(); @flush();
 }
 
-// -----------------------------
-// FS helpers
-// -----------------------------
 function ensureDir(string $dir): void {
   if (!is_dir($dir)) {
     if (!mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -131,13 +72,10 @@ function ensureDir(string $dir): void {
 }
 
 function randDelayMs(): int {
-  return random_int(DELAY_MIN_MS, DELAY_MAX_MS);
+  return random_int(constant('DELAY_MIN_MS'), constant('DELAY_MAX_MS'));
 }
 
-// -----------------------------
-// HTTP
-// -----------------------------
-function httpGet(string $url): string {
+function httpGet(string $url, int &$httpCode = 0): string {
   $ch = curl_init($url);
   if ($ch === false) throw new RuntimeException("curl_init failed");
 
@@ -156,17 +94,13 @@ function httpGet(string $url): string {
 
   $body = curl_exec($ch);
   $err  = curl_error($ch);
-  $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  $httpCode = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
   curl_close($ch);
 
   if ($body === false) throw new RuntimeException("HTTP GET failed: $url :: $err");
-  if ($code >= 400)     throw new RuntimeException("HTTP $code for $url");
   return (string)$body;
 }
 
-// -----------------------------
-// Parsing
-// -----------------------------
 function parseW3Reference(string $html, string $fallbackTitle, string $url): array {
   libxml_use_internal_errors(true);
   $dom = new DOMDocument();
@@ -213,9 +147,7 @@ function parseW3Reference(string $html, string $fallbackTitle, string $url): arr
   }
 
   $defText = trim(preg_replace("/\s+/", " ", $defText));
-  if (mb_strlen($defText) > 320) {
-    $defText = mb_substr($defText, 0, 320) . '…';
-  }
+  if (mb_strlen($defText) > 320) $defText = mb_substr($defText, 0, 320) . '…';
 
   $md = "**{$title}**\n\n";
   if ($defText !== '') $md .= $defText . "\n\n";
@@ -231,67 +163,101 @@ function parseW3Reference(string $html, string $fallbackTitle, string $url): arr
   ];
 }
 
-// -----------------------------
-// Run
-// -----------------------------
+function buildTargets(): array {
+  // Keep these in sync with your JS method lists
+  $stringMethods = [
+    "lower","upper","title","capitalize","swapcase","casefold",
+    "strip","lstrip","rstrip","removeprefix","removesuffix",
+    "ljust","rjust","center","zfill",
+    "find","rfind","index","rindex","count","startswith","endswith",
+    "isalpha","isalnum","isdigit","isdecimal","isnumeric","isspace",
+    "islower","isupper","istitle",
+    "split","rsplit","splitlines","join","partition","rpartition",
+    "replace","translate","maketrans","format","format_map","encode",
+  ];
+
+  $listMethods = ["append","extend","insert","remove","pop","clear","index","count","sort","reverse","copy"];
+
+  $dictMethods = ["get","setdefault","update","pop","popitem","clear","keys","values","items","copy","fromkeys"];
+
+  $targets = [];
+
+  foreach ($stringMethods as $m) {
+    $targets["str.$m"] = "https://www.w3schools.com/python/ref_string_{$m}.asp";
+  }
+  foreach ($listMethods as $m) {
+    $targets["list.$m"] = "https://www.w3schools.com/python/ref_list_{$m}.asp";
+  }
+  foreach ($dictMethods as $m) {
+    $targets["dict.$m"] = "https://www.w3schools.com/python/ref_dictionary_{$m}.asp";
+  }
+
+  return $targets;
+}
+
 htmlHeader();
 
 try {
   ensureDir(OUT_DIR);
 } catch (Throwable $e) {
   logLine("ERROR creating output dir: " . $e->getMessage(), "err");
-  htmlFooter();
-  exit;
+  htmlFooter(); exit;
 }
 
-// optional: allow ?force=1 to re-scrape
 $force = isset($_GET['force']) && $_GET['force'] === '1';
 
 if (!$force && is_file(OUT_FILE)) {
   logLine("Hinweis: help.json existiert bereits. Mit ?force=1 neu erzeugen.", "warn");
 }
 
+$targets = buildTargets();
 $total = count($targets);
 $i = 0;
 
 $result = [];
+$skipped = 0;
 
 foreach ($targets as $key => $url) {
   $i++;
   logLine("[$i/$total] Fetch: $key → $url");
 
   try {
-    $html = httpGet($url);
-    $entry = parseW3Reference($html, $key, $url);
-    $result[$key] = $entry;
-    logLine("  OK: " . ($entry['title'] ?? $key), "ok");
+    $code = 0;
+    $html = httpGet($url, $code);
+
+    if ($code >= 400) {
+      $skipped++;
+      logLine("  SKIP (HTTP $code): $key", "warn");
+    } else {
+      $entry = parseW3Reference($html, $key, $url);
+      $result[$key] = $entry;
+      logLine("  OK: " . ($entry['title'] ?? $key), "ok");
+    }
   } catch (Throwable $e) {
-    logLine("  ERROR: " . $e->getMessage(), "err");
+    $skipped++;
+    logLine("  SKIP (error): " . $e->getMessage(), "warn");
   }
 
   $delay = randDelayMs();
-  logLine("  sleep ${delay}ms");
   usleep($delay * 1000);
 }
 
 $json = json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 if ($json === false) {
   logLine("ERROR: json_encode failed", "err");
-  htmlFooter();
-  exit;
+  htmlFooter(); exit;
 }
 
-$ok = @file_put_contents(OUT_FILE, $json);
-if ($ok === false) {
+if (@file_put_contents(OUT_FILE, $json) === false) {
   logLine("ERROR: Failed to write " . OUT_FILE, "err");
-  htmlFooter();
-  exit;
+  htmlFooter(); exit;
 }
 
 logLine("");
 logLine("DONE ✅", "ok");
 logLine("Wrote: " . OUT_FILE, "ok");
-logLine("Entries: " . count($result) . " / $total", "ok");
-logLine("Tipp: in index.php nutzt du dann ?api=help&key=str.split");
+logLine("Entries saved: " . count($result) . " / $total", "ok");
+logLine("Skipped: $skipped (no ref page / error)", "warn");
+logLine("Test: /public/index.php?api=help&key=str.split");
 
 htmlFooter();

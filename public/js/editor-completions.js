@@ -1,21 +1,21 @@
-// public/js/editor-completions.js (ES module)
-
-import {
-  NUMPY_COMPLETIONS,
-  PLT_COMPLETIONS,
-  AX_COMPLETIONS,
-  BUILTIN_COMPLETIONS,
-  NP_SNIPPETS,
-  PLT_SNIPPETS,
-  AX_SNIPPETS,
-  BUILTIN_SNIPPETS,
-  // optional fallback docs
-  STRING_HOVER_DOCS,
-  LIST_HOVER_DOCS,
-  DICT_HOVER_DOCS,
-} from "./editor-completions.config.js";
+// public/js/editor-completions.js
+import * as C from "./editor-completions.config.js";
 
 export function registerPythonCompletions(monaco, editor) {
+  const NUMPY_COMPLETIONS   = Array.isArray(C.NUMPY_COMPLETIONS) ? C.NUMPY_COMPLETIONS : [];
+  const PLT_COMPLETIONS     = Array.isArray(C.PLT_COMPLETIONS) ? C.PLT_COMPLETIONS : [];
+  const AX_COMPLETIONS      = Array.isArray(C.AX_COMPLETIONS) ? C.AX_COMPLETIONS : [];
+  const BUILTIN_COMPLETIONS = Array.isArray(C.BUILTIN_COMPLETIONS) ? C.BUILTIN_COMPLETIONS : [];
+
+  const NP_SNIPPETS         = Array.isArray(C.NP_SNIPPETS) ? C.NP_SNIPPETS : [];
+  const PLT_SNIPPETS        = Array.isArray(C.PLT_SNIPPETS) ? C.PLT_SNIPPETS : [];
+  const AX_SNIPPETS         = Array.isArray(C.AX_SNIPPETS) ? C.AX_SNIPPETS : [];
+  const BUILTIN_SNIPPETS    = Array.isArray(C.BUILTIN_SNIPPETS) ? C.BUILTIN_SNIPPETS : [];
+
+  const STRING_HOVER_DOCS   = C.STRING_HOVER_DOCS && typeof C.STRING_HOVER_DOCS === "object" ? C.STRING_HOVER_DOCS : {};
+  const LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
+  const DICT_HOVER_DOCS     = C.DICT_HOVER_DOCS && typeof C.DICT_HOVER_DOCS === "object" ? C.DICT_HOVER_DOCS : {};
+
   const STRING_METHODS = [
     "lower","upper","title","capitalize","swapcase","casefold",
     "strip","lstrip","rstrip","removeprefix","removesuffix",
@@ -31,16 +31,9 @@ export function registerPythonCompletions(monaco, editor) {
 
   const InsertAsSnippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
 
-  function mkMethodSuggestion(name, detail, documentation) {
-    return {
-      label: name,
-      kind: monaco.languages.CompletionItemKind.Method,
-      insertText: name,
-      detail,
-      documentation: documentation ? { value: documentation } : undefined,
-    };
+  function mkMethodSuggestion(name, detail) {
+    return { label: name, kind: monaco.languages.CompletionItemKind.Method, insertText: name, detail };
   }
-
   function mkSnippetSuggestion(label, snippet, detail, documentation) {
     return {
       label,
@@ -52,23 +45,11 @@ export function registerPythonCompletions(monaco, editor) {
     };
   }
 
-  function escapeRegExp(s) {
-    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  function getTextUpToCursor(model, position) {
-    return model.getValueInRange({
-      startLineNumber: 1,
-      startColumn: 1,
-      endLineNumber: position.lineNumber,
-      endColumn: position.column,
-    });
-  }
+  function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
   function inferVarType(varName, textUpToCursor) {
     const reAssign = new RegExp(`\\b${escapeRegExp(varName)}\\s*=`);
     const lines = String(textUpToCursor).split("\n");
-
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];
       const trimmed = line.trim();
@@ -77,17 +58,14 @@ export function registerPythonCompletions(monaco, editor) {
 
       const rhsTrim = (line.split("=", 2)[1] ?? "").trim();
 
-      // str
       if (/^(?:[rubf]|rb|br|rf|fr|urf|fur|r|u|b|f){0,3}(['"])/i.test(rhsTrim)) return "str";
       if (/^(?:[rubf]|rb|br|rf|fr){0,3}("""|''')/i.test(rhsTrim)) return "str";
       if (/^str\s*\(/.test(rhsTrim)) return "str";
       if (/^input\s*\(/.test(rhsTrim)) return "str";
 
-      // list
       if (/^\[\s*.*\s*\]$/.test(rhsTrim)) return "list";
       if (/^list\s*\(/.test(rhsTrim)) return "list";
 
-      // dict
       if (/^\{\s*.*\s*\}$/.test(rhsTrim)) return "dict";
       if (/^dict\s*\(/.test(rhsTrim)) return "dict";
 
@@ -96,17 +74,18 @@ export function registerPythonCompletions(monaco, editor) {
     return null;
   }
 
-  function getVarDotContext(prefix) {
-    const m = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
-    return m ? m[1] : null;
+  function getTextUpToLine(model, lineNumber) {
+    return model.getValueInRange({
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: lineNumber,
+      endColumn: model.getLineMaxColumn(lineNumber),
+    });
   }
 
-  // -----------------------------
-  // Completion Provider
-  // -----------------------------
+  // ---------------- Completion Provider ----------------
   const completionDisposable = monaco.languages.registerCompletionItemProvider("python", {
     triggerCharacters: [".", "_", "("],
-
     provideCompletionItems(model, position) {
       const line = model.getLineContent(position.lineNumber);
       const prefix = line.slice(0, position.column - 1);
@@ -145,14 +124,19 @@ export function registerPythonCompletions(monaco, editor) {
         };
       }
 
-      const varName = getVarDotContext(prefix);
+      const m = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
+      const varName = m ? m[1] : null;
       if (varName) {
-        const upToCursor = getTextUpToCursor(model, position);
+        const upToCursor = model.getValueInRange({
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        });
         const t = inferVarType(varName, upToCursor);
-
-        if (t === "str") return { suggestions: STRING_METHODS.map((m) => mkMethodSuggestion(m, "str")) };
-        if (t === "list") return { suggestions: LIST_METHODS.map((m) => mkMethodSuggestion(m, "list")) };
-        if (t === "dict") return { suggestions: DICT_METHODS.map((m) => mkMethodSuggestion(m, "dict")) };
+        if (t === "str") return { suggestions: STRING_METHODS.map((x) => mkMethodSuggestion(x, "str")) };
+        if (t === "list") return { suggestions: LIST_METHODS.map((x) => mkMethodSuggestion(x, "list")) };
+        if (t === "dict") return { suggestions: DICT_METHODS.map((x) => mkMethodSuggestion(x, "dict")) };
       }
 
       return {
@@ -164,59 +148,38 @@ export function registerPythonCompletions(monaco, editor) {
     },
   });
 
-  // -----------------------------
-  // Help panel rendering (simple + safe)
-  // -----------------------------
+  // ---------------- Help rendering ----------------
   function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
   }
-
-  // very small markdown renderer: **bold**, `inline`, ```code fences```
   function mdToHtml(md) {
     const src = String(md || "");
-    // code fences
     const parts = src.split(/```/);
     let out = "";
     for (let i = 0; i < parts.length; i++) {
       const chunk = parts[i];
       if (i % 2 === 1) {
-        // fenced block: may start with "python\n..."
         const cleaned = chunk.replace(/^\s*\w+\s*\n/, "");
         out += `<pre><code>${escapeHtml(cleaned.trim())}</code></pre>`;
       } else {
         let html = escapeHtml(chunk);
-
-        // inline code
         html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-        // bold
         html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-        // newlines -> <br>
         html = html.replace(/\n/g, "<br>");
         out += html;
       }
     }
     return out;
   }
-
-  function setHelpPanel(md, { autoTab = true } = {}) {
+  function setHelpPanel(content, { isMd = true } = {}) {
     const el = document.getElementById("help-container");
     if (!el) return;
-    el.innerHTML = mdToHtml(md);
-
-    if (autoTab && typeof window.__setHelpTab === "function") {
-      window.__setHelpTab();
-    }
+    el.innerHTML = isMd ? mdToHtml(content) : String(content);
   }
 
-  // -----------------------------
-  // Hover Provider: write help to right panel
-  // -----------------------------
-  const helpCache = new Map(); // key -> { ok, md }
+  // ---------------- Local help fetch ----------------
+  const helpCache = new Map();
+  let lastKey = null;
 
   function buildHelpKey(type, method) {
     if (!type || !method) return null;
@@ -229,85 +192,165 @@ export function registerPythonCompletions(monaco, editor) {
   async function fetchHelp(key) {
     if (!key) return null;
     if (helpCache.has(key)) return helpCache.get(key);
-
-    const url = `index.php?api=help&key=${encodeURIComponent(key)}`;
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        const miss = { ok: false, md: null };
-        helpCache.set(key, miss);
-        return miss;
-      }
+      const res = await fetch(`index.php?api=help&key=${encodeURIComponent(key)}`, { cache: "no-store" });
+      if (!res.ok) { const miss = { ok:false, md:null }; helpCache.set(key, miss); return miss; }
       const data = await res.json();
       const out = { ok: !!data?.ok, md: data?.md || null };
       helpCache.set(key, out);
       return out;
     } catch {
-      const err = { ok: false, md: null };
-      helpCache.set(key, err);
-      return err;
+      const err = { ok:false, md:null }; helpCache.set(key, err); return err;
     }
   }
 
-  function getDotCallAtPosition(model, position) {
+  function getVarMethodNearCursor(model, position) {
     const line = model.getLineContent(position.lineNumber);
-    const re = /\b([A-Za-z_]\w*)\.(\w+)/g;
+    const col0 = Math.max(0, position.column - 1);
+    const start = Math.max(0, col0 - 80);
+    const end = Math.min(line.length, col0 + 80);
+    const windowText = line.slice(start, end);
+
+    const re = /\b([A-Za-z_]\w*)\.(\w+)\b/g;
+    let best = null;
     let m;
-    while ((m = re.exec(line)) !== null) {
-      const varName = m[1];
-      const method = m[2];
-      const dotIndex = m.index + varName.length;
-      const methodStartCol = dotIndex + 2;
-      const methodEndCol = methodStartCol + method.length;
-      const col = position.column;
-      if (col >= methodStartCol && col <= methodEndCol) return { varName, method };
+    while ((m = re.exec(windowText)) !== null) {
+      const absStart = start + m.index;
+      const absEnd = absStart + m[0].length;
+      const dist = Math.min(Math.abs(col0 - absStart), Math.abs(col0 - absEnd));
+      if (!best || dist < best.dist) best = { varName: m[1], method: m[2], dist };
     }
-    return null;
+    return best ? { varName: best.varName, method: best.method } : null;
   }
 
-  const hoverDisposable = monaco.languages.registerHoverProvider("python", {
-    async provideHover(model, position) {
-      const hit = getDotCallAtPosition(model, position);
-      if (!hit) return null;
+  function debounce(fn, ms) {
+    let t = null;
+    return (...args) => { if (t) clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
 
-      const upToLine = model.getValueInRange({
-        startLineNumber: 1,
-        startColumn: 1,
-        endLineNumber: position.lineNumber,
-        endColumn: model.getLineMaxColumn(position.lineNumber),
-      });
+  const updateHelp = debounce(async () => {
+    const model = editor?.getModel?.();
+    const pos = editor?.getPosition?.();
+    if (!model || !pos) return;
 
-      const t = inferVarType(hit.varName, upToLine);
-      const helpKey = buildHelpKey(t, hit.method);
-      if (!helpKey) return null;
+    const hit = getVarMethodNearCursor(model, pos);
+    if (!hit) return;
 
-      // 1) scraped local help
-      const remote = await fetchHelp(helpKey);
-      if (remote?.ok && remote.md) {
-        setHelpPanel(remote.md, { autoTab: true });
-        // optional: still return hover tooltip; keep minimal
-        return { contents: [{ value: `**Hilfe** → siehe Panel rechts (${helpKey})` }] };
-      }
+    const upToLine = getTextUpToLine(model, pos.lineNumber);
+    const t = inferVarType(hit.varName, upToLine);
+    const key = buildHelpKey(t, hit.method);
+    if (!key || key === lastKey) return;
 
-      // 2) fallback local docs from config (if present)
-      let doc = null;
-      if (t === "str") doc = STRING_HOVER_DOCS?.[hit.method];
-      else if (t === "list") doc = LIST_HOVER_DOCS?.[hit.method];
-      else if (t === "dict") doc = DICT_HOVER_DOCS?.[hit.method];
+    const remote = await fetchHelp(key);
+    if (remote?.ok && remote.md) {
+      lastKey = key;
+      setHelpPanel(remote.md, { isMd: true });
+      return;
+    }
 
-      if (doc) {
-        setHelpPanel(doc, { autoTab: true });
-        return { contents: [{ value: `**Hilfe** → siehe Panel rechts (${helpKey})` }] };
-      }
+    let doc = null;
+    if (t === "str") doc = STRING_HOVER_DOCS?.[hit.method];
+    else if (t === "list") doc = LIST_HOVER_DOCS?.[hit.method];
+    else if (t === "dict") doc = DICT_HOVER_DOCS?.[hit.method];
 
-      return null;
-    },
+    if (doc) {
+      lastKey = key;
+      setHelpPanel(doc, { isMd: true });
+      return;
+    }
+
+    lastKey = key;
+    setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+  }, 120);
+
+  const cursorDisposable = editor.onDidChangeCursorPosition(() => updateHelp());
+  const changeDisposable = editor.onDidChangeModelContent(() => updateHelp());
+
+  // Suggest-widget navigation (ArrowUp/Down)
+  function getFocusedSuggestLabel() {
+    const widget = document.querySelector(".suggest-widget");
+    if (!widget) return null;
+    const style = getComputedStyle(widget);
+    if (style.display === "none" || style.visibility === "hidden") return null;
+
+    const focusedRow =
+      widget.querySelector(".monaco-list-row.focused") ||
+      widget.querySelector(".monaco-list-row.selected") ||
+      widget.querySelector(".monaco-list-row[aria-selected='true']");
+    if (!focusedRow) return null;
+
+    const nameEl = focusedRow.querySelector(".label-name") || focusedRow.querySelector(".monaco-highlighted-label") || focusedRow;
+    const txt = (nameEl.textContent || "").trim();
+    const m = txt.match(/[A-Za-z_]\w*/);
+    return m ? m[0] : null;
+  }
+
+  function getVarNameBeforeDot(model, position) {
+    const line = model.getLineContent(position.lineNumber);
+    const col0 = Math.max(0, position.column - 1);
+    const left = line.slice(0, col0);
+    const m = left.match(/\b([A-Za-z_]\w*)\.\w*$/) || left.match(/\b([A-Za-z_]\w*)\.$/);
+    return m ? m[1] : null;
+  }
+
+  async function updateHelpFromSuggestSelection() {
+    const model = editor?.getModel?.();
+    const pos = editor?.getPosition?.();
+    if (!model || !pos) return;
+
+    const method = getFocusedSuggestLabel();
+    if (!method) return;
+
+    const varName = getVarNameBeforeDot(model, pos);
+    if (!varName) return;
+
+    const upToLine = getTextUpToLine(model, pos.lineNumber);
+    const t = inferVarType(varName, upToLine);
+    const key = buildHelpKey(t, method);
+    if (!key || key === lastKey) return;
+
+    const remote = await fetchHelp(key);
+    if (remote?.ok && remote.md) {
+      lastKey = key;
+      setHelpPanel(remote.md, { isMd:true });
+      return;
+    }
+
+    let doc = null;
+    if (t === "str") doc = STRING_HOVER_DOCS?.[method];
+    else if (t === "list") doc = LIST_HOVER_DOCS?.[method];
+    else if (t === "dict") doc = DICT_HOVER_DOCS?.[method];
+
+    if (doc) {
+      lastKey = key;
+      setHelpPanel(doc, { isMd:true });
+      return;
+    }
+
+    lastKey = key;
+    setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+  }
+
+  const keyDisposable = editor.onKeyDown((e) => {
+    const k = e.browserEvent?.key || "";
+    if (!["ArrowUp","ArrowDown","PageUp","PageDown"].includes(k)) return;
+    setTimeout(() => { updateHelpFromSuggestSelection(); }, 0);
   });
+
+  // Disable overloaded hover
+  const hoverDisposable = monaco.languages.registerHoverProvider("python", {
+    provideHover() { return null; }
+  });
+
+  updateHelp();
 
   return {
     dispose() {
       try { completionDisposable?.dispose?.(); } catch {}
       try { hoverDisposable?.dispose?.(); } catch {}
-    },
+      try { cursorDisposable?.dispose?.(); } catch {}
+      try { changeDisposable?.dispose?.(); } catch {}
+      try { keyDisposable?.dispose?.(); } catch {}
+    }
   };
 }
