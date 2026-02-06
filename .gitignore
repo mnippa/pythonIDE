@@ -11,3 +11,5 @@
 
 # Monaco falls extern eingebunden
 node_modules/
+# Generated help documentation (W3Schools content)
+storage/help/help.json

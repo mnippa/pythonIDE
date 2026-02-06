@@ -179,6 +179,39 @@ function addTargets(array &$targets, string $prefix, array $names, callable $url
   }
 }
 
+/** Learn what NumPy/Matplotlib topics W3Schools has, extract topic URLs from an index page */
+function discoverTopicUrls(string $indexUrl, string $type): array {
+  try {
+    $code = 0;
+    $html = httpGet($indexUrl, $code);
+    if ($code >= 400) return [];
+
+    libxml_use_internal_errors(true);
+    $dom = new DOMDocument();
+    $dom->loadHTML($html);
+    $xp = new DOMXPath($dom);
+
+    // Look for all <a href> that match the pattern /{type}_<topic>.asp
+    $pattern = '/' . preg_quote($type, '/') . '_[a-z0-9_]+\.asp$/i';
+    $aElements = $xp->query('//a[@href]');
+    
+    $urls = [];
+    if ($aElements) {
+      foreach ($aElements as $a) {
+        $href = (string)($a->getAttribute('href') ?? '');
+        if (preg_match($pattern, $href)) {
+          $fullUrl = 'https://www.w3schools.com/python/' . ltrim($href, '/');
+          $urls[$fullUrl] = true;
+        }
+      }
+    }
+
+    return array_keys($urls);
+  } catch (Throwable $e) {
+    return [];
+  }
+}
+
 function buildTargets(): array {
   $targets = [];
 
@@ -198,7 +231,6 @@ function buildTargets(): array {
 
   $dictMethods = ["get","setdefault","update","pop","popitem","clear","keys","values","items","copy","fromkeys"];
 
-  // NEW: set + tuple methods
   $setMethods = [
     "add","clear","copy","difference","difference_update","discard",
     "intersection","intersection_update","isdisjoint","issubset","issuperset",
@@ -207,7 +239,6 @@ function buildTargets(): array {
 
   $tupleMethods = ["count","index"];
 
-  // NEW: math functions (best-effort: many exist on w3schools as ref_math_*.asp)
   $mathFuncs = [
     "ceil","floor","fabs","factorial","fmod","frexp","fsum","gcd","isfinite","isinf","isnan",
     "ldexp","modf","prod","remainder","trunc",
@@ -216,7 +247,6 @@ function buildTargets(): array {
     "copysign","isclose"
   ];
 
-  // OPTIONAL: builtins (best-effort; pages may not exist)
   $builtins = [
     "print","len","range","enumerate","sum","min","max","sorted","reversed",
     "list","dict","set","tuple","str","int","float","bool",
@@ -226,14 +256,25 @@ function buildTargets(): array {
   addTargets($targets, "str",  $stringMethods, fn($m) => "https://www.w3schools.com/python/ref_string_{$m}.asp");
   addTargets($targets, "list", $listMethods,   fn($m) => "https://www.w3schools.com/python/ref_list_{$m}.asp");
   addTargets($targets, "dict", $dictMethods,   fn($m) => "https://www.w3schools.com/python/ref_dictionary_{$m}.asp");
-
   addTargets($targets, "set",  $setMethods,    fn($m) => "https://www.w3schools.com/python/ref_set_{$m}.asp");
   addTargets($targets, "tuple",$tupleMethods,  fn($m) => "https://www.w3schools.com/python/ref_tuple_{$m}.asp");
-
   addTargets($targets, "math", $mathFuncs,     fn($m) => "https://www.w3schools.com/python/ref_math_{$m}.asp");
-
-  // builtins: try common patterns
   addTargets($targets, "builtins", $builtins, fn($f) => "https://www.w3schools.com/python/ref_func_{$f}.asp");
+
+  // NumPy & Matplotlib: Discover tutorial topics dynamically
+  logLine("Discovering NumPy topics from https://www.w3schools.com/python/numpy_intro.asp...");
+  $numpyUrls = discoverTopicUrls("https://www.w3schools.com/python/numpy_intro.asp", "numpy");
+  foreach ($numpyUrls as $url) {
+    $targets["__np_tutorial__" . count($targets)] = $url;
+  }
+  logLine("  Found " . count($numpyUrls) . " NumPy tutorials");
+
+  logLine("Discovering Matplotlib topics from https://www.w3schools.com/python/matplotlib_intro.asp...");
+  $matplotlibUrls = discoverTopicUrls("https://www.w3schools.com/python/matplotlib_intro.asp", "matplotlib");
+  foreach ($matplotlibUrls as $url) {
+    $targets["__plt_tutorial__" . count($targets)] = $url;
+  }
+  logLine("  Found " . count($matplotlibUrls) . " Matplotlib tutorials");
 
   return $targets;
 }
@@ -271,6 +312,24 @@ foreach ($targets as $key => $url) {
       $skipped++;
       logLine("  SKIP (HTTP $code): $key", "warn");
     } else {
+      // For NumPy/Matplotlib topics, extract topic name from URL and use as function name
+      if (strpos($key, '__np_tutorial__') === 0) {
+        // Extract topic name from URL: numpy_array_slicing.asp -> array_slicing -> array
+        if (preg_match('/numpy_([a-z0-9_]+)\.asp$/i', $url, $m)) {
+          $topicName = $m[1];
+          // Use first significant word as function name
+          $parts = explode('_', $topicName);
+          $funcName = $parts[0];
+          $key = "np.$funcName";
+        }
+      } elseif (strpos($key, '__plt_tutorial__') === 0) {
+        // Extract topic name from URL: matplotlib_grid.asp -> grid
+        if (preg_match('/matplotlib_([a-z0-9_]+)\.asp$/i', $url, $m)) {
+          $funcName = $m[1];
+          $key = "plt.$funcName";
+        }
+      }
+
       $entry = parseW3Reference($html, $key, $url);
       $result[$key] = $entry;
       logLine("  OK: " . ($entry['title'] ?? $key), "ok");
