@@ -1,12 +1,20 @@
 // public/js/editor-completions.config.js
 // Pure data exports (arrays/objects), no Monaco dependency.
+// NumPy and Matplotlib completions are primarily loaded from help.json,
+// but these are used as fallback if help.json is empty or unavailable.
 
 export const NUMPY_COMPLETIONS = [
-  "array","arange","linspace","zeros","ones","empty","reshape","random","mean","median","std","sum","min","max","argmin","argmax",
+  "abs","absolute","add","all","any","arange","arcsin","arcsinh","arctanh","argmax","argmin","around","array","array_split","ceil",
+  "clip","concatenate","copy","cos","cosh","cross","cumprod","cumsum","deg2rad","diag","diff","divide","divmod","dot","dstack","eye","exp","fix",
+  "flatten","floor","frompyfunc","full","gcd","hsplit","hstack","hypot","intersect1d","intro","lcm","linspace","log",
+  "log10","log2","logspace","matmul","max","mean","median","min","mod","multiply","ndenumerate","nditer","nonzero","ones","ones_like","power","prod","rad2deg","random",
+  "remainder","reshape","round","searchsorted","setdiff1d","setxor1d","sign","sin","sinh","sort","sqrt","stack","std","subtract","sum","tan",
+  "transpose","trunc","union1d","unique","var","vstack","where","zeros","zeros_like"
 ];
 
 export const PLT_COMPLETIONS = [
-  "plot","scatter","hist","bar","barh","imshow","title","xlabel","ylabel","legend","grid","xlim","ylim","figure","subplots","show","savefig",
+  "plot","scatter","show","xlabel","ylabel","title","grid","legend","subplot","figure",
+  "bar","barh","hist","pie","imshow","colorbar","savefig","close","suptitle",
 ];
 
 export const AX_COMPLETIONS = [

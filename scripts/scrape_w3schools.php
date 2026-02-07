@@ -171,6 +171,50 @@ function parseW3Reference(string $html, string $fallbackTitle, string $url): arr
   ];
 }
 
+/**
+ * Extract module symbols (e.g. np.array, plt.plot) from code examples on a topic page.
+ * Returns an array of symbol names (without module prefix), e.g. ['array','reshape']
+ */
+function extractModuleSymbols(string $html, string $module): array {
+  libxml_use_internal_errors(true);
+  $dom = new DOMDocument();
+  $dom->loadHTML($html);
+  $xp = new DOMXPath($dom);
+
+  $codeNodes = $xp->query('//div[contains(@class,"w3-code")]');
+  $found = [];
+  if ($codeNodes) {
+    foreach ($codeNodes as $node) {
+      $txt = $node->textContent;
+      if (!$txt) continue;
+
+      if ($module === 'np') {
+        if (preg_match_all('/\b(?:np|numpy)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/', $txt, $m)) {
+          foreach ($m[1] as $sym) $found[$sym] = true;
+        }
+      } elseif ($module === 'plt') {
+        if (preg_match_all('/\bplt\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/', $txt, $m)) {
+          foreach ($m[1] as $sym) $found[$sym] = true;
+        }
+      }
+    }
+  }
+
+  // Fallback: also search the whole page text for patterns like "numpy.array(" or "np.array("
+  if (empty($found)) {
+    if ($module === 'np') {
+      if (preg_match_all('/\b(?:np|numpy)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/', $html, $m)) {
+        foreach ($m[1] as $sym) $found[$sym] = true;
+      }
+    } elseif ($module === 'plt') {
+      if (preg_match_all('/\bplt\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/', $html, $m)) {
+        foreach ($m[1] as $sym) $found[$sym] = true;
+      }
+    }
+  }
+
+  return array_keys($found);
+}
 function addTargets(array &$targets, string $prefix, array $names, callable $urlFn): void {
   foreach ($names as $name) {
     $name = trim((string)$name);
@@ -312,27 +356,57 @@ foreach ($targets as $key => $url) {
       $skipped++;
       logLine("  SKIP (HTTP $code): $key", "warn");
     } else {
-      // For NumPy/Matplotlib topics, extract topic name from URL and use as function name
+      // For NumPy/Matplotlib topics: parse page and also extract specific function names
       if (strpos($key, '__np_tutorial__') === 0) {
-        // Extract topic name from URL: numpy_array_slicing.asp -> array_slicing -> array
-        if (preg_match('/numpy_([a-z0-9_]+)\.asp$/i', $url, $m)) {
-          $topicName = $m[1];
-          // Use first significant word as function name
-          $parts = explode('_', $topicName);
-          $funcName = $parts[0];
-          $key = "np.$funcName";
+        $entry = parseW3Reference($html, $key, $url);
+        $symbols = extractModuleSymbols($html, 'np');
+        if (!empty($symbols)) {
+          foreach ($symbols as $sym) {
+            $symKey = "np.$sym";
+            if (!isset($result[$symKey])) {
+              $result[$symKey] = $entry;
+              logLine("  OK (mapped): $symKey -> $url", "ok");
+            }
+          }
+        } else {
+          // fallback: map topic name to single function key
+          if (preg_match('/numpy_([a-z0-9_]+)\.asp$/i', $url, $m)) {
+            $topicName = $m[1];
+            $parts = explode('_', $topicName);
+            $funcName = $parts[0];
+            $symKey = "np.$funcName";
+            if (!isset($result[$symKey])) {
+              $result[$symKey] = $entry;
+              logLine("  OK (topic fallback): $symKey -> $url", "ok");
+            }
+          }
         }
       } elseif (strpos($key, '__plt_tutorial__') === 0) {
-        // Extract topic name from URL: matplotlib_grid.asp -> grid
-        if (preg_match('/matplotlib_([a-z0-9_]+)\.asp$/i', $url, $m)) {
-          $funcName = $m[1];
-          $key = "plt.$funcName";
+        $entry = parseW3Reference($html, $key, $url);
+        $symbols = extractModuleSymbols($html, 'plt');
+        if (!empty($symbols)) {
+          foreach ($symbols as $sym) {
+            $symKey = "plt.$sym";
+            if (!isset($result[$symKey])) {
+              $result[$symKey] = $entry;
+              logLine("  OK (mapped): $symKey -> $url", "ok");
+            }
+          }
+        } else {
+          if (preg_match('/matplotlib_([a-z0-9_]+)\.asp$/i', $url, $m)) {
+            $funcName = $m[1];
+            $symKey = "plt.$funcName";
+            if (!isset($result[$symKey])) {
+              $result[$symKey] = $entry;
+              logLine("  OK (topic fallback): $symKey -> $url", "ok");
+            }
+          }
         }
+      } else {
+        $entry = parseW3Reference($html, $key, $url);
+        $result[$key] = $entry;
+        logLine("  OK: " . ($entry['title'] ?? $key), "ok");
       }
-
-      $entry = parseW3Reference($html, $key, $url);
-      $result[$key] = $entry;
-      logLine("  OK: " . ($entry['title'] ?? $key), "ok");
     }
   } catch (Throwable $e) {
     $skipped++;

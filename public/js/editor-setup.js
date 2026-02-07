@@ -165,11 +165,48 @@ async function initPyodideAndEditor() {
       .replace(/'/g, "&#039;");
   }
 
+  /* Store reference for theme listener */
+  let editorInstance = null;
+
   /* ---------------- Monaco ---------------- */
   require(["vs/editor/editor.main"], async function () {
-    // Detect initial theme
+    // Define custom light theme
+    monaco.editor.defineTheme('ide-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#333333',
+        'editor.lineNumbersBackground': '#f5f5f5',
+        'editor.lineNumbersForeground': '#999999',
+        'editorCursor.foreground': '#000000',
+        'editor.selectionBackground': '#add6ff',
+        'editor.inactiveSelectionBackground': '#e5ebf1',
+      }
+    });
+    
+    // Define custom theme for better dark mode integration
+    monaco.editor.defineTheme('ide-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: '', foreground: '9cdcfe' }
+      ],
+      colors: {
+        'editor.background': '#1e1e1e',
+        'editor.foreground': '#d4d4d4',
+        'editor.lineNumbersBackground': '#1e1e1e',
+        'editor.lineNumbersForeground': '#858585',
+        'editorCursor.foreground': '#aeafad',
+        'editor.selectionBackground': '#264f78',
+        'editor.inactiveSelectionBackground': '#3f3f46',
+      }
+    });
+
+    // Setup theme helpers
     const isDarkMode = () => document.documentElement.classList.contains('dark-mode');
-    const getEditorTheme = () => isDarkMode() ? 'vs-dark' : 'vs';
+    const getEditorTheme = () => isDarkMode() ? 'ide-dark' : 'ide-light';
     
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
       value: `import numpy as np
@@ -197,12 +234,21 @@ print("done")
       lightbulb: { enabled: false }, // kein "No quick fixes available"
     });
     
-    // Listen for theme changes
-    const themeBtn = document.getElementById('theme-toggle');
-    themeBtn?.addEventListener('click', () => {
-      setTimeout(() => {
-        editor.setTheme(getEditorTheme());
-      }, 0);
+    // Store reference for theme changes
+    editorInstance = editor;
+
+    // Setup theme listener AFTER editor is created
+    const themeObserver = new MutationObserver(() => {
+      if (!editorInstance) return;
+      const newTheme = isDarkMode() ? 'ide-dark' : 'ide-light';
+      monaco.editor.setTheme(newTheme);
+      editorInstance.layout();
+    });
+    
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+      attributeOldValue: true
     });
 
     const outputEl = document.getElementById("output-container");
@@ -216,7 +262,7 @@ print("done")
     try {
       const ts = new Date().getTime();
       const mod = await import(`./editor-completions.js?t=${ts}`);
-      mod.registerPythonCompletions(monaco, editor);
+      await mod.registerPythonCompletions(monaco, editor);
     } catch (e) {
       console.error("Failed to load ./editor-completions.js", e);
     }

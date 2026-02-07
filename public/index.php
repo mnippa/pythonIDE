@@ -12,9 +12,6 @@ function jsonResponse(array $data, int $code = 200): void {
 
 // API: local help store
 if (isset($_GET['api']) && $_GET['api'] === 'help') {
-  $key = isset($_GET['key']) ? trim((string)$_GET['key']) : '';
-  if ($key === '') jsonResponse(['ok' => false, 'error' => 'missing key'], 400);
-
   $storeFile = __DIR__ . '/../storage/help/help.json';
   if (!is_file($storeFile)) jsonResponse(['ok' => false, 'found' => false], 404);
 
@@ -24,14 +21,140 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
   $data = json_decode($raw, true);
   if (!is_array($data)) jsonResponse(['ok' => false, 'error' => 'invalid help store json'], 500);
 
-  if (!isset($data[$key])) jsonResponse(['ok' => false, 'found' => false], 404);
+  // Special API: return all keys (for dynamic completion loading)
+  $key = isset($_GET['key']) ? trim((string)$_GET['key']) : '';
+  if ($key === '__list__' || $key === '') {
+    jsonResponse(['ok' => true, 'keys' => array_keys($data)]);
+  }
 
-  $e = $data[$key];
+  if ($key === '') jsonResponse(['ok' => false, 'error' => 'missing key'], 400);
+
+  // Try direct lookup first
+  if (isset($data[$key])) {
+    $e = $data[$key];
+    $resolved = $key;
+  } else {
+    // Fallbacks: if key contains module prefix like "plt.plot" or "np.array",
+    // try the bare name "plot" / "array" and common module expansions.
+    $resolved = null;
+    $candidates = [$key];
+    if (strpos($key, '.') !== false) {
+      [$mod, $name] = explode('.', $key, 2) + [null, null];
+      if ($name) {
+        $candidates[] = $name; // bare function name
+        if ($mod === 'plt') $candidates[] = 'matplotlib.' . $name;
+        if ($mod === 'np')  $candidates[] = 'numpy.' . $name;
+      }
+    }
+
+    foreach ($candidates as $cand) {
+      if (isset($data[$cand])) {
+        $e = $data[$cand];
+        $resolved = $cand;
+        break;
+      }
+    }
+
+    if ($resolved === null) {
+      // Fallback: static help for common math and string functions
+      $fallbackHelp = [
+        'math.ceil' => [
+          'title' => 'math.ceil(x)',
+          'md' => 'Returns the ceiling of x, the smallest integer >= x.\n\n```python\nimport math\nmath.ceil(4.3)  # 5\nmath.ceil(-2.5)  # -2\n```'
+        ],
+        'math.floor' => [
+          'title' => 'math.floor(x)',
+          'md' => 'Returns the floor of x, the largest integer <= x.\n\n```python\nimport math\nmath.floor(4.7)  # 4\nmath.floor(-2.5)  # -3\n```'
+        ],
+        'math.sqrt' => [
+          'title' => 'math.sqrt(x)',
+          'md' => 'Returns the square root of x.\n\n```python\nimport math\nmath.sqrt(16)  # 4.0\nmath.sqrt(2)   # 1.414...\n```'
+        ],
+        'math.sin' => [
+          'title' => 'math.sin(x)',
+          'md' => 'Returns the sine of x (in radians).\n\n```python\nimport math\nmath.sin(math.pi/2)  # 1.0\nmath.sin(0)          # 0.0\n```'
+        ],
+        'math.cos' => [
+          'title' => 'math.cos(x)',
+          'md' => 'Returns the cosine of x (in radians).\n\n```python\nimport math\nmath.cos(0)           # 1.0\nmath.cos(math.pi)     # -1.0\n```'
+        ],
+        'math.tan' => [
+          'title' => 'math.tan(x)',
+          'md' => 'Returns the tangent of x (in radians).\n\n```python\nimport math\nmath.tan(math.pi/4)  # 1.0\nmath.tan(0)          # 0.0\n```'
+        ],
+        'math.pi' => [
+          'title' => 'math.pi',
+          'md' => 'The mathematical constant π (pi), approximately 3.14159.\n\n```python\nimport math\nmath.pi  # 3.14159265...\n```'
+        ],
+        'math.e' => [
+          'title' => 'math.e',
+          'md' => 'The mathematical constant e (Euler\'s number), approximately 2.71828.\n\n```python\nimport math\nmath.e  # 2.718281828...\n```'
+        ],
+        'str.split' => [
+          'title' => 'str.split(sep=None, maxsplit=-1)',
+          'md' => 'Splits the string by separator and returns a list.\n\n```python\n"hello world".split()      # [\'hello\', \'world\']\n"a,b,c".split(",")         # [\'a\', \'b\', \'c\']\n"a:b:c".split(":", 1)      # [\'a\', \'b:c\']\n```'
+        ],
+        'str.join' => [
+          'title' => 'str.join(iterable)',
+          'md' => 'Concatenates an iterable of strings with this string as separator.\n\n```python\n",".join([\'a\', \'b\', \'c\'])     # \'a,b,c\'\n" ".join(["hello", "world"])  # \'hello world\'\n```'
+        ],
+        'str.replace' => [
+          'title' => 'str.replace(old, new, count=-1)',
+          'md' => 'Returns a copy with all occurrences of old replaced with new.\n\n```python\n"hello world".replace("world", "Python")  # \'hello Python\'\n"aaa".replace("a", "b", 2)                   # \'bba\'\n```'
+        ],
+        'str.strip' => [
+          'title' => 'str.strip(chars=None)',
+          'md' => 'Returns a copy with leading and trailing whitespace removed.\n\n```python\n"  hello  ".strip()     # \'hello\'\n"xxxhelloxxx".strip("x")  # \'hello\'\n```'
+        ],
+        'str.upper' => [
+          'title' => 'str.upper()',
+          'md' => 'Returns a copy converted to uppercase.\n\n```python\n"hello".upper()  # \'HELLO\'\n```'
+        ],
+        'str.lower' => [
+          'title' => 'str.lower()',
+          'md' => 'Returns a copy converted to lowercase.\n\n```python\n"HELLO".lower()  # \'hello\'\n```'
+        ],
+        'str.startswith' => [
+          'title' => 'str.startswith(prefix, start=0, end=len(string))',
+          'md' => 'Returns True if the string starts with prefix.\n\n```python\n"hello".startswith("he")   # True\n"hello".startswith("lo")   # False\n```'
+        ],
+        'str.endswith' => [
+          'title' => 'str.endswith(suffix, start=0, end=len(string))',
+          'md' => 'Returns True if the string ends with suffix.\n\n```python\n"hello".endswith("lo")  # True\n"hello".endswith("he")  # False\n```'
+        ],
+        'str.find' => [
+          'title' => 'str.find(sub, start=0, end=len(string))',
+          'md' => 'Returns the lowest index where substring is found, or -1 if not found.\n\n```python\n"hello".find("l")   # 2\n"hello".find("x")   # -1\n```'
+        ],
+        'str.format' => [
+          'title' => 'str.format(*args, **kwargs)',
+          'md' => 'Formats this string using positional and keyword arguments.\n\n```python\n"Hello, {}!".format("world")           # \'Hello, world!\'\n"x={x}, y={y}".format(x=1, y=2)       # \'x=1, y=2\'\n```'
+        ],
+      ];
+
+      if (isset($fallbackHelp[$key])) {
+        $fallback = $fallbackHelp[$key];
+        jsonResponse([
+          'ok' => true,
+          'found' => true,
+          'requested_key' => $key,
+          'resolved_key' => $key,
+          'title' => $fallback['title'],
+          'md' => $fallback['md'],
+          'source' => 'fallback',
+          'note' => 'This help is provided as a fallback while the help database is being extended.'
+        ]);
+      }
+
+      jsonResponse(['ok' => false, 'found' => false], 404);
+    }
+  }
   jsonResponse([
     'ok' => true,
     'found' => true,
-    'key' => $key,
-    'title' => $e['title'] ?? $key,
+    'requested_key' => $key,
+    'resolved_key' => $resolved ?? $key,
+    'title' => $e['title'] ?? ($resolved ?? $key),
     'md' => $e['md'] ?? '',
     'source' => $e['source'] ?? null,
     'fetched_at' => $e['fetched_at'] ?? null,
@@ -119,8 +242,13 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
       white-space:pre-wrap;
       min-width:0; min-height:0;
     }
+    
+    html.dark-mode #lint-container {
+      background: #252526;
+      color: #cccccc;
+    }
     #help-container{
-      padding:10px;
+      padding:6px 8px;
       overflow:auto;
       background:var(--help-bg);
       color:var(--help-text);
@@ -128,18 +256,27 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
       line-height:1.6;
       min-width:0; min-height:0;
     }
-    #help-container .help-muted{ color:var(--text-secondary); }
+    #help-container h1, #help-container h2, #help-container h3{
+      margin:2px 0 6px 0;
+      padding:0;
+      font-size:1em;
+    }
+    #help-container p{
+      margin:4px 0;
+      padding:0;
+    }
+    #help-container .help-muted{ color:var(--text-secondary); margin:0; padding:0; }
     #help-container pre{
       background:var(--code-bg);
       color:var(--code-color);
-      padding:12px;
-      border-radius:6px;
+      padding:8px;
+      border-radius:4px;
       overflow-x:auto;
-      margin:10px 0;
-      border-left:3px solid var(--border);
+      margin:4px 0;
+      border-left:2px solid var(--border);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size:0.9em;
-      line-height:1.5;
+      line-height:1.4;
     }
     #help-container code{
       background:var(--inline-code-bg);
@@ -159,6 +296,33 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
     }
     #help-container a:hover{
       text-decoration:underline;
+    }
+
+    /* Autocomplete: light background, semi-transparent to see help behind */
+    .monaco-editor .suggest-widget{
+      z-index:100 !important;
+      opacity:0.9 !important;
+      background:rgba(245, 245, 250, 0.95) !important;
+      border:1px solid rgba(180, 180, 190, 0.9) !important;
+      color:#333 !important;
+    }
+    .editor-widget.suggest-widget{
+      z-index:100 !important;
+      opacity:0.9 !important;
+      background:rgba(245, 245, 250, 0.95) !important;
+    }
+    .monaco-editor .suggest-widget .monaco-list-row{
+      background:rgba(245, 245, 250, 0.95) !important;
+      color:#333 !important;
+    }
+    .monaco-editor .suggest-widget .monaco-list-row:hover{
+      background:rgba(230, 235, 245, 0.95) !important;
+    }
+    .monaco-editor .suggest-widget .monaco-list-row.selected{
+      background:rgba(220, 230, 245, 0.95) !important;
+    }
+    .monaco-editor .suggest-widget-details{
+      background:rgba(245, 245, 250, 0.95) !important;
     }
 
     /* RIGHT COLUMN: output top + plot bottom (full height) */

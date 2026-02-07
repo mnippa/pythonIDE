@@ -1,21 +1,80 @@
 // public/js/editor-completions.js
-import * as C from "./editor-completions.config.js";
+import * as C from "./editor-completions.config.js?t=1770415900";
 
-export function registerPythonCompletions(monaco, editor) {
-  // Safe config reads
-  const NUMPY_COMPLETIONS   = Array.isArray(C.NUMPY_COMPLETIONS) ? C.NUMPY_COMPLETIONS : [];
-  const PLT_COMPLETIONS     = Array.isArray(C.PLT_COMPLETIONS) ? C.PLT_COMPLETIONS : [];
-  const AX_COMPLETIONS      = Array.isArray(C.AX_COMPLETIONS) ? C.AX_COMPLETIONS : [];
-  const BUILTIN_COMPLETIONS = Array.isArray(C.BUILTIN_COMPLETIONS) ? C.BUILTIN_COMPLETIONS : [];
+let helpJson = null; // Cached help.json data
+let NUMPY_COMPLETIONS = [];
+let PLT_COMPLETIONS = [];
+let AX_COMPLETIONS = [];
+let BUILTIN_COMPLETIONS = [];
+let NP_SNIPPETS = [];
+let PLT_SNIPPETS = [];
+let AX_SNIPPETS = [];
+let BUILTIN_SNIPPETS = [];
+let STRING_HOVER_DOCS = {};
+let LIST_HOVER_DOCS = {};
+let DICT_HOVER_DOCS = {};
 
-  const NP_SNIPPETS         = Array.isArray(C.NP_SNIPPETS) ? C.NP_SNIPPETS : [];
-  const PLT_SNIPPETS        = Array.isArray(C.PLT_SNIPPETS) ? C.PLT_SNIPPETS : [];
-  const AX_SNIPPETS         = Array.isArray(C.AX_SNIPPETS) ? C.AX_SNIPPETS : [];
-  const BUILTIN_SNIPPETS    = Array.isArray(C.BUILTIN_SNIPPETS) ? C.BUILTIN_SNIPPETS : [];
+export async function registerPythonCompletions(monaco, editor) {
+  // Load help.json to extract numpy and matplotlib functions
+  if (!helpJson) {
+    try {
+      const res = await fetch("index.php?api=help&key=__list__", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.keys)) {
+          // Convert array of keys to object for compatibility
+          helpJson = {};
+          data.keys.forEach(key => { helpJson[key] = true; });
+          console.log("[editor-completions] Loaded help.json with " + data.keys.length + " keys");
+        } else {
+          console.warn("[editor-completions] Invalid help.json response", data);
+          helpJson = {};
+        }
+      }
+    } catch (e) {
+      console.error("[editor-completions] Failed to load help keys", e);
+      helpJson = {};
+    }
+  }
 
-  const STRING_HOVER_DOCS   = C.STRING_HOVER_DOCS && typeof C.STRING_HOVER_DOCS === "object" ? C.STRING_HOVER_DOCS : {};
-  const LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
-  const DICT_HOVER_DOCS     = C.DICT_HOVER_DOCS && typeof C.DICT_HOVER_DOCS === "object" ? C.DICT_HOVER_DOCS : {};
+  // Extract numpy and matplotlib functions from help.json (if available)
+  let foundNumpyKeys = [];
+  let foundPltKeys = [];
+  
+  if (helpJson && typeof helpJson === 'object' && Object.keys(helpJson).length > 0) {
+    foundNumpyKeys = Object.keys(helpJson)
+      .filter(k => k.startsWith('np.'))
+      .map(k => k.substring(3)); // Remove 'np.' prefix
+    
+    foundPltKeys = Object.keys(helpJson)
+      .filter(k => k.startsWith('plt.'))
+      .map(k => k.substring(4)); // Remove 'plt.' prefix
+  }
+
+  // Use config defaults (curated, main functions only) rather than all help.json entries
+  // This avoids overwhelming the user with 100+ numpy functions
+  // Help.json is still available for the help panel via API
+  NUMPY_COMPLETIONS = Array.isArray(C.NUMPY_COMPLETIONS) ? C.NUMPY_COMPLETIONS : [];
+  PLT_COMPLETIONS = Array.isArray(C.PLT_COMPLETIONS) ? C.PLT_COMPLETIONS : [];
+
+  AX_COMPLETIONS      = Array.isArray(C.AX_COMPLETIONS) ? C.AX_COMPLETIONS : [];
+  BUILTIN_COMPLETIONS = Array.isArray(C.BUILTIN_COMPLETIONS) ? C.BUILTIN_COMPLETIONS : [];
+
+  console.log("[editor-completions] Loaded arrays:", {
+    numpy: NUMPY_COMPLETIONS.length,
+    plt: PLT_COMPLETIONS.length,
+    ax: AX_COMPLETIONS.length,
+    builtin: BUILTIN_COMPLETIONS.length,
+  });
+
+  NP_SNIPPETS         = Array.isArray(C.NP_SNIPPETS) ? C.NP_SNIPPETS : [];
+  PLT_SNIPPETS        = Array.isArray(C.PLT_SNIPPETS) ? C.PLT_SNIPPETS : [];
+  AX_SNIPPETS         = Array.isArray(C.AX_SNIPPETS) ? C.AX_SNIPPETS : [];
+  BUILTIN_SNIPPETS    = Array.isArray(C.BUILTIN_SNIPPETS) ? C.BUILTIN_SNIPPETS : [];
+
+  STRING_HOVER_DOCS   = C.STRING_HOVER_DOCS && typeof C.STRING_HOVER_DOCS === "object" ? C.STRING_HOVER_DOCS : {};
+  LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
+  DICT_HOVER_DOCS     = C.DICT_HOVER_DOCS && typeof C.DICT_HOVER_DOCS === "object" ? C.DICT_HOVER_DOCS : {};
 
   // Math function list (matches scraper targets)
   const MATH_FUNCS = [
@@ -47,6 +106,15 @@ export function registerPythonCompletions(monaco, editor) {
   }
   function mkFunctionSuggestion(name, detail) {
     return { label: name, kind: monaco.languages.CompletionItemKind.Function, insertText: name, detail };
+  }
+  function mkPrefixedFunctionSuggestion(module, name, detail) {
+    return {
+      label: `${module}.${name}`,
+      kind: monaco.languages.CompletionItemKind.Function,
+      insertText: `${module}.${name}`,
+      filterText: `${module}.${name}`,
+      detail,
+    };
   }
   function mkSnippetSuggestion(label, snippet, detail, documentation) {
     return {
@@ -135,27 +203,57 @@ export function registerPythonCompletions(monaco, editor) {
       const fullText = model.getValue();
 
       const aliases = parseModuleAliases(fullText);
+      console.log('[editor-completions] aliases:', Array.from(aliases.entries()));
 
       // NP completions (like before)
       if (/\bnp\.\w*$/.test(prefix)) {
-        return {
-          suggestions: [
-            ...NP_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "NumPy (snippet)", s.doc)),
-            ...NUMPY_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "NumPy")),
-          ],
-        };
+       console.log("[NP] Matched! prefix:", prefix, "suggestions:", NUMPY_COMPLETIONS.length, 'first:', NUMPY_COMPLETIONS.slice(0,5));
+        const match = prefix.match(/\bnp\.\w*$/);
+        const matchStartIndex = match ? (prefix.length - match[0].length) : 0;
+        const matchStartColumn = matchStartIndex + 1; // Convert to 1-indexed
+        
+        // Show only plain functions, not snippets (avoids filtering issues and double suggestions)
+        let sugs = [
+          ...NUMPY_COMPLETIONS.map((n) => mkPrefixedFunctionSuggestion('np', n, "NumPy")),
+        ];
+        
+        // Set range to replace from start of 'np' to cursor (so np.<typed> gets replaced by full suggestion)
+        try {
+          const range = new monaco.Range(position.lineNumber, matchStartColumn, position.lineNumber, position.column);
+          sugs = sugs.map(s => ({ ...s, range }));
+          console.log('[NP] range:', { startColumn: matchStartColumn, endColumn: position.column });
+        } catch (e) {}
+        
+        try { console.log('[NP] suggestions JSON:', JSON.stringify(sugs.slice(0,8), null, 2)); } catch(e){ console.log('[NP] suggestions objects sample (raw):', sugs.slice(0,8)); }
+        return { suggestions: sugs };
       }
 
       // PLT completions
       if (/\bplt\.\w*$/.test(prefix)) {
-        return {
-          suggestions: [
-            ...PLT_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "matplotlib.pyplot (snippet)", s.doc)),
-            ...PLT_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "matplotlib.pyplot")),
-          ],
-        };
+       console.log("[PLT] Matched! prefix:", prefix, "suggestions:", PLT_COMPLETIONS.length, 'first:', PLT_COMPLETIONS.slice(0,5));
+        const match = prefix.match(/\bplt\.\w*$/);
+        const matchStartIndex = match ? (prefix.length - match[0].length) : 0;
+        const matchStartColumn = matchStartIndex + 1; // Convert to 1-indexed
+        
+        // Show only plain functions, not snippets
+        let sugs = [
+          ...PLT_COMPLETIONS.map((n) => mkPrefixedFunctionSuggestion('plt', n, "matplotlib.pyplot")),
+        ];
+        
+        // Set range to replace from start of 'plt' to cursor
+        try {
+          const range = new monaco.Range(position.lineNumber, matchStartColumn, position.lineNumber, position.column);
+          sugs = sugs.map(s => ({ ...s, range }));
+          console.log('[PLT] range:', { startColumn: matchStartColumn, endColumn: position.column });
+        } catch (e) {}
+        
+        try { console.log('[PLT] suggestions JSON:', JSON.stringify(sugs.slice(0,8), null, 2)); } catch(e){ console.log('[PLT] suggestions objects sample (raw):', sugs.slice(0,8)); }
+        return { suggestions: sugs };
       }
 
+       if (/\bnp\.|plt\./.test(prefix)) {
+         console.log("[DEBUG] Prefix contains np. or plt. but didn't match:", prefix);
+       }
       // AX completions
       if (/\bax\.\w*$/.test(prefix)) {
         return {
@@ -218,24 +316,44 @@ export function registerPythonCompletions(monaco, editor) {
 
   function mdToHtml(md) {
     const src = String(md || "");
-    const parts = src.split(/```/);
+    
+    // Strip W3Schools promotional boilerplate and common navigation text
+    let cleaned = src
+      .replace(/W3Schools offers.*?skills\.\s*/gi, "")
+      .replace(/Learn by examples.*?\s*/gi, "")
+      .replace(/Try it Yourself.*?\s*/gi, "")
+      .replace(/^(Advertisement|Share|Report Error).*$/gmi, "");
+    
+    // Collapse multiple consecutive line breaks
+    cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+    
+    const parts = cleaned.split(/```/);
     let out = "";
     for (let i = 0; i < parts.length; i++) {
       const chunk = parts[i];
       if (i % 2 === 1) {
         // Code block: remove lang identifier and format
-        const cleaned = chunk.replace(/^\s*\w+\s*\n/, "");
-        out += `<pre><code>${escapeHtml(cleaned.trim())}</code></pre>`;
+        const codeContent = chunk.replace(/^\s*\w+\s*\n/, "").trim();
+        if (codeContent) {
+          out += `<pre><code>${escapeHtml(codeContent)}</code></pre>`;
+        }
       } else {
-        // Regular text
-        let html = escapeHtml(chunk);
+        // Regular text: preserve paragraph structure
+        const text = chunk.trim();
+        if (!text) continue;
+        
+        let html = escapeHtml(text);
         // Inline code (backticks)
         html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
         // Bold (**text**)
         html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-        // Line breaks
-        html = html.replace(/\n/g, "<br>");
-        out += html;
+        // Headers (# text)
+        html = html.replace(/^#+\s+(.+?)$/gm, "<strong>$1</strong>");
+        // URLs as clickable links (but not inside tags)
+        html = html.replace(/(?<![">])(https?:\/\/[^\s<>]+)/g, '<a href="$1" target="_blank">$1</a>');
+        // Multiple newlines -> paragraph break
+        const paragraphs = html.split(/\n\s*\n/);
+        out += paragraphs.map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
       }
     }
     return out;
@@ -325,8 +443,19 @@ export function registerPythonCompletions(monaco, editor) {
 
     const canon = aliases.get(best.left) || best.left;
 
+    // Handle math module
     if (canon === "math" || best.left === "math") {
       return { kind: "module", module: "math", name: best.name };
+    }
+
+    // Handle numpy as np
+    if (canon === "numpy") {
+      return { kind: "module", module: "np", name: best.name };
+    }
+
+    // Handle matplotlib.pyplot as plt
+    if (canon === "matplotlib.pyplot") {
+      return { kind: "module", module: "plt", name: best.name };
     }
 
     const upToLine = getTextUpToLine(model, position.lineNumber);
@@ -396,8 +525,9 @@ export function registerPythonCompletions(monaco, editor) {
       focusedRow;
 
     const txt = (nameEl.textContent || "").trim();
-    const m = txt.match(/[A-Za-z_]\w*/);
-    return m ? m[0] : null;
+    // Extract the part after the last dot, or the whole identifier if no dot
+    const m = txt.match(/(?:\.)?([A-Za-z_]\w*)(?:\(|$)/);
+    return m ? m[1] : null;
   }
 
   function getLeftBeforeDot(model, position) {
@@ -423,9 +553,33 @@ export function registerPythonCompletions(monaco, editor) {
     const aliases = parseModuleAliases(fullText);
     const canon = aliases.get(left) || left;
 
-    // module math
+    // Handle math module
     if (canon === "math" || left === "math") {
       const key = `math.${name}`;
+      if (key === lastKey) return;
+
+      const remote = await fetchHelp(key);
+      lastKey = key;
+      if (remote?.ok && remote.md) setHelpPanel(remote.md, { isMd:true });
+      else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+      return;
+    }
+
+    // Handle numpy as np
+    if (canon === "numpy") {
+      const key = `np.${name}`;
+      if (key === lastKey) return;
+
+      const remote = await fetchHelp(key);
+      lastKey = key;
+      if (remote?.ok && remote.md) setHelpPanel(remote.md, { isMd:true });
+      else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+      return;
+    }
+
+    // Handle matplotlib.pyplot as plt
+    if (canon === "matplotlib.pyplot") {
+      const key = `plt.${name}`;
       if (key === lastKey) return;
 
       const remote = await fetchHelp(key);
