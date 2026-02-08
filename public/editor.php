@@ -25,6 +25,7 @@ if ($displayName === '') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Python IDE - Meine Projekte</title>
   <link rel="stylesheet" href="css/ide.css">
+  <link rel="stylesheet" href="css/file-tree.css">
   <style>
     :root {
       --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
@@ -90,21 +91,98 @@ if ($displayName === '') {
       color:var(--text-secondary);
     }
 
-    /* MASTER GRID: 75% left / 25% right */
+    /* MASTER GRID: left sidebar | editor | right output */
     .app{
       height: calc(100vh - 52px);
       display:grid;
-      grid-template-columns: 75% 25%;
+      grid-template-columns: 1fr 25%;
       min-height:0;
       min-width:0;
     }
+    .app.with-task-details {
+      grid-template-columns: 300px 1fr 25%;
+    }
 
-    /* LEFT COLUMN: editor top, bottom tools (lint+help) */
+    /* TASK DETAILS SIDEBAR (left) */
+    #task-details-panel {
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+      overflow-y: auto;
+      display: none;
+      flex-direction: column;
+      min-height:0;
+    }
+    #task-details-panel.active {
+      display: flex;
+    }
+    .task-details-header {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .task-details-header h3 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .task-details-content {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .task-details-content h4 {
+      margin: 12px 0 6px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      text-transform: uppercase;
+    }
+    .task-details-content p {
+      margin: 0 0 10px 0;
+      color: var(--text-secondary);
+    }
+    .task-hint {
+      background: var(--panel);
+      border-left: 3px solid #f59e0b;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 12px;
+    }
+    .task-expected {
+      background: var(--code-bg);
+      border-left: 3px solid #10b981;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 12px;
+      font-family: ui-monospace, Menlo, monospace;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    /* LEFT COLUMN: file tree + editor + lint/help */
     .left{
       border-right:1px solid var(--border);
       display:grid;
-      grid-template-rows: 1fr 180px;
+      grid-template-rows: auto 1fr 180px;
       min-width:0; min-height:0;
+    }
+    .file-tree-wrapper {
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      overflow: hidden;
+      max-height: 0;
+      padding: 0;
+      min-height: 0;
+      transition: max-height 0.2s;
+    }
+    .file-tree-wrapper.active {
+      max-height: 250px;
+      overflow: auto;
+      padding: 8px;
     }
     #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
 
@@ -400,12 +478,98 @@ if ($displayName === '') {
       font-weight: 600;
       color: var(--text-primary);
     }
+
+    .assignments-panel {
+      position: fixed;
+      top: 0;
+      right: -420px;
+      width: 420px;
+      height: 100vh;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+      transition: right 0.3s;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+    }
+    .assignments-panel.open { right: 0; }
+    .assignments-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .assignments-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+    .assignments-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .assignment-item {
+      padding: 12px;
+      margin-bottom: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .assignment-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+    .assignment-meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .status-badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e5e7eb;
+      color: #111827;
+    }
+    .status-assigned { background: #e0f2fe; color: #0369a1; }
+    .status-in_progress { background: #fef3c7; color: #92400e; }
+    .status-submitted { background: #ddd6fe; color: #5b21b6; }
+    .status-passed { background: #dcfce7; color: #166534; }
+    .status-failed { background: #fee2e2; color: #b91c1c; }
+    .assignment-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .assignment-detail {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .task-item {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 8px;
+      background: var(--bg);
+    }
+    .task-title { font-weight: 600; margin-bottom: 4px; }
+    .task-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
   <div class="toolbar">
     <button id="projects-btn">📁 Projekte</button>
+    <button id="assignments-btn">📚 Aufgaben</button>
     <button id="run-btn">Run</button>
+    <button id="check-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">✓ Check</button>
+    <span id="attempts-counter" style="display:none; margin:0 12px; font-weight:600; color:var(--text-primary);">Versuche: <span id="attempts-value">0/10</span></span>
     <button id="save-btn" style="display:none;">💾 Speichern</button>
 
     <div style="flex:1"></div>
@@ -456,7 +620,18 @@ if ($displayName === '') {
   </div>
 
   <div class="app">
+    <div id="task-details-panel">
+      <div class="task-details-header">
+        <h3 id="task-details-title">Aufgabe</h3>
+        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;" id="task-details-position">-</div>
+      </div>
+      <div class="task-details-content" id="task-details-content">
+        <p>Laden Sie eine Aufgabe um Details zu sehen</p>
+      </div>
+    </div>
+
     <div class="left">
+      <div class="file-tree-wrapper" id="file-tree-wrapper"></div>
       <div id="editor-container"></div>
 
       <div class="left-bottom">
@@ -482,6 +657,17 @@ if ($displayName === '') {
     </div>
   </div>
 
+  <div id="assignments-panel" class="assignments-panel">
+    <div class="assignments-header">
+      <h2>Meine Aufgaben</h2>
+      <button class="close-panel" id="close-assignments">×</button>
+    </div>
+    <div class="assignments-body">
+      <div id="assignments-list">Lade Aufgaben...</div>
+      <div id="assignment-detail" class="assignment-detail" style="display:none;"></div>
+    </div>
+  </div>
+
   <!-- Monaco loader (AMD) -->
   <script src="monaco/min/vs/loader.js"></script>
   <script>
@@ -490,6 +676,10 @@ if ($displayName === '') {
 
   <!-- Pyodide -->
   <script src="pyodide/pyodide.js"></script>
+
+  <!-- File Tree & Validation -->
+  <script src="js/file-tree.js"></script>
+  <script src="js/code-validator.js"></script>
 
   <script type="module" src="js/editor-setup.js"></script>
 
@@ -552,5 +742,6 @@ if ($displayName === '') {
     });
   </script>
   <script type="module" src="js/projects.js"></script>
+  <script type="module" src="js/assignments.js"></script>
 </body>
 </html>

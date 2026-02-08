@@ -93,6 +93,24 @@ if (array_key_exists('expected_output', $input)) {
     $types .= 's';
 }
 
+if (array_key_exists('validation_mode', $input)) {
+    $updates[] = 'validation_mode = ?';
+    $params[] = $input['validation_mode'];
+    $types .= 's';
+}
+
+if (array_key_exists('test_cases', $input)) {
+    $updates[] = 'test_cases = ?';
+    $params[] = $input['test_cases'];
+    $types .= 's';
+}
+
+if (array_key_exists('solution_code', $input)) {
+    $updates[] = 'solution_code = ?';
+    $params[] = $input['solution_code'];
+    $types .= 's';
+}
+
 if (empty($updates)) {
     jsonResponse(['ok' => false, 'error' => 'No fields to update'], 400);
 }

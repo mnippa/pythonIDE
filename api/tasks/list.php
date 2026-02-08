@@ -38,9 +38,9 @@ if (!$canAccess) {
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 
-$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint';
+$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, max_attempts, test_cases, validation_mode';
 if ($includeExpected) {
-    $sql .= ', expected_output';
+    $sql .= ', expected_output, solution_code';
 }
 $sql .= ' FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
 
@@ -59,10 +59,14 @@ while ($row = $result->fetch_assoc()) {
         'position' => (int)$row['position'],
         'problem_type' => $row['problem_type'],
         'code_template' => $row['code_template'],
-        'hint' => $row['hint']
+        'hint' => $row['hint'],
+        'max_attempts' => (int)$row['max_attempts'],
+        'test_cases' => $row['test_cases'],
+        'validation_mode' => $row['validation_mode']
     ];
     if ($includeExpected) {
         $task['expected_output'] = $row['expected_output'];
+        $task['solution_code'] = $row['solution_code'];
     }
     $tasks[] = $task;
 }

@@ -123,9 +123,16 @@ async function loadProject(projectId) {
         currentBar.style.display = 'flex';
       }
       
+      // Update name in UI
       const nameEl = document.getElementById('current-project-name');
       if (nameEl) {
         nameEl.textContent = data.project.name;
+      }
+      
+      // Initialize file tree with project name (if available)
+      if (window.FileTreeManager && window.fileTreeManager) {
+        const structure = window.fileTreeManager.initializeDefaultStructure(data.project.name);
+        window.fileTreeManager.render(structure);
       }
       
       const saveBtn = document.getElementById('save-btn');

@@ -3,6 +3,7 @@
 async function initPyodideAndEditor() {
   /* ---------------- Pyodide ---------------- */
   const pyodide = await loadPyodide({ indexURL: "pyodide/" });
+  window.pyodide = pyodide; // Make globally available for assignments.js
   console.log("Pyodide ready");
 
   const loadedPackages = new Set();
@@ -285,9 +286,25 @@ async function initPyodideAndEditor() {
     window.editorInstance = editor;
     console.log('Editor instance created and stored globally');
 
-    // Check for project_id in URL and load project if present
+    // Initialize file tree if not in project view
     const urlParams = new URLSearchParams(window.location.search);
     const projectId = urlParams.get('project_id');
+    
+    // Initialize file tree for project mode
+    if (projectId && window.FileTreeManager) {
+      const treeWrapper = document.getElementById('file-tree-wrapper');
+      if (treeWrapper) {
+        const treeManager = new window.FileTreeManager('file-tree-wrapper');
+        window.fileTreeManager = treeManager;
+      }
+    }
+
+    // Initialize validator
+    if (window.CodeValidator) {
+      window.validator = new window.CodeValidator();
+    }
+
+    // Check for project_id in URL and load project if present
     if (projectId) {
       console.log('Project ID detected in URL:', projectId);
       // Load project dynamically

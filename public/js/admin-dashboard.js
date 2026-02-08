@@ -110,13 +110,22 @@ async function loadTasks(assignmentId, assignmentTitle) {
   body.innerHTML = '';
 
   state.tasks.forEach((t) => {
+    const hasTests = t.test_cases ? '✓' : '✗';
+    const hasSolution = t.solution_code ? '✓' : '✗';
+    const modeLabel = t.validation_mode || '-';
+    
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${t.position}</td>
       <td>${escapeHtml(t.title)}</td>
       <td><span class="tag">${escapeHtml(t.problem_type)}</span></td>
+      <td>${hasTests}</td>
+      <td>${hasSolution}</td>
+      <td><span class="tag">${escapeHtml(modeLabel)}</span></td>
       <td>
         <div class="row-actions">
+          <button class="btn" data-action="edit-task" data-id="${t.id}">Edit</button>
+          <button class="btn" data-action="view-task" data-id="${t.id}">View</button>
           <button class="btn warn" data-action="delete-task" data-id="${t.id}">Delete</button>
         </div>
       </td>
@@ -211,12 +220,25 @@ async function handleTaskSubmit(e) {
     problem_type: $('task-type').value,
     code_template: $('task-template').value,
     hint: $('task-hint').value,
-    expected_output: $('task-expected').value
+    expected_output: $('task-expected').value,
+    validation_mode: $('task-validation-mode').value || null,
+    test_cases: $('task-test-cases').value.trim() || null,
+    solution_code: $('task-solution').value.trim() || null
   };
 
   if (!payload.title) {
     alert('Title is required');
     return;
+  }
+
+  // Validate test_cases JSON if provided
+  if (payload.test_cases) {
+    try {
+      JSON.parse(payload.test_cases);
+    } catch (err) {
+      alert('Invalid test_cases JSON: ' + err.message);
+      return;
+    }
   }
 
   await requestJson('../api/tasks/create.php', {
@@ -230,6 +252,9 @@ async function handleTaskSubmit(e) {
   $('task-template').value = '';
   $('task-hint').value = '';
   $('task-expected').value = '';
+  $('task-validation-mode').value = '';
+  $('task-test-cases').value = '';
+  $('task-solution').value = '';
 
   await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
   await loadAssignments();
@@ -245,6 +270,76 @@ function escapeHtml(input) {
     .replace(/'/g, '&#39;');
 }
 
+function openEditTaskModal(taskId) {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+
+  $('edit-task-id').value = task.id;
+  $('edit-task-title').value = task.title || '';
+  $('edit-task-description').value = task.description || '';
+  $('edit-task-position').value = task.position || '';
+  $('edit-task-type').value = task.problem_type || 'code_completion';
+  $('edit-task-template').value = task.code_template || '';
+  $('edit-task-hint').value = task.hint || '';
+  $('edit-task-expected').value = task.expected_output || '';
+  $('edit-task-validation-mode').value = task.validation_mode || '';
+  $('edit-task-test-cases').value = task.test_cases || '';
+  $('edit-task-solution').value = task.solution_code || '';
+
+  $('task-modal').style.display = 'block';
+  $('modal-title').textContent = `Edit Task: ${task.title}`;
+}
+
+function closeEditTaskModal() {
+  $('task-modal').style.display = 'none';
+  $('edit-task-id').value = '';
+}
+
+async function handleEditTaskSubmit(e) {
+  e.preventDefault();
+
+  const taskId = parseInt($('edit-task-id').value, 10);
+  if (!taskId) return;
+
+  const payload = {
+    id: taskId,
+    title: $('edit-task-title').value.trim(),
+    description: $('edit-task-description').value.trim(),
+    position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
+    problem_type: $('edit-task-type').value,
+    code_template: $('edit-task-template').value,
+    hint: $('edit-task-hint').value,
+    expected_output: $('edit-task-expected').value,
+    validation_mode: $('edit-task-validation-mode').value || null,
+    test_cases: $('edit-task-test-cases').value.trim() || null,
+    solution_code: $('edit-task-solution').value.trim() || null
+  };
+
+  if (!payload.title) {
+    alert('Title is required');
+    return;
+  }
+
+  // Validate test_cases JSON if provided
+  if (payload.test_cases) {
+    try {
+      JSON.parse(payload.test_cases);
+    } catch (err) {
+      alert('Invalid test_cases JSON: ' + err.message);
+      return;
+    }
+  }
+
+  await requestJson('../api/tasks/update.php', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  closeEditTaskModal();
+  await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+  await loadAssignments();
+}
+
 function bindEvents() {
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
@@ -253,6 +348,18 @@ function bindEvents() {
   $('assignment-form').addEventListener('submit', handleAssignmentSubmit);
   $('assignment-reset').addEventListener('click', resetAssignmentForm);
   $('task-form').addEventListener('submit', handleTaskSubmit);
+  $('task-edit-form').addEventListener('submit', handleEditTaskSubmit);
+
+  // Modal close buttons
+  $('close-modal-btn').addEventListener('click', closeEditTaskModal);
+  $('cancel-modal-btn').addEventListener('click', closeEditTaskModal);
+  
+  // Close modal on background click
+  $('task-modal').addEventListener('click', (e) => {
+    if (e.target === $('task-modal')) {
+      closeEditTaskModal();
+    }
+  });
 
   $('logout-btn').addEventListener('click', async () => {
     await requestJson('../api/auth/logout.php', { method: 'POST' });
@@ -307,6 +414,44 @@ function bindEvents() {
       await requestJson(`../api/tasks/delete.php?id=${id}`, { method: 'DELETE' });
       await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
       await loadAssignments();
+    }
+
+    if (action === 'edit-task') {
+      openEditTaskModal(id);
+    }
+
+    if (action === 'view-task') {
+      const task = state.tasks.find((t) => t.id === id);
+      if (!task) return;
+      
+      const details = `
+TASK DETAILS
+============
+Title: ${task.title}
+Position: ${task.position}
+Type: ${task.problem_type}
+Validation Mode: ${task.validation_mode || 'none'}
+
+Description:
+${task.description || '(no description)'}
+
+Code Template:
+${task.code_template || '(none)'}
+
+Hint:
+${task.hint || '(none)'}
+
+Expected Output:
+${task.expected_output || '(none)'}
+
+Test Cases:
+${task.test_cases ? JSON.stringify(JSON.parse(task.test_cases), null, 2) : '(none)'}
+
+Solution Code:
+${task.solution_code ? task.solution_code.substring(0, 200) + '...' : '(none)'}
+      `;
+      
+      alert(details);
     }
 
     if (action === 'toggle-user') {

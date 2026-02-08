@@ -287,6 +287,9 @@ if ($displayName === '') {
                 <th>Pos</th>
                 <th>Title</th>
                 <th>Type</th>
+                <th>Tests</th>
+                <th>Solution</th>
+                <th>Mode</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -329,6 +332,23 @@ if ($displayName === '') {
               <label for="task-expected">Expected output</label>
               <textarea id="task-expected"></textarea>
             </div>
+            <div class="field">
+              <label for="task-validation-mode">Validation Mode</label>
+              <select id="task-validation-mode">
+                <option value="">-- none --</option>
+                <option value="strict">strict (exact match)</option>
+                <option value="loose">loose (whitespace tolerant)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="task-test-cases">Test Cases (JSON)</label>
+              <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+              <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
+            </div>
+            <div class="field">
+              <label for="task-solution">Solution Code</label>
+              <textarea id="task-solution" placeholder="Musterlösung"></textarea>
+            </div>
             <div class="row-actions">
               <button class="btn primary" type="submit">Add Task</button>
             </div>
@@ -359,6 +379,78 @@ if ($displayName === '') {
       </div>
     </section>
   </div>
+
+  <div id="task-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:600px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="modal-title" style="margin:0;">Edit Task</h3>
+        <button id="close-modal-btn" class="btn ghost" style="font-size:20px;">✕</button>
+      </div>
+      <form id="task-edit-form">
+        <input type="hidden" id="edit-task-id" />
+        <div class="field">
+          <label for="edit-task-title">Title</label>
+          <input id="edit-task-title" required />
+        </div>
+        <div class="field">
+          <label for="edit-task-description">Description</label>
+          <textarea id="edit-task-description"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-position">Position</label>
+          <input id="edit-task-position" type="number" min="1" />
+        </div>
+        <div class="field">
+          <label for="edit-task-type">Problem type</label>
+          <select id="edit-task-type">
+            <option value="code_completion">code_completion</option>
+            <option value="code_fix">code_fix</option>
+            <option value="multiple_choice">multiple_choice</option>
+            <option value="essay">essay</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="edit-task-template">Code template</label>
+          <textarea id="edit-task-template"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-hint">Hint</label>
+          <textarea id="edit-task-hint"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-expected">Expected output</label>
+          <textarea id="edit-task-expected"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-validation-mode">Validation Mode</label>
+          <select id="edit-task-validation-mode">
+            <option value="">-- none --</option>
+            <option value="strict">strict (exact match)</option>
+            <option value="loose">loose (whitespace tolerant)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="edit-task-test-cases">Test Cases (JSON)</label>
+          <textarea id="edit-task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+          <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
+        </div>
+        <div class="field">
+          <label for="edit-task-solution">Solution Code</label>
+          <textarea id="edit-task-solution" placeholder="Musterlösung"></textarea>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" type="submit">Save Changes</button>
+          <button class="btn" type="button" id="cancel-modal-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <style>
+    #task-modal textarea { min-height:120px; }
+    #task-modal { animation: fadeIn 0.2s ease-in; }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  </style>
 
   <script src="js/admin-dashboard.js"></script>
 </body>

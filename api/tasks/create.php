@@ -29,6 +29,9 @@ $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
 $hint = $input['hint'] ?? null;
 $expectedOutput = $input['expected_output'] ?? null;
+$validationMode = $input['validation_mode'] ?? null;
+$testCases = $input['test_cases'] ?? null;
+$solutionCode = $input['solution_code'] ?? null;
 
 if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
@@ -59,11 +62,11 @@ if ($position === null || $position < 1) {
 }
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, problem_type, code_template, hint, expected_output)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, problem_type, code_template, hint, expected_output, validation_mode, test_cases, solution_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 $stmt->bind_param(
-    'ississss',
+    'isisssssss',
     $assignmentId,
     $title,
     $description,
@@ -71,7 +74,10 @@ $stmt->bind_param(
     $problemType,
     $codeTemplate,
     $hint,
-    $expectedOutput
+    $expectedOutput,
+    $validationMode,
+    $testCases,
+    $solutionCode
 );
 
 if ($stmt->execute()) {
@@ -89,6 +95,9 @@ if ($stmt->execute()) {
             'code_template' => $codeTemplate,
             'hint' => $hint,
             'expected_output' => $expectedOutput,
+            'validation_mode' => $validationMode,
+            'test_cases' => $testCases,
+            'solution_code' => $solutionCode,
             'created_at' => date('Y-m-d H:i:s')
         ]
     ], 201);
