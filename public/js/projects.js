@@ -235,6 +235,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadProjects();
   });
   
+  // Check if project_id is in URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const projectId = urlParams.get('project_id');
+  if (projectId) {
+    loadProject(projectId);
+  }
+  
   // New project button
   document.getElementById('new-project-btn')?.addEventListener('click', () => {
     createNewProject();

@@ -273,25 +273,7 @@ async function initPyodideAndEditor() {
     const getEditorTheme = () => isDarkMode() ? 'ide-dark' : 'ide-light';
     
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
-      value: `import numpy as np
-import matplotlib.pyplot as plt
-
-x = np.linspace(0, 10, 100)
-
-plt.figure()
-plt.plot(x, np.sin(x))
-plt.title("sin(x)")
-
-plt.figure()
-plt.plot(x, np.cos(x))
-plt.title("cos(x)")
-
-plt.show()
-print("done")
-
-# runtime typo test:
-# pint("hello")
-`,
+      value: `// Hier Python Code`,
       language: "python",
       theme: getEditorTheme(),
       automaticLayout: true,

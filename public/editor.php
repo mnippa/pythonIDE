@@ -270,6 +270,18 @@ if ($displayName === '') {
       font-weight: 600;
       text-transform: uppercase;
     }
+    .admin-link {
+      padding: 6px 10px;
+      background: #0f766e;
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .admin-link:hover {
+      background: #0b5f57;
+    }
     #projects-btn {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -405,6 +417,9 @@ if ($displayName === '') {
         <span class="user-badge">Admin</span>
         <?php endif; ?>
       </div>
+      <?php if ($user['role'] === 'admin'): ?>
+      <a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>
+      <?php endif; ?>
       <button id="settings-toggle" title="Module" aria-label="Module settings">⚙</button>
       <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
       <button id="logout-btn" title="Abmelden">🚪</button>

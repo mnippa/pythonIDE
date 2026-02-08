@@ -19,10 +19,10 @@ function requireAuth() {
     
     return [
         'id' => $_SESSION['user_id'],
-        'username' => $_SESSION['username'],
+        'email' => $_SESSION['email'] ?? $_SESSION['username'] ?? '',
         'first_name' => $_SESSION['first_name'] ?? '',
         'last_name' => $_SESSION['last_name'] ?? '',
-        'role' => $_SESSION['role']
+        'role' => $_SESSION['role'] ?? 'user'
     ];
 }
 
@@ -74,6 +74,8 @@ function isLoggedIn() {
  * Check if user is admin (boolean)
  */
 function isAdmin() {
-    session_start();
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }

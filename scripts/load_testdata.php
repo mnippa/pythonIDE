@@ -61,7 +61,7 @@ try {
     echo "Inserting test users...\n";
     
     // Admin user (email: admin@pythonide.local, password: admin123)
-    $stmt = $conn->prepare("INSERT INTO users (email, first_name, last_name, password_hash, role) VALUES (?, ?, ?, ?, ?)");
+    $stmt = $conn->prepare("INSERT INTO users (email, first_name, last_name, password_hash, role, status) VALUES (?, ?, ?, ?, ?, ?)");
     if (!$stmt) {
         throw new Exception("Failed to prepare statement: " . $conn->error);
     }
@@ -71,9 +71,10 @@ try {
     $lastName = 'Schmidt';
     $passwordHash = '$2y$10$0BDRET8OScPxeaK7xPvP1.dp7tcvVWWCaLLfWh7UIP.WyWauGx4L6';
     $role = 'admin';
-    $stmt->bind_param('sssss', $email, $firstName, $lastName, $passwordHash, $role);
+    $status = 'aktiv';
+    $stmt->bind_param('ssssss', $email, $firstName, $lastName, $passwordHash, $role, $status);
     $stmt->execute();
-    echo "  ✓ Admin: Sarah Schmidt (admin@pythonide.local)\n";
+    echo "  ✓ Admin: Sarah Schmidt (admin@pythonide.local) [aktiv]\n";
     
     // Regular test users (all passwords: test123)
     $testUsers = [
@@ -85,14 +86,15 @@ try {
     
     $passwordHash = '$2y$10$h8jBmVqm9e2E3DdLYgohi.J8eNwPl95XTST0urazUo6S4dxlKKS.6';
     $role = 'user';
+    $status = 'aktiv';
     
     foreach ($testUsers as $user) {
         $email = $user[0];
         $firstName = $user[1];
         $lastName = $user[2];
-        $stmt->bind_param('sssss', $email, $firstName, $lastName, $passwordHash, $role);
+        $stmt->bind_param('ssssss', $email, $firstName, $lastName, $passwordHash, $role, $status);
         $stmt->execute();
-        echo "  ✓ User: $firstName $lastName ($email)\n";
+        echo "  ✓ User: $firstName $lastName ($email) [aktiv]\n";
     }
     
     echo "\n";
