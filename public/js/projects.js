@@ -3,20 +3,37 @@
 let currentProject = null;
 let editorInstance = null;
 
-// Wait for editor to be ready
+// Make currentProject globally accessible
+window.currentProject = null;
+
+// Wait for editor to be ready - improved version
 function waitForEditor() {
   return new Promise((resolve) => {
+    let attempts = 0;
     const check = () => {
+      attempts++;
+      // Check both local editorInstance and global window.editorInstance
+      if (window.editorInstance) {
+        editorInstance = window.editorInstance;
+        console.log('Editor ready after', attempts, 'attempts');
+        resolve(editorInstance);
+        return;
+      }
       if (window.monaco && window.monaco.editor) {
         const editors = window.monaco.editor.getEditors();
         if (editors.length > 0) {
           editorInstance = editors[0];
+          window.editorInstance = editorInstance;
+          console.log('Editor found via getEditors() after', attempts, 'attempts');
           resolve(editorInstance);
-        } else {
-          setTimeout(check, 100);
+          return;
         }
-      } else {
+      }
+      if (attempts < 200) { // max 20 seconds
         setTimeout(check, 100);
+      } else {
+        console.error('Editor did not initialize after', attempts, 'attempts');
+        resolve(null);
       }
     };
     check();
@@ -67,45 +84,89 @@ async function loadProjects() {
 // Load specific project
 async function loadProject(projectId) {
   try {
+    console.log('loadProject called with ID:', projectId);
+    
     const response = await fetch(`../api/projects/load.php?id=${projectId}`, {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' }
     });
     const data = await response.json();
     
+    console.log('Project API response:', data);
+    
     if (data.ok) {
       currentProject = data.project;
+      window.currentProject = data.project;
+      console.log('Project loaded:', currentProject.name);
       
-      // Wait for editor to be ready
-      const editor = await waitForEditor();
+      // Get editor - use global reference first
+      let editor = window.editorInstance;
+      if (!editor) {
+        console.log('No window.editorInstance, waiting for editor...');
+        editor = await waitForEditor();
+      }
+      
+      if (!editor) {
+        console.error('Failed to get editor instance');
+        alert('Editor konnte nicht initialisiert werden');
+        return;
+      }
       
       // Set code in editor
-      editor.setValue(data.project.code || '');
+      const code = data.project.code || '';
+      console.log('Setting code in editor, length:', code.length);
+      editor.setValue(code);
       
       // Update UI
-      document.getElementById('current-project-bar').style.display = 'flex';
-      document.getElementById('current-project-name').textContent = data.project.name;
-      document.getElementById('save-btn').style.display = 'block';
+      const currentBar = document.getElementById('current-project-bar');
+      if (currentBar) {
+        currentBar.style.display = 'flex';
+      }
+      
+      const nameEl = document.getElementById('current-project-name');
+      if (nameEl) {
+        nameEl.textContent = data.project.name;
+      }
+      
+      const saveBtn = document.getElementById('save-btn');
+      if (saveBtn) {
+        saveBtn.style.display = 'block';
+      }
       
       // Show visibility
       const visibilityEl = document.getElementById('project-visibility');
-      if (data.project.visibility === 'public') {
-        const shareUrl = `${window.location.origin}/pythonIDE/public/share.php?token=${data.project.share_token}`;
-        visibilityEl.innerHTML = `<span class="visibility-badge visibility-public">🌐 Public</span> 
-          <button onclick="copyShareLink('${shareUrl}')" style="padding:4px 8px;font-size:11px;margin-left:8px;">Link kopieren</button>`;
-      } else {
-        visibilityEl.innerHTML = '<span class="visibility-badge visibility-private">🔒 Private</span>';
+      if (visibilityEl) {
+        if (data.project.visibility === 'public') {
+          const shareUrl = `${window.location.origin}/pythonIDE/public/share.php?token=${data.project.share_token}`;
+          visibilityEl.innerHTML = `<span class="visibility-badge visibility-public">🌐 Public</span> 
+            <button onclick="copyShareLink('${shareUrl}')" style="padding:4px 8px;font-size:11px;margin-left:8px;">Link kopieren</button>`;
+        } else {
+          visibilityEl.innerHTML = '<span class="visibility-badge visibility-private">🔒 Private</span>';
+        }
       }
       
       // Close panel
-      document.getElementById('projects-panel').classList.remove('open');
+      const panel = document.getElementById('projects-panel');
+      if (panel) {
+        panel.classList.remove('open');
+      }
+      
+      console.log('Project loaded successfully in editor');
     } else {
+      console.error('Project load failed:', data.error);
       alert('Fehler beim Laden: ' + (data.error || 'Unbekannter Fehler'));
     }
   } catch (err) {
+    console.error('Project load exception:', err);
     alert('Verbindungsfehler beim Laden');
   }
 }
+
+// Make loadProject globally available
+window.loadProject = loadProject;
+
+// Export for ES module usage
+export { loadProject as loadProjectById };
 
 // Save current project
 async function saveProject() {
@@ -228,19 +289,15 @@ function escapeHtml(str) {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Load projects on open
   const projectsBtn = document.getElementById('projects-btn');
   projectsBtn?.addEventListener('click', () => {
     loadProjects();
   });
   
-  // Check if project_id is in URL params
-  const urlParams = new URLSearchParams(window.location.search);
-  const projectId = urlParams.get('project_id');
-  if (projectId) {
-    loadProject(projectId);
-  }
+  // Note: project_id loading is now handled in editor-setup.js after editor is ready
+  // to ensure proper initialization order
   
   // New project button
   document.getElementById('new-project-btn')?.addEventListener('click', () => {

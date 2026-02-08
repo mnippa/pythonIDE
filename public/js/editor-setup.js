@@ -273,15 +273,42 @@ async function initPyodideAndEditor() {
     const getEditorTheme = () => isDarkMode() ? 'ide-dark' : 'ide-light';
     
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
-      value: `// Hier Python Code`,
+      value: `# Hier Python Code`,
       language: "python",
       theme: getEditorTheme(),
       automaticLayout: true,
       lightbulb: { enabled: false }, // kein "No quick fixes available"
     });
     
-    // Store reference for theme changes
+    // Store reference globally for theme changes AND external modules
     editorInstance = editor;
+    window.editorInstance = editor;
+    console.log('Editor instance created and stored globally');
+
+    // Check for project_id in URL and load project if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const projectId = urlParams.get('project_id');
+    if (projectId) {
+      console.log('Project ID detected in URL:', projectId);
+      // Load project dynamically
+      try {
+        const projectsModule = await import('./projects.js?t=' + Date.now());
+        if (projectsModule && projectsModule.loadProjectById) {
+          console.log('Loading project via projects module...');
+          await projectsModule.loadProjectById(projectId);
+        } else {
+          console.log('Projects module loaded, calling global loadProject if available');
+          // Fallback: Wait a bit and try window.loadProject
+          setTimeout(async () => {
+            if (window.loadProject) {
+              await window.loadProject(projectId);
+            }
+          }, 500);
+        }
+      } catch (e) {
+        console.error('Error loading project:', e);
+      }
+    }
 
     // Setup theme listener AFTER editor is created
     const themeObserver = new MutationObserver(() => {
