@@ -5,7 +5,71 @@ async function initPyodideAndEditor() {
   const pyodide = await loadPyodide({ indexURL: "pyodide/" });
   console.log("Pyodide ready");
 
-  await pyodide.loadPackage(["numpy", "matplotlib"]);
+  const loadedPackages = new Set();
+  const moduleCheckboxes = {
+    numpy: document.getElementById("pkg-numpy"),
+    matplotlib: document.getElementById("pkg-matplotlib"),
+    pandas: document.getElementById("pkg-pandas"),
+    panel: document.getElementById("pkg-panel"),
+    seaborn: document.getElementById("pkg-seaborn"),
+  };
+  const availablePackages = new Set(["numpy", "matplotlib", "pandas"]);
+
+  function applyPackageAvailability() {
+    Object.entries(moduleCheckboxes).forEach(([name, checkbox]) => {
+      if (!checkbox) return;
+      if (!availablePackages.has(name)) {
+        checkbox.checked = false;
+        checkbox.disabled = true;
+      }
+    });
+  }
+
+  function getSelectedPackages() {
+    const packages = [];
+    if (moduleCheckboxes.numpy?.checked) packages.push("numpy");
+    if (moduleCheckboxes.matplotlib?.checked) packages.push("matplotlib");
+    if (moduleCheckboxes.pandas?.checked) packages.push("pandas");
+    if (moduleCheckboxes.panel?.checked) packages.push("panel");
+    if (moduleCheckboxes.seaborn?.checked) packages.push("seaborn");
+    return packages;
+  }
+
+  async function ensurePackages(packages) {
+    const toLoad = (packages || []).filter((pkg) => !loadedPackages.has(pkg));
+    if (!toLoad.length) return;
+    await pyodide.loadPackage(toLoad);
+    toLoad.forEach((pkg) => loadedPackages.add(pkg));
+  }
+
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel = document.getElementById("settings-panel");
+
+  function closeSettingsPanel() {
+    if (!settingsPanel) return;
+    settingsPanel.classList.remove("open");
+    settingsPanel.setAttribute("aria-hidden", "true");
+  }
+
+  settingsToggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!settingsPanel) return;
+    const isOpen = settingsPanel.classList.toggle("open");
+    settingsPanel.setAttribute("aria-hidden", String(!isOpen));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!settingsPanel || !settingsToggle) return;
+    if (settingsPanel.contains(event.target) || settingsToggle.contains(event.target)) return;
+    closeSettingsPanel();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSettingsPanel();
+  });
+
+  applyPackageAvailability();
+  await ensurePackages(getSelectedPackages());
 
   /* ---------------- Error helpers ---------------- */
   function bestErrorLine(full) {
@@ -326,12 +390,12 @@ print("done")
 
     /* ---------------- Lint UI helpers ---------------- */
     function setLintChecking() {
-      lintEl.innerHTML = `<span style="color:#6b7280;font-weight:500;">Prüfe…</span>`;
+      lintEl.innerHTML = `<span class="lint-checking">Prüfe…</span>`;
     }
 
     function setLintOk() {
-      lintEl.innerHTML = `<span style="color:#000;font-weight:600;">
-        Syntaxcheck <span style="color:#22c55e;font-weight:700;">✓</span>
+      lintEl.innerHTML = `<span class="lint-ok">
+        Syntaxcheck <span class="lint-checkmark">✓</span>
       </span>`;
     }
 
@@ -343,10 +407,10 @@ print("done")
         (hint ? `<div style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(hint)}</div>` : "") +
         (hasFix
           ? `<div style="margin-top:8px;">
-               <span style="color:#111;font-weight:600;">Quick Fix:</span>
+               <span class="lint-fix-label">Quick Fix:</span>
                <span id="lint-fix"
                      title="Klick/Doppelklick oder Ctrl+."
-                     style="cursor:pointer; text-decoration:underline; color:#2563eb;">
+                     class="lint-fix-link">
                  Replace '${escapeHtml(token)}' → '${escapeHtml(suggestion)}'
                </span>
              </div>`
@@ -449,6 +513,9 @@ compile(code, "<usercode>", "exec")
       if (!syntax.ok || hasAnyMarkers()) return;
 
       const code = editor.getValue();
+      const selectedPackages = getSelectedPackages();
+      await ensurePackages(selectedPackages);
+      const enableMatplotlib = selectedPackages.includes("matplotlib");
 
       try {
         await pyodide.runPythonAsync(`
@@ -457,9 +524,11 @@ import sys, warnings
 
 warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+enable_matplotlib = ${enableMatplotlib ? "True" : "False"}
+if enable_matplotlib:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
 from io import BytesIO
 import base64
@@ -484,32 +553,33 @@ try:
     g = {"__name__": "__main__"}
     exec(compile(code, "<usercode>", "exec"), g, g)
 
-    fignums = list(plt.get_fignums())
-    if fignums:
+    if enable_matplotlib:
+      fignums = list(plt.get_fignums())
+      if fignums:
         container = document.getElementById("plot-container")
 
         for n in fignums:
-            fig = plt.figure(n)
-            buf = BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight")
-            buf.seek(0)
-            b64 = base64.b64encode(buf.read()).decode("ascii")
-            data_url = "data:image/png;base64," + b64
+          fig = plt.figure(n)
+          buf = BytesIO()
+          fig.savefig(buf, format="png", bbox_inches="tight")
+          buf.seek(0)
+          b64 = base64.b64encode(buf.read()).decode("ascii")
+          data_url = "data:image/png;base64," + b64
 
-            card = document.createElement("div")
-            card.className = "plot-card"
+          card = document.createElement("div")
+          card.className = "plot-card"
 
-            header = document.createElement("div")
-            header.className = "plot-card-header"
-            header.innerHTML = "<strong>Figure " + str(n) + "</strong>"
+          header = document.createElement("div")
+          header.className = "plot-card-header"
+          header.innerHTML = "<strong>Figure " + str(n) + "</strong>"
 
-            img = document.createElement("img")
-            img.className = "plot-img"
-            img.src = data_url
+          img = document.createElement("img")
+          img.className = "plot-img"
+          img.src = data_url
 
-            card.appendChild(header)
-            card.appendChild(img)
-            container.appendChild(card)
+          card.appendChild(header)
+          card.appendChild(img)
+          container.appendChild(card)
 
         plt.close("all")
 

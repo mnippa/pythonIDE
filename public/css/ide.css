@@ -1,65 +1,17 @@
-* { box-sizing: border-box; margin:0; padding:0; }
-html, body { height: 100%; font-family: monospace; }
-body { background: #1e1e1e; color: #fff; }
-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 16px; background: #252526; border-bottom: 1px solid #333;
-}
-#run-btn {
-    padding: 6px 14px; background: #0e639c; border:none; color:#fff; cursor:pointer;
-}
-#run-btn:disabled { opacity:0.5; cursor:not-allowed; }
-main { height: calc(100% - 50px); display: grid; grid-template-rows: 2fr 1fr; }
-#editor { width:100%; height:100%; }
-#output {
-    background:#1b1b1b; border-top:1px solid #333; padding:8px; overflow-y:auto; white-space: pre-wrap;
+/* Tooltip leicht transparent */
+.monaco-editor .monaco-hover {
+    background: rgba(50, 50, 50, 0.9) !important;
+    border: 1px solid #888 !important;
+    color: #fff !important;
 }
 
-#help-container {
-    font-size: 12px;
-    line-height: 1.4;
-    padding: 8px;
-    overflow-y: auto;
+/* Bounce-Animation für Unterwellen */
+@keyframes bounceEffect {
+    0%   { transform: translateY(0); }
+    50%  { transform: translateY(-4px); }
+    100% { transform: translateY(0); }
 }
 
-#help-container p {
-    margin: 4px 0;
-    padding: 0;
-}
-
-#help-container br {
-    display: block;
-    height: 0;
-    margin: 2px 0;
-}
-
-#help-container code {
-    background: #2d2d2d;
-    padding: 2px 4px;
-    border-radius: 2px;
-    font-size: 11px;
-}
-
-#help-container pre {
-    background: #2d2d2d;
-    padding: 6px;
-    margin: 4px 0;
-    border-radius: 2px;
-    overflow-x: auto;
-    font-size: 11px;
-    line-height: 1.3;
-}
-
-#help-container strong {
-    color: #4ec9b0;
-}
-
-#help-container pre code {
-    background: transparent;
-    padding: 0;
-}
-
-.help-muted {
-    color: #888;
-    font-size: 12px;
+.bounce {
+    animation: bounceEffect 1s ease;
 }

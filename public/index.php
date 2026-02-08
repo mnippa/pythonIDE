@@ -166,270 +166,187 @@ if (isset($_GET['api']) && $_GET['api'] === 'help') {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Python IDE</title>
+  <title>Python IDE - Start</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
   <style>
     :root {
-      --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --code-bg: #f3f4f6;
-      --code-color: #1f2937;
-      --inline-code-bg: #e5e7eb;
-      --help-bg: #ffffff;
-      --help-text: #1f2937;
+      --bg:#f6f1ea;
+      --panel:#fffaf4;
+      --ink:#1c1b1a;
+      --muted:#6c6762;
+      --accent:#0f766e;
+      --accent-2:#f59e0b;
+      --border:#e6ddd4;
+      --shadow:0 18px 60px rgba(15, 23, 42, 0.12);
     }
-    
-    html.dark-mode {
-      --border:#374151; --muted:#9ca3af; --bg:#1e1e1e; --panel:#252526;
-      --text-primary: #e6edf3;
-      --text-secondary: #8b949e;
-      --code-bg: #0d1117;
-      --code-color: #e6edf3;
-      --inline-code-bg: #161b22;
-      --help-bg: #1e1e1e;
-      --help-text: #e6edf3;
-    }
-    
+
     *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text-primary); transition:background 0.2s, color 0.2s; }
-
-    .toolbar{
-      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:10px; border-bottom:1px solid var(--border);
-      background:var(--bg);
+    body{
+      margin:0;
+      font-family:"Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      color:var(--ink);
+      background:radial-gradient(1200px 600px at 20% -10%, #e5f6f2, transparent),
+                 radial-gradient(900px 500px at 110% 10%, #fef3c7, transparent),
+                 var(--bg);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:32px 18px 48px;
     }
-    .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
-    .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
-    #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
-    #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
-    html.dark-mode #theme-toggle::after{ content:'☀️'; }
-    .toolcheck{ display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:var(--panel); color:var(--text-primary); }
-    .toolcheck input{ transform: translateY(0.5px); }
 
-    /* MASTER GRID: 75% left / 25% right */
-    .app{
-      height: calc(100vh - 52px);
+    .shell{
+      width:100%;
+      max-width:980px;
+      position:relative;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:18px;
+    }
+    .brand-mark{
+      width:44px;
+      height:44px;
+      border-radius:14px;
+      background:conic-gradient(from 210deg, #0f766e, #f59e0b, #22c55e, #0f766e);
+      box-shadow:0 12px 30px rgba(15, 118, 110, 0.25);
+    }
+    .brand h1{
+      margin:0;
+      font-size:28px;
+      letter-spacing:-0.02em;
+    }
+    .tagline{
+      margin:0 0 26px 0;
+      color:var(--muted);
+      font-size:16px;
+      max-width:520px;
+    }
+
+    .card-grid{
       display:grid;
-      grid-template-columns: 75% 25%;
-      min-height:0;
-      min-width:0;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap:18px;
     }
 
-    /* LEFT COLUMN: editor top, bottom tools (lint+help) */
-    .left{
-      border-right:1px solid var(--border);
-      display:grid;
-      grid-template-rows: 1fr 180px;  /* bottom only under editor */
-      min-width:0; min-height:0;
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:18px;
+      padding:22px 22px 20px;
+      box-shadow:var(--shadow);
+      position:relative;
+      overflow:hidden;
+      min-height:220px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
     }
-    #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
-
-    .left-bottom{
-      border-top:1px solid var(--border);
-      display:grid;
-      grid-template-columns: 40% 60%;
-      min-width:0; min-height:0;
+    .card::after{
+      content:"";
+      position:absolute;
+      inset:auto -40px -40px auto;
+      width:140px;
+      height:140px;
+      background:radial-gradient(circle, rgba(15, 118, 110, 0.18), transparent 65%);
+      pointer-events:none;
     }
-    #lint-container{
-      border-right:1px solid var(--border);
-      background:var(--bg);
-      color:var(--text-primary);
-      padding:10px;
-      overflow:auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:13px;
-      white-space:pre-wrap;
-      min-width:0; min-height:0;
+    .card h2{
+      margin:0;
+      font-size:20px;
     }
-    
-    html.dark-mode #lint-container {
-      background: #252526;
-      color: #cccccc;
-    }
-    #help-container{
-      padding:6px 8px;
-      overflow:auto;
-      background:var(--help-bg);
-      color:var(--help-text);
+    .card p{
+      margin:0;
+      color:var(--muted);
+      line-height:1.5;
       font-size:14px;
-      line-height:1.6;
-      min-width:0; min-height:0;
     }
-    #help-container h1, #help-container h2, #help-container h3{
-      margin:2px 0 6px 0;
-      padding:0;
-      font-size:1em;
-    }
-    #help-container p{
-      margin:4px 0;
-      padding:0;
-    }
-    #help-container .help-muted{ color:var(--text-secondary); margin:0; padding:0; }
-    #help-container pre{
-      background:var(--code-bg);
-      color:var(--code-color);
-      padding:8px;
-      border-radius:4px;
-      overflow-x:auto;
-      margin:4px 0;
-      border-left:2px solid var(--border);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:0.9em;
-      line-height:1.4;
-    }
-    #help-container code{
-      background:var(--inline-code-bg);
-      color:var(--code-color);
-      padding:2px 6px;
-      border-radius:4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:0.9em;
-    }
-    #help-container strong{
-      color:var(--text-primary);
-      font-weight:600;
-    }
-    #help-container a{
-      color:#3b82f6;
+
+    .cta{
+      margin-top:auto;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      padding:12px 16px;
+      border-radius:12px;
+      border:1px solid transparent;
+      background:var(--accent);
+      color:#fff;
       text-decoration:none;
+      font-weight:600;
+      transition:transform 0.2s, box-shadow 0.2s, background 0.2s;
     }
-    #help-container a:hover{
-      text-decoration:underline;
+    .cta.secondary{
+      background:transparent;
+      color:var(--accent);
+      border-color:var(--accent);
     }
-
-    /* Autocomplete: light background, semi-transparent to see help behind */
-    .monaco-editor .suggest-widget{
-      z-index:100 !important;
-      opacity:0.9 !important;
-      background:rgba(245, 245, 250, 0.95) !important;
-      border:1px solid rgba(180, 180, 190, 0.9) !important;
-      color:#333 !important;
-    }
-    .editor-widget.suggest-widget{
-      z-index:100 !important;
-      opacity:0.9 !important;
-      background:rgba(245, 245, 250, 0.95) !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row{
-      background:rgba(245, 245, 250, 0.95) !important;
-      color:#333 !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row:hover{
-      background:rgba(230, 235, 245, 0.95) !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row.selected{
-      background:rgba(220, 230, 245, 0.95) !important;
-    }
-    .monaco-editor .suggest-widget-details{
-      background:rgba(245, 245, 250, 0.95) !important;
+    .cta:hover{
+      transform:translateY(-2px);
+      box-shadow:0 12px 26px rgba(15, 118, 110, 0.25);
     }
 
-    /* RIGHT COLUMN: output top + plot bottom (full height) */
-    .right{
-      display:grid;
-      grid-template-rows: 1fr 1fr;
-      min-width:0; min-height:0;
-    }
-    #output-container{
-      padding:10px;
-      overflow:auto;
-      background:var(--bg);
-      color:var(--text-primary);
-      border-bottom:1px solid var(--border);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .meta{
+      margin-top:24px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px 20px;
       font-size:13px;
-      white-space:pre-wrap;
-      min-width:0; min-height:0;
+      color:var(--muted);
     }
-    #plot-container{
-      padding:10px;
-      overflow:auto;
-      background:var(--bg);
-      color:var(--text-primary);
-      min-width:0; min-height:0;
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:#fff;
+      border:1px solid var(--border);
+      font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:12px;
     }
 
-    .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
-    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:700; border-bottom:1px solid var(--border); }
-    .plot-img{ width:100%; height:auto; display:block; }
+    @media (max-width: 680px) {
+      body{ padding:24px 14px 38px; }
+      .brand h1{ font-size:24px; }
+      .card{ min-height:200px; }
+    }
   </style>
-
-  <!-- Monaco loader (AMD) -->
-  <script src="monaco/min/vs/loader.js"></script>
-  <script>
-    require.config({ paths: { vs: "monaco/min/vs" } });
-  </script>
-
-  <!-- Pyodide -->
-  <script src="pyodide/pyodide.js"></script>
-
-  <script type="module" src="js/editor-setup.js"></script>
 </head>
-
 <body>
-  <div class="toolbar">
-    <button id="run-btn">Run</button>
-
-    <label class="toolcheck" title="NumPy laden">
-      <input id="pkg-numpy" type="checkbox" checked>
-      <span>NumPy</span>
-    </label>
-
-    <label class="toolcheck" title="Matplotlib laden">
-      <input id="pkg-matplotlib" type="checkbox" checked>
-      <span>Matplotlib</span>
-    </label>
-
-    <span style="opacity:.7">Links: Editor + Lint/Hilfe | Rechts: Output + Plot</span>
-    
-    <div style="flex:1"></div>
-    <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-  </div>
-
-  <div class="app">
-    <div class="left">
-      <div id="editor-container"></div>
-
-      <div class="left-bottom">
-        <div id="lint-container"></div>
-        <div id="help-container">
-          <div class="help-muted">
-            Hilfe erscheint hier:
-            <br>• Cursor auf <code>var.method</code> (z.B. <code>s.split</code>)
-            <br>• auch beim Navigieren in Autovorschlägen (↑/↓)
-            <br><br>
-            Wenn ein Eintrag fehlt: Scraper erneut laufen lassen (<code>?force=1</code>).
-          </div>
-        </div>
-      </div>
+  <main class="shell">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <h1>Python IDE</h1>
     </div>
+    <p class="tagline">Starte sofort im Free Editor oder melde dich an, um Projekte zu speichern und zu teilen.</p>
 
-    <div class="right">
-      <div id="output-container"></div>
-      <div id="plot-container"></div>
+    <section class="card-grid">
+      <article class="card">
+        <h2>Free Editor</h2>
+        <p>Ohne Anmeldung direkt loslegen. Ideal zum schnellen Testen, Lernen und Ausprobieren von Code.</p>
+        <a class="cta" href="free.php">Free Editor starten</a>
+      </article>
+
+      <article class="card">
+        <h2>Login / Registrierung</h2>
+        <p>Speichere Projekte, teile Links, arbeite an Aufgaben und bleib uebersichtlich organisiert.</p>
+        <a class="cta secondary" href="login.php">Anmelden oder Registrieren</a>
+      </article>
+    </section>
+
+    <div class="meta">
+      <span class="chip">Pyodide · Python im Browser</span>
+      <span class="chip">Monaco Editor</span>
+      <span class="chip">Autosave & Sharing</span>
     </div>
-  </div>
-
-  <script>
-    // Theme Toggle
-    (function() {
-      const html = document.documentElement;
-      const themeBtn = document.getElementById('theme-toggle');
-      
-      // Load saved theme from localStorage
-      const savedTheme = localStorage.getItem('theme') || 'light';
-      if (savedTheme === 'dark') {
-        html.classList.add('dark-mode');
-      }
-      
-      // Toggle theme
-      themeBtn?.addEventListener('click', () => {
-        html.classList.toggle('dark-mode');
-        const isDark = html.classList.contains('dark-mode');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-      });
-    })();
-  </script>
+  </main>
 </body>
 </html>
