@@ -69,8 +69,7 @@ print(ausgabe)',
         'hint' => 'Nutzen Sie f-Strings: f"Text {variable}"',
         'expected_output' => 'Ich bin Max und 25 Jahre alt.',
         'test_cases' => json_encode([
-            ['input' => '', 'expected' => 'Ich bin Max und 25 Jahre alt.'],
-            ['input' => '', 'expected' => 'Ich bin Max und 25 Jahre alt']
+            ['input' => '', 'expected' => 'Ich bin Max und 25 Jahre alt.']
         ]),
         'validation_mode' => 'loose',
         'solution_code' => 'name = "Max"
@@ -203,9 +202,7 @@ print(zaehle_woerter("Ein Satz mit fuenf Woertern"))',
         'hint' => 'split() teilt String bei Leerzeichen, len() gibt Länge zurück',
         'expected_output' => '2\n3\n5',
         'test_cases' => json_encode([
-            ['input' => '', 'expected' => '2'],
-            ['input' => '', 'expected' => '3'],
-            ['input' => '', 'expected' => '5']
+            ['input' => '', 'expected' => "2\n3\n5"]
         ]),
         'validation_mode' => 'strict',
         'solution_code' => 'def zaehle_woerter(text):

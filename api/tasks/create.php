@@ -28,6 +28,10 @@ $position = isset($input['position']) ? (int)$input['position'] : null;
 $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
 $hint = $input['hint'] ?? null;
+$hint1 = $input['hint1'] ?? null;
+$hint2 = $input['hint2'] ?? null;
+$hint3 = $input['hint3'] ?? null;
+$stoff = $input['stoff'] ?? null;
 $expectedOutput = $input['expected_output'] ?? null;
 $validationMode = $input['validation_mode'] ?? null;
 $testCases = $input['test_cases'] ?? null;
@@ -62,11 +66,11 @@ if ($position === null || $position < 1) {
 }
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, problem_type, code_template, hint, expected_output, validation_mode, test_cases, solution_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 $stmt->bind_param(
-    'isisssssss',
+    'isisssssssssss',
     $assignmentId,
     $title,
     $description,
@@ -74,6 +78,10 @@ $stmt->bind_param(
     $problemType,
     $codeTemplate,
     $hint,
+    $hint1,
+    $hint2,
+    $hint3,
+    $stoff,
     $expectedOutput,
     $validationMode,
     $testCases,

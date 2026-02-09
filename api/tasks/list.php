@@ -38,7 +38,7 @@ if (!$canAccess) {
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 
-$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, max_attempts, test_cases, validation_mode';
+$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, test_cases, validation_mode';
 if ($includeExpected) {
     $sql .= ', expected_output, solution_code';
 }
@@ -60,6 +60,10 @@ while ($row = $result->fetch_assoc()) {
         'problem_type' => $row['problem_type'],
         'code_template' => $row['code_template'],
         'hint' => $row['hint'],
+        'hint1' => $row['hint1'],
+        'hint2' => $row['hint2'],
+        'hint3' => $row['hint3'],
+        'stoff' => $row['stoff'],
         'max_attempts' => (int)$row['max_attempts'],
         'test_cases' => $row['test_cases'],
         'validation_mode' => $row['validation_mode']

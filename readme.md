@@ -1,18 +1,68 @@
-# Python IDE - Browser-basiert mit Live-Execution
+﻿# Python IDE - Browser-basierte Lern-Plattform
 
-Eine leistungsstarke, browserbasierte Python-IDE mit **Monaco Editor**, **Pyodide**, und **PHP-Backend**. Code schreiben, ausführen und debuggen direkt im Browser mit integriertem Help-System.
+Eine leistungsstarke, browserbasierte Python-IDE mit **Monaco Editor**, **Pyodide**, **intelligenten Autocompletion**, und **automatisiertem Test-System**. Ideal für Programmier-Unterricht mit integriertem Assignment- und Help-System.
 
 ---
 
-## ✨ Funktionen
+## ✨ Hauptfunktionen
 
 ### 🎯 Kern-Features
 - ✅ **Live Python-Ausführung** - Python im Browser via Pyodide (WebAssembly)
 - ✅ **Monaco Editor** - Professioneller Code-Editor mit Syntax-Highlighting
 - ✅ **Intelligente Autocompletion** - Kontext-bewusste Vorschläge für NumPy, Matplotlib, Math, Strings
+- ✅ **Assignment-System** - Strukturierte Aufgaben mit automatischer Validierung
+- ✅ **3 Test-Typen** - OUTPUT, FUNCTION, VARIABLE Testing (flexibel kombinierbar)
+- ✅ **INIT-Block System** - Einfaches Testen ohne manuelles Löschen von Test-Werten
 - ✅ **Integriertes Help-System** - Instant-Dokumentation für 220+ Funktionen und Methoden
 - ✅ **Matplotlib-Integration** - Plots direkt im IDE rendern
 - ✅ **Multi-Package-Support** - NumPy, Matplotlib und weitere Libraries laden
+
+### 🎓 Assignment & Testing System
+
+**3 Test-Typen für präzise Validierung:**
+
+#### 1. OUTPUT Testing
+Testet die Programmausgabe mit mehreren möglichen Patterns:
+```json
+{
+  "type": "output",
+  "input": "",
+  "expected": ["Hallo Welt!", "Hello World!"]
+}
+```
+
+#### 2. FUNCTION Testing
+Testet Funktionen mit expliziten Argumenten:
+```json
+{
+  "type": "function",
+  "function_name": "quadrat",
+  "args": [5],
+  "expected": 25
+}
+```
+
+#### 3. VARIABLE Testing mit INIT-Blöcken
+Testet Variable mit automatischer Trennung von Test- und Lösungscode:
+```python
+#INIT Start#
+x = 7  # Testwerte - werden bei CHECK ignoriert
+#INIT End#
+
+# Lösung:
+quadrat = x * x
+```
+```json
+{
+  "type": "variable",
+  "init_vars": {"x": 5},
+  "expected_vars": {"quadrat": 25}
+}
+```
+
+**Workflow:**
+- **▶ RUN** - Code mit INIT-Block ausführen (Student-Test)
+- **✓ CHECK** - INIT-Block automatisch entfernen, System-Tests ausführen
 
 ### 📚 Help-Datenbank (220 Einträge)
 | Modul | Einträge | Quellen |
@@ -71,29 +121,136 @@ http://localhost/pythonIDE/public
 pythonIDE/
 ├── public/
 │   ├── index.php                      # Main App + Help API
+│   ├── assignments.php                # Assignment System
+│   ├── login.php / register.php       # Authentication
 │   ├── css/
-│   │   └── ide.css                    # Editor & Layout Styling
+│   │   ├── ide.css                    # Editor & Layout Styling
+│   │   └── editor-tooltip.css         # Help Tooltips
 │   └── js/
 │       ├── editor-setup.js            # Monaco Initialisierung
 │       ├── editor.js                  # Editor Kernfunktionalität
 │       ├── editor-completions.js      # Autocompletion Engine
 │       ├── editor-completions.config.js # Kurierte Funktionslisten
+│       ├── assignments.js             # Assignment & Test System
 │       ├── output.js                  # Output & Plot Rendering
 │       ├── pyodide-init.js            # Pyodide Setup
 │       └── pyodide.js                 # Pyodide Loader
+│
+├── api/
+│   └── auth/
+│       ├── login.php / logout.php     # Session Management
+│       └── register.php               # User Registration
+│
+├── config/
+│   └── database.php                   # DB Connection
+│
+├── sql/
+│   └── schema.sql                     # Database Schema
 │
 ├── storage/
 │   └── help/
 │       └── help.json                  # 220 Help-Einträge (220 KB)
 │
 ├── scripts/
-│   ├── scrape_geeksforgeeks.php       # NumPy/Matplotlib Scraper
-│   ├── scrape_w3schools.php           # Math/String Scraper
+│   OUTPUT Test - Einfache Ausgabe
+```python
+# Task: Geben Sie "Hello World!" aus
+print("Hello World!")
+```
+**Test:**
+```json
+{
+  "type": "output",
+  "expected": ["Hello World!", "Hallo Welt!"]
+}
+```
+
+### FUNCTION Test - Funktion implementieren
+```python
+# Task: Implementieren Sie eine Quadrat-Funktion
+def quadrat(x):
+    return x * x
+```
+**Test:**
+```json
+{
+  "type": "function",
+  "function_name": "quadrat",
+  "args": [5],
+  "expected": 25
+}
+```
+
+### VARIABLE Test - Mit INIT-Block
+```python
+#INIT Start#
+a = Datenbank Setup
+```bash
+# 1. Datenbank erstellen
+mysql -u root -p < sql/schema.sql
+
+# 2. config/database.php anpassen
+$config = [
+    'host' => 'localhost',
+    'username' => 'root',
+    'password' => '',
+    'database' => 'python_ide'
+];
+```
+
+### Assignments erstellen
+```bash
+# Beispiel-Tasks mit allen 3 Test-Typen
+php scripts/create_test_type_examples.php
+
+# Output:
+✓ Task 1: Begrüßung ausgeben (OUTPUT)
+✓ Task 2: Quadrat-Funktion (FUNCTION)
+✓ Task 3: Bereichsprüfung (FUNCTION, mehrere Args)
+✓ Task 4: Quadrat berechnen (VARIABLE)
+✓ Task 5: Summe und Produkt (VARIABLE, mehrere)
+✓ Task 6: Gerade Zahlen filtern (VARIABLE)
+```
+
+### INIT-Block Verifikation
+```bash
+# Verifizieren dass alle VARIABLE-Tasks INIT-Blöcke haben
+php scripts/verify_init_blocks.php
+
+# End-to-End Tests
+php scripts/test_e2e_init_blocks.php
+```
+
+### 8   # Testwerte für RUN
+b = 12
+#INIT End#
+
+# Lösung:
+summe = a + b
+produkt = a * b
+```
+**Workflow:**
+1. **Entwickeln:** Code schreiben, Werte im INIT ändern
+2. **▶ RUN:** Testen mit eigenen Werten (a=8, b=12)
+3. **✓ CHECK:** System entfernt INIT-Block, testet mit verschiedenen Werten
+
+**Test:**
+```json
+{
+  "type": "variable",
+  "init_vars": {"a": 5, "b": 10},
+  "expected_vars": {"summe": 15, "produkt": 50}
+}s.php       # End-to-End Tests
 │   └── list_help.php                  # Help-DB Monitor
 │
 ├── docs/
 │   ├── architecture.md                # System-Design
-│   └── setup.md                       # Detaillierte Setup-Anleitung
+│   ├── setup.md                       # Setup-Anleitung
+│   ├── test-types.md                  # Test-Typen Dokumentation
+│   ├── test-types-quickref.md         # Quick Reference
+│   ├── init-block-system.md           # INIT-Block System
+│   ├── init-block-quickref.md         # INIT Quick Reference
+│   └── init-block-summary.md          # INIT Summary
 │
 └── README.md                          # Diese Datei
 ```
@@ -155,197 +312,258 @@ curl "http://localhost/pythonIDE/public/index.php?api=help&key=math.sqrt"
 **Response-Format**:
 ```json
 {
-  "ok": true,
-  "found": true,
-  "resolved_key": "np.array",
-  "title": "numpy.array()",
-  "md": "Create an array...",
-  "source": "geeksforgeeks",
-  "fetched_at": "2025-03-15"
-}
-```
+| **Test-Typen** | 3 (OUTPUT, FUNCTION, VARIABLE) |
+| **Test-Validierung** | Automatisch, Echtzeit |
 
----
+## 🧪 Test-System Details
 
-## 🔄 Help-Datenbank aktualisieren
+### Test-Typen Übersicht
 
-**NumPy/Matplotlib von GeeksforGeeks scrapen**:
-```bash
-php scripts/scrape_geeksforgeeks.php
-```
+| Typ | Wann verwenden | Beispiel |
+|-----|---------------|----------|
+| **OUTPUT** | Programmausgabe testen | `print("Hello")` |
+| **FUNCTION** | Funktions-Return-Werte | `def add(a, b): return a+b` |
+| **VARIABLE** | Variable nach Berechnung | `result = x * 2` |
 
-**Math/Strings von W3Schools scrapen**:
-```bash
-php scripts/scrape_w3schools.php
-```
+### Test-Typen kombinieren
 
-**Help-DB überwachen**:
-```bash
-php scripts/list_help.php
-```
+**Verschiedene Typen in einem Assignment:**
+Ein Assignment kann beliebig viele Tasks mit unterschiedlichen Test-Typen enthalten:
 
-Ausgabe:
-```
-Total Entries: 220
-  NumPy: 55
-  Matplotlib: 17
-  Math: 35
-  String: 41
-  List: 11
-```
-
----
-
-## 🎨 Styling & Theme
-
-### Farschema
-- **Editor BG**: `#1e1e1e`
-- **Text Primary**: `#e8e8e8`
-- **Text Secondary**: `#858585`
-- **Accent/Links**: `#3b82f6`
-- **Code BG**: `#2d2d2d`
-- **Border**: `#3e3e42`
-
-### Theme anpassen
-In `public/index.php` (Zeilen 200-230):
-```css
-:root {
-  --bg: #1e1e1e;
-  --text-primary: #e8e8e8;
-  --code-bg: #2d2d2d;
-  /* ... weitere Variablen */
-}
-```
-
----
-
-## ⚙️ Für Entwickler
-
-### Autocompletion anpassen
-Datei: `public/js/editor-completions.config.js`
-
-```javascript
-export const NUMPY_COMPLETIONS = [
-  "array", "arange", "linspace", "zeros", // ...
+```php
+// Assignment mit gemischten Test-Typen
+$assignment = [
+    'title' => 'Python Grundlagen',
+    'tasks' => [
+        // Task 1: OUTPUT
+        ['type' => 'output', 'expected' => ['Hello']],
+        // Task 2: FUNCTION  
+        ['type' => 'function', 'function_name' => 'add', ...],
+        // Task 3: VARIABLE
+        ['type' => 'variable', 'init_vars' => [...], ...]
+    ]
 ];
 ```
 
-### Help-Datenbank prüfen
-Browser DevTools → Console:
-```javascript
-// Config prüfen
-console.log(NUMPY_COMPLETIONS);
+**Mehrere Tests pro Task:**
+Eine einzelne Task kann mehrere Test-Cases unterschiedlicher Typen haben:
 
-// Help abrufen
-fetch("index.php?api=help&key=np.array")
-  .then(r => r.json())
-  .then(d => console.log(d.md));
+```json
+{
+  "test_cases": [
+    {
+      "type": "output",
+      "expected": ["Test erfolgreich"]
+    },
+    {
+      "type": "variable",
+      "init_vars": {"x": 10},
+      "expected_vars": {"result": 20}
+    }
+  ]
+}
 ```
 
-### Pyodide debuggen
-```javascript
-// Pyodide-Objekt inspizieren
-console.log(pyodide);
+**Praktisches Beispiel - Komplexe Validierung:**
+```python
+# Student-Code
+def verdoppeln(x):
+    return x * 2
 
-// Python direkt ausführen
-await pyodide.runPython("print('Test!')");
+x = 5
+result = verdoppeln(x)
+print(f"Ergebnis: {result}")
 ```
 
----
+**Test-Cases:**
+```json
+[
+  {
+    "type": "function",
+    "function_name": "verdoppeln",
+    "args": [7],
+    "expected": 14
+  },
+  {
+    "type": "variable", 
+    "init_vars": {"x": 10},
+    "expected_vars": {"result": 20}
+  },
+  {
+    "type": "output",
+    "expected": ["Ergebnis: 10", "Ergebnis: 20"]
+  }
+]
+```
 
-## 📊 Performance & Statistiken
+**Vorteile der Kombination:**
+- ✅ **Umfassende Validierung** - Funktion UND Nutzung testen
+- ✅ **Flexibilität** - Unterschiedliche Aspekte prüfen
+- ✅ **Realistische Szenarien** - Funktion + Variable + Output
+- ✅ **Granulares Feedback** - Genau sehen wo Fehler sind
 
-| Metrik | Wert |
-|--------|------|
-| **Help-DB Größe** | ~220 KB |
-| **Startup-Zeit** | 2-3 Sekunden (Pyodide-Load) |
-| **Autocompletion Suggestions** | 30 pro Modul (konfigurierbar) |
-| **Funktionen in Help** | 220+ |
-| **Unterstützte Module** | NumPy, Matplotlib, Math, Strings, Lists |
+### INIT-Block System
+x = 7  # Wird bei CHECK ignoriert
+#INIT End#
+
+quadrat = x * x  # Wird getestet
+```
+
+**Technische Umsetzung:**
+```python
+# Python in assignments.js
+pattern = r'#INIT Start#.*?#INIT End#'
+code_without_init = re.sub(pattern, '', user_code, flags=re.DOTALL)
+```
+
+**Vorteile:**
+- ✅ Student muss nichts löschen
+- ✅ Python kennt Typen (IDE-Support)
+- ✅ Klare Trennung: Test vs. Lösung
+- ✅ Weniger fehleranfällig
 
 ---
 
 ## 🐛 Bekannte Einschränkungen & Zukunftspläne
 
 ### Aktuelle Limits
-- ⚠️ **Keine persistenten Sessions** - Code nach Browser-Close weg
 - ⚠️ **Datei-I/O limitiert** - Nur In-Memory Operationen
-- ⚠️ **Package-Einschränkung** - Nur vorgeladene Module
+- ⚠️ **Package-Einschränkung** - Nur vorgeladene Module (Pyodide-Libraries)
 - ⚠️ **Kein Debugger** - Keine Step-Through Debugging
 
+### Implementierte Features ✅
+- ✅ **Assignment-System** - Strukturierte Aufgaben mit DB
+- ✅ **3 Test-Typen** - OUTPUT, FUNCTION, VARIABLE (flexibel kombinierbar)
+- ✅ **INIT-Block System** - Automatische Trennung Test/Lösung
+- ✅ **User Authentication** - Login, Register, Sessions
+- ✅ **Progress Tracking** - Task-Completion per User
+- ✅ **Code-Validierung** - Automatische Tests mit granularem Feedback
+
 ### Geplante Features
-- [ ] **Code speichern/laden** - LocalStorage oder Datenbank
 - [ ] **Code-Sharing** - Teilbare Links generieren
 - [ ] **Mehr Libraries** - SciPy, Pandas, Scikit-learn
 - [ ] **Dark/Light Toggle** - Theme-Umschalter
 - [ ] **Shell-Modus** - Interaktive REPL
 - [ ] **Linting** - Echtzeit Code-Analyse
 - [ ] **Export** - Download von Code/Plots
+- [ ] **Leaderboard** - Gamification
+- [ ] **Code-Review** - Instructor Feedback
 
 ---
 
 ## 🎓 Einsatzszenarien
 
 Perfekt für:
-- 📚 Python-Anfänger-Unterricht (Schleifen, Funktionen, Datenstrukturen)
-- 🔬 NumPy/Matplotlib-Konzepte demonstrieren
-- 🧪 Quick Prototyping (keine lokale Installation nötig)
-- 📊 Daten-Visualisierungs-Übungen
-- 💻 Web-Dev Anfänger (Python im Browser kennenlernen)
+- 📚 **Python-Unterricht** - Strukturierte Assignments mit Auto-Grading
+- 🔬 **NumPy/Matplotlib-Kurse** - Demonstrationen und Übungen
+- 🧪 **Programmier-Übungen** - Sofortiges Feedback durch Tests
+- 📊 **Algorithmen lehren** - OUTPUT/FUNCTION/VARIABLE Testing
+- 💻 **Coding-Bootcamps** - Keine lokale Installation nötig
+- 🎯 **Selbststudium** - Integriertes Help-System
 
-**Kein Setup notwendig für Schüler** — einfach Link teilen!
+**Vorteile für Lehrende:**
+- ✅ Automatische Validierung spart Korrektur-Zeit
+- ✅ 3 Test-Typen für präzises Testing
+- ✅ INIT-Block System vereinfacht Übungen
+- ✅ Progress Tracking pro Student
+- ✅ Keine Student-Installation nötig
+
+**Vorteile für Studierende:**
+- ✅ Sofortiges Feedback (RUN & CHECK)
+- ✅ Help-System mit 220+ Funktionen
+- ✅ Autocomplete während Tippen
+- ✅ Klarer Workflow (INIT für Tests, CHECK für Abgabe)
+- ✅ Beispiele für jeden Test-Typ
 
 ---
 
 ## 📄 Lizenz
 
-Proprietary — XAMPP Python IDE (2025)
+Proprietary — XAMPP Python IDE (2026)
 
 ---
 
 ## 📞 Support & Dokumentation
 
-- **Detaillierte Docs**: Siehe `/docs/`
-- **Fehlersuche**: Browser Console (F12)
-- **Logs**: XAMPP Log-Verzeichnis
-- **Issues**: GitHub Issues (falls Repository öffentlich)
+### Dokumentation
+- **Test-Typen**: [docs/test-types.md](docs/test-types.md) - Vollständige Test-Typen Dokumentation
+- **Test-Typen Quick Ref**: [docs/test-types-quickref.md](docs/test-types-quickref.md) - Quick Reference
+- **Test-Typen kombinieren**: [docs/test-types-combining.md](docs/test-types-combining.md) - Kombinierte Tests
+- **INIT-Block System**: [docs/init-block-system.md](docs/init-block-system.md) - INIT-Block Details
+- **INIT Quick Ref**: [docs/init-block-quickref.md](docs/init-block-quickref.md) - Quick Reference
+- **Architektur**: [docs/architecture.md](docs/architecture.md) - System-Design
+- **Setup**: [docs/setup.md](docs/setup.md) - Detaillierte Installation
+
+### Fehlersuche
+- **Browser Console**: F12 → Console
+- **XAMPP Logs**: XAMPP Log-Verzeichnis
+- **PHP Errors**: `php -d display_errors=1 script.php`
+- **Test Verifikation**: `php scripts/verify_init_blocks.php`
+
+### Scripts
+```bash
+# Beispiel-Assignments erstellen
+php scripts/create_test_type_examples.php
+
+# INIT-Blöcke verifizieren
+php scripts/verify_init_blocks.php
+
+# End-to-End Tests
+php scripts/test_e2e_init_blocks.php
+
+# INIT-Block Demo
+php scripts/demo_init_blocks.php
+
+# Help-DB aktualisieren
+php scripts/scrape_geeksforgeeks.php
+php scripts/scrape_w3schools.php
+```
 
 ---
 
-**Status**: ✅ Produktiv-ready (v1.0)  
-**Letzte Aktualisierung**: 7. Februar 2025  
-**Team**: XAMPP Python IDE Contributors
+## 🚀 Tech Stack
 
-Kontakt / Weiteres
-------------------
-Bei Fragen oder Wunsch nach Live-Demo bitte melden.
+- **Frontend**: Monaco Editor, Vanilla JavaScript
+- **Python Runtime**: Pyodide (WebAssembly)
+- **Backend**: PHP 7.4+
+- **Database**: MariaDB / MySQL
+- **Testing**: Custom Test Framework (OUTPUT/FUNCTION/VARIABLE)
+- **Auth**: Session-based Authentication
 
 ---
-Stand: 06.02.2026
 
-\# Python Web IDE
+## 📈 Version & Status
 
+**Status**: ✅ Produktiv-ready (v2.0)  
+**Letzte Aktualisierung**: 9. Februar 2026  
+**Neue Features (v2.0)**:
+- ✅ Assignment-System mit Datenbank
+- ✅ 3 Test-Typen (OUTPUT, FUNCTION, VARIABLE)
+- ✅ INIT-Block System für VARIABLE Tests
+- ✅ User Authentication & Progress Tracking
+- ✅ Automatische Test-Validierung
 
+**Team**: Python IDE Contributors
 
-Browserbasierte Web-IDE für Python mit Monaco Editor und Pyodide.
+---
 
+## 🎯 Quick Start Zusammenfassung
 
+```bash
+# 1. XAMPP Setup
+cd c:\xampp\htdocs
+# pythonIDE Ordner hier platzieren
 
-\## Tech Stack
+# 2. Datenbank Setup
+mysql -u root -p < sql/schema.sql
 
-\- Monaco Editor
+# 3. Beispiel-Tasks erstellen
+php scripts/create_test_type_examples.php
 
-\- Pyodide (Python WASM)
+# 4. Browser öffnen
+http://localhost/pythonIDE/public
 
-\- PHP 7.4
+# 5. Account erstellen & Tasks lösen!
+```
 
-\- MariaDB (später)
-
-
-
-\## Ziel
-
-Studierende schreiben und testen Python-Code direkt im Browser.
-
-
-
+**Viel Erfolg beim Programmieren lernen! 🎉**

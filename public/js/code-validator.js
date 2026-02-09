@@ -62,9 +62,47 @@ class CodeValidator {
 
   /**
    * Compare actual vs expected output
+   * Expected can be:
+   * - String: exact match required
+   * - Array: match ANY of the values (OR logic)
    */
   compareOutput(actual, expected, mode = 'loose', testNumber = 1) {
     let actualCleaned = String(actual || '').trim();
+
+    // Handle array of expected values (OR logic)
+    if (Array.isArray(expected)) {
+      const results = expected.map(exp => {
+        let expectedCleaned = String(exp || '').trim();
+        
+        if (mode === 'loose') {
+          const actualLoose = actualCleaned.replace(/\s+/g, ' ');
+          const expectedLoose = expectedCleaned.replace(/\s+/g, ' ');
+          return actualLoose === expectedLoose;
+        }
+        
+        return actualCleaned === expectedCleaned;
+      });
+
+      const passed = results.some(r => r); // Pass if ANY matches
+      const matchedValue = expected[results.indexOf(true)];
+
+      return {
+        testNumber,
+        passed,
+        expected: expected.length > 1 
+          ? `Eine von ${expected.length} möglichen Lösungen` 
+          : expected[0],
+        expectedOptions: expected,
+        actual: actual,
+        matchedOption: matchedValue,
+        mode,
+        message: passed 
+          ? `✓ Test ${testNumber} bestanden${matchedValue ? ` (Lösung: "${matchedValue}")` : ''}`
+          : `✗ Test ${testNumber} fehlgeschlagen (Keine der ${expected.length} Lösungen passt)`
+      };
+    }
+
+    // Single expected value
     let expectedCleaned = String(expected || '').trim();
 
     if (mode === 'loose') {
@@ -107,9 +145,18 @@ class CodeValidator {
         html += `<div class="test-result ${resultClass}">`;
         html += `<span class="test-icon">${result.passed ? '✓' : '✗'}</span>`;
         html += `<span class="test-info">`;
-        html += `Test ${result.testNumber}: ${result.message}<br>`;
-        html += `<small>Erwartet: <code>${escapeHtml(result.expected.substring(0, 100))}</code></small><br>`;
-        html += `<small>Erhalten: <code>${escapeHtml(result.actual.substring(0, 100))}</code></small>`;
+        html += `Test ${result.testNumber}: ${result.passed ? 'Bestanden' : 'Fehlgeschlagen'}`;
+        
+        // Show which option matched if multiple were available
+        if (result.passed && result.matchedOption && result.expectedOptions && result.expectedOptions.length > 1) {
+          html += ` <span style="color:#10b981;font-size:11px;">(${result.matchedOption})</span>`;
+        }
+        
+        // Show available options for failed tests
+        if (!result.passed && result.expectedOptions && result.expectedOptions.length > 1) {
+          html += `<br><span style="font-size:11px;color:var(--text-secondary);">Akzeptierte Lösungen: ${result.expectedOptions.length}</span>`;
+        }
+        
         html += `</span>`;
         html += `</div>`;
       });

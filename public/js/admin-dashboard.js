@@ -281,6 +281,10 @@ function openEditTaskModal(taskId) {
   $('edit-task-type').value = task.problem_type || 'code_completion';
   $('edit-task-template').value = task.code_template || '';
   $('edit-task-hint').value = task.hint || '';
+  $('edit-task-hint1').value = task.hint1 || '';
+  $('edit-task-hint2').value = task.hint2 || '';
+  $('edit-task-hint3').value = task.hint3 || '';
+  $('edit-task-stoff').value = task.stoff || '';
   $('edit-task-expected').value = task.expected_output || '';
   $('edit-task-validation-mode').value = task.validation_mode || '';
   $('edit-task-test-cases').value = task.test_cases || '';
@@ -309,6 +313,10 @@ async function handleEditTaskSubmit(e) {
     problem_type: $('edit-task-type').value,
     code_template: $('edit-task-template').value,
     hint: $('edit-task-hint').value,
+    hint1: $('edit-task-hint1').value,
+    hint2: $('edit-task-hint2').value,
+    hint3: $('edit-task-hint3').value,
+    stoff: $('edit-task-stoff').value,
     expected_output: $('edit-task-expected').value,
     validation_mode: $('edit-task-validation-mode').value || null,
     test_cases: $('edit-task-test-cases').value.trim() || null,

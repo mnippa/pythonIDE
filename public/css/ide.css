@@ -85,3 +85,92 @@
   font-size: 12px;
   word-break: break-all;
 }
+
+/* Status Ampel (Traffic Light) */
+.status-light {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.status-light.status-unbearbeitet {
+  background-color: #d1d5db;
+}
+
+.status-light.status-in-progress {
+  background-color: #facc15;
+}
+
+.status-light.status-passed {
+  background-color: #22c55e;
+}
+
+.status-light.status-failed {
+  background-color: #ef4444;
+}
+
+/* Hints section */
+.hints-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.hints-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hint-item {
+  background: var(--panel);
+  border-left: 3px solid #f59e0b;
+  padding: 8px;
+  margin: 6px 0;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hint-item:hover {
+  background: var(--bg);
+}
+
+.hint-item.revealed {
+  border-left-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.hint-number {
+  font-weight: bold;
+  color: #f59e0b;
+  margin-right: 6px;
+}
+
+.hint-number.revealed {
+  color: #22c55e;
+}
+
+/* Stoff (Learning Content) */
+.stoff-section {
+  background: var(--panel);
+  border-left: 3px solid #3b82f6;
+  padding: 8px;
+  margin: 12px 0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.stoff-section h4 {
+  margin: 0 0 6px 0;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.stoff-section p {
+  margin: 0;
+  color: var(--text-secondary);
+}

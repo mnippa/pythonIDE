@@ -87,6 +87,30 @@ if (array_key_exists('hint', $input)) {
     $types .= 's';
 }
 
+if (array_key_exists('hint1', $input)) {
+    $updates[] = 'hint1 = ?';
+    $params[] = $input['hint1'];
+    $types .= 's';
+}
+
+if (array_key_exists('hint2', $input)) {
+    $updates[] = 'hint2 = ?';
+    $params[] = $input['hint2'];
+    $types .= 's';
+}
+
+if (array_key_exists('hint3', $input)) {
+    $updates[] = 'hint3 = ?';
+    $params[] = $input['hint3'];
+    $types .= 's';
+}
+
+if (array_key_exists('stoff', $input)) {
+    $updates[] = 'stoff = ?';
+    $params[] = $input['stoff'];
+    $types .= 's';
+}
+
 if (array_key_exists('expected_output', $input)) {
     $updates[] = 'expected_output = ?';
     $params[] = $input['expected_output'];

@@ -236,7 +236,7 @@
         if (data.ok) {
           messageContainer.innerHTML = `<div class="success">${isLoginMode ? 'Anmeldung' : 'Registrierung'} erfolgreich!</div>`;
           setTimeout(() => {
-            window.location.href = 'editor.php';
+            window.location.href = 'dashboard.php';
           }, 500);
         } else {
           messageContainer.innerHTML = `<div class="error">${data.error || 'Ein Fehler ist aufgetreten'}</div>`;

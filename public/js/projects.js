@@ -135,9 +135,33 @@ async function loadProject(projectId) {
         window.fileTreeManager.render(structure);
       }
       
-      const saveBtn = document.getElementById('save-btn');
-      if (saveBtn) {
-        saveBtn.style.display = 'block';
+      const saveProjectBtn = document.getElementById('save-project-btn');
+      if (saveProjectBtn) {
+        saveProjectBtn.style.display = 'inline-block';
+      }
+      
+      // Hide save-task-btn (for assignments)
+      const saveTaskBtn = document.getElementById('save-task-btn');
+      if (saveTaskBtn) {
+        saveTaskBtn.style.display = 'none';
+      }
+      
+      // Hide download-btn (for assignments)
+      const downloadBtn = document.getElementById('download-btn');
+      if (downloadBtn) {
+        downloadBtn.style.display = 'none';
+      }
+      
+      // Hide check-btn (for assignments)
+      const checkBtn = document.getElementById('check-btn');
+      if (checkBtn) {
+        checkBtn.style.display = 'none';
+      }
+      
+      // Hide attempts-counter (for assignments)
+      const attemptsCounter = document.getElementById('attempts-counter');
+      if (attemptsCounter) {
+        attemptsCounter.style.display = 'none';
       }
       
       // Show visibility
@@ -303,6 +327,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadProjects();
   });
   
+  // Auto-load last project if no project_id in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const projectIdFromUrl = urlParams.get('project_id');
+  
+  if (!projectIdFromUrl) {
+    console.log('Projects: No project ID in URL, attempting auto-load of last project');
+    // Wait for editor to be ready
+    await waitForEditor();
+    
+    // Try to load the most recently updated project
+    try {
+      const response = await fetch('../api/projects/list.php', {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      
+      if (data.ok && data.projects && data.projects.length > 0) {
+        // Projects are already sorted by updated_at DESC in API
+        const lastProject = data.projects[0];
+        console.log('Auto-loading last project:', lastProject.name);
+        await loadProject(lastProject.id);
+      } else {
+        console.log('No projects found for auto-load');
+      }
+    } catch (err) {
+      console.error('Failed to auto-load last project:', err);
+    }
+  }
+  
   // Note: project_id loading is now handled in editor-setup.js after editor is ready
   // to ensure proper initialization order
   
@@ -312,7 +366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   
   // Save button
-  document.getElementById('save-btn')?.addEventListener('click', () => {
+  document.getElementById('save-project-btn')?.addEventListener('click', () => {
     saveProject();
   });
   

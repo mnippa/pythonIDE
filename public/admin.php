@@ -329,6 +329,22 @@ if ($displayName === '') {
               <textarea id="task-hint"></textarea>
             </div>
             <div class="field">
+              <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+              <textarea id="task-hint1"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+              <textarea id="task-hint2"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+              <textarea id="task-hint3"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
+              <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+            </div>
+            <div class="field">
               <label for="task-expected">Expected output</label>
               <textarea id="task-expected"></textarea>
             </div>
@@ -416,6 +432,22 @@ if ($displayName === '') {
         <div class="field">
           <label for="edit-task-hint">Hint</label>
           <textarea id="edit-task-hint"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+          <textarea id="edit-task-hint1"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+          <textarea id="edit-task-hint2"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+          <textarea id="edit-task-hint3"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
+          <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
         </div>
         <div class="field">
           <label for="edit-task-expected">Expected output</label>

@@ -1,6 +1,6 @@
 <?php
 /**
- * Protected Editor for logged-in users
+ * Assignments Page - For working on assigned programming tasks
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -23,7 +23,7 @@ if ($displayName === '') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Python IDE - Meine Projekte</title>
+  <title>Python IDE - Meine Aufgaben</title>
   <link rel="stylesheet" href="css/ide.css">
   <link rel="stylesheet" href="css/file-tree.css">
   <style>
@@ -163,26 +163,12 @@ if ($displayName === '') {
       word-wrap: break-word;
     }
 
-    /* LEFT COLUMN: file tree + editor + lint/help */
+    /* LEFT COLUMN: editor + lint/help */
     .left{
       border-right:1px solid var(--border);
       display:grid;
-      grid-template-rows: auto 1fr 180px;
+      grid-template-rows: 1fr 180px;
       min-width:0; min-height:0;
-    }
-    .file-tree-wrapper {
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
-      overflow: hidden;
-      max-height: 0;
-      padding: 0;
-      min-height: 0;
-      transition: max-height 0.2s;
-    }
-    .file-tree-wrapper.active {
-      max-height: 250px;
-      overflow: auto;
-      padding: 8px;
     }
     #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
 
@@ -363,120 +349,6 @@ if ($displayName === '') {
     #projects-btn {
       background: var(--panel);
       border: 1px solid var(--border);
-    }
-    #projects-btn:hover {
-      background: var(--border);
-    }
-    .projects-panel {
-      position: fixed;
-      top: 0;
-      right: -400px;
-      width: 400px;
-      height: 100vh;
-      background: var(--bg);
-      border-left: 1px solid var(--border);
-      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-      transition: right 0.3s;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-    }
-    .projects-panel.open {
-      right: 0;
-    }
-    .projects-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .projects-header h2 {
-      margin: 0;
-      font-size: 18px;
-      color: var(--text-primary);
-    }
-    .close-panel {
-      background: transparent;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      padding: 4px 8px;
-      color: var(--text-secondary);
-    }
-    .projects-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-    .project-item {
-      padding: 12px;
-      margin-bottom: 8px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .project-item:hover {
-      border-color: #667eea;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-    }
-    .project-name {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 4px;
-    }
-    .project-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 12px;
-    }
-    .visibility-badge {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .visibility-private {
-      background: #fee;
-      color: #c00;
-    }
-    .visibility-public {
-      background: #efe;
-      color: #060;
-    }
-    .new-project-btn {
-      width: 100%;
-      padding: 12px;
-      margin-bottom: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .project-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .current-project-bar {
-      padding: 8px 12px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-    }
-    .current-project-name {
-      font-weight: 600;
-      color: var(--text-primary);
     }
 
     .assignments-panel {
@@ -741,12 +613,11 @@ if ($displayName === '') {
 </head>
 <body>
   <div class="toolbar">
-    <button id="projects-btn">📁 Projekte</button>
+    <button id="dashboard-btn" onclick="window.location.href='dashboard.php'">⬅ Dashboard</button>
     <button id="assignments-btn">📚 Aufgaben</button>
     <button id="run-btn">Run</button>
     <button id="check-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">✓ Check</button>
     <span id="attempts-counter" style="display:none; margin:0 12px; font-weight:600; color:var(--text-primary);">Versuche: <span id="attempts-value">0/10</span></span>
-    <button id="save-project-btn" style="display:none;">💾 Speichern</button>
     <button id="save-task-btn" style="display:none;">💾 Speichern</button>
     <button id="download-btn" style="display:none;">⬇ Herunterladen</button>
 
@@ -809,7 +680,6 @@ if ($displayName === '') {
     </div>
 
     <div class="left">
-      <div class="file-tree-wrapper" id="file-tree-wrapper"></div>
       <div id="editor-container"></div>
 
       <div class="left-bottom">
@@ -824,15 +694,8 @@ if ($displayName === '') {
     </div>
   </div>
 
-  <div id="projects-panel" class="projects-panel">
-    <div class="projects-header">
-      <h2>Meine Projekte</h2>
-      <button class="close-panel" id="close-projects">×</button>
-    </div>
-    <div class="projects-body">
-      <button class="new-project-btn" id="new-project-btn">+ Neues Projekt</button>
-      <div id="projects-list">Lade Projekte...</div>
-    </div>
+  <div id="projects-panel" class="projects-panel" style="display:none;">
+    <!-- Projects panel removed - use projects.php instead -->
   </div>
 
   <div id="assignments-panel" class="assignments-panel">
@@ -936,7 +799,6 @@ if ($displayName === '') {
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/projects.js"></script>
   <script type="module" src="js/assignments.js"></script>
 </body>
 </html>
