@@ -103,6 +103,23 @@ if ($displayName === '') {
       grid-template-columns: 30% 1fr 25%;
     }
 
+    /* Responsive: Medium screens */
+    @media (max-width: 1200px) {
+      .app.with-task-details {
+        grid-template-columns: 25% 1fr 25%;
+      }
+    }
+
+    /* Responsive: Tablets and down */
+    @media (max-width: 768px) {
+      .app.with-task-details {
+        grid-template-columns: 1fr 25%;
+      }
+      #task-details-panel {
+        display: none !important;
+      }
+    }
+
     /* TASK DETAILS SIDEBAR (left) */
     #task-details-panel {
       border-right: 1px solid var(--border);
