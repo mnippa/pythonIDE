@@ -59,6 +59,11 @@ if ($displayName === '') {
     }
     .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
+    .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
+    #submitted-info{ display:none; margin:0 12px; font-weight:600; color:var(--text-primary); align-items:center; gap:8px; }
+    #submitted-info.show{ display:flex; }
+    #submitted-status.status-passed{ background-color:#34d399; }
+    #submitted-status.status-failed{ background-color:#f87171; }
     #settings-toggle{ width:34px; height:34px; padding:0; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
     #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
     #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
@@ -95,25 +100,32 @@ if ($displayName === '') {
     .app{
       height: calc(100vh - 52px);
       display:grid;
-      grid-template-columns: 1fr 25%;
+      grid-template-columns: 1fr 240px;
       min-height:0;
-      min-width:0;
     }
+    
+    /* Medium: Navigation 264px, Code Rest, Output 240px (base) */
     .app.with-task-details {
-      grid-template-columns: 30% 1fr 25%;
+      grid-template-columns: 264px 1fr 240px !important;
     }
 
-    /* Responsive: Medium screens */
-    @media (max-width: 1200px) {
+    /* Desktop: Navigation 440px fix, Code Rest, Output 320px fix */
+    @media (min-width: 1201px) {
+      .app {
+        grid-template-columns: 1fr 320px;
+      }
       .app.with-task-details {
-        grid-template-columns: 25% 1fr 25%;
+        grid-template-columns: 440px 1fr 320px !important;
       }
     }
 
-    /* Responsive: Tablets and down */
+    /* Mobile: Navigation collapsible, Code 70%, Output 30% */
     @media (max-width: 768px) {
+      .app {
+        grid-template-columns: 1fr 30%;
+      }
       .app.with-task-details {
-        grid-template-columns: 1fr 25%;
+        grid-template-columns: 1fr 30% !important;
       }
       #task-details-panel {
         display: none !important;
@@ -204,6 +216,79 @@ if ($displayName === '') {
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.6;
+    }
+    .task-details-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .task-details-tab {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text-primary);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .task-details-tab.active {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .task-tab-count {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-left: 6px;
+    }
+    .task-details-panel-section {
+      display: none;
+    }
+    .task-details-panel-section.active {
+      display: block;
+    }
+    .task-hints-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 6px 0 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .task-hints-counter {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .task-hints-empty {
+      margin: 0 0 10px;
+      color: var(--text-secondary);
+    }
+    .hint-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      margin: 6px 0;
+      font-size: 12px;
+    }
+    .hint-number {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    .hint-reveal-btn {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fef3c7;
+      color: #92400e;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .hint-reveal-btn:disabled {
+      background: var(--panel);
+      color: var(--text-secondary);
+      cursor: not-allowed;
     }
     .task-details-content h4 {
       margin: 12px 0 6px 0;
@@ -760,10 +845,19 @@ if ($displayName === '') {
     <button id="dashboard-btn" onclick="window.location.href='dashboard.php'">⬅ Dashboard</button>
     <button id="back-to-list-btn" style="display:none;">⬅ Zurück zur Liste</button>
     <button id="run-btn" style="display:none;">Run</button>
-    <button id="check-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">✓ Check</button>
-    <span id="attempts-counter" style="display:none; margin:0 12px; font-weight:600; color:var(--text-primary);">Versuche: <span id="attempts-value">0/10</span></span>
-    <button id="save-task-btn" style="display:none;">💾 Speichern</button>
-    <button id="download-btn" style="display:none;">⬇ Herunterladen</button>
+    <button id="check-btn" style="display:none; background:#667eea; color:#fff; border-color:transparent;">🔍 Überprüfen (0/10)</button>
+    <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
+    <span id="attempts-counter" style="display:none;"></span>
+    <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
+    <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
+    <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
+    <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
+    <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
+      <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
+      <span>Abgegeben: <span id="submitted-date"></span></span>
+      <span>Checks <span id="submitted-checks"></span></span>
+      <span>Hints <span id="submitted-hints"></span></span>
+    </div>
 
     <div style="flex:1"></div>
     

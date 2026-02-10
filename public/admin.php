@@ -392,10 +392,6 @@ if ($displayName === '') {
           <textarea id="task-template"></textarea>
         </div>
         <div class="field">
-          <label for="task-hint">Hint</label>
-          <textarea id="task-hint"></textarea>
-        </div>
-        <div class="field">
           <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
           <textarea id="task-hint1"></textarea>
         </div>
@@ -410,10 +406,6 @@ if ($displayName === '') {
         <div class="field">
           <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
           <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-        </div>
-        <div class="field">
-          <label for="task-expected">Expected output</label>
-          <textarea id="task-expected"></textarea>
         </div>
         <div class="field">
           <label for="task-validation-mode">Validation Mode</label>
@@ -434,6 +426,7 @@ if ($displayName === '') {
                 <option value="output">OUTPUT (Console Output)</option>
                 <option value="function">FUNCTION (Return Value)</option>
                 <option value="variable">VARIABLE (Check Variables)</option>
+                <option value="intelligent">INTELLIGENT (Musterloesung)</option>
                 <option value="code_check">CODE CHECK (Keywords) ✨</option>
               </select>
               <button type="button" class="btn" id="add-test-btn" style="margin-left:10px;">+ Add Test</button>
@@ -493,10 +486,6 @@ if ($displayName === '') {
           <textarea id="edit-task-template"></textarea>
         </div>
         <div class="field">
-          <label for="edit-task-hint">Hint</label>
-          <textarea id="edit-task-hint"></textarea>
-        </div>
-        <div class="field">
           <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
           <textarea id="edit-task-hint1"></textarea>
         </div>
@@ -511,10 +500,6 @@ if ($displayName === '') {
         <div class="field">
           <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
           <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-        </div>
-        <div class="field">
-          <label for="edit-task-expected">Expected output</label>
-          <textarea id="edit-task-expected"></textarea>
         </div>
         <div class="field">
           <label for="edit-task-validation-mode">Validation Mode</label>
@@ -535,6 +520,7 @@ if ($displayName === '') {
                 <option value="output">OUTPUT (Console Output)</option>
                 <option value="function">FUNCTION (Return Value)</option>
                 <option value="variable">VARIABLE (Check Variables)</option>
+                <option value="intelligent">INTELLIGENT (Musterloesung)</option>
                 <option value="code_check">CODE CHECK (Keywords) ✨</option>
               </select>
               <button type="button" class="btn" id="edit-add-test-btn" style="margin-left:10px;">+ Add Test</button>

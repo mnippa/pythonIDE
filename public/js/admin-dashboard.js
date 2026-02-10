@@ -262,8 +262,10 @@ async function handleTaskSubmit(e) {
     position: $('task-position').value ? parseInt($('task-position').value, 10) : null,
     problem_type: $('task-type').value,
     code_template: $('task-template').value,
-    hint: $('task-hint').value,
-    expected_output: $('task-expected').value,
+    hint1: $('task-hint1').value,
+    hint2: $('task-hint2').value,
+    hint3: $('task-hint3').value,
+    stoff: $('task-stoff').value,
     validation_mode: $('task-validation-mode').value || null,
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
@@ -271,7 +273,15 @@ async function handleTaskSubmit(e) {
 
   // If builder has data, prefer it over manual JSON
   if (Array.isArray(testCasesData) && testCasesData.length > 0) {
-    payload.test_cases = JSON.stringify(testCasesData);
+    // Special case: if single intelligent test, save as object (not array)
+    if (testCasesData.length === 1 && testCasesData[0].type === 'intelligent') {
+      const intelligentConfig = {...testCasesData[0]};
+      delete intelligentConfig.type; // Remove 'type' key when serializing as object
+      payload.test_cases = JSON.stringify(intelligentConfig);
+      payload.validation_mode = 'intelligent'; // Auto-set validation mode
+    } else {
+      payload.test_cases = JSON.stringify(testCasesData);
+    }
     $('task-test-cases').value = payload.test_cases;
   }
 
@@ -283,7 +293,12 @@ async function handleTaskSubmit(e) {
   // Validate test_cases JSON if provided
   if (payload.test_cases) {
     try {
-      JSON.parse(payload.test_cases);
+      const parsed = JSON.parse(payload.test_cases);
+      const error = validateIntelligentTests(parsed, payload.solution_code);
+      if (error) {
+        alert(error);
+        return;
+      }
     } catch (err) {
       alert('Invalid test_cases JSON: ' + err.message);
       return;
@@ -312,6 +327,90 @@ function escapeHtml(input) {
     .replace(/'/g, '&#39;');
 }
 
+function validateIntelligentTests(testCases, solutionCode) {
+  if (!Array.isArray(testCases)) return null;
+
+  const allowedTypes = ['int', 'integer', 'float', 'number', 'double', 'bool', 'boolean', 'string', 'str', 'list', 'array', 'choice', 'enum', 'object', 'dict', 'map'];
+
+  for (const test of testCases) {
+    if (!test || test.type !== 'intelligent') continue;
+
+    const mode = test.mode || 'vars';
+    const testsCount = Number(test.tests ?? 5);
+    if (!Number.isFinite(testsCount) || testsCount < 1) {
+      return 'Intelligent: tests muss >= 1 sein';
+    }
+
+    const effectiveSolution = test.solution_code || solutionCode || '';
+    if (!effectiveSolution) {
+      return 'Intelligent: Musterloesung fehlt (Solution Code)';
+    }
+
+    const inputs = Array.isArray(test.inputs) ? test.inputs : [];
+    for (const input of inputs) {
+      if (!input || !input.name) {
+        return 'Intelligent: Inputs brauchen name';
+      }
+      const type = String(input.type || 'int').toLowerCase();
+      if (!allowedTypes.includes(type)) {
+        return `Intelligent: Unbekannter Input-Typ '${type}'`;
+      }
+      if ((type === 'choice' || type === 'enum') && (!Array.isArray(input.values) || input.values.length === 0)) {
+        return 'Intelligent: choice/enum braucht values';
+      }
+      if ((type === 'list' || type === 'array') && !input.element && !input.of) {
+        return 'Intelligent: list/array braucht element/of Definition';
+      }
+      if ((type === 'object' || type === 'dict' || type === 'map') && !Array.isArray(input.fields)) {
+        return 'Intelligent: object braucht fields Array';
+      }
+    }
+
+    if (mode === 'vars') {
+      const outputs = Array.isArray(test.outputs) ? test.outputs : [];
+      if (outputs.length === 0) {
+        return 'Intelligent (vars): Outputs fehlen';
+      }
+      for (const output of outputs) {
+        if (!output || !output.name) {
+          return 'Intelligent (vars): Output braucht name';
+        }
+        const type = String(output.type || 'int').toLowerCase();
+        if (!allowedTypes.includes(type)) {
+          return `Intelligent: Unbekannter Output-Typ '${type}'`;
+        }
+        if ((type === 'list' || type === 'array') && !output.element && !output.of) {
+          return 'Intelligent: list/array Output braucht element/of';
+        }
+      }
+    } else if (mode === 'function') {
+      // Check new structure: test.function.name
+      if (!test.function || !test.function.name || test.function.name.trim() === '') {
+        return 'Intelligent (function): function_name fehlt';
+      }
+      // Validate inputs array
+      if (!test.function.inputs || !Array.isArray(test.function.inputs)) {
+        return 'Intelligent (function): function.inputs Array fehlt';
+      }
+      for (const input of test.function.inputs) {
+        if (!input || !input.name) {
+          return 'Intelligent (function): Input braucht name';
+        }
+        const type = String(input.type || 'int').toLowerCase();
+        if (!allowedTypes.includes(type)) {
+          return `Intelligent (function): Unbekannter Input-Typ '${type}'`;
+        }
+      }
+      // Validate output
+      if (!test.function.output || !test.function.output.type) {
+        return 'Intelligent (function): function.output.type fehlt';
+      }
+    }
+  }
+
+  return null;
+}
+
 function openEditTaskModal(taskId) {
   const task = state.tasks.find((t) => t.id === taskId);
   if (!task) return;
@@ -322,12 +421,10 @@ function openEditTaskModal(taskId) {
   $('edit-task-position').value = task.position || '';
   $('edit-task-type').value = task.problem_type || 'code_completion';
   $('edit-task-template').value = task.code_template || '';
-  $('edit-task-hint').value = task.hint || '';
   $('edit-task-hint1').value = task.hint1 || '';
   $('edit-task-hint2').value = task.hint2 || '';
   $('edit-task-hint3').value = task.hint3 || '';
   $('edit-task-stoff').value = task.stoff || '';
-  $('edit-task-expected').value = task.expected_output || '';
   $('edit-task-validation-mode').value = task.validation_mode || '';
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
@@ -337,9 +434,15 @@ function openEditTaskModal(taskId) {
     let parsedData = task.test_cases && task.test_cases.trim() 
       ? JSON.parse(task.test_cases) 
       : [];
+    
+    // Handle intelligent test config (single object with mode, tests, etc.)
+    if (!Array.isArray(parsedData) && parsedData.mode) {
+      parsedData = [{type: 'intelligent', ...parsedData}];
+    }
+    
     // Migrate legacy FUNCTION structure to new structure
     parsedData = migrateLegacyTestCases(parsedData);
-    editTestCasesData = parsedData;
+    editTestCasesData = Array.isArray(parsedData) ? parsedData : [];
   } catch (e) {
     console.error('Failed to parse test cases:', e);
     editTestCasesData = [];
@@ -371,12 +474,10 @@ async function handleEditTaskSubmit(e) {
     position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
     problem_type: $('edit-task-type').value,
     code_template: $('edit-task-template').value,
-    hint: $('edit-task-hint').value,
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
     stoff: $('edit-task-stoff').value,
-    expected_output: $('edit-task-expected').value,
     validation_mode: $('edit-task-validation-mode').value || null,
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
@@ -384,7 +485,15 @@ async function handleEditTaskSubmit(e) {
 
   // If builder has data, prefer it over manual JSON
   if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
-    payload.test_cases = JSON.stringify(editTestCasesData);
+    // Special case: if single intelligent test, save as object (not array)
+    if (editTestCasesData.length === 1 && editTestCasesData[0].type === 'intelligent') {
+      const intelligentConfig = {...editTestCasesData[0]};
+        payload.validation_mode = 'intelligent'; // Auto-set validation mode
+      delete intelligentConfig.type; // Remove 'type' key when serializing as object
+      payload.test_cases = JSON.stringify(intelligentConfig);
+    } else {
+      payload.test_cases = JSON.stringify(editTestCasesData);
+    }
     $('edit-task-test-cases').value = payload.test_cases;
   }
 
@@ -396,7 +505,12 @@ async function handleEditTaskSubmit(e) {
   // Validate test_cases JSON if provided
   if (payload.test_cases) {
     try {
-      JSON.parse(payload.test_cases);
+      const parsed = JSON.parse(payload.test_cases);
+      const error = validateIntelligentTests(parsed, payload.solution_code);
+      if (error) {
+        alert(error);
+        return;
+      }
     } catch (err) {
       alert('Invalid test_cases JSON: ' + err.message);
       return;
@@ -559,11 +673,10 @@ ${task.description || '(no description)'}
 Code Template:
 ${task.code_template || '(none)'}
 
-Hint:
-${task.hint || '(none)'}
-
-Expected Output:
-${task.expected_output || '(none)'}
+Hints:
+Hint 1: ${task.hint1 || '(none)'}
+Hint 2: ${task.hint2 || '(none)'}
+Hint 3: ${task.hint3 || '(none)'}
 
 Test Cases:
 ${task.test_cases ? JSON.stringify(JSON.parse(task.test_cases), null, 2) : '(none)'}
@@ -657,6 +770,16 @@ function addTestCase(type, dataArray, containerId) {
     testCase.init_var_names = [];
     testCase.expected_var_names = [];
     testCase.test_cases = [{ init_values: [], expected_values: [] }]; // Start with one empty test case
+  } else if (type === 'intelligent') {
+    testCase.mode = 'function';
+    testCase.tests = 5;
+    testCase.seed = '';
+    testCase.tolerance = 0.000001;
+    testCase.function = {
+      name: '',
+      inputs: [],
+      output: { type: 'int' }
+    };
   } else if (type === 'code_check') {
     testCase.keywords = [];
     testCase.operator = 'AND';
@@ -673,6 +796,12 @@ function addTestCase(type, dataArray, containerId) {
 function renderTestCases(dataArray, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
+  
+  // Ensure dataArray is an array
+  if (!Array.isArray(dataArray)) {
+    console.warn('renderTestCases: dataArray is not an array', dataArray);
+    dataArray = [];
+  }
   
   container.innerHTML = dataArray.map((test, idx) => {
     return renderTestCaseHTML(test, idx, containerId);
@@ -892,6 +1021,144 @@ function renderTestCaseHTML(test, idx, containerId) {
       
       <div style="font-size:11px; color:#666; margin-top:6px;">
         Operator: AND = alle Keywords müssen vorhanden sein | OR = mindestens eines | NOT = alle Keywords müssen FEHLEN (verboten).
+      </div>
+    `;
+  } else if (type === 'intelligent') {
+    const mode = test.mode || 'function';
+    const tests = test.tests || 5;
+    const seed = test.seed !== undefined ? test.seed : '';
+    const tolerance = test.tolerance !== undefined ? test.tolerance : 0.000001;
+    const inputs = test.inputs || [];
+    const outputs = test.outputs || [];
+    const functionDef = test.function || {};
+    const solutionCode = test.solution_code || '';
+    
+    html += `
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Mode:
+        </label>
+        <select class="intelligent-mode-input" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+          <option value="vars" ${mode === 'vars' ? 'selected' : ''}>Variables (Vars Mode)</option>
+          <option value="function" ${mode === 'function' ? 'selected' : ''}>Function (Function Mode)</option>
+        </select>
+      </div>
+      
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Tests Count:</label>
+          <input type="number" class="intelligent-tests-input" data-idx="${idx}" value="${tests}" min="1" max="20"
+                 style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Tolerance (Float):</label>
+          <input type="number" class="intelligent-tolerance-input" data-idx="${idx}" value="${tolerance}" step="0.000001"
+                 style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+        </div>
+      </div>
+    `;
+    
+    // Build Function Mode UI or Vars Mode UI
+    if (mode === 'function') {
+      html += `
+        <div style="margin-bottom:12px; padding:12px; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
+          <div style="font-weight:bold; font-size:13px; margin-bottom:10px;">Function Definition</div>
+          
+          <div style="margin-bottom:8px;">
+            <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Function Name:</label>
+            <input type="text" class="intelligent-fn-name-input" data-idx="${idx}" value="${escapeHtml(functionDef.name || '')}" 
+                   placeholder="addiere"
+                   style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          </div>
+          
+          <div style="margin-bottom:8px;">
+            <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">Input Parameters:</label>
+            <div class="intelligent-fn-inputs-container" data-idx="${idx}">
+      `;
+      
+      const fnInputs = functionDef.inputs || [];
+      fnInputs.forEach((inp, inpIdx) => {
+        html += `
+              <div class="intelligent-fn-input-item" data-inpidx="${inpIdx}" style="padding:10px; margin-bottom:8px; border:1px solid #d1d5db; border-radius:4px; background:white;">
+                <div style="display:grid; grid-template-columns: 2fr 2fr 1fr 1fr auto; gap:8px; align-items:end;">
+                  <div>
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Name:</label>
+                    <input type="text" class="intelligent-fn-input-name" data-inpidx="${inpIdx}" value="${escapeHtml(inp.name || '')}" placeholder="a"
+                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                  </div>
+                  <div>
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Type:</label>
+                    <select class="intelligent-fn-input-type" data-inpidx="${inpIdx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                      <option value="int" ${inp.type === 'int' ? 'selected' : ''}>int</option>
+                      <option value="float" ${inp.type === 'float' ? 'selected' : ''}>float</option>
+                      <option value="bool" ${inp.type === 'bool' ? 'selected' : ''}>bool</option>
+                      <option value="string" ${inp.type === 'string' ? 'selected' : ''}>string</option>
+                      <option value="list" ${inp.type === 'list' ? 'selected' : ''}>list</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Min:</label>
+                    <input type="text" class="intelligent-fn-input-min" data-inpidx="${inpIdx}" value="${inp.min !== undefined ? inp.min : ''}" placeholder="0"
+                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                  </div>
+                  <div>
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Max:</label>
+                    <input type="text" class="intelligent-fn-input-max" data-inpidx="${inpIdx}" value="${inp.max !== undefined ? inp.max : ''}" placeholder="100"
+                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                  </div>
+                  <button type="button" class="btn-remove-fn-input" data-inpidx="${inpIdx}" 
+                          style="background:#ef4444; color:white; padding:6px 8px; border:none; border-radius:4px; cursor:pointer;">✕</button>
+                </div>
+              </div>
+        `;
+      });
+      
+      html += `
+            </div>
+            <button type="button" class="btn-add-fn-input" data-idx="${idx}" 
+                    style="background:#3b82f6; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;">
+              + Parameter hinzufügen
+            </button>
+          </div>
+          
+          <div style="margin-bottom:8px;">
+            <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Output Type:</label>
+            <select class="intelligent-fn-output-type" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+              <option value="int" ${functionDef.output?.type === 'int' ? 'selected' : ''}>int</option>
+              <option value="float" ${functionDef.output?.type === 'float' ? 'selected' : ''}>float</option>
+              <option value="bool" ${functionDef.output?.type === 'bool' ? 'selected' : ''}>bool</option>
+              <option value="string" ${functionDef.output?.type === 'string' ? 'selected' : ''}>string</option>
+              <option value="list" ${functionDef.output?.type === 'list' ? 'selected' : ''}>list</option>
+            </select>
+          </div>
+        </div>
+      `;
+    } else {
+      // Vars mode
+      html += `
+        <div style="margin-bottom:8px;">
+          <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+            Inputs (JSON für Vars Mode):
+          </label>
+          <textarea class="intelligent-inputs-input" data-idx="${idx}" 
+                    placeholder='[{"name": "x", "type": "int", "min": 1, "max": 10}]'
+                    style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; min-height:80px; font-size:11px;">${escapeHtml(JSON.stringify(inputs, null, 2))}</textarea>
+        </div>
+        
+        <div style="margin-bottom:8px;">
+          <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+            Outputs (JSON):
+          </label>
+          <textarea class="intelligent-outputs-input" data-idx="${idx}" 
+                    placeholder='[{"name": "result", "type": "int"}]'
+                    style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; min-height:80px; font-size:11px;">${escapeHtml(JSON.stringify(outputs, null, 2))}</textarea>
+        </div>
+      `;
+    }
+    
+    html += `
+      <div style="font-size:11px; color:#666; margin-top:6px; padding:10px; background:#fef3c7; border-radius:4px; border-left:3px solid #f59e0b;">
+        <strong>💡 Musterlösung:</strong> Im Feld "Solution Code" (weiter unten im Formular) eingeben.
       </div>
     `;
   }
@@ -1148,6 +1415,153 @@ function bindTestCaseEvents(dataArray, containerId) {
     });
   });
 
+  // Handle INTELLIGENT inputs
+  container.querySelectorAll('.intelligent-mode-input').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      dataArray[idx]['mode'] = e.target.value;
+      // Re-render to show/hide appropriate fields
+      renderTestCases(dataArray, containerId);
+    });
+  });
+
+  container.querySelectorAll('.intelligent-tests-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const value = parseInt(e.target.value, 10);
+      dataArray[idx]['tests'] = Number.isFinite(value) ? value : 5;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-tolerance-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const value = parseFloat(e.target.value);
+      dataArray[idx]['tolerance'] = Number.isFinite(value) ? value : 0.000001;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-inputs-input').forEach(textarea => {
+    textarea.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const mode = dataArray[idx]['mode'] || 'function';
+      try {
+        const parsed = JSON.parse(e.target.value);
+        if (mode === 'function') {
+          dataArray[idx]['function'] = parsed;
+          delete dataArray[idx]['inputs']; // Remove old inputs field
+        } else {
+          dataArray[idx]['inputs'] = parsed;
+          delete dataArray[idx]['function']; // Remove old function field
+        }
+      } catch {
+        if (mode === 'function') {
+          dataArray[idx]['function'] = {};
+        } else {
+          dataArray[idx]['inputs'] = [];
+        }
+      }
+    });
+  });
+
+  container.querySelectorAll('.intelligent-outputs-input').forEach(textarea => {
+    textarea.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      try {
+        dataArray[idx]['outputs'] = JSON.parse(e.target.value);
+      } catch {
+        dataArray[idx]['outputs'] = [];
+      }
+    });
+  });
+
+  // Handle INTELLIGENT FUNCTION UI fields
+  container.querySelectorAll('.intelligent-fn-name-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      dataArray[idx]['function']['name'] = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-fn-input-name').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
+      const inpIdx = parseInt(e.target.dataset.inpidx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
+      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
+      dataArray[idx]['function']['inputs'][inpIdx]['name'] = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-fn-input-type').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
+      const inpIdx = parseInt(e.target.dataset.inpidx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
+      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
+      dataArray[idx]['function']['inputs'][inpIdx]['type'] = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-fn-input-min').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
+      const inpIdx = parseInt(e.target.dataset.inpidx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
+      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
+      const val = e.target.value;
+      dataArray[idx]['function']['inputs'][inpIdx]['min'] = val === '' ? undefined : (isNaN(val) ? val : Number(val));
+    });
+  });
+
+  container.querySelectorAll('.intelligent-fn-input-max').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
+      const inpIdx = parseInt(e.target.dataset.inpidx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
+      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
+      const val = e.target.value;
+      dataArray[idx]['function']['inputs'][inpIdx]['max'] = val === '' ? undefined : (isNaN(val) ? val : Number(val));
+    });
+  });
+
+  container.querySelectorAll('.btn-add-fn-input').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(btn.dataset.idx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
+      dataArray[idx]['function']['inputs'].push({ name: '', type: 'int', min: 0, max: 100 });
+      renderTestCases(dataArray, containerId);
+    });
+  });
+
+  container.querySelectorAll('.btn-remove-fn-input').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tcBtn = e.target.closest('.btn-remove-fn-input');
+      const idx = parseInt(tcBtn.closest('.test-case-item').dataset.idx);
+      const inpIdx = parseInt(tcBtn.dataset.inpidx);
+      
+      if (dataArray[idx]['function'] && Array.isArray(dataArray[idx]['function']['inputs'])) {
+        dataArray[idx]['function']['inputs'].splice(inpIdx, 1);
+        renderTestCases(dataArray, containerId);
+      }
+    });
+  });
+
+  container.querySelectorAll('.intelligent-fn-output-type').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
+      if (!dataArray[idx]['function']['output']) dataArray[idx]['function']['output'] = {};
+      dataArray[idx]['function']['output']['type'] = e.target.value;
+    });
+  });
+
   // Handle Code Check Keywords input
   container.querySelectorAll('.code-check-keywords-input').forEach(input => {
     input.addEventListener('input', (e) => {
@@ -1231,7 +1645,14 @@ function generateJSON(dataArray, textareaId) {
   const textarea = document.getElementById(textareaId);
   if (!textarea) return;
   
-  const json = JSON.stringify(dataArray, null, 2);
+  // Special case: if single intelligent test, serialize as object (not array)
+  let output = dataArray;
+  if (Array.isArray(dataArray) && dataArray.length === 1 && dataArray[0].type === 'intelligent') {
+    output = {...dataArray[0]};
+    delete output.type; // Remove 'type' key for intelligent config object
+  }
+  
+  const json = JSON.stringify(output, null, 2);
   textarea.value = json;
   
   alert(`JSON generated! ${dataArray.length} test case(s)`);

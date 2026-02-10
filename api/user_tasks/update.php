@@ -53,7 +53,9 @@ if (isset($input['status'])) {
     // Set completed_at if status is passed or failed
     if (in_array($input['status'], ['passed', 'failed'])) {
         $updates[] = 'completed_at = ?';
-        $params[] = date('Y-m-d H:i:s');
+        // Use client-provided completed_at if available, otherwise use server time
+        $completedAt = isset($input['completed_at']) ? $input['completed_at'] : date('Y-m-d H:i:s');
+        $params[] = $completedAt;
         $types .= 's';
     }
 }

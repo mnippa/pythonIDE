@@ -38,11 +38,8 @@ if (!$canAccess) {
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 
-$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, test_cases, validation_mode';
-if ($includeExpected) {
-    $sql .= ', expected_output, solution_code';
-}
-$sql .= ' FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
+// Always fetch solution_code and expected_output (needed for intelligent tests)
+$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, test_cases, validation_mode, expected_output, solution_code FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $assignmentId);
@@ -68,10 +65,14 @@ while ($row = $result->fetch_assoc()) {
         'test_cases' => $row['test_cases'],
         'validation_mode' => $row['validation_mode']
     ];
-    if ($includeExpected) {
+    
+    // Include solution_code for intelligent tests (needed for execution)
+    // Also include if admin requested it explicitly
+    if ($includeExpected || $row['validation_mode'] === 'intelligent') {
         $task['expected_output'] = $row['expected_output'];
         $task['solution_code'] = $row['solution_code'];
     }
+    
     $tasks[] = $task;
 }
 

@@ -11,6 +11,7 @@ const assignmentState = {
   taskStatuses: {},
   taskAttempts: {},
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
+  taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
   hasAutoLoaded: false // Flag to prevent multiple auto-loads
@@ -47,7 +48,7 @@ function statusClass(status) {
 }
 
 // Display task details in left sidebar
-function showTaskDetails(task) {
+function showTaskDetails(task, activeTab = 'details') {
   assignmentState.currentTask = task;
   
   const contentEl = $('task-details-content');
@@ -59,11 +60,29 @@ function showTaskDetails(task) {
   panel.classList.add('active');
   if (app) app.classList.add('with-task-details');
 
-  let html = '';
+  const availableHints = [];
+  if (task.hint1) {
+    availableHints.push({ id: 1, text: task.hint1 });
+  }
+  if (task.hint2) {
+    availableHints.push({ id: 2, text: task.hint2 });
+  }
+  if (task.hint3) {
+    availableHints.push({ id: 3, text: task.hint3 });
+  }
+
+  const revealedRaw = assignmentState.hintsRevealed[task.id] || [];
+  const revealedSet = new Set(revealedRaw);
+  const revealedHints = availableHints.filter(hint => revealedSet.has(hint.id));
+  const totalHints = availableHints.length;
+  const revealedCount = revealedHints.length;
+  const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
+
+  let detailsHtml = '';
 
   // Stoff (Learning Content)
   if (task.stoff) {
-    html += `<div class="stoff-section">
+    detailsHtml += `<div class="stoff-section">
       <h4>📚 Lerninhalt (Stoff)</h4>
       <p>${escapeHtml(task.stoff)}</p>
     </div>`;
@@ -71,128 +90,93 @@ function showTaskDetails(task) {
   
   // Description
   if (task.description) {
-    html += `<h4>Aufgabenstellung</h4><p>${escapeHtml(task.description)}</p>`;
+    detailsHtml += `<h4>Aufgabenstellung</h4><p>${escapeHtml(task.description)}</p>`;
   }
 
-  // Hint (initial hint, always visible)
-  if (task.hint) {
-    html += `<h4>Hinweis</h4><div class="task-hint">${escapeHtml(task.hint)}</div>`;
+  if (!detailsHtml) {
+    detailsHtml = '<p>Keine Details vorhanden.</p>';
   }
 
-  // Additional hints (reveal one by one after clicking)
-  const hasAdditionalHints = task.hint1 || task.hint2 || task.hint3;
-  if (hasAdditionalHints) {
-    // Get revealed hints for this task
-    const revealedHints = assignmentState.hintsRevealed[task.id] || [];
-    const nextHintToReveal = revealedHints.length + 1; // 1, 2, or 3
-    
-    html += `<div class="hints-section" id="hints-container">
-      <h4>Weitere Hinweise <span id="hints-counter" style="color:#888; font-size:11px;">(${revealedHints.length}/3 genutzt)</span></h4>`;
-    
-    // Hinweis 1
-    if (task.hint1) {
-      if (revealedHints.includes(1)) {
-        // Already revealed
-        html += `<div class="hint-item revealed" data-hint="1">
-          <span class="hint-number">✓ Hinweis 1:</span> ${escapeHtml(task.hint1)}
-        </div>`;
-      } else if (nextHintToReveal === 1) {
-        // Next to reveal
-        html += `<div class="hint-item clickable" data-hint="1" style="cursor:pointer; background:#fef3c7; padding:8px; border-radius:4px; margin:6px 0;">
-          <span class="hint-number">💡 Hinweis 1:</span> <em>Klicken zum Anzeigen</em>
-        </div>`;
-      }
+  let hintsHtml = '';
+  if (totalHints > 0) {
+    hintsHtml += `<div class="task-hints-header">
+      <span>Hinweise</span>
+      <span id="hints-counter" class="task-hints-counter">${revealedCount}/${totalHints}</span>
+    </div>`;
+
+    if (revealedCount === 0) {
+      hintsHtml += '<p class="task-hints-empty">Noch keine Hinweise freigeschaltet.</p>';
     }
-    
-    // Hinweis 2
-    if (task.hint2) {
-      if (revealedHints.includes(2)) {
-        // Already revealed
-        html += `<div class="hint-item revealed" data-hint="2">
-          <span class="hint-number">✓ Hinweis 2:</span> ${escapeHtml(task.hint2)}
-        </div>`;
-      } else if (nextHintToReveal === 2) {
-        // Next to reveal (only after hint 1)
-        html += `<div class="hint-item clickable" data-hint="2" style="cursor:pointer; background:#fef3c7; padding:8px; border-radius:4px; margin:6px 0;">
-          <span class="hint-number">💡 Hinweis 2:</span> <em>Klicken zum Anzeigen</em>
-        </div>`;
-      } else if (nextHintToReveal < 2) {
-        // Locked (hint 1 not revealed yet)
-        html += `<div class="hint-item locked" data-hint="2" style="color:#999; padding:8px; margin:6px 0;">
-          <span class="hint-number">🔒 Hinweis 2:</span> <em>Erst Hinweis 1 anzeigen</em>
-        </div>`;
-      }
-    }
-    
-    // Hinweis 3
-    if (task.hint3) {
-      if (revealedHints.includes(3)) {
-        // Already revealed
-        html += `<div class="hint-item revealed" data-hint="3">
-          <span class="hint-number">✓ Hinweis 3:</span> ${escapeHtml(task.hint3)}
-        </div>`;
-      } else if (nextHintToReveal === 3) {
-        // Next to reveal (only after hint 2)
-        html += `<div class="hint-item clickable" data-hint="3" style="cursor:pointer; background:#fef3c7; padding:8px; border-radius:4px; margin:6px 0;">
-          <span class="hint-number">💡 Hinweis 3:</span> <em>Klicken zum Anzeigen</em>
-        </div>`;
-      } else if (nextHintToReveal < 3) {
-        // Locked (previous hints not revealed yet)
-        html += `<div class="hint-item locked" data-hint="3" style="color:#999; padding:8px; margin:6px 0;">
-          <span class="hint-number">🔒 Hinweis 3:</span> <em>Erst Hinweis ${nextHintToReveal} anzeigen</em>
-        </div>`;
-      }
-    }
-    
-    html += `</div>`;
+
+    revealedHints.forEach((hint) => {
+      const displayIndex = availableHints.findIndex(item => item.id === hint.id) + 1;
+      hintsHtml += `<div class="hint-item revealed">
+        <span class="hint-number">Hinweis ${displayIndex}:</span> ${escapeHtml(hint.text)}
+      </div>`;
+    });
+
+    const nextIndex = nextHint ? (availableHints.findIndex(item => item.id === nextHint.id) + 1) : null;
+    const buttonLabel = nextHint ? `Hinweis ${nextIndex} freischalten` : 'Alle Hinweise freigeschaltet';
+    const disabledAttr = nextHint ? '' : 'disabled';
+    hintsHtml += `<button type="button" class="hint-reveal-btn" id="hint-reveal-btn" ${disabledAttr}>${buttonLabel}</button>`;
   }
 
-  // Expected Output
-  if (task.expected_output) {
-    html += `<h4>Erwartete Ausgabe</h4><div class="task-expected">${escapeHtml(task.expected_output)}</div>`;
+  let tabsHtml = `<div class="task-details-tabs">`;
+  tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>`;
+  if (totalHints > 0) {
+    tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'hints' ? 'active' : ''}" data-tab="hints">Hinweise <span class="task-tab-count">${revealedCount}/${totalHints}</span></button>`;
+  }
+  tabsHtml += `</div>`;
+
+  let html = tabsHtml;
+  html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
+  if (totalHints > 0) {
+    html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
   }
 
   contentEl.innerHTML = html;
-  
-  // Store initial hint data for revealing on click
-  task._hint1 = task.hint1;
-  task._hint2 = task.hint2;
-  task._hint3 = task.hint3;
-  
-  // Bind hint click handlers (only for clickable hints)
-  const hintItems = contentEl.querySelectorAll('.hint-item.clickable');
-  hintItems.forEach(item => {
-    item.addEventListener('click', function() {
-      const hintNum = parseInt(this.dataset.hint);
-      const hintText = task[`hint${hintNum}`];
-      
-      if (hintText && !this.classList.contains('revealed')) {
-        // Reveal hint
-        this.innerHTML = `<span class="hint-number">✓ Hinweis ${hintNum}:</span> ${escapeHtml(hintText)}`;
-        this.classList.remove('clickable');
-        this.classList.add('revealed');
-        this.style.cursor = 'default';
-        this.style.background = 'transparent';
-        
-        // Track revealed hint
-        if (!assignmentState.hintsRevealed[task.id]) {
-          assignmentState.hintsRevealed[task.id] = [];
-        }
-        if (!assignmentState.hintsRevealed[task.id].includes(hintNum)) {
-          assignmentState.hintsRevealed[task.id].push(hintNum);
-          
-          // Update counter
-          const counter = $('hints-counter');
-          if (counter) {
-            counter.textContent = `(${assignmentState.hintsRevealed[task.id].length}/3 genutzt)`;
-          }
-          
-          // Reload task details to show next hint
-          renderTaskDetails(task);
-        }
-      }
+
+  const tabButtons = contentEl.querySelectorAll('.task-details-tab');
+  const tabPanels = contentEl.querySelectorAll('.task-details-panel-section');
+
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.tab;
+      tabButtons.forEach(other => {
+        other.classList.toggle('active', other === btn);
+      });
+      tabPanels.forEach(panelEl => {
+        panelEl.classList.toggle('active', panelEl.dataset.tabPanel === tabName);
+      });
     });
   });
+
+  const revealBtn = $('hint-reveal-btn');
+  if (revealBtn && nextHint) {
+    revealBtn.addEventListener('click', async () => {
+      if (!assignmentState.hintsRevealed[task.id]) {
+        assignmentState.hintsRevealed[task.id] = [];
+      }
+
+      if (!assignmentState.hintsRevealed[task.id].includes(nextHint.id)) {
+        assignmentState.hintsRevealed[task.id].push(nextHint.id);
+      }
+
+      try {
+        await requestJson('../api/user_tasks/update.php', {
+          method: 'POST',
+          body: JSON.stringify({
+            task_id: task.id,
+            hints_revealed: assignmentState.hintsRevealed[task.id]
+          })
+        });
+      } catch (err) {
+        console.warn('Failed to save hints progress:', err);
+      }
+
+      showTaskDetails(task, 'hints');
+    });
+  }
 }
 
 function getStatusLabel(status) {
@@ -274,6 +258,9 @@ async function loadAssignments() {
           userTasks.forEach(ut => {
             assignmentState.taskStatuses[ut.task_id] = ut.status;
             assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+            if (ut.completed_at) {
+              assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+            }
             if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
               assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
             }
@@ -533,6 +520,7 @@ function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Show check button if test cases OR validation mode exist
   const checkBtn = $('check-btn');
+  const submitBtn = $('submit-btn');
   if (checkBtn) {
     // Debug: Log task data
     console.log(`[RENDER] Task ${task.id} (${task.title}): test_cases=${!!task.test_cases} validation_mode='${task.validation_mode}'`);
@@ -540,41 +528,94 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     // Show button if either test cases exist OR validation mode is set
     if (task.test_cases || task.validation_mode) {
       checkBtn.style.display = 'inline-block';
-      // Disable button if max attempts reached and not passed
-      const currentAttempts = assignmentState.taskAttempts[task.id] || 0;
-      const maxAttempts = task.max_attempts || 10;
-      const currentStatus = assignmentState.taskStatuses[task.id];
-      
-      if (currentAttempts >= maxAttempts && currentStatus !== 'passed') {
-        checkBtn.disabled = true;
-        checkBtn.style.opacity = '0.5';
-        checkBtn.style.cursor = 'not-allowed';
-      } else {
-        checkBtn.disabled = false;
-        checkBtn.style.opacity = '1';
-        checkBtn.style.cursor = 'pointer';
-      }
+      if (submitBtn) submitBtn.style.display = 'inline-block';
+      checkBtn.disabled = false;
+      checkBtn.style.opacity = '1';
+      checkBtn.style.cursor = 'pointer';
     } else {
       checkBtn.style.display = 'none';
+      if (submitBtn) submitBtn.style.display = 'none';
     }
   }
 
-  // Show save and download buttons for tasks
+  // Lock editor and hide check/submit if task already finalized (passed or failed)
+  const currentStatus = assignmentState.taskStatuses[task.id];
+  const isFinalized = currentStatus === 'passed' || currentStatus === 'failed';
+  
+  // Get elements
   const saveTaskBtn = $('save-task-btn');
-  if (saveTaskBtn) {
-    saveTaskBtn.style.display = 'inline-block';
-    // Override the onclick handler to save task code
-    saveTaskBtn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      saveCode();
-      return false;
-    };
-  }
-
   const downloadBtn = $('download-btn');
-  if (downloadBtn) {
-    downloadBtn.style.display = 'inline-block';
+  const undoBtn = $('undo-btn');
+  const redoBtn = $('redo-btn');
+  const attemptsCounter = $('attempts-counter');
+  const submittedInfo = $('submitted-info');
+  const submittedStatus = $('submitted-status');
+  const submittedDate = $('submitted-date');
+  
+  if (isFinalized) {
+    // Task finalized - hide buttons (but keep download), lock editor, show submitted info
+    if (checkBtn) checkBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
+    if (saveTaskBtn) saveTaskBtn.style.display = 'none';
+    if (undoBtn) undoBtn.style.display = 'none';
+    if (redoBtn) redoBtn.style.display = 'none';
+    if (attemptsCounter) attemptsCounter.style.display = 'none';
+    // Keep download button visible
+    
+    // Show submitted info with status and date
+    if (submittedInfo && submittedStatus && submittedDate) {
+      submittedInfo.classList.add('show');
+      submittedStatus.className = 'status-' + currentStatus;
+      
+      // Format date: DD.MM.YYYY HH:MM
+      const completedAt = assignmentState.taskCompletedAt[task.id];
+      if (completedAt) {
+        const date = new Date(completedAt);
+        const formatted = date.toLocaleString('de-DE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        submittedDate.textContent = formatted;
+      } else {
+        submittedDate.textContent = '-';
+      }
+
+      updateSubmittedMeta(task);
+    }
+    
+    if (editor) {
+      editor.updateOptions({ readOnly: true });
+    }
+  } else {
+    // Normal state - show buttons, editor editable, hide submitted info
+    if (submittedInfo) submittedInfo.classList.remove('show');
+    
+    if (editor) {
+      editor.updateOptions({ readOnly: false });
+    }
+    
+    // Show save and download buttons for tasks
+    if (saveTaskBtn) {
+      saveTaskBtn.style.display = 'inline-block';
+      // Override the onclick handler to save task code
+      saveTaskBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        saveCode();
+        return false;
+      };
+    }
+
+    if (downloadBtn) {
+      downloadBtn.style.display = 'inline-block';
+    }
+
+    // Show undo/redo buttons
+    if (undoBtn) undoBtn.style.display = 'inline-block';
+    if (redoBtn) redoBtn.style.display = 'inline-block';
   }
 
   // Hide project save button
@@ -597,15 +638,34 @@ function loadTaskIntoEditor(assignmentId, taskId) {
 }
 
 function updateAttemptsCounter(task) {
-  const counter = $('attempts-counter');
-  const value = $('attempts-value');
-  if (!counter || !value) return;
+  const maxAttempts = task.max_attempts || 10;
+  const attempts = assignmentState.taskAttempts[task.id] || 0;
+  
+  // Update check button text with attempts
+  const checkBtn = $('check-btn');
+  if (checkBtn) {
+    checkBtn.textContent = `🔍 Überprüfen (${attempts}/${maxAttempts})`;
+  }
+}
+
+function getHintStats(task) {
+  const totalHints = [task.hint1, task.hint2, task.hint3]
+    .filter(hint => hint && String(hint).trim() !== '').length;
+  const revealed = assignmentState.hintsRevealed[task.id] || [];
+  return { revealedCount: revealed.length, totalHints };
+}
+
+function updateSubmittedMeta(task) {
+  const submittedChecks = $('submitted-checks');
+  const submittedHints = $('submitted-hints');
+  if (!submittedChecks || !submittedHints) return;
 
   const maxAttempts = task.max_attempts || 10;
   const attempts = assignmentState.taskAttempts[task.id] || 0;
+  const { revealedCount, totalHints } = getHintStats(task);
 
-  value.textContent = `${attempts}/${maxAttempts}`;
-  counter.style.display = 'inline-block';
+  submittedChecks.textContent = `${attempts}/${maxAttempts}`;
+  submittedHints.textContent = `${revealedCount}/${totalHints}`;
 }
 
 function generateFilename(title) {
@@ -650,7 +710,8 @@ async function downloadCode() {
   URL.revokeObjectURL(url);
 }
 
-async function saveCode() {
+async function saveCode(options = {}) {
+  const { setStatus = true } = options;
   const task = assignmentState.currentTask;
   if (!task) {
     console.warn('No task loaded for saving');
@@ -670,11 +731,11 @@ async function saveCode() {
   if (!taskId) {
     console.error('Task ID not found');
     if (saveTaskBtn) {
-      saveTaskBtn.textContent = '✗ Fehler: Task ID nicht gefunden';
+      saveTaskBtn.title = 'Fehler: Task ID nicht gefunden';
       saveTaskBtn.style.background = '#ef4444';
       saveTaskBtn.style.color = '#fff';
       setTimeout(() => {
-        saveTaskBtn.textContent = '💾 Speichern';
+        saveTaskBtn.title = 'Speichern';
         saveTaskBtn.style.background = '';
         saveTaskBtn.style.color = '';
       }, 3000);
@@ -685,7 +746,7 @@ async function saveCode() {
   try {
     // Show saving indicator
     if (saveTaskBtn) {
-      saveTaskBtn.textContent = '⏳ Speichert...';
+      saveTaskBtn.style.opacity = '0.6';
       saveTaskBtn.disabled = true;
     }
 
@@ -696,10 +757,13 @@ async function saveCode() {
     const payload = {
       task_id: taskId,
       current_code: code,
-      status: 'in-progress',
       hints_revealed: assignmentState.hintsRevealed[taskId] || [],
       started_at: new Date(assignmentState.taskStartTimes[taskId] || Date.now()).toISOString().slice(0, 19).replace('T', ' ')
     };
+
+    if (setStatus) {
+      payload.status = 'in-progress';
+    }
 
     console.log('[SAVE] Saving task:', taskId, 'Code length:', code.length, 'chars');
     console.log('[SAVE] Payload:', payload);
@@ -712,30 +776,17 @@ async function saveCode() {
     console.log('[SAVE] API Response:', response);
 
     if (saveTaskBtn) {
-      saveTaskBtn.textContent = '✓ Gespeichert';
-      saveTaskBtn.style.background = '#10b981';
-      saveTaskBtn.style.color = '#fff';
-      setTimeout(() => {
-        saveTaskBtn.textContent = '💾 Speichern';
-        saveTaskBtn.style.background = '';
-        saveTaskBtn.style.color = '';
-        saveTaskBtn.disabled = false;
-      }, 2000);
+      saveTaskBtn.style.opacity = '1';
+      saveTaskBtn.disabled = false;
     }
 
     return true;
   } catch (err) {
     console.error('Failed to save code:', err);
     if (saveTaskBtn) {
-      saveTaskBtn.textContent = '✗ Fehler';
-      saveTaskBtn.style.background = '#ef4444';
-      saveTaskBtn.style.color = '#fff';
-      setTimeout(() => {
-        saveTaskBtn.textContent = '💾 Speichern';
-        saveTaskBtn.style.background = '';
-        saveTaskBtn.style.color = '';
-        saveTaskBtn.disabled = false;
-      }, 2000);
+      saveTaskBtn.disabled = false;
+      saveTaskBtn.style.opacity = '1';
+      saveTaskBtn.title = 'Speichern fehlgeschlagen';
     }
     return false;
   }
@@ -861,8 +912,8 @@ async function checkTask() {
     return;
   }
 
-  // Auto-save code before checking
-  await saveCode();
+  // Auto-save code before checking (no status change)
+  await saveCode({ setStatus: false });
 
   // Get code from editor
   const code = editor.getValue();
@@ -885,6 +936,12 @@ async function checkTask() {
     let testCases = [];
     try {
       testCases = JSON.parse(task.test_cases);
+      
+      // Handle intelligent test config (single object with mode, tests, etc.)
+      if (!Array.isArray(testCases) && testCases.mode) {
+        testCases = [{type: 'intelligent', ...testCases}];
+      }
+      
       // Migrate legacy FUNCTION structure to new structure
       testCases = migrateLegacyTestCases(testCases);
     } catch (e) {
@@ -922,6 +979,9 @@ async function checkTask() {
       } else if (type === 'variable') {
         // VARIABLE TESTING: Set init vars, check expected vars
         allResults.push(...await runVariableTests(pyodide, code, cases, task.validation_mode));
+      } else if (type === 'intelligent') {
+        // INTELLIGENT TESTING: Compare against solution code
+        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.validation_mode, task.solution_code));
       } else if (type === 'code_check') {
         // CODE CHECK: Check if code contains required keywords
         allResults.push(...runCodeCheck(code, cases));
@@ -947,8 +1007,130 @@ async function checkTask() {
       results: allResults
     };
     
-    // Process validation result
-    processValidationResult(result, task, outputEl);
+    // Increment attempts counter and save to database
+    assignmentState.taskAttempts[task.id] = (assignmentState.taskAttempts[task.id] || 0) + 1;
+    updateAttemptsCounter(task);
+    
+    // Save attempts to database
+    try {
+      const editor = window.editorInstance;
+      const code = editor ? editor.getValue() : '';
+      const savePayload = {
+        task_id: task.id,
+        attempts: assignmentState.taskAttempts[task.id],
+        current_code: code,
+        hints_revealed: assignmentState.hintsRevealed[task.id] || []
+      };
+      
+      await requestJson('../api/user_tasks/update.php', {
+        method: 'POST',
+        body: JSON.stringify(savePayload)
+      });
+    } catch (err) {
+      console.error('[CHECK] Failed to save attempts:', err);
+    }
+    
+    // Process validation result (for CHECK only - don't change status)
+    processValidationResult(result, task, outputEl, false);
+
+  } catch (err) {
+    outputEl.innerHTML = `<div style="color:#c00;"><strong>Fehler:</strong> ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+/**
+ * Submit task for grading - runs validation and commits final status
+ */
+async function submitTask() {
+  const task = assignmentState.currentTask;
+  if (!task) {
+    alert('No task loaded');
+    return;
+  }
+
+  if (!task.test_cases && !task.validation_mode) {
+    alert('No test cases available');
+    return;
+  }
+
+  const editor = window.editorInstance;
+  if (!editor) {
+    alert('Editor not ready');
+    return;
+  }
+
+  // Auto-save code before submitting (no status change)
+  await saveCode({ setStatus: false });
+
+  const code = editor.getValue();
+  const outputEl = $('output-container');
+  if (outputEl) outputEl.innerHTML = '<span style="color:#666;">Überprüfe Code...</span>';
+
+  try {
+    let pyodide = window.pyodide;
+    if (!pyodide) {
+      outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
+      return;
+    }
+
+    // Parse test cases
+    let testCases = [];
+    try {
+      testCases = JSON.parse(task.test_cases);
+      
+      // Handle intelligent test config (single object with mode, tests, etc.)
+      if (!Array.isArray(testCases) && testCases.mode) {
+        testCases = [{type: 'intelligent', ...testCases}];
+      }
+      
+      testCases = migrateLegacyTestCases(testCases);
+    } catch (e) {
+      console.error('Failed to parse test cases:', e);
+      testCases = [];
+    }
+
+    let allResults = [];
+    const groupedByType = {};
+    testCases.forEach(tc => {
+      const type = tc.type || 'output';
+      if (!groupedByType[type]) groupedByType[type] = [];
+      groupedByType[type].push(tc);
+    });
+
+    // Execute tests
+    for (const [type, cases] of Object.entries(groupedByType)) {
+      console.log(`[SUBMIT] Executing ${type} tests`);
+      if (type === 'output') {
+        allResults.push(...await runOutputTests(pyodide, code, cases, task.validation_mode));
+      } else if (type === 'function') {
+        allResults.push(...await runFunctionTests(pyodide, code, cases, task.validation_mode));
+      } else if (type === 'variable') {
+        allResults.push(...await runVariableTests(pyodide, code, cases, task.validation_mode));
+      } else if (type === 'intelligent') {
+        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.validation_mode, task.solution_code));
+      } else if (type === 'code_check') {
+        allResults.push(...runCodeCheck(code, cases));
+      }
+    }
+
+    if (allResults.length === 0) {
+      outputEl.innerHTML = '<span style="color:#c00;">No test results</span>';
+      return;
+    }
+    
+    // Display results
+    displayTestResults(allResults, testCases, outputEl);
+    
+    const result = {
+      passed: allResults.every(r => r.passed),
+      total: allResults.length,
+      passedCount: allResults.filter(r => r.passed).length,
+      message: `${allResults.filter(r => r.passed).length}/${allResults.length} Tests bestanden`,
+      results: allResults
+    };
+    
+    // Process with isSubmission=true to commit status and lock editor
+    processValidationResult(result, task, outputEl, true);
 
   } catch (err) {
     outputEl.innerHTML = `<div style="color:#c00;"><strong>Fehler:</strong> ${escapeHtml(String(err))}</div>`;
@@ -1116,6 +1298,361 @@ output_buffer.getvalue()
     }
   }
   
+  return results;
+}
+
+function createSeededRng(seed) {
+  let s = Number(seed);
+  if (!Number.isFinite(s)) {
+    s = Date.now() & 0xffffffff;
+  }
+  let t = s >>> 0;
+  return () => {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function generateValue(def, rng) {
+  if (def && Array.isArray(def.values) && def.values.length > 0) {
+    const idx = Math.floor(rng() * def.values.length);
+    return def.values[idx];
+  }
+
+  const type = String(def?.type || 'int').toLowerCase();
+  if (type === 'choice' || type === 'enum') {
+    const values = Array.isArray(def?.values) ? def.values : [];
+    if (values.length === 0) return null;
+    const idx = Math.floor(rng() * values.length);
+    return values[idx];
+  }
+
+  if (type === 'list' || type === 'array') {
+    const minLen = Number(def?.minLength ?? def?.min_len ?? 1);
+    const maxLen = Number(def?.maxLength ?? def?.max_len ?? minLen);
+    const len = Math.max(0, Math.floor(minLen + rng() * Math.max(1, maxLen - minLen + 1)));
+    const elementDef = def?.element || def?.of || { type: 'int' };
+    const out = [];
+    for (let i = 0; i < len; i += 1) {
+      out.push(generateValue(elementDef, rng));
+    }
+    return out;
+  }
+
+  if (type === 'object' || type === 'dict' || type === 'map') {
+    const fields = Array.isArray(def?.fields) ? def.fields : [];
+    const out = {};
+    fields.forEach((field) => {
+      if (field?.name) {
+        out[field.name] = generateValue(field, rng);
+      }
+    });
+    return out;
+  }
+  if (type === 'bool' || type === 'boolean') {
+    return rng() < 0.5;
+  }
+
+  if (type === 'string' || type === 'str') {
+    const minLen = Number(def?.minLength ?? def?.min_len ?? 3);
+    const maxLen = Number(def?.maxLength ?? def?.max_len ?? 8);
+    const len = Math.max(0, Math.floor(minLen + rng() * Math.max(1, maxLen - minLen + 1)));
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+    let out = '';
+    for (let i = 0; i < len; i += 1) {
+      out += alphabet[Math.floor(rng() * alphabet.length)];
+    }
+    return out;
+  }
+
+  if (type === 'float' || type === 'number' || type === 'double') {
+    const min = Number(def?.min ?? 0);
+    const max = Number(def?.max ?? 1);
+    return min + rng() * (max - min);
+  }
+
+  // Default: int
+  const min = Number(def?.min ?? 0);
+  const max = Number(def?.max ?? 10);
+  return Math.floor(min + rng() * (max - min + 1));
+}
+
+function compareIntelligentValue(actual, expected, type, tolerance) {
+  const def = type && typeof type === 'object' ? type : { type };
+  const normalizedType = String(def?.type || '').toLowerCase();
+
+  if (normalizedType === 'list' || normalizedType === 'array') {
+    if (!Array.isArray(actual) || !Array.isArray(expected)) return false;
+    if (actual.length !== expected.length) return false;
+    const elementDef = def?.element || def?.of || {};
+    return expected.every((val, idx) => compareIntelligentValue(actual[idx], val, elementDef, tolerance));
+  }
+
+  if (normalizedType === 'object' || normalizedType === 'dict' || normalizedType === 'map') {
+    const fields = Array.isArray(def?.fields) ? def.fields : null;
+    if (fields) {
+      return fields.every((field) => {
+        if (!field?.name) return true;
+        return compareIntelligentValue(actual?.[field.name], expected?.[field.name], field, tolerance);
+      });
+    }
+    return compareValues(actual, expected);
+  }
+  if (normalizedType === 'float' || normalizedType === 'number' || normalizedType === 'double') {
+    const actualNum = Number(actual);
+    const expectedNum = Number(expected);
+    if (!Number.isFinite(actualNum) || !Number.isFinite(expectedNum)) {
+      return false;
+    }
+    return Math.abs(actualNum - expectedNum) <= tolerance;
+  }
+
+  if (normalizedType === 'int' || normalizedType === 'integer') {
+    return Number(actual) === Number(expected);
+  }
+
+  if (normalizedType === 'bool' || normalizedType === 'boolean') {
+    return Boolean(actual) === Boolean(expected);
+  }
+
+  return compareValues(actual, expected);
+}
+
+async function runIntelligentTests(pyodide, code, testCases, validationMode, solutionCode) {
+  const results = [];
+  const testSpec = testCases[0];
+  if (!testSpec) return results;
+
+  const mode = testSpec.mode || 'vars';
+  const testsCount = Number(testSpec.tests ?? 5);
+  // Generate new random seed for each check (combine base seed with timestamp)
+  const baseSeed = testSpec.seed || 12345;
+  const seed = baseSeed + Date.now();
+  const tolerance = Number(testSpec.tolerance ?? 0.000001);
+  
+  // Extract inputs/outputs depending on mode
+  let inputs = [];
+  let outputs = [];
+  let functionName = '';
+  let functionOutput = null;
+  
+  if (mode === 'function' && testSpec.function) {
+    // Function mode: inputs/output are inside testSpec.function
+    inputs = Array.isArray(testSpec.function.inputs) ? testSpec.function.inputs : [];
+    functionOutput = testSpec.function.output;
+    functionName = testSpec.function.name || '';
+  } else {
+    // Vars mode or legacy: inputs/outputs at top level
+    inputs = Array.isArray(testSpec.inputs) ? testSpec.inputs : [];
+    outputs = Array.isArray(testSpec.outputs) ? testSpec.outputs : [];
+    functionName = testSpec.function_name || testSpec.function?.name || '';
+  }
+  
+  const returnType = testSpec.return_type || functionOutput?.type || '';
+  const effectiveSolutionCode = testSpec.solution_code || solutionCode || '';
+
+  if (!effectiveSolutionCode) {
+    return [{
+      passed: false,
+      testNumber: 1,
+      type: 'intelligent',
+      mode,
+      error: 'Musterloesung fehlt (Solution Code ist leer)'
+    }];
+  }
+
+  if (mode === 'vars' && outputs.length === 0) {
+    return [{
+      passed: false,
+      testNumber: 1,
+      type: 'intelligent',
+      mode,
+      error: 'Keine Outputs definiert'
+    }];
+  }
+
+  if (mode === 'function' && !functionName) {
+    return [{
+      passed: false,
+      testNumber: 1,
+      type: 'intelligent',
+      mode,
+      error: 'Function Name fehlt'
+    }];
+  }
+
+  const rng = createSeededRng(seed);
+  const cases = [];
+  for (let i = 0; i < testsCount; i += 1) {
+    const inputsObj = {};
+    const args = [];
+    inputs.forEach((def) => {
+      const value = generateValue(def, rng);
+      if (def?.name) {
+        inputsObj[def.name] = value;
+      }
+      args.push(value);
+    });
+    cases.push({ inputs: inputsObj, args });
+  }
+
+  const testOutputs = await pyodide.runPythonAsync(`
+import json
+
+user_code = ${JSON.stringify(code)}
+solution_code = ${JSON.stringify(effectiveSolutionCode)}
+cases_json = ${JSON.stringify(JSON.stringify(cases))}
+cases = json.loads(cases_json)
+mode = ${JSON.stringify(mode)}
+outputs_json = ${JSON.stringify(JSON.stringify(outputs.map(o => o.name)))}
+outputs = json.loads(outputs_json)
+function_name = ${JSON.stringify(functionName)}
+
+def safe_value(value):
+    if value is None or isinstance(value, (int, float, bool, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [safe_value(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): safe_value(v) for k, v in value.items()}
+    return repr(value)
+
+def run_vars(code, inputs, output_names):
+    namespace = {}
+    namespace.update(inputs)
+    try:
+        exec(compile(code, "<code>", "exec"), namespace)
+    except Exception as e:
+        return {"error": str(e)}
+    out = {}
+    for name in output_names:
+        if name in namespace:
+            out[name] = safe_value(namespace[name])
+        else:
+            return {"error": f"Variable '{name}' not found"}
+    return {"output": out}
+
+def run_func(code, args, fn_name):
+    namespace = {}
+    try:
+        exec(compile(code, "<code>", "exec"), namespace)
+    except Exception as e:
+        return {"error": f"Code execution error: {e}"}
+    fn = namespace.get(fn_name)
+    if not callable(fn):
+        return {"error": f"Function '{fn_name}' not found"}
+    try:
+        res = fn(*args)
+        return {"output": safe_value(res)}
+    except Exception as e:
+        return {"error": str(e)}
+
+results = []
+for idx, case in enumerate(cases):
+    if mode == 'vars':
+        sol = run_vars(solution_code, case.get('inputs', {}), outputs)
+        usr = run_vars(user_code, case.get('inputs', {}), outputs)
+    else:
+        sol = run_func(solution_code, case.get('args', []), function_name)
+        usr = run_func(user_code, case.get('args', []), function_name)
+    results.append({
+        "test": idx + 1,
+        "inputs": case.get('inputs', {}),
+        "args": case.get('args', []),
+        "solution": sol,
+        "user": usr
+    })
+
+json.dumps(results)
+`);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(testOutputs);
+  } catch (e) {
+    return [{
+      passed: false,
+      testNumber: 1,
+      type: 'intelligent',
+      mode,
+      error: `Failed to parse results: ${e.message}`
+    }];
+  }
+
+  parsed.forEach((testResult, idx) => {
+    const solution = testResult.solution || {};
+    const user = testResult.user || {};
+    const base = {
+      testNumber: idx + 1,
+      type: 'intelligent',
+      mode,
+      inputs: testResult.inputs || {},
+      args: testResult.args || [],
+      functionName,
+      outputs: mode === 'vars' ? outputs.map(o => o.name) : [],
+      expected: solution.output,
+      actual: user.output
+    };
+
+    if (solution.error) {
+      results.push({
+        ...base,
+        passed: false,
+        error: `Musterloesung: ${solution.error}`
+      });
+      return;
+    }
+
+    if (user.error) {
+      results.push({
+        ...base,
+        passed: false,
+        error: `Fehler: ${user.error}`
+      });
+      return;
+    }
+
+    let passed = true;
+    const matchDetails = [];
+
+    if (mode === 'vars') {
+      outputs.forEach((outDef) => {
+        const name = outDef.name;
+        const expectedValue = solution.output ? solution.output[name] : undefined;
+        const actualValue = user.output ? user.output[name] : undefined;
+        const matches = compareIntelligentValue(actualValue, expectedValue, outDef, tolerance);
+        if (!matches) {
+          passed = false;
+        }
+        matchDetails.push({
+          name,
+          expected: expectedValue,
+          actual: actualValue,
+          type: outDef.type,
+          matches
+        });
+      });
+    } else {
+      const matches = compareIntelligentValue(user.output, solution.output, { type: returnType }, tolerance);
+      passed = matches;
+      matchDetails.push({
+        name: functionName,
+        expected: solution.output,
+        actual: user.output,
+        type: returnType,
+        matches
+      });
+    }
+
+    results.push({
+      ...base,
+      passed,
+      matchDetails
+    });
+  });
+
   return results;
 }
 
@@ -1530,6 +2067,21 @@ function displayTestResults(results, testCases, outputEl) {
       if (expectedDisplay) {
         html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
       }
+    } else if (result.type === 'intelligent') {
+      html += `</div>`;
+      const inputsDisplay = result.mode === 'function'
+        ? JSON.stringify(result.args || [])
+        : JSON.stringify(result.inputs || {});
+      const expectedDisplay = JSON.stringify(result.expected ?? null);
+      const actualDisplay = JSON.stringify(result.actual ?? null);
+      if (result.mode === 'function') {
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Funktion: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(result.functionName || '')}</code></div>`;
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Args: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+      } else {
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Inputs: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+      }
+      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
+      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualDisplay)}</code></div>`;
     } else if (result.type === 'code_check') {
       html += `</div>`;
       const feedbackText = result.feedback || 'Code-Check';
@@ -1610,6 +2162,47 @@ function displayTestResults(results, testCases, outputEl) {
       html += `<div style="font-size:12px; color:#555; margin-top:2px;">`;
       html += `checked: <code style="background:#e5e7eb; padding:2px 6px; border-radius:3px;">${expectedVarsDisplay}</code>`;
       html += `</div>`;
+    } else if (type === 'intelligent') {
+      const firstResult = items[0]?.result;
+      const mode = firstResult?.mode || 'vars';
+      html += `<div style="font-size:12px; color:#555; margin-top:4px;">`;
+      html += `Mode: <code style="background:#e5e7eb; padding:2px 6px; border-radius:3px;">${escapeHtml(mode)}</code>`;
+      html += `</div>`;
+      if (mode === 'function') {
+        const fn = firstResult?.functionName || 'function';
+        html += `<div style="font-size:12px; color:#555; margin-top:2px;">`;
+        html += `Funktion: <code style="background:#e5e7eb; padding:2px 6px; border-radius:3px;">${escapeHtml(fn)}()</code>`;
+        html += `</div>`;
+      } else {
+        const outputs = (firstResult?.outputs || []).join(', ');
+        html += `<div style="font-size:12px; color:#555; margin-top:2px;">`;
+        html += `Outputs: <code style="background:#e5e7eb; padding:2px 6px; border-radius:3px;">${escapeHtml(outputs)}</code>`;
+        html += `</div>`;
+      }
+
+      // Show generated cases (safe to display for intelligent randomized tests)
+      items.forEach(({result}, itemIdx) => {
+        const payload = mode === 'function'
+          ? JSON.stringify(result.args || [])
+          : JSON.stringify(result.inputs || {});
+        const expected = JSON.stringify(result.expected ?? null);
+        const actual = JSON.stringify(result.actual ?? null);
+        const shortened = payload.length > 120 ? `${payload.slice(0, 120)}...` : payload;
+        const expectedShort = expected.length > 120 ? `${expected.slice(0, 120)}...` : expected;
+        const actualShort = actual.length > 120 ? `${actual.slice(0, 120)}...` : actual;
+        
+        const passed = result.passed;
+        const statusIcon = passed ? '✓' : '✗';
+        const statusColor = passed ? '#10b981' : '#ef4444';
+        
+        html += `<div style="font-size:11px; margin-top:4px;">`;
+        html += `<span style="color:${statusColor}; font-weight:700;">${statusIcon}</span> `;
+        html += `#${itemIdx + 1}: <code style="background:#eef2ff; padding:1px 4px;">${escapeHtml(shortened)}</code>`;
+        html += ` &rarr; <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualShort)}</code>`;
+        html += `<br>`;
+        html += `<span style="margin-left:20px; color:#6b7280;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedShort)}</code></span>`;
+        html += `</div>`;
+      });
     } else if (type === 'code_check') {
       // Show all code_check tests with their feedback
       html += `<div style="font-size:12px; color:#555; margin-top:4px;">`;
@@ -1684,11 +2277,29 @@ function runCodeCheck(code, testCases) {
     const operator = testSpec.operator || 'AND';
     const feedback = testSpec.feedback || '';
     
-    // Check each keyword
-    const keywordResults = keywords.map(keyword => ({
-      keyword,
-      found: code.toUpperCase().includes(keyword.toUpperCase())
-    }));
+    // Check each keyword (supports regex patterns)
+    const keywordResults = keywords.map(keyword => {
+      let found = false;
+      
+      // Check if keyword looks like a regex pattern (contains regex special chars)
+      const hasRegexChars = /[.*+?^${}()|[\]\\]/.test(keyword);
+      
+      if (hasRegexChars) {
+        // Treat as regex pattern (case-insensitive)
+        try {
+          const regex = new RegExp(keyword, 'i');
+          found = regex.test(code);
+        } catch (e) {
+          // If regex is invalid, fall back to literal string search
+          found = code.toUpperCase().includes(keyword.toUpperCase());
+        }
+      } else {
+        // Literal string search (case-insensitive)
+        found = code.toUpperCase().includes(keyword.toUpperCase());
+      }
+      
+      return { keyword, found };
+    });
     
     // Determine pass/fail based on operator
     let passed;
@@ -1780,27 +2391,120 @@ function compareTestOutput(actual, expected, mode = 'loose') {
 /**
  * Process validation result and update task status
  */
-async function processValidationResult(result, task, outputEl) {
-  // Increment attempts
-  assignmentState.taskAttempts[task.id] = (assignmentState.taskAttempts[task.id] || 0) + 1;
-  updateAttemptsCounter(task);
+async function processValidationResult(result, task, outputEl, isSubmission = false) {
+  // Only commit status changes and lock editor if this is a submission
+  if (!isSubmission) {
+    // CHECK flow: Just show feedback, don't change status or attempts
+    console.log('[CHECK] Showing feedback only - status and attempts unchanged');
+    return;
+  }
 
-  // Update task status based on validation result and attempts
-  const currentAttempts = assignmentState.taskAttempts[task.id];
+  // SUBMISSION flow: Commit final status and lock editor
+  // NOTE: Attempts are already incremented in checkTask(), don't increment again here
+  
+  // Get current attempts (already incremented)
+  const currentAttempts = assignmentState.taskAttempts[task.id] || 0;
   const maxAttempts = task.max_attempts || 10;
 
   if (result.passed === true) {
     // All tests passed - GREEN
     assignmentState.taskStatuses[task.id] = 'passed';
+    
+    // Store completion timestamp
+    const now = new Date();
+    assignmentState.taskCompletedAt[task.id] = now.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Lock editor after successful submission
+    const editor = window.editorInstance;
+    if (editor) {
+      editor.updateOptions({ readOnly: true });
+    }
+
+    // Hide check and submit buttons after successful submission
+    const checkBtn = $('check-btn');
+    const submitBtn = $('submit-btn');
+    if (checkBtn) checkBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
+    
+    // Hide save, undo, redo, attempts counter (keep download visible)
+    const saveTaskBtn = $('save-task-btn');
+    const undoBtn = $('undo-btn');
+    const redoBtn = $('redo-btn');
+    const attemptsCounter = $('attempts-counter');
+    if (saveTaskBtn) saveTaskBtn.style.display = 'none';
+    if (undoBtn) undoBtn.style.display = 'none';
+    if (redoBtn) redoBtn.style.display = 'none';
+    if (attemptsCounter) attemptsCounter.style.display = 'none';
+    
+    // Show submitted info
+    const submittedInfo = $('submitted-info');
+    const submittedStatus = $('submitted-status');
+    const submittedDate = $('submitted-date');
+    if (submittedInfo && submittedStatus && submittedDate) {
+      submittedInfo.classList.add('show');
+      submittedStatus.className = 'status-passed';
+      const formatted = now.toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      submittedDate.textContent = formatted;
+
+      updateSubmittedMeta(task);
+    }
 
     // Show success modal with stats
     showSuccessModal(task, currentAttempts, maxAttempts);
-  } else if (currentAttempts < maxAttempts) {
-    // Some tests failed but still have attempts - YELLOW (in-progress)
-    assignmentState.taskStatuses[task.id] = 'in-progress';
   } else {
-    // Failed and no attempts left - RED
+    // Submission failed - RED (final, regardless of attempts)
     assignmentState.taskStatuses[task.id] = 'failed';
+    
+    // Store completion timestamp
+    const now = new Date();
+    assignmentState.taskCompletedAt[task.id] = now.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Lock editor after final failed submission
+    const editor = window.editorInstance;
+    if (editor) {
+      editor.updateOptions({ readOnly: true });
+    }
+
+    // Hide check and submit buttons after final failed submission
+    const checkBtn = $('check-btn');
+    const submitBtn = $('submit-btn');
+    if (checkBtn) checkBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
+    
+    // Hide save, undo, redo, attempts counter (keep download visible)
+    const saveTaskBtn = $('save-task-btn');
+    const undoBtn = $('undo-btn');
+    const redoBtn = $('redo-btn');
+    const attemptsCounter = $('attempts-counter');
+    if (saveTaskBtn) saveTaskBtn.style.display = 'none';
+    if (undoBtn) undoBtn.style.display = 'none';
+    if (redoBtn) redoBtn.style.display = 'none';
+    if (attemptsCounter) attemptsCounter.style.display = 'none';
+    
+    // Show submitted info
+    const submittedInfo = $('submitted-info');
+    const submittedStatus = $('submitted-status');
+    const submittedDate = $('submitted-date');
+    if (submittedInfo && submittedStatus && submittedDate) {
+      submittedInfo.classList.add('show');
+      submittedStatus.className = 'status-failed';
+      const formatted = now.toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      submittedDate.textContent = formatted;
+
+      updateSubmittedMeta(task);
+    }
   }
 
   // Save attempts and status to database (for all status changes)
@@ -1818,6 +2522,11 @@ async function processValidationResult(result, task, outputEl) {
       hints_revealed: assignmentState.hintsRevealed[task.id] || []
     };
     
+    // Add completed_at if task is finalized
+    if (isSubmission && assignmentState.taskCompletedAt[task.id]) {
+      savePayload.completed_at = assignmentState.taskCompletedAt[task.id];
+    }
+    
     console.log('[CHECK] Save payload:', savePayload);
     
     const saveResponse = await requestJson('../api/user_tasks/update.php', {
@@ -1832,34 +2541,6 @@ async function processValidationResult(result, task, outputEl) {
 
   // Update task status display
   updateTaskStatusDisplay(task);
-
-  // Check if max attempts reached and disable button
-  const checkBtn = $('check-btn');
-  if (checkBtn) {
-    const finalStatus = assignmentState.taskStatuses[task.id];
-    console.log('[CHECK] Final status:', finalStatus, 'Attempts:', currentAttempts, '/', maxAttempts);
-    
-    if (finalStatus === 'passed') {
-      // Task passed - keep button enabled (user might want to check again)
-      checkBtn.disabled = false;
-      checkBtn.style.opacity = '1';
-      checkBtn.style.cursor = 'pointer';
-      checkBtn.style.display = 'inline-block';
-      console.log('[CHECK] Task passed - button kept enabled');
-    } else if (currentAttempts >= maxAttempts) {
-      // Max attempts reached and not passed - disable button
-      checkBtn.disabled = true;
-      checkBtn.style.opacity = '0.5';
-      checkBtn.style.cursor = 'not-allowed';
-      console.log('[CHECK] Max attempts reached - button disabled');
-    } else {
-      // Still have attempts left - keep button enabled
-      checkBtn.disabled = false;
-      checkBtn.style.opacity = '1';
-      checkBtn.style.cursor = 'pointer';
-      console.log('[CHECK] Attempts remaining - button enabled');
-    }
-  }
 }
 
 function updateTaskStatusDisplay(task) {
@@ -1871,6 +2552,7 @@ function updateTaskStatusDisplay(task) {
 
 function bindAssignmentsEvents() {
   const checkBtn = $('check-btn');
+  const submitBtn = $('submit-btn');
   const backToListBtn = $('back-to-list-btn');
 
   // Back to list button
@@ -1881,6 +2563,11 @@ function bindAssignmentsEvents() {
   // Check button
   checkBtn?.addEventListener('click', () => {
     checkTask();
+  });
+
+  // Submit button
+  submitBtn?.addEventListener('click', () => {
+    submitTask();
   });
 
   // Save task button - Only bind for non-task cases (when task is not loaded)
@@ -1896,6 +2583,24 @@ function bindAssignmentsEvents() {
   const downloadBtn = $('download-btn');
   downloadBtn?.addEventListener('click', () => {
     downloadCode();
+  });
+
+  // Undo button
+  const undoBtn = $('undo-btn');
+  undoBtn?.addEventListener('click', () => {
+    const editor = window.editorInstance;
+    if (editor) {
+      editor.trigger('', 'undo');
+    }
+  });
+
+  // Redo button
+  const redoBtn = $('redo-btn');
+  redoBtn?.addEventListener('click', () => {
+    const editor = window.editorInstance;
+    if (editor) {
+      editor.trigger('', 'redo');
+    }
   });
 }
 
