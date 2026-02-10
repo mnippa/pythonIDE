@@ -175,6 +175,33 @@ if ($displayName === '') {
     .mono{ font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
     .status{ padding:2px 8px; border-radius:999px; font-size:11px; background:#e5f6f2; }
     .status.arch{ background:#fde2e2; }
+    
+    /* Test Cases Builder GUI */
+    .test-cases-builder{ 
+      background:#ffffff; 
+      border:1px solid #e5e7eb; 
+      border-radius:8px; 
+      padding:16px; 
+      margin-bottom:12px;
+    }
+    .builder-header{ 
+      display:flex; 
+      align-items:center; 
+      flex-wrap:wrap; 
+      gap:8px;
+      padding-bottom:12px;
+      border-bottom:2px solid #e5e7eb;
+    }
+    .test-case-item{
+      transition: all 0.2s ease;
+    }
+    .test-case-item:hover{
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .btn-remove-test:hover{
+      background:#dc2626 !important;
+    }
+    
     @media (max-width: 980px){
       .grid.two{ grid-template-columns: 1fr; }
     }
@@ -222,58 +249,26 @@ if ($displayName === '') {
     </section>
 
     <section class="panel" id="tab-assignments">
-      <div class="grid two">
-        <div class="card">
-          <h2>Assignments</h2>
-          <div class="muted">Create, update, delete assignments.</div>
-          <div style="margin-top:10px; overflow:auto;">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Title</th>
-                  <th>Difficulty</th>
-                  <th>Active</th>
-                  <th>Tasks</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="assignments-body"></tbody>
-            </table>
-          </div>
+      <div class="card">
+        <h2>Assignments</h2>
+        <div class="muted">Create, update, delete assignments.</div>
+        <div style="margin-top:10px; overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Difficulty</th>
+                <th>Active</th>
+                <th>Tasks</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="assignments-body"></tbody>
+          </table>
         </div>
-        <div class="card">
-          <h3 id="assignment-form-title">New Assignment</h3>
-          <form id="assignment-form">
-            <input type="hidden" id="assignment-id" />
-            <div class="field">
-              <label for="assignment-title">Title</label>
-              <input id="assignment-title" required />
-            </div>
-            <div class="field">
-              <label for="assignment-description">Description</label>
-              <textarea id="assignment-description"></textarea>
-            </div>
-            <div class="field">
-              <label for="assignment-difficulty">Difficulty</label>
-              <select id="assignment-difficulty">
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="assignment-active">Active</label>
-              <select id="assignment-active">
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            </div>
-            <div class="row-actions">
-              <button class="btn primary" type="submit">Save</button>
-              <button class="btn" type="button" id="assignment-reset">Reset</button>
-            </div>
-          </form>
+        <div style="margin-top:16px;">
+          <button class="btn primary" type="button" id="open-assignment-modal">+ New Assignment</button>
         </div>
       </div>
 
@@ -297,78 +292,7 @@ if ($displayName === '') {
           </table>
         </div>
         <div style="margin-top:12px;">
-          <h4>New Task</h4>
-          <form id="task-form">
-            <div class="field">
-              <label for="task-title">Title</label>
-              <input id="task-title" />
-            </div>
-            <div class="field">
-              <label for="task-description">Description</label>
-              <textarea id="task-description"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-position">Position</label>
-              <input id="task-position" type="number" min="1" />
-            </div>
-            <div class="field">
-              <label for="task-type">Problem type</label>
-              <select id="task-type">
-                <option value="code_completion">code_completion</option>
-                <option value="code_fix">code_fix</option>
-                <option value="multiple_choice">multiple_choice</option>
-                <option value="essay">essay</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="task-template">Code template</label>
-              <textarea id="task-template"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-hint">Hint</label>
-              <textarea id="task-hint"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
-              <textarea id="task-hint1"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
-              <textarea id="task-hint2"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
-              <textarea id="task-hint3"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
-              <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-            </div>
-            <div class="field">
-              <label for="task-expected">Expected output</label>
-              <textarea id="task-expected"></textarea>
-            </div>
-            <div class="field">
-              <label for="task-validation-mode">Validation Mode</label>
-              <select id="task-validation-mode">
-                <option value="">-- none --</option>
-                <option value="strict">strict (exact match)</option>
-                <option value="loose">loose (whitespace tolerant)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="task-test-cases">Test Cases (JSON)</label>
-              <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
-              <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
-            </div>
-            <div class="field">
-              <label for="task-solution">Solution Code</label>
-              <textarea id="task-solution" placeholder="Musterlösung"></textarea>
-            </div>
-            <div class="row-actions">
-              <button class="btn primary" type="submit">Add Task</button>
-            </div>
-          </form>
+          <button class="btn primary" type="button" id="open-task-modal">+ New Task</button>
         </div>
       </div>
     </section>
@@ -394,6 +318,145 @@ if ($displayName === '') {
         </div>
       </div>
     </section>
+  </div>
+
+  <div id="assignment-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:600px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="assignment-modal-title" style="margin:0;">New Assignment</h3>
+        <button id="assignment-close-btn" class="btn ghost" style="font-size:20px;">✕</button>
+      </div>
+      <form id="assignment-form">
+        <input type="hidden" id="assignment-id" />
+        <div class="field">
+          <label for="assignment-title">Title</label>
+          <input id="assignment-title" required />
+        </div>
+        <div class="field">
+          <label for="assignment-description">Description</label>
+          <textarea id="assignment-description"></textarea>
+        </div>
+        <div class="field">
+          <label for="assignment-difficulty">Difficulty</label>
+          <select id="assignment-difficulty">
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="assignment-active">Active</label>
+          <select id="assignment-active">
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" type="submit">Save</button>
+          <button class="btn" type="button" id="assignment-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="task-create-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:800px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0;">New Task</h3>
+        <button id="task-create-close-btn" class="btn ghost" style="font-size:20px;">✕</button>
+      </div>
+      <form id="task-form">
+        <div class="field">
+          <label for="task-title">Title</label>
+          <input id="task-title" />
+        </div>
+        <div class="field">
+          <label for="task-description">Description</label>
+          <textarea id="task-description"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-position">Position</label>
+          <input id="task-position" type="number" min="1" />
+        </div>
+        <div class="field">
+          <label for="task-type">Problem type</label>
+          <select id="task-type">
+            <option value="code_completion">code_completion</option>
+            <option value="code_fix">code_fix</option>
+            <option value="multiple_choice">multiple_choice</option>
+            <option value="essay">essay</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="task-template">Code template</label>
+          <textarea id="task-template"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-hint">Hint</label>
+          <textarea id="task-hint"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+          <textarea id="task-hint1"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+          <textarea id="task-hint2"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+          <textarea id="task-hint3"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
+          <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+        </div>
+        <div class="field">
+          <label for="task-expected">Expected output</label>
+          <textarea id="task-expected"></textarea>
+        </div>
+        <div class="field">
+          <label for="task-validation-mode">Validation Mode</label>
+          <select id="task-validation-mode">
+            <option value="">-- none --</option>
+            <option value="strict">strict (exact match)</option>
+            <option value="loose">loose (whitespace tolerant)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="task-test-cases">Test Cases (JSON)</label>
+          
+          <!-- Test Cases GUI Builder -->
+          <div class="test-cases-builder" id="test-cases-builder">
+            <div class="builder-header">
+              <label>Test Type:</label>
+              <select id="test-type-selector" style="margin-left:10px; padding:4px 8px;">
+                <option value="output">OUTPUT (Console Output)</option>
+                <option value="function">FUNCTION (Return Value)</option>
+                <option value="variable">VARIABLE (Check Variables)</option>
+                <option value="code_check">CODE CHECK (Keywords) ✨</option>
+              </select>
+              <button type="button" class="btn" id="add-test-btn" style="margin-left:10px;">+ Add Test</button>
+              <button type="button" class="btn primary" id="generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
+            </div>
+            
+            <div id="tests-container" style="margin-top:15px;"></div>
+          </div>
+          
+          <label for="task-test-cases" style="margin-top:20px; display:block;">JSON (Manual Edit):</label>
+          <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+          <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
+        </div>
+        <div class="field">
+          <label for="task-solution">Solution Code</label>
+          <textarea id="task-solution" placeholder="Musterlösung"></textarea>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" type="submit">Add Task</button>
+          <button class="btn" type="button" id="task-create-cancel-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div id="task-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
@@ -463,6 +526,25 @@ if ($displayName === '') {
         </div>
         <div class="field">
           <label for="edit-task-test-cases">Test Cases (JSON)</label>
+          
+          <!-- Test Cases GUI Builder (Edit) -->
+          <div class="test-cases-builder" id="edit-test-cases-builder">
+            <div class="builder-header">
+              <label>Test Type:</label>
+              <select id="edit-test-type-selector" style="margin-left:10px; padding:4px 8px;">
+                <option value="output">OUTPUT (Console Output)</option>
+                <option value="function">FUNCTION (Return Value)</option>
+                <option value="variable">VARIABLE (Check Variables)</option>
+                <option value="code_check">CODE CHECK (Keywords) ✨</option>
+              </select>
+              <button type="button" class="btn" id="edit-add-test-btn" style="margin-left:10px;">+ Add Test</button>
+              <button type="button" class="btn primary" id="edit-generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
+            </div>
+            
+            <div id="edit-tests-container" style="margin-top:15px;"></div>
+          </div>
+          
+          <label for="edit-task-test-cases" style="margin-top:20px; display:block;">JSON (Manual Edit):</label>
           <textarea id="edit-task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
           <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
         </div>
@@ -479,8 +561,12 @@ if ($displayName === '') {
   </div>
 
   <style>
-    #task-modal textarea { min-height:120px; }
-    #task-modal { animation: fadeIn 0.2s ease-in; }
+    #task-modal textarea,
+    #task-create-modal textarea,
+    #assignment-modal textarea { min-height:120px; }
+    #task-modal,
+    #task-create-modal,
+    #assignment-modal { animation: fadeIn 0.2s ease-in; }
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   </style>
 

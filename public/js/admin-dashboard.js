@@ -169,7 +169,49 @@ function resetAssignmentForm() {
   $('assignment-description').value = '';
   $('assignment-difficulty').value = 'beginner';
   $('assignment-active').value = 'true';
-  $('assignment-form-title').textContent = 'New Assignment';
+  const titleEl = $('assignment-modal-title');
+  if (titleEl) titleEl.textContent = 'New Assignment';
+}
+
+function resetTaskForm() {
+  $('task-title').value = '';
+  $('task-description').value = '';
+  $('task-position').value = '';
+  $('task-template').value = '';
+  $('task-hint').value = '';
+  $('task-hint1').value = '';
+  $('task-hint2').value = '';
+  $('task-hint3').value = '';
+  $('task-stoff').value = '';
+  $('task-expected').value = '';
+  $('task-validation-mode').value = '';
+  $('task-test-cases').value = '';
+  $('task-solution').value = '';
+  testCasesData = [];
+  renderTestCases(testCasesData, 'tests-container');
+}
+
+function openAssignmentModal() {
+  resetAssignmentForm();
+  $('assignment-modal').style.display = 'block';
+}
+
+function closeAssignmentModal() {
+  $('assignment-modal').style.display = 'none';
+  resetAssignmentForm();
+}
+
+function openNewTaskModal() {
+  if (!state.currentAssignmentId) {
+    alert('Select an assignment first');
+    return;
+  }
+  resetTaskForm();
+  $('task-create-modal').style.display = 'block';
+}
+
+function closeNewTaskModal() {
+  $('task-create-modal').style.display = 'none';
 }
 
 async function handleAssignmentSubmit(e) {
@@ -203,6 +245,7 @@ async function handleAssignmentSubmit(e) {
 
   resetAssignmentForm();
   await loadAssignments();
+  closeAssignmentModal();
 }
 
 async function handleTaskSubmit(e) {
@@ -226,6 +269,12 @@ async function handleTaskSubmit(e) {
     solution_code: $('task-solution').value.trim() || null
   };
 
+  // If builder has data, prefer it over manual JSON
+  if (Array.isArray(testCasesData) && testCasesData.length > 0) {
+    payload.test_cases = JSON.stringify(testCasesData);
+    $('task-test-cases').value = payload.test_cases;
+  }
+
   if (!payload.title) {
     alert('Title is required');
     return;
@@ -246,18 +295,11 @@ async function handleTaskSubmit(e) {
     body: JSON.stringify(payload)
   });
 
-  $('task-title').value = '';
-  $('task-description').value = '';
-  $('task-position').value = '';
-  $('task-template').value = '';
-  $('task-hint').value = '';
-  $('task-expected').value = '';
-  $('task-validation-mode').value = '';
-  $('task-test-cases').value = '';
-  $('task-solution').value = '';
+  resetTaskForm();
 
   await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
   await loadAssignments();
+  closeNewTaskModal();
 }
 
 function escapeHtml(input) {
@@ -289,6 +331,22 @@ function openEditTaskModal(taskId) {
   $('edit-task-validation-mode').value = task.validation_mode || '';
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
+  
+  // Initialize editTestCasesData from JSON
+  try {
+    let parsedData = task.test_cases && task.test_cases.trim() 
+      ? JSON.parse(task.test_cases) 
+      : [];
+    // Migrate legacy FUNCTION structure to new structure
+    parsedData = migrateLegacyTestCases(parsedData);
+    editTestCasesData = parsedData;
+  } catch (e) {
+    console.error('Failed to parse test cases:', e);
+    editTestCasesData = [];
+  }
+  
+  // Render test cases in the builder
+  renderTestCases(editTestCasesData, 'edit-tests-container');
 
   $('task-modal').style.display = 'block';
   $('modal-title').textContent = `Edit Task: ${task.title}`;
@@ -297,6 +355,7 @@ function openEditTaskModal(taskId) {
 function closeEditTaskModal() {
   $('task-modal').style.display = 'none';
   $('edit-task-id').value = '';
+  editTestCasesData = [];
 }
 
 async function handleEditTaskSubmit(e) {
@@ -322,6 +381,12 @@ async function handleEditTaskSubmit(e) {
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
+
+  // If builder has data, prefer it over manual JSON
+  if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
+    payload.test_cases = JSON.stringify(editTestCasesData);
+    $('edit-task-test-cases').value = payload.test_cases;
+  }
 
   if (!payload.title) {
     alert('Title is required');
@@ -354,9 +419,38 @@ function bindEvents() {
   });
 
   $('assignment-form').addEventListener('submit', handleAssignmentSubmit);
-  $('assignment-reset').addEventListener('click', resetAssignmentForm);
   $('task-form').addEventListener('submit', handleTaskSubmit);
   $('task-edit-form').addEventListener('submit', handleEditTaskSubmit);
+
+  const openAssignmentBtn = $('open-assignment-modal');
+  if (openAssignmentBtn) {
+    openAssignmentBtn.addEventListener('click', openAssignmentModal);
+  }
+
+  const assignmentCloseBtn = $('assignment-close-btn');
+  if (assignmentCloseBtn) {
+    assignmentCloseBtn.addEventListener('click', closeAssignmentModal);
+  }
+
+  const assignmentCancelBtn = $('assignment-cancel');
+  if (assignmentCancelBtn) {
+    assignmentCancelBtn.addEventListener('click', closeAssignmentModal);
+  }
+
+  const openTaskBtn = $('open-task-modal');
+  if (openTaskBtn) {
+    openTaskBtn.addEventListener('click', openNewTaskModal);
+  }
+
+  const taskCreateCloseBtn = $('task-create-close-btn');
+  if (taskCreateCloseBtn) {
+    taskCreateCloseBtn.addEventListener('click', closeNewTaskModal);
+  }
+
+  const taskCreateCancelBtn = $('task-create-cancel-btn');
+  if (taskCreateCancelBtn) {
+    taskCreateCancelBtn.addEventListener('click', closeNewTaskModal);
+  }
 
   // Modal close buttons
   $('close-modal-btn').addEventListener('click', closeEditTaskModal);
@@ -368,6 +462,24 @@ function bindEvents() {
       closeEditTaskModal();
     }
   });
+
+  const assignmentModal = $('assignment-modal');
+  if (assignmentModal) {
+    assignmentModal.addEventListener('click', (e) => {
+      if (e.target === assignmentModal) {
+        closeAssignmentModal();
+      }
+    });
+  }
+
+  const taskCreateModal = $('task-create-modal');
+  if (taskCreateModal) {
+    taskCreateModal.addEventListener('click', (e) => {
+      if (e.target === taskCreateModal) {
+        closeNewTaskModal();
+      }
+    });
+  }
 
   $('logout-btn').addEventListener('click', async () => {
     await requestJson('../api/auth/logout.php', { method: 'POST' });
@@ -402,7 +514,8 @@ function bindEvents() {
       $('assignment-description').value = a.description || '';
       $('assignment-difficulty').value = a.difficulty || 'beginner';
       $('assignment-active').value = a.is_active ? 'true' : 'false';
-      $('assignment-form-title').textContent = `Edit Assignment #${a.id}`;
+      $('assignment-modal-title').textContent = `Edit Assignment #${a.id}`;
+      $('assignment-modal').style.display = 'block';
     }
 
     if (action === 'delete-assignment') {
@@ -481,4 +594,737 @@ async function init() {
 init().catch((err) => {
   console.error(err);
   alert(err.message || 'Failed to load admin dashboard');
+});
+
+// ===================================================================
+// TEST CASES BUILDER GUI
+// ===================================================================
+
+let testCasesData = []; // CREATE form
+let editTestCasesData = []; // EDIT form
+
+// Initialize Test Cases Builder for CREATE form
+function initTestCasesBuilder() {
+  const addBtn = document.getElementById('add-test-btn');
+  const generateBtn = document.getElementById('generate-json-btn');
+  const typeSelector = document.getElementById('test-type-selector');
+  
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const type = typeSelector.value;
+      addTestCase(type, testCasesData, 'tests-container');
+    });
+  }
+  
+  if (generateBtn) {
+    generateBtn.addEventListener('click', () => {
+      generateJSON(testCasesData, 'task-test-cases');
+    });
+  }
+}
+
+// Initialize Test Cases Builder for EDIT form
+function initEditTestCasesBuilder() {
+  const addBtn = document.getElementById('edit-add-test-btn');
+  const generateBtn = document.getElementById('edit-generate-json-btn');
+  const typeSelector = document.getElementById('edit-test-type-selector');
+  
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const type = typeSelector.value;
+      addTestCase(type, editTestCasesData, 'edit-tests-container');
+    });
+  }
+  
+  if (generateBtn) {
+    generateBtn.addEventListener('click', () => {
+      generateJSON(editTestCasesData, 'edit-task-test-cases');
+    });
+  }
+}
+
+// Add a test case to the GUI
+function addTestCase(type, dataArray, containerId) {
+  const testCase = { type };
+  
+  // Initialize type-specific default structures
+  if (type === 'output') {
+    testCase.expected = [];
+  } else if (type === 'function') {
+    testCase.function_name = '';
+    testCase.test_cases = [{ args: [], expected: '' }]; // Start with one empty test case
+  } else if (type === 'variable') {
+    testCase.init_var_names = [];
+    testCase.expected_var_names = [];
+    testCase.test_cases = [{ init_values: [], expected_values: [] }]; // Start with one empty test case
+  } else if (type === 'code_check') {
+    testCase.keywords = [];
+    testCase.operator = 'AND';
+    testCase.feedback = '';
+  }
+  
+  const idx = dataArray.length;
+  dataArray.push(testCase);
+  
+  renderTestCases(dataArray, containerId);
+}
+
+// Render all test cases
+function renderTestCases(dataArray, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  container.innerHTML = dataArray.map((test, idx) => {
+    return renderTestCaseHTML(test, idx, containerId);
+  }).join('');
+  
+  // Bind event handlers
+  bindTestCaseEvents(dataArray, containerId);
+}
+
+// Render single test case HTML
+function renderTestCaseHTML(test, idx, containerId) {
+  const type = test.type || 'output';
+  
+  let html = `
+    <div class="test-case-item" data-idx="${idx}" style="border:1px solid #e5e7eb; padding:12px; margin-bottom:10px; border-radius:6px; background:#f9fafb;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <strong>Test #${idx + 1} - ${type.toUpperCase()}</strong>
+        <button type="button" class="btn-remove-test" data-idx="${idx}" style="background:#ef4444; color:white; padding:4px 8px; border:none; border-radius:4px; cursor:pointer;">✕ Remove</button>
+      </div>
+  `;
+  
+  if (type === 'output') {
+    const patterns = test.expected && Array.isArray(test.expected) ? test.expected : (test.expected ? [test.expected] : []);
+    
+    html += `
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Expected Output Patterns (Wildcards: * = any chars, ? = one char):
+        </label>
+        <div class="patterns-container" data-idx="${idx}" style="margin-bottom:8px;">
+    `;
+    
+    // Render each pattern in its own field
+    patterns.forEach((pattern, pidx) => {
+      html += `
+        <div class="pattern-item" data-pidx="${pidx}" style="margin-bottom:6px; display:flex; gap:6px;">
+          <textarea class="pattern-input" data-pidx="${pidx}" 
+                    placeholder="e.g. Output with * OR exact match OR test?" 
+                    style="flex:1; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; min-height:60px;">${escapeHtml(pattern)}</textarea>
+          <button type="button" class="btn-remove-pattern" data-pidx="${pidx}" style="background:#ef4444; color:white; padding:6px 8px; border:none; border-radius:4px; cursor:pointer; height:fit-content;">✕</button>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+        <button type="button" class="btn-add-pattern" data-idx="${idx}" style="background:#3b82f6; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;">
+          + Weiteres Pattern
+        </button>
+        <div style="font-size:11px; color:#666; margin-top:6px;">
+          Jedes Feld = ein Pattern. Test bestanden wenn EINES der Patterns passt (ODER-Logik). Patterns können mehrzeilig sein.
+        </div>
+      </div>
+    `;
+  } else if (type === 'function') {
+    html += `
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Function Name:
+        </label>
+        <input type="text" class="function-name-input" data-idx="${idx}" value="${test.function_name || ''}" 
+               placeholder="e.g. quadrat" 
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+      </div>
+      
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Test Cases (Arguments → Expected Result):
+        </label>
+        <div class="function-test-cases-container" data-idx="${idx}" style="margin-bottom:8px;">
+    `;
+    
+    // Render each test case
+    const testCases = test.test_cases && Array.isArray(test.test_cases) ? test.test_cases : [];
+    testCases.forEach((tc, tcIdx) => {
+      html += `
+        <div class="function-test-case" data-tcidx="${tcIdx}" style="margin-bottom:10px; border:1px solid #e5e7eb; padding:10px; border-radius:4px; background:#f9fafb;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; margin-bottom:8px;">
+            <div>
+              <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">Args (comma-separated):</label>
+              <input type="text" class="function-args-input" data-tcidx="${tcIdx}" value="${tc.args || ''}" 
+                     placeholder="5, 10" 
+                     style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; font-size:12px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">Expected:</label>
+              <input type="text" class="function-expected-input" data-tcidx="${tcIdx}" value="${tc.expected || ''}" 
+                     placeholder="25" 
+                     style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; font-size:12px;">
+            </div>
+            <button type="button" class="btn-remove-function-tc" data-tcidx="${tcIdx}" style="background:#ef4444; color:white; padding:6px 8px; border:none; border-radius:4px; cursor:pointer; height:fit-content; margin-top:20px;">✕</button>
+          </div>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+        <button type="button" class="btn-add-function-tc" data-idx="${idx}" style="background:#3b82f6; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;">
+          + Weiterer Test Case
+        </button>
+        <div style="font-size:11px; color:#666; margin-top:6px;">
+          Funktion wird mit jedem Test Case aufgerufen. Test bestanden wenn alle Cases den erwarteten Wert zurückgeben.
+        </div>
+      </div>
+    `;
+  } else if (type === 'variable') {
+    html += `
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Init Variable Names (comma-separated):
+        </label>
+        <input type="text" class="variable-init-names-input" data-idx="${idx}" value="${(test.init_var_names || []).join(', ')}" 
+               placeholder="a, b, c" 
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+      </div>
+      
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Expected Variable Names (comma-separated):
+        </label>
+        <input type="text" class="variable-expected-names-input" data-idx="${idx}" value="${(test.expected_var_names || []).join(', ')}" 
+               placeholder="summe, produkt" 
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+      </div>
+      
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Test Cases (Init Values → Expected Values):
+        </label>
+        <div class="variable-test-cases-container" data-idx="${idx}" style="margin-bottom:8px;">
+    `;
+    
+    // Render each test case
+    const testCases = test.test_cases && Array.isArray(test.test_cases) ? test.test_cases : [];
+    testCases.forEach((tc, tcIdx) => {
+      html += `
+        <div class="variable-test-case" data-tcidx="${tcIdx}" style="margin-bottom:10px; border:1px solid #e5e7eb; padding:10px; border-radius:4px; background:#f9fafb;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; margin-bottom:8px;">
+            <div>
+              <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">Init Values (comma-separated):</label>
+              <input type="text" class="variable-init-values-input" data-tcidx="${tcIdx}" value="${(tc.init_values || []).join(', ')}" 
+                     placeholder="2, 4, 5" 
+                     style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; font-size:12px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">Expected Values (comma-separated):</label>
+              <input type="text" class="variable-expected-values-input" data-tcidx="${tcIdx}" value="${(tc.expected_values || []).join(', ')}" 
+                     placeholder="20, 30" 
+                     style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; font-size:12px;">
+            </div>
+            <button type="button" class="btn-remove-variable-tc" data-tcidx="${tcIdx}" style="background:#ef4444; color:white; padding:6px 8px; border:none; border-radius:4px; cursor:pointer; height:fit-content; margin-top:20px;">✕</button>
+          </div>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+        <button type="button" class="btn-add-variable-tc" data-idx="${idx}" style="background:#3b82f6; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;">
+          + Weiterer Test Case
+        </button>
+        <div style="font-size:11px; color:#666; margin-top:6px;">
+          Jeder Test Case setzt die Init-Variablen, führt den Code aus und prüft die Expected-Variablen.
+        </div>
+      </div>
+    `;
+  } else if (type === 'code_check') {
+    // Code Pattern Check
+    const keywords = test.keywords && Array.isArray(test.keywords) ? test.keywords : (test.keywords ? [test.keywords] : []);
+    const operator = test.operator || 'AND';
+    const feedback = test.feedback || '';
+    
+    html += `
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Keywords to check (comma-separated):
+        </label>
+        <input type="text" class="code-check-keywords-input" data-idx="${idx}" 
+               value="${keywords.join(', ')}" 
+               placeholder="e.g.: for, print, if" 
+               list="keyword-suggestions"
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+        <datalist id="keyword-suggestions">
+          <option>for</option>
+          <option>while</option>
+          <option>if</option>
+          <option>def</option>
+          <option>print</option>
+          <option>import</option>
+          <option>class</option>
+          <option>return</option>
+          <option>append</option>
+          <option>len</option>
+        </datalist>
+      </div>
+      
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Operator:
+        </label>
+        <select class="code-check-operator-input" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          <option value="AND" ${operator === 'AND' ? 'selected' : ''}>AND (all keywords required)</option>
+          <option value="OR" ${operator === 'OR' ? 'selected' : ''}>OR (at least one keyword)</option>
+          <option value="NOT" ${operator === 'NOT' ? 'selected' : ''}>NOT (keywords forbidden)</option>
+        </select>
+      </div>
+      
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Feedback:
+        </label>
+        <textarea class="code-check-feedback-input" data-idx="${idx}" 
+                  placeholder="z.B.: 'Du musst eine FOR-Schleife verwenden'" 
+                  style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; min-height:60px;">${escapeHtml(feedback)}</textarea>
+      </div>
+      
+      <div style="font-size:11px; color:#666; margin-top:6px;">
+        Operator: AND = alle Keywords müssen vorhanden sein | OR = mindestens eines | NOT = alle Keywords müssen FEHLEN (verboten).
+      </div>
+    `;
+  }
+  
+  html += `</div>`;
+  return html;
+}
+
+// Bind events for test case inputs
+function bindTestCaseEvents(dataArray, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  // Handle OUTPUT pattern inputs
+  container.querySelectorAll('.pattern-input').forEach(textarea => {
+    textarea.addEventListener('input', (e) => {
+      const target = e.target;
+      const testIdx = parseInt(target.closest('.patterns-container').dataset.idx);
+      const patternIdx = parseInt(target.dataset.pidx);
+      const value = target.value;
+      
+      if (!Array.isArray(dataArray[testIdx]['expected'])) {
+        dataArray[testIdx]['expected'] = [];
+      }
+      dataArray[testIdx]['expected'][patternIdx] = value;
+    });
+  });
+  
+  // Handle Add Pattern button
+  container.querySelectorAll('.btn-add-pattern').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      if (!Array.isArray(dataArray[idx]['expected'])) {
+        dataArray[idx]['expected'] = [];
+      }
+      dataArray[idx]['expected'].push(''); // Add empty pattern
+      renderTestCases(dataArray, containerId);
+    });
+  });
+  
+  // Handle Remove Pattern button
+  container.querySelectorAll('.btn-remove-pattern').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const patternBtn = e.target.closest('.btn-remove-pattern');
+      const patternContainer = patternBtn.closest('.patterns-container');
+      const testIdx = parseInt(patternContainer.dataset.idx);
+      const patternIdx = parseInt(patternBtn.dataset.pidx);
+      
+      if (Array.isArray(dataArray[testIdx]['expected'])) {
+        dataArray[testIdx]['expected'].splice(patternIdx, 1);
+        renderTestCases(dataArray, containerId);
+      }
+    });
+  });
+
+  // Handle FUNCTION test case inputs
+  container.querySelectorAll('.function-name-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      dataArray[testIdx]['function_name'] = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.function-args-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testContainer = e.target.closest('.function-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(e.target.dataset.tcidx);
+      const value = e.target.value;
+      
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      
+      if (!dataArray[testIdx]['test_cases'][tcIdx]) {
+        dataArray[testIdx]['test_cases'][tcIdx] = {};
+      }
+      
+      // Parse comma-separated args with type conversion
+      try {
+        const parsed = value.split(',').map(v => {
+          const trimmed = v.trim();
+          if (trimmed === 'true') return true;
+          if (trimmed === 'false') return false;
+          if (!isNaN(trimmed) && trimmed !== '') return Number(trimmed);
+          return trimmed.replace(/^["']|["']$/g, ''); // Remove quotes
+        });
+        dataArray[testIdx]['test_cases'][tcIdx]['args'] = parsed;
+      } catch (e) {
+        dataArray[testIdx]['test_cases'][tcIdx]['args'] = [value];
+      }
+    });
+  });
+
+  container.querySelectorAll('.function-expected-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testContainer = e.target.closest('.function-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(e.target.dataset.tcidx);
+      const value = e.target.value;
+      
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      
+      if (!dataArray[testIdx]['test_cases'][tcIdx]) {
+        dataArray[testIdx]['test_cases'][tcIdx] = {};
+      }
+      
+      // Auto-convert booleans and numbers
+      let expectedValue = value;
+      if (value.toLowerCase() === 'true') expectedValue = true;
+      else if (value.toLowerCase() === 'false') expectedValue = false;
+      else if (!isNaN(value) && value !== '') expectedValue = Number(value);
+      
+      dataArray[testIdx]['test_cases'][tcIdx]['expected'] = expectedValue;
+    });
+  });
+
+  // Handle Add Function Test Case button
+  container.querySelectorAll('.btn-add-function-tc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const testIdx = parseInt(btn.dataset.idx);
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      dataArray[testIdx]['test_cases'].push({ args: [], expected: '' }); // Add empty test case
+      renderTestCases(dataArray, containerId);
+    });
+  });
+
+  // Handle Remove Function Test Case button
+  container.querySelectorAll('.btn-remove-function-tc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tcBtn = e.target.closest('.btn-remove-function-tc');
+      const testContainer = tcBtn.closest('.function-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(tcBtn.dataset.tcidx);
+      
+      if (Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'].splice(tcIdx, 1);
+        renderTestCases(dataArray, containerId);
+      }
+    });
+  });
+
+  // Handle VARIABLE test case inputs
+  container.querySelectorAll('.variable-init-names-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      const value = e.target.value;
+      // Parse comma-separated variable names
+      const names = value.split(',').map(n => n.trim()).filter(n => n.length > 0);
+      dataArray[testIdx]['init_var_names'] = names;
+    });
+  });
+
+  container.querySelectorAll('.variable-expected-names-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      const value = e.target.value;
+      // Parse comma-separated variable names
+      const names = value.split(',').map(n => n.trim()).filter(n => n.length > 0);
+      dataArray[testIdx]['expected_var_names'] = names;
+    });
+  });
+
+  container.querySelectorAll('.variable-init-values-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testContainer = e.target.closest('.variable-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(e.target.dataset.tcidx);
+      const value = e.target.value;
+      
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      
+      if (!dataArray[testIdx]['test_cases'][tcIdx]) {
+        dataArray[testIdx]['test_cases'][tcIdx] = {};
+      }
+      
+      // Parse comma-separated values with type conversion
+      try {
+        const parsed = value.split(',').map(v => {
+          const trimmed = v.trim();
+          if (trimmed === 'true') return true;
+          if (trimmed === 'false') return false;
+          if (!isNaN(trimmed) && trimmed !== '') return Number(trimmed);
+          return trimmed.replace(/^["']|["']$/g, ''); // Remove quotes
+        });
+        dataArray[testIdx]['test_cases'][tcIdx]['init_values'] = parsed;
+      } catch (e) {
+        dataArray[testIdx]['test_cases'][tcIdx]['init_values'] = [value];
+      }
+    });
+  });
+
+  container.querySelectorAll('.variable-expected-values-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testContainer = e.target.closest('.variable-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(e.target.dataset.tcidx);
+      const value = e.target.value;
+      
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      
+      if (!dataArray[testIdx]['test_cases'][tcIdx]) {
+        dataArray[testIdx]['test_cases'][tcIdx] = {};
+      }
+      
+      // Parse comma-separated values with type conversion
+      try {
+        const parsed = value.split(',').map(v => {
+          const trimmed = v.trim();
+          if (trimmed === 'true') return true;
+          if (trimmed === 'false') return false;
+          if (!isNaN(trimmed) && trimmed !== '') return Number(trimmed);
+          return trimmed.replace(/^["']|["']$/g, ''); // Remove quotes
+        });
+        dataArray[testIdx]['test_cases'][tcIdx]['expected_values'] = parsed;
+      } catch (e) {
+        dataArray[testIdx]['test_cases'][tcIdx]['expected_values'] = [value];
+      }
+    });
+  });
+
+  // Handle Add Variable Test Case button
+  container.querySelectorAll('.btn-add-variable-tc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const testIdx = parseInt(btn.dataset.idx);
+      if (!Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'] = [];
+      }
+      dataArray[testIdx]['test_cases'].push({ init_values: [], expected_values: [] }); // Add empty test case
+      renderTestCases(dataArray, containerId);
+    });
+  });
+
+  // Handle Remove Variable Test Case button
+  container.querySelectorAll('.btn-remove-variable-tc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tcBtn = e.target.closest('.btn-remove-variable-tc');
+      const testContainer = tcBtn.closest('.variable-test-cases-container');
+      const testIdx = parseInt(testContainer.dataset.idx);
+      const tcIdx = parseInt(tcBtn.dataset.tcidx);
+      
+      if (Array.isArray(dataArray[testIdx]['test_cases'])) {
+        dataArray[testIdx]['test_cases'].splice(tcIdx, 1);
+        renderTestCases(dataArray, containerId);
+      }
+    });
+  });
+
+  // Handle Code Check Keywords input
+  container.querySelectorAll('.code-check-keywords-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const value = e.target.value;
+      const keywords = value.split(',').map(k => k.trim()).filter(k => k !== '');
+      dataArray[idx]['keywords'] = keywords;
+    });
+  });
+
+  // Handle Code Check Operator dropdown
+  container.querySelectorAll('.code-check-operator-input').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const value = e.target.value;
+      dataArray[idx]['operator'] = value;
+    });
+  });
+
+  // Handle Code Check Feedback input
+  container.querySelectorAll('.code-check-feedback-input').forEach(textarea => {
+    textarea.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const value = e.target.value;
+      dataArray[idx]['feedback'] = value;
+    });
+  });
+  
+  // Input changes (function/variable fields)
+  container.querySelectorAll('.test-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const field = e.target.dataset.field;
+      const value = e.target.value;
+      
+      if (field === 'args') {
+        // Parse comma-separated args
+        try {
+          const parsed = value.split(',').map(v => {
+            const trimmed = v.trim();
+            if (trimmed === 'true') return true;
+            if (trimmed === 'false') return false;
+            if (!isNaN(trimmed) && trimmed !== '') return Number(trimmed);
+            return trimmed.replace(/^["']|["']$/g, ''); // Remove quotes
+          });
+          dataArray[idx][field] = parsed;
+        } catch (e) {
+          dataArray[idx][field] = [value];
+        }
+      } else if (field === 'init_vars' || field === 'expected_vars') {
+        // Parse JSON
+        try {
+          dataArray[idx][field] = JSON.parse(value);
+        } catch (e) {
+          dataArray[idx][field] = value; // Keep as string if invalid
+        }
+      } else if (field === 'expected') {
+        // For FUNCTION: Auto-convert booleans and numbers
+        if (value === 'true') dataArray[idx][field] = true;
+        else if (value === 'false') dataArray[idx][field] = false;
+        else if (!isNaN(value) && value.trim() !== '') dataArray[idx][field] = Number(value);
+        else dataArray[idx][field] = value;
+      } else {
+        dataArray[idx][field] = value;
+      }
+    });
+  });
+  
+  // Remove buttons
+  container.querySelectorAll('.btn-remove-test').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      dataArray.splice(idx, 1);
+      renderTestCases(dataArray, containerId);
+    });
+  });
+}
+
+// Generate JSON from GUI
+function generateJSON(dataArray, textareaId) {
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+  
+  const json = JSON.stringify(dataArray, null, 2);
+  textarea.value = json;
+  
+  alert(`JSON generated! ${dataArray.length} test case(s)`);
+}
+
+/**
+ * Migrate legacy test case structures to new unified structure
+ * Legacy FUNCTION: [{ type: 'function', function_name: 'f', args: [...], expected: value }, ...]
+ * New FUNCTION:    [{ type: 'function', function_name: 'f', test_cases: [{ args: [...], expected: value }, ...] }]
+ * 
+ * Legacy VARIABLE: [{ type: 'variable', init_vars: {a: 1, b: 2}, expected_vars: {sum: 3} }, ...]
+ * New VARIABLE:    [{ type: 'variable', init_var_names: ['a', 'b'], expected_var_names: ['sum'], test_cases: [{ init_values: [1, 2], expected_values: [3] }] }]
+ */
+function migrateLegacyTestCases(testCases) {
+  if (!Array.isArray(testCases) || testCases.length === 0) return testCases;
+  
+  const firstTest = testCases[0];
+  
+  // Check if already migrated (new structure has test_cases array)
+  if (firstTest.type === 'function' && Array.isArray(firstTest.test_cases)) {
+    return testCases; // Already new structure
+  }
+  
+  if (firstTest.type === 'variable' && Array.isArray(firstTest.test_cases)) {
+    return testCases; // Already new structure
+  }
+  
+  // Migrate legacy FUNCTION structure: group by function_name
+  if (firstTest.type === 'function' || firstTest.function_name) {
+    const grouped = {};
+    
+    testCases.forEach(tc => {
+      const fn = tc.function_name || '';
+      if (!grouped[fn]) {
+        grouped[fn] = {
+          type: 'function',
+          function_name: fn,
+          test_cases: []
+        };
+      }
+      
+      grouped[fn].test_cases.push({
+        args: tc.args || [],
+        expected: tc.expected
+      });
+    });
+    
+    // Return as array of grouped functions
+    return Object.values(grouped);
+  }
+  
+  // Migrate legacy VARIABLE structure: convert JSON objects to name/value arrays
+  if (firstTest.type === 'variable' || firstTest.init_vars || firstTest.expected_vars) {
+    // Combine all old test cases into ONE new test case with multiple test_cases
+    const allTestCases = [];
+    let initNames = [];
+    let expectedNames = [];
+    
+    testCases.forEach(tc => {
+      const initVars = tc.init_vars || {};
+      const expectedVars = tc.expected_vars || {};
+      
+      // Use names from first test case
+      if (initNames.length === 0) {
+        initNames = Object.keys(initVars);
+      }
+      if (expectedNames.length === 0) {
+        expectedNames = Object.keys(expectedVars);
+      }
+      
+      const initValues = initNames.map(name => initVars[name]);
+      const expectedValues = expectedNames.map(name => expectedVars[name]);
+      
+      allTestCases.push({
+        init_values: initValues,
+        expected_values: expectedValues
+      });
+    });
+    
+    return [{
+      type: 'variable',
+      init_var_names: initNames,
+      expected_var_names: expectedNames,
+      test_cases: allTestCases
+    }];
+  }
+  
+  // No migration needed for OUTPUT type
+  return testCases;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initTestCasesBuilder();
+  initEditTestCasesBuilder();
 });

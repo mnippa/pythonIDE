@@ -100,14 +100,13 @@ if ($displayName === '') {
       min-width:0;
     }
     .app.with-task-details {
-      grid-template-columns: 300px 1fr 25%;
+      grid-template-columns: 30% 1fr 25%;
     }
 
     /* TASK DETAILS SIDEBAR (left) */
     #task-details-panel {
       border-right: 1px solid var(--border);
       background: var(--bg);
-      overflow-y: auto;
       display: none;
       flex-direction: column;
       min-height:0;
@@ -115,16 +114,73 @@ if ($displayName === '') {
     #task-details-panel.active {
       display: flex;
     }
-    .task-details-header {
-      padding: 12px;
-      border-bottom: 1px solid var(--border);
+    
+    /* Task Navigation (oben, kompakt) */
+    .task-navigation {
+      border-bottom: 2px solid var(--border);
       background: var(--panel);
+      max-height: 40vh;
+      overflow-y: auto;
+      padding: 8px;
     }
-    .task-details-header h3 {
-      margin: 0 0 4px 0;
-      font-size: 14px;
+    .task-nav-item {
+      padding: 8px 10px;
+      margin: 2px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+    }
+    .task-nav-item:hover {
+      background: var(--bg);
+    }
+    .task-nav-item.active {
+      background: var(--bg);
+      border-left-color: #667eea;
+      font-weight: 600;
+    }
+    .task-nav-title {
+      flex: 1;
       color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+    .task-nav-status {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 2px solid transparent;
+    }
+    .task-nav-position {
+      font-size: 11px;
+      color: #9ca3af;
+      min-width: 20px;
+      text-align: right;
+    }
+    .task-nav-status.status-unbearbeitet {
+      background-color: #9ca3af;
+      border-color: #6b7280;
+    }
+    .task-nav-status.status-in-progress {
+      background-color: #fbbf24;
+      border-color: #f59e0b;
+    }
+    .task-nav-status.status-passed {
+      background-color: #34d399;
+      border-color: #10b981;
+    }
+    .task-nav-status.status-failed {
+      background-color: #f87171;
+      border-color: #dc2626;
+    }
+    
+    /* Task Details (unten) */
     .task-details-content {
       flex: 1;
       padding: 12px;
@@ -161,6 +217,14 @@ if ($displayName === '') {
       font-family: ui-monospace, Menlo, monospace;
       white-space: pre-wrap;
       word-wrap: break-word;
+    }
+    .stoff-section {
+      background: var(--panel);
+      border-left: 3px solid #3b82f6;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 12px;
     }
 
     /* LEFT COLUMN: file tree + editor + lint/help */
@@ -478,135 +542,6 @@ if ($displayName === '') {
       font-weight: 600;
       color: var(--text-primary);
     }
-
-    .assignments-panel {
-      position: fixed;
-      top: 0;
-      right: -420px;
-      width: 420px;
-      height: 100vh;
-      background: var(--bg);
-      border-left: 1px solid var(--border);
-      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-      transition: right 0.3s;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-    }
-    .assignments-panel.open { right: 0; }
-    .assignments-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .assignments-header h2 {
-      margin: 0;
-      font-size: 18px;
-      color: var(--text-primary);
-    }
-    .assignments-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-    .assignment-item {
-      margin-bottom: 10px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .assignment-header-bar {
-      padding: 12px;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: background 0.2s;
-    }
-    .assignment-header-bar:hover {
-      background: var(--bg);
-    }
-    .assignment-header-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-    }
-    .assignment-expand-icon {
-      transition: transform 0.2s;
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-    .assignment-item.expanded .assignment-expand-icon {
-      transform: rotate(90deg);
-    }
-    .assignment-status-summary {
-      font-size: 11px;
-      color: var(--text-secondary);
-      background: var(--bg);
-      padding: 2px 8px;
-      border-radius: 999px;
-    }
-    .assignment-tasks-list {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease-out;
-      border-top: 1px solid var(--border);
-    }
-    .assignment-item.expanded .assignment-tasks-list {
-      max-height: 600px;
-      overflow-y: auto;
-    }
-    .assignment-task-row {
-      padding: 10px 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      border-bottom: 1px solid var(--border);
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .assignment-task-row:last-child {
-      border-bottom: none;
-    }
-    .assignment-task-row:hover {
-      background: var(--bg);
-    }
-    .assignment-header-bar .assignment-title {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin: 0;
-      font-size: 14px;
-    }
-    .assignment-title {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 6px;
-    }
-    .assignment-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .status-badge {
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      background: #e5e7eb;
-      color: #111827;
-    }
-    .status-assigned { background: #e0f2fe; color: #0369a1; }
-    .status-in_progress { background: #fef3c7; color: #92400e; }
-    .status-submitted { background: #ddd6fe; color: #5b21b6; }
-    .status-passed { background: #dcfce7; color: #166534; }
-    .status-failed { background: #fee2e2; color: #b91c1c; }
     .assignment-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
     .assignment-detail {
       margin-top: 14px;
@@ -742,7 +677,7 @@ if ($displayName === '') {
 <body>
   <div class="toolbar">
     <button id="projects-btn">📁 Projekte</button>
-    <button id="assignments-btn">📚 Aufgaben</button>
+    <button id="assignments-btn" onclick="window.location.href='assignments.php'">📚 Aufgaben</button>
     <button id="run-btn">Run</button>
     <button id="check-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">✓ Check</button>
     <span id="attempts-counter" style="display:none; margin:0 12px; font-weight:600; color:var(--text-primary);">Versuche: <span id="attempts-value">0/10</span></span>
@@ -799,9 +734,8 @@ if ($displayName === '') {
 
   <div class="app">
     <div id="task-details-panel">
-      <div class="task-details-header">
-        <h3 id="task-details-title">Aufgabe</h3>
-        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;" id="task-details-position">-</div>
+      <div class="task-navigation" id="task-navigation">
+        <p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Keine Aufgaben geladen</p>
       </div>
       <div class="task-details-content" id="task-details-content">
         <p>Laden Sie eine Aufgabe um Details zu sehen</p>
@@ -832,16 +766,6 @@ if ($displayName === '') {
     <div class="projects-body">
       <button class="new-project-btn" id="new-project-btn">+ Neues Projekt</button>
       <div id="projects-list">Lade Projekte...</div>
-    </div>
-  </div>
-
-  <div id="assignments-panel" class="assignments-panel">
-    <div class="assignments-header">
-      <h2>Meine Aufgaben</h2>
-      <button class="close-panel" id="close-assignments">×</button>
-    </div>
-    <div class="assignments-body">
-      <div id="assignments-list">Lade Aufgaben...</div>
     </div>
   </div>
 
