@@ -10,12 +10,34 @@ const assignmentState = {
   currentUserAssignmentId: null,
   taskStatuses: {},
   taskAttempts: {},
+  taskRuns: {},
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
-  hasAutoLoaded: false // Flag to prevent multiple auto-loads
+  hasAutoLoaded: false, // Flag to prevent multiple auto-loads
+  // Activity tracking: accumulated active seconds per task
+  taskActiveSeconds: {}, // { taskId: totalSeconds }
+  taskLastActivityTime: {}, // { taskId: timestamp }
+  taskActivityIntervals: {} // { taskId: timerId }
 };
+
+// Export to window for editor-setup.js access
+window.assignmentState = assignmentState;
+
+// Activity tracking constants
+const ACTIVITY_HEARTBEAT_INTERVAL = 30000; // Send heartbeat every 30 seconds
+const ACTIVITY_IDLE_TIMEOUT = 90000; // 90 seconds of inactivity = idle
+const ACTIVITY_DEBUG = false;
+
+function logActivityDebug(message, data) {
+  if (!ACTIVITY_DEBUG) return;
+  if (data !== undefined) {
+    console.debug('[activity]', message, data);
+  } else {
+    console.debug('[activity]', message);
+  }
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -46,6 +68,126 @@ function statusClass(status) {
   if (!status) return 'status-badge';
   return `status-badge status-${status}`;
 }
+
+// ============================================================================
+// Activity Tracking System: Track accumulated active seconds per task
+// ============================================================================
+
+/**
+ * Track activity on current task: updates last activity time and sends heartbeats
+ */
+function startActivityTracking(taskId) {
+  if (!taskId) return;
+  logActivityDebug('startActivityTracking', { taskId });
+  
+  // Initialize task activity tracking
+  assignmentState.taskLastActivityTime[taskId] = Date.now();
+  assignmentState.taskActiveSeconds[taskId] = assignmentState.taskActiveSeconds[taskId] || 0;
+  
+  // Clear any existing interval
+  if (assignmentState.taskActivityIntervals[taskId]) {
+    clearInterval(assignmentState.taskActivityIntervals[taskId]);
+  }
+
+  // Start heartbeat interval: send accumulated seconds to server periodically
+  assignmentState.taskActivityIntervals[taskId] = setInterval(() => {
+    const now = Date.now();
+    const lastActivity = assignmentState.taskLastActivityTime[taskId] || now;
+    const timeSinceLastActivity = now - lastActivity;
+    logActivityDebug('heartbeat tick', { taskId, timeSinceLastActivity });
+    
+    // Only add time if user was active (not idle)
+    if (timeSinceLastActivity < ACTIVITY_IDLE_TIMEOUT) {
+      const secondsSinceLastHeartbeat = ACTIVITY_HEARTBEAT_INTERVAL / 1000;
+      assignmentState.taskActiveSeconds[taskId] += secondsSinceLastHeartbeat;
+      logActivityDebug('active time added', { taskId, secondsSinceLastHeartbeat });
+      
+      // Send heartbeat to server
+      sendActivityHeartbeat(taskId, secondsSinceLastHeartbeat, true);
+    } else {
+      // User is idle
+      logActivityDebug('idle heartbeat', { taskId });
+      sendActivityHeartbeat(taskId, 0, false);
+    }
+  }, ACTIVITY_HEARTBEAT_INTERVAL);
+  
+  // Set up activity event listeners on editor
+  const editor = window.editorInstance;
+  if (editor) {
+    const editorContainer = editor.getDomNode();
+    if (editorContainer) {
+      const updateActivity = () => {
+        assignmentState.taskLastActivityTime[taskId] = Date.now();
+        logActivityDebug('activity event', { taskId });
+      };
+      
+      editorContainer.addEventListener('click', updateActivity);
+      editorContainer.addEventListener('keydown', updateActivity);
+      editorContainer.addEventListener('scroll', updateActivity);
+      logActivityDebug('activity listeners bound', { taskId });
+    } else {
+      logActivityDebug('editor container missing', { taskId });
+    }
+  } else {
+    logActivityDebug('editor instance missing', { taskId });
+  }
+}
+
+/**
+ * Stop tracking activity for a task
+ */
+function stopActivityTracking(taskId) {
+  if (assignmentState.taskActivityIntervals[taskId]) {
+    clearInterval(assignmentState.taskActivityIntervals[taskId]);
+    delete assignmentState.taskActivityIntervals[taskId];
+    logActivityDebug('stopActivityTracking', { taskId });
+  }
+}
+
+/**
+ * Send activity heartbeat to server
+ * @param {number} taskId - Task ID
+ * @param {number} deltaSeconds - Seconds of active time since last heartbeat
+ * @param {boolean} isActive - Whether user is currently active
+ */
+async function sendActivityHeartbeat(taskId, deltaSeconds, isActive) {
+  logActivityDebug('sendActivityHeartbeat', { taskId, deltaSeconds, isActive });
+  try {
+    const response = await fetch('../api/user_tasks/heartbeat.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: taskId,
+        active_seconds_delta: Math.max(0, deltaSeconds),
+        is_active: isActive ? 1 : 0
+      })
+    });
+    const text = await response.text();
+    logActivityDebug('heartbeat raw response', { status: response.status, text: text.slice(0, 200) });
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch (err) {
+      console.warn('Heartbeat JSON parse failed:', err);
+    }
+    if (json) {
+      logActivityDebug('heartbeat response', json);
+    }
+    if (!response.ok || (json && json.ok === false)) {
+      throw new Error((json && json.error) ? json.error : response.statusText);
+    }
+  } catch (err) {
+    console.warn('Failed to send activity heartbeat:', err);
+  }
+}
+
+/**
+ * Exposed global function to track task activity (called from editor)
+ */
+window.trackTaskActivity = function(taskId) {
+  startActivityTracking(taskId);
+};
 
 // Display task details in left sidebar
 function showTaskDetails(task, activeTab = 'details') {
@@ -258,6 +400,9 @@ async function loadAssignments() {
           userTasks.forEach(ut => {
             assignmentState.taskStatuses[ut.task_id] = ut.status;
             assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+            if (ut.run_count !== undefined && ut.run_count !== null) {
+              assignmentState.taskRuns[ut.task_id] = ut.run_count;
+            }
             if (ut.completed_at) {
               assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
             }
@@ -475,10 +620,24 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     return;
   }
 
+  // Stop activity tracking for previous task
+  if (assignmentState.currentTaskId) {
+    stopActivityTracking(assignmentState.currentTaskId);
+  }
+
   // Store current task info globally for Check button
   assignmentState.currentTask = task;
   assignmentState.currentAssignmentId = assignmentId;
   assignmentState.currentTaskId = taskId;
+
+  // Start activity tracking for new task (only if not finalized)
+  const currentStatus = assignmentState.taskStatuses[task.id];
+  const isFinalized = currentStatus === 'passed' || currentStatus === 'failed';
+  if (!isFinalized) {
+    startActivityTracking(taskId);
+  } else {
+    logActivityDebug('task finalized, tracking skipped', { taskId, currentStatus });
+  }
 
   // Track task start time for time calculation
   if (!assignmentState.taskStartTimes[taskId]) {
@@ -552,8 +711,7 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   }
 
   // Lock editor and hide check/submit if task already finalized (passed or failed)
-  const currentStatus = assignmentState.taskStatuses[task.id];
-  const isFinalized = currentStatus === 'passed' || currentStatus === 'failed';
+  // (currentStatus and isFinalized already computed above)
   
   // Get elements
   const saveTaskBtn = $('save-task-btn');
@@ -805,6 +963,25 @@ async function saveCode(options = {}) {
   }
 }
 
+async function incrementRunCount(taskId) {
+  if (!taskId) return;
+  assignmentState.taskRuns[taskId] = (assignmentState.taskRuns[taskId] || 0) + 1;
+
+  try {
+    await requestJson('../api/user_tasks/update.php', {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: taskId,
+        run_count: assignmentState.taskRuns[taskId]
+      })
+    });
+  } catch (err) {
+    console.warn('Failed to update run_count:', err);
+  }
+}
+
+window.incrementTaskRunCount = incrementRunCount;
+
 function showSuccessModal(task, attempts, maxAttempts) {
   // Calculate elapsed time
   const startTime = assignmentState.taskStartTimes[task.id];
@@ -1031,6 +1208,7 @@ async function checkTask() {
       const savePayload = {
         task_id: task.id,
         attempts: assignmentState.taskAttempts[task.id],
+        run_count: assignmentState.taskRuns[task.id] || 0,
         current_code: code,
         hints_revealed: assignmentState.hintsRevealed[task.id] || []
       };
@@ -2423,6 +2601,9 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
     // All tests passed - GREEN
     assignmentState.taskStatuses[task.id] = 'passed';
     
+    // FREEZE time tracking - submission complete
+    stopActivityTracking(task.id);
+    
     // Store completion timestamp
     const now = new Date();
     assignmentState.taskCompletedAt[task.id] = now.toISOString().slice(0, 19).replace('T', ' ');
@@ -2473,6 +2654,9 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
   } else {
     // Submission failed - RED (final, regardless of attempts)
     assignmentState.taskStatuses[task.id] = 'failed';
+    
+    // FREEZE time tracking - submission complete (failed)
+    stopActivityTracking(task.id);
     
     // Store completion timestamp
     const now = new Date();

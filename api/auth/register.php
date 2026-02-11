@@ -59,8 +59,36 @@ if ($stmt->get_result()->num_rows > 0) {
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 $role = 'user'; // Default role
 
-$stmt = $conn->prepare('INSERT INTO users (email, first_name, last_name, password_hash, role) VALUES (?, ?, ?, ?, ?)');
-$stmt->bind_param('sssss', $email, $firstName, $lastName, $passwordHash, $role);
+// Auto-assign team based on current date
+// WiSe: 01.10 - 28.02 → WiSe 25/26 (id=1)
+// SoSe: 01.03 - 30.09 → SoSe 26/27/28 based on year
+$teamId = 1; // Default: WiSe 25/26
+$currentMonth = (int)date('n');
+$currentYear = (int)date('Y');
+
+if ($currentMonth >= 3 && $currentMonth <= 9) {
+    // Sommersemester (März - September)
+    // Map year to team: 2026→id=2, 2027→id=3, 2028→id=4
+    switch ($currentYear) {
+        case 2026:
+            $teamId = 2; // SoSe 26
+            break;
+        case 2027:
+            $teamId = 3; // SoSe 27
+            break;
+        case 2028:
+            $teamId = 4; // SoSe 28
+            break;
+        default:
+            $teamId = 1; // Fallback to WiSe
+    }
+} else {
+    // Wintersemester (Oktober - Februar)
+    $teamId = 1; // WiSe 25/26
+}
+
+$stmt = $conn->prepare('INSERT INTO users (email, first_name, last_name, password_hash, role, team_id) VALUES (?, ?, ?, ?, ?, ?)');
+$stmt->bind_param('sssssi', $email, $firstName, $lastName, $passwordHash, $role, $teamId);
 
 if ($stmt->execute()) {
     $userId = $conn->insert_id;

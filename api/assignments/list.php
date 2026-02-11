@@ -13,6 +13,37 @@ $conn = getDbConnection();
 
 $showAll = isset($_GET['all']) && $_GET['all'] === '1';
 
+$columnExists = function (mysqli $conn, string $table, string $column): bool {
+    $safeTable = $conn->real_escape_string($table);
+    $safeColumn = $conn->real_escape_string($column);
+    $check = $conn->query("SHOW COLUMNS FROM `{$safeTable}` LIKE '{$safeColumn}'");
+    return $check && $check->num_rows > 0;
+};
+
+$hasUserTeamId = $columnExists($conn, 'users', 'team_id');
+$hasAssignmentTeamId = $columnExists($conn, 'user_assignments', 'team_id');
+
+$directCountSql = '(SELECT COUNT(DISTINCT ua1.user_id)
+            FROM user_assignments ua1
+            WHERE ua1.assignment_id = a.id AND ua1.user_id IS NOT NULL)';
+
+$userCountSql = $directCountSql . ' AS user_count';
+
+if ($hasUserTeamId && $hasAssignmentTeamId) {
+    $teamCountSql = '(SELECT COUNT(DISTINCT u2.id)
+            FROM user_assignments ua2
+            INNER JOIN users u2 ON u2.team_id = ua2.team_id
+            WHERE ua2.assignment_id = a.id
+              AND ua2.team_id IS NOT NULL
+              AND u2.id NOT IN (
+                  SELECT ua3.user_id
+                  FROM user_assignments ua3
+                  WHERE ua3.assignment_id = a.id AND ua3.user_id IS NOT NULL
+              ))';
+
+    $userCountSql = '(' . $directCountSql . ' + ' . $teamCountSql . ') AS user_count';
+}
+
 $sql = '
     SELECT 
         a.id,
@@ -27,6 +58,7 @@ $sql = '
         u.last_name,
         u.email,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignment_id = a.id) AS task_count,
+        ' . $userCountSql . ',
         ua.status AS user_status
     FROM assignments a
     LEFT JOIN users u ON a.created_by = u.id
@@ -44,10 +76,18 @@ if ($user['role'] !== 'admin') {
 
 $sql .= ' ORDER BY a.created_at DESC';
 
-$stmt = $conn->prepare($sql);
-$stmt->bind_param($types, ...$params);
-$stmt->execute();
-$result = $stmt->get_result();
+try {
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        throw new Exception('Prepare failed: ' . $conn->error);
+    }
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+} catch (Exception $e) {
+    error_log('Assignments list error: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'Failed to load assignments'], 500);
+}
 
 $assignments = [];
 while ($row = $result->fetch_assoc()) {
@@ -63,6 +103,7 @@ while ($row = $result->fetch_assoc()) {
         'is_active' => (bool)$row['is_active'],
         'difficulty' => $row['difficulty'],
         'task_count' => (int)$row['task_count'],
+        'user_count' => (int)$row['user_count'],
         'user_status' => $row['user_status']
     ];
 }

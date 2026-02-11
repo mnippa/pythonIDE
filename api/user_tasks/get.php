@@ -17,10 +17,20 @@ $taskId = isset($_GET['task_id']) ? (int)$_GET['task_id'] : null;
 
 $userId = (int)$user['id'];
 
+$columnExists = function (mysqli $conn, string $table, string $column): bool {
+    $safeTable = $conn->real_escape_string($table);
+    $safeColumn = $conn->real_escape_string($column);
+    $check = $conn->query("SHOW COLUMNS FROM `{$safeTable}` LIKE '{$safeColumn}'");
+    return $check && $check->num_rows > 0;
+};
+
+$hasRunCount = $columnExists($conn, 'user_tasks', 'run_count');
+$runSelect = $hasRunCount ? ', run_count' : '';
+
 if ($taskId) {
     // Get single task progress
     $stmt = $conn->prepare(
-        'SELECT id, user_id, task_id, status, attempts, current_code, hints_revealed, started_at, completed_at, updated_at
+        'SELECT id, user_id, task_id, status, attempts' . $runSelect . ', current_code, hints_revealed, started_at, completed_at, updated_at
          FROM user_tasks 
          WHERE user_id = ? AND task_id = ?'
     );
@@ -34,6 +44,9 @@ if ($taskId) {
         $task['user_id'] = (int)$task['user_id'];
         $task['task_id'] = (int)$task['task_id'];
         $task['attempts'] = (int)$task['attempts'];
+        if ($hasRunCount) {
+            $task['run_count'] = (int)$task['run_count'];
+        }
         $task['hints_revealed'] = $task['hints_revealed'] ? json_decode($task['hints_revealed'], true) : [];
         jsonResponse(['ok' => true, 'task' => $task]);
     } else {
@@ -42,7 +55,7 @@ if ($taskId) {
 } elseif ($assignmentId) {
     // Get all tasks progress for assignment
     $stmt = $conn->prepare(
-        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts, ut.current_code, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
+        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . ', ut.current_code, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
          FROM user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
          WHERE ut.user_id = ? AND t.assignment_id = ?
@@ -58,6 +71,9 @@ if ($taskId) {
         $row['user_id'] = (int)$row['user_id'];
         $row['task_id'] = (int)$row['task_id'];
         $row['attempts'] = (int)$row['attempts'];
+        if ($hasRunCount) {
+            $row['run_count'] = (int)$row['run_count'];
+        }
         $row['hints_revealed'] = $row['hints_revealed'] ? json_decode($row['hints_revealed'], true) : [];
         $tasks[] = $row;
     }

@@ -131,13 +131,19 @@ function renderAssignments() {
       <td>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span>${a.task_count}</span>
-          <button class="icon-btn" data-action="select-assignment" data-id="${a.id}" title="View Tasks">�</button>
+          <button class="icon-btn" data-action="select-assignment" data-id="${a.id}" title="View Tasks">📚</button>
+        </div>
+      </td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>${a.user_count ?? 0}</span>
+          <button class="icon-btn" data-action="view-assignment-users" data-id="${a.id}" title="View Users">👥</button>
         </div>
       </td>
       <td>
         <div class="row-actions">
           <button class="icon-btn" data-action="edit-assignment" data-id="${a.id}" title="Edit">✏️</button>
-          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">�</button>
+          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">🔄</button>
           <button class="icon-btn danger" data-action="delete-assignment" data-id="${a.id}" title="Delete">🗑️</button>
         </div>
       </td>
@@ -793,6 +799,10 @@ function bindEvents() {
       await loadTasks(a.id, a.title);
     }
 
+    if (action === 'view-assignment-users') {
+      window.location.href = `evaluation.php?assignment_id=${id}`;
+    }
+
     if (action === 'move-task-up') {
       await moveTask(id, 'up');
     }
@@ -854,6 +864,7 @@ ${task.solution_code ? task.solution_code.substring(0, 200) + '...' : '(none)'}
       await loadUsers();
     }
   });
+
 }
 
 async function init() {

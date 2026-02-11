@@ -1,0 +1,260 @@
+<?php
+/**
+ * Admin: Assignment evaluation overview
+ * GET ?assignment_id=X
+ */
+
+require_once __DIR__ . '/../../../config/database.php';
+require_once __DIR__ . '/../../auth/middleware.php';
+
+header('Content-Type: application/json');
+
+try {
+    $admin = requireAdmin();
+    $conn = getDbConnection();
+
+    $assignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
+    if (!$assignmentId) {
+        jsonResponse(['ok' => false, 'error' => 'assignment_id required'], 400);
+    }
+
+    $stmt = $conn->prepare('SELECT id, title FROM assignments WHERE id = ?');
+    $stmt->bind_param('i', $assignmentId);
+    $stmt->execute();
+    $assignment = $stmt->get_result()->fetch_assoc();
+    if (!$assignment) {
+        jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
+    }
+
+    $columnExists = function (mysqli $conn, string $table, string $column): bool {
+        $safeTable = $conn->real_escape_string($table);
+        $safeColumn = $conn->real_escape_string($column);
+        $check = $conn->query("SHOW COLUMNS FROM `{$safeTable}` LIKE '{$safeColumn}'");
+        return $check && $check->num_rows > 0;
+    };
+
+    $tableExists = function (mysqli $conn, string $table): bool {
+        $safeTable = $conn->real_escape_string($table);
+        $check = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
+        return $check && $check->num_rows > 0;
+    };
+
+    $hasUserTeamId = $columnExists($conn, 'users', 'team_id');
+    $hasAssignmentTeamId = $columnExists($conn, 'user_assignments', 'team_id');
+    $hasUserTasks = $tableExists($conn, 'user_tasks');
+    $hasRunCount = $hasUserTasks && $columnExists($conn, 'user_tasks', 'run_count');
+    $hasHintsRevealed = $hasUserTasks && $columnExists($conn, 'user_tasks', 'hints_revealed');
+    $hasActiveSeconds = $hasUserTasks && $columnExists($conn, 'user_tasks', 'active_seconds');
+
+    $assignedUsers = [];
+
+    $directStmt = $conn->prepare('
+        SELECT u.id, ua.status
+        FROM user_assignments ua
+        INNER JOIN users u ON u.id = ua.user_id
+        WHERE ua.assignment_id = ? AND ua.user_id IS NOT NULL
+    ');
+    $directStmt->bind_param('i', $assignmentId);
+    $directStmt->execute();
+    $directResult = $directStmt->get_result();
+    while ($row = $directResult->fetch_assoc()) {
+        $assignedUsers[(int)$row['id']] = $row['status'] ?? 'assigned';
+    }
+
+    if ($hasUserTeamId && $hasAssignmentTeamId) {
+        $teamStmt = $conn->prepare('
+            SELECT u.id, ua.status
+            FROM user_assignments ua
+            INNER JOIN users u ON u.team_id = ua.team_id
+            WHERE ua.assignment_id = ? AND ua.team_id IS NOT NULL
+        ');
+        $teamStmt->bind_param('i', $assignmentId);
+        $teamStmt->execute();
+        $teamResult = $teamStmt->get_result();
+        while ($row = $teamResult->fetch_assoc()) {
+            $userId = (int)$row['id'];
+            if (!isset($assignedUsers[$userId])) {
+                $assignedUsers[$userId] = $row['status'] ?? 'assigned';
+            }
+        }
+    }
+
+    $stats = [
+        'total' => count($assignedUsers),
+        'unstarted' => 0,
+        'in_progress' => 0,
+        'passed' => 0,
+        'failed' => 0,
+        'avg_runs' => 0
+    ];
+
+    foreach ($assignedUsers as $status) {
+        switch ($status) {
+            case 'passed':
+                $stats['passed']++;
+                break;
+            case 'failed':
+                $stats['failed']++;
+                break;
+            case 'in_progress':
+            case 'submitted':
+                $stats['in_progress']++;
+                break;
+            case 'assigned':
+            default:
+                $stats['unstarted']++;
+                break;
+        }
+    }
+
+    $tasks = [];
+    $taskStmt = $conn->prepare('SELECT id, title, position FROM tasks WHERE assignment_id = ? ORDER BY position ASC');
+    $taskStmt->bind_param('i', $assignmentId);
+    $taskStmt->execute();
+    $taskResult = $taskStmt->get_result();
+
+    while ($row = $taskResult->fetch_assoc()) {
+        $tasks[] = [
+            'id' => (int)$row['id'],
+            'title' => $row['title'],
+            'position' => (int)$row['position'],
+            'stats' => [
+                'unstarted' => 0,
+                'in_progress' => 0,
+                'passed' => 0,
+                'failed' => 0
+            ],
+            'sum_checks' => 0,
+            'avg_checks' => 0,
+            'sum_runs' => 0,
+            'avg_runs' => 0,
+            'sum_hints' => 0,
+            'avg_hints' => 0,
+            'sum_active_seconds' => 0,
+            'avg_active_seconds' => 0
+        ];
+    }
+
+    if ($hasUserTasks && $stats['total'] > 0 && count($tasks) > 0) {
+        $taskIds = array_map(function ($t) { return $t['id']; }, $tasks);
+        $userIds = array_keys($assignedUsers);
+
+        $taskPlaceholders = implode(',', array_fill(0, count($taskIds), '?'));
+        $userPlaceholders = implode(',', array_fill(0, count($userIds), '?'));
+        $types = str_repeat('i', count($taskIds) + count($userIds));
+        $params = array_merge($taskIds, $userIds);
+
+        $runSelect = $hasRunCount ? 'ut.run_count' : '0';
+        $hintsSelect = $hasHintsRevealed ? 'IFNULL(JSON_LENGTH(ut.hints_revealed), 0)' : '0';
+        $activeSelect = $hasActiveSeconds ? 'ut.active_seconds' : '0';
+
+        $sql = "SELECT ut.task_id, ut.status, ut.attempts,
+                       {$runSelect} AS run_count,
+                       {$hintsSelect} AS hints_count,
+                       {$activeSelect} AS active_seconds
+                FROM user_tasks ut
+                WHERE ut.task_id IN ({$taskPlaceholders})
+                  AND ut.user_id IN ({$userPlaceholders})";
+
+        $statStmt = $conn->prepare($sql);
+        if ($statStmt) {
+            $statStmt->bind_param($types, ...$params);
+            $statStmt->execute();
+            $statResult = $statStmt->get_result();
+
+            $statsByTask = [];
+            $avgByTask = [];
+            while ($row = $statResult->fetch_assoc()) {
+                $taskId = (int)$row['task_id'];
+                $status = $row['status'] ?? 'unbearbeitet';
+                $attempts = (int)$row['attempts'];
+                $runs = (int)$row['run_count'];
+                $hints = (int)$row['hints_count'];
+                $activeSeconds = (int)$row['active_seconds'];
+
+                if (!isset($statsByTask[$taskId])) {
+                    $statsByTask[$taskId] = [
+                        'in_progress' => 0,
+                        'passed' => 0,
+                        'failed' => 0
+                    ];
+                }
+
+                if (!isset($avgByTask[$taskId])) {
+                    $avgByTask[$taskId] = [
+                        'attempts' => 0,
+                        'runs' => 0,
+                        'hints' => 0,
+                        'active_seconds' => 0,
+                        'entries' => 0
+                    ];
+                }
+
+                if ($status === 'in-progress') {
+                    $statsByTask[$taskId]['in_progress'] += 1;
+                } elseif ($status === 'passed') {
+                    $statsByTask[$taskId]['passed'] += 1;
+                } elseif ($status === 'failed') {
+                    $statsByTask[$taskId]['failed'] += 1;
+                }
+
+                $avgByTask[$taskId]['attempts'] += $attempts;
+                $avgByTask[$taskId]['runs'] += $runs;
+                $avgByTask[$taskId]['hints'] += $hints;
+                $avgByTask[$taskId]['active_seconds'] += $activeSeconds;
+                $avgByTask[$taskId]['entries'] += 1;
+            }
+
+            $totalRuns = 0;
+            $totalEntries = 0;
+
+            foreach ($tasks as &$task) {
+                $taskId = $task['id'];
+                $taskStats = $statsByTask[$taskId] ?? ['in_progress' => 0, 'passed' => 0, 'failed' => 0];
+                $taskAvg = $avgByTask[$taskId] ?? ['attempts' => 0, 'runs' => 0, 'hints' => 0, 'active_seconds' => 0, 'entries' => 0];
+                $started = $taskStats['in_progress'] + $taskStats['passed'] + $taskStats['failed'];
+                $unstarted = max(0, $stats['total'] - $started);
+
+                $task['stats']['in_progress'] = $taskStats['in_progress'];
+                $task['stats']['passed'] = $taskStats['passed'];
+                $task['stats']['failed'] = $taskStats['failed'];
+                $task['stats']['unstarted'] = $unstarted;
+
+                if ($taskAvg['entries'] > 0) {
+                    $task['sum_checks'] = $taskAvg['attempts'];
+                    $task['avg_checks'] = $taskAvg['attempts'] / $taskAvg['entries'];
+                    $task['sum_runs'] = $taskAvg['runs'];
+                    $task['avg_runs'] = $taskAvg['runs'] / $taskAvg['entries'];
+                    $task['sum_hints'] = $taskAvg['hints'];
+                    $task['avg_hints'] = $taskAvg['hints'] / $taskAvg['entries'];
+                    $task['sum_active_seconds'] = $taskAvg['active_seconds'];
+                    $task['avg_active_seconds'] = $taskAvg['active_seconds'] / $taskAvg['entries'];
+                }
+
+                $totalRuns += $taskAvg['runs'];
+                $totalEntries += $taskAvg['entries'];
+            }
+            unset($task);
+
+            if ($totalEntries > 0) {
+                $stats['avg_runs'] = $totalRuns / $totalEntries;
+            }
+        }
+    } else {
+        foreach ($tasks as &$task) {
+            $task['stats']['unstarted'] = $stats['total'];
+        }
+        unset($task);
+    }
+
+    jsonResponse([
+        'ok' => true,
+        'assignment_id' => $assignmentId,
+        'title' => $assignment['title'],
+        'stats' => $stats,
+        'tasks' => $tasks
+    ]);
+} catch (Exception $e) {
+    error_log('Evaluation overview error: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'Failed to load evaluation overview'], 500);
+}

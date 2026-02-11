@@ -29,6 +29,55 @@ if (!$taskId) {
 
 $userId = (int)$user['id'];
 
+// Resolve assignment_id for this task so we can update assignment status
+$assignmentId = null;
+$assignmentStmt = $conn->prepare('SELECT assignment_id FROM tasks WHERE id = ?');
+if ($assignmentStmt) {
+    $assignmentStmt->bind_param('i', $taskId);
+    $assignmentStmt->execute();
+    $assignmentRow = $assignmentStmt->get_result()->fetch_assoc();
+    if ($assignmentRow) {
+        $assignmentId = (int)$assignmentRow['assignment_id'];
+    }
+}
+
+// Mark assignment as in_progress when the first task is edited
+$markAssignmentInProgress = function () use ($conn, $userId, $assignmentId) {
+    if (!$assignmentId) {
+        return;
+    }
+
+    $uaStmt = $conn->prepare('SELECT id, status FROM user_assignments WHERE user_id = ? AND assignment_id = ?');
+    if (!$uaStmt) {
+        return;
+    }
+
+    $uaStmt->bind_param('ii', $userId, $assignmentId);
+    $uaStmt->execute();
+    $uaRow = $uaStmt->get_result()->fetch_assoc();
+
+    if ($uaRow) {
+        $currentStatus = $uaRow['status'] ?? 'assigned';
+        if ($currentStatus === 'assigned') {
+            $updateStmt = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
+            if ($updateStmt) {
+                $newStatus = 'in_progress';
+                $uaId = (int)$uaRow['id'];
+                $updateStmt->bind_param('si', $newStatus, $uaId);
+                $updateStmt->execute();
+            }
+        }
+        return;
+    }
+
+    $insertStmt = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status) VALUES (?, ?, ?)');
+    if ($insertStmt) {
+        $newStatus = 'in_progress';
+        $insertStmt->bind_param('iis', $userId, $assignmentId, $newStatus);
+        $insertStmt->execute();
+    }
+};
+
 // Check if user_task entry exists
 $stmt = $conn->prepare('SELECT id FROM user_tasks WHERE user_id = ? AND task_id = ?');
 $stmt->bind_param('ii', $userId, $taskId);
@@ -71,6 +120,17 @@ if (isset($input['attempts'])) {
     $types .= 'i';
 }
 
+// Runs
+if (isset($input['run_count'])) {
+    $runCount = (int)$input['run_count'];
+    if ($runCount < 0) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid run_count'], 400);
+    }
+    $updates[] = 'run_count = ?';
+    $params[] = $runCount;
+    $types .= 'i';
+}
+
 // Current code
 if (array_key_exists('current_code', $input)) {
     $updates[] = 'current_code = ?';
@@ -106,6 +166,7 @@ if ($existing) {
     $stmt->bind_param($types, ...$params);
     
     if ($stmt->execute()) {
+        $markAssignmentInProgress();
         jsonResponse(['ok' => true, 'message' => 'User task updated', 'id' => $existing['id']]);
     } else {
         jsonResponse(['ok' => false, 'error' => 'Failed to update user task'], 500);
@@ -114,17 +175,19 @@ if ($existing) {
     // Create new record
     $status = isset($input['status']) ? $input['status'] : 'in-progress';
     $attempts = isset($input['attempts']) ? (int)$input['attempts'] : 0;
+    $runCount = isset($input['run_count']) ? (int)$input['run_count'] : 0;
     $currentCode = isset($input['current_code']) ? $input['current_code'] : null;
     $hintsRevealed = isset($input['hints_revealed']) ? json_encode($input['hints_revealed']) : '[]';
     $startedAt = isset($input['started_at']) ? $input['started_at'] : date('Y-m-d H:i:s');
     
     $stmt = $conn->prepare(
-        'INSERT INTO user_tasks (user_id, task_id, status, attempts, current_code, hints_revealed, started_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO user_tasks (user_id, task_id, status, attempts, run_count, current_code, hints_revealed, started_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    $stmt->bind_param('iisisss', $userId, $taskId, $status, $attempts, $currentCode, $hintsRevealed, $startedAt);
+    $stmt->bind_param('iisiisss', $userId, $taskId, $status, $attempts, $runCount, $currentCode, $hintsRevealed, $startedAt);
     
     if ($stmt->execute()) {
+        $markAssignmentInProgress();
         jsonResponse(['ok' => true, 'message' => 'User task created', 'id' => $conn->insert_id]);
     } else {
         jsonResponse(['ok' => false, 'error' => 'Failed to create user task'], 500);

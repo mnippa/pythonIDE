@@ -437,6 +437,7 @@ if ($displayName === '') {
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="projects">Projects</button>
       <button class="tab" data-tab="assignments">Assignments</button>
+      <button class="tab" data-tab="teams">Teams</button>
       <button class="tab" data-tab="users">Users</button>
     </div>
 
@@ -482,6 +483,7 @@ if ($displayName === '') {
                 <th class="sortable" data-sort="difficulty">Difficulty</th>
                 <th class="sortable" data-sort="is_active">Active</th>
                 <th class="sortable" data-sort="task_count">Tasks</th>
+                <th class="sortable" data-sort="user_count">Users</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -523,19 +525,61 @@ if ($displayName === '') {
           <input type="file" id="import-task-file-input" accept=".json" style="display:none;">
         </div>
       </div>
+
+    </section>
+
+    <section class="panel" id="tab-teams">
+      <div class="admin-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
+          <h2 style="margin: 0;">👥 Teams</h2>
+          <button class="hspf-btn hspf-btn-primary" type="button" id="open-team-modal">+ New Team</button>
+        </div>
+        <div class="admin-card-subtitle">Teams für Gruppen-Zuweisung. User können einem Team zugeordnet werden.</div>
+        
+        <div style="overflow:auto;">
+          <table id="teams-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Users</th>
+                <th>Active</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="teams-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="tab-users">
       <div class="admin-card">
-        <h2>Users</h2>
-        <div class="admin-card-subtitle">Set status to aktiv or archiviert.</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
+          <h2 style="margin: 0;">👤 Users</h2>
+          <div style="display: flex; gap: var(--hspf-spacing-sm);">
+            <button class="hspf-btn hspf-btn-primary" type="button" id="bulk-assign-btn">📋 Bulk Assign</button>
+          </div>
+        </div>
+        
+        <div class="search-filter" style="margin-bottom: var(--hspf-spacing-md);">
+          <select id="users-team-filter" style="min-width: 200px;">
+            <option value="">All Teams</option>
+          </select>
+          <input type="text" id="users-search" placeholder="Search users..." />
+        </div>
+        
         <div style="overflow:auto;">
-          <table>
+          <table id="users-table">
             <thead>
               <tr>
+                <th style="width: 40px;"><input type="checkbox" id="select-all-users" title="Select All"></th>
                 <th>ID</th>
                 <th>Email</th>
                 <th>Name</th>
+                <th>Team</th>
+                <th>Assignments</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -785,5 +829,6 @@ if ($displayName === '') {
   </style>
 
   <script src="js/admin-dashboard.js"></script>
+  <script src="js/admin-teams-users.js"></script>
 </body>
 </html>

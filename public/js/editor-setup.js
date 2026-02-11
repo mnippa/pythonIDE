@@ -279,6 +279,24 @@ async function initPyodideAndEditor() {
       theme: getEditorTheme(),
       automaticLayout: true,
       lightbulb: { enabled: false }, // kein "No quick fixes available"
+      contextmenu: false, // Disable right-click context menu to prevent paste
+    });
+    
+    // Disable paste in editor to prevent copying solutions
+    const editorDomNode = editor.getDomNode();
+    if (editorDomNode) {
+      editorDomNode.addEventListener('paste', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+    }
+    
+    // Also prevent paste via Monaco API
+    editor.onDidPaste(() => {
+      const model = editor.getModel();
+      if (model) {
+        editor.trigger('keyboard', 'undo', null);
+      }
     });
     
     // Store reference globally for theme changes AND external modules
@@ -527,6 +545,10 @@ compile(code, "<usercode>", "exec")
 
     /* ---------------- Run ---------------- */
     document.getElementById("run-btn").addEventListener("click", async () => {
+      if (window.incrementTaskRunCount && window.assignmentState?.currentTask?.id) {
+        await window.incrementTaskRunCount(window.assignmentState.currentTask.id);
+      }
+
       outputEl.innerText = "";
       plotEl.innerHTML = "";
       setLintChecking();
