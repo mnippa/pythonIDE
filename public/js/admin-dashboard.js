@@ -4,7 +4,12 @@ const state = {
   users: [],
   tasks: [],
   currentAssignmentId: null,
-  currentAssignmentTitle: null
+  currentAssignmentTitle: null,
+  assignmentsPage: 1,
+  assignmentsPerPage: 10,
+  assignmentsSortBy: 'id',
+  assignmentsSortDir: 'asc',
+  assignmentsFilter: ''
 };
 
 function $(id) {
@@ -41,6 +46,16 @@ function setActiveTab(tab) {
   document.querySelectorAll('.panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === `tab-${tab}`);
   });
+  
+  // Handle tasks section visibility
+  const tasksSection = $('tasks-section');
+  if (tab !== 'assignments') {
+    // Hide tasks section when switching away from assignments
+    if (tasksSection) tasksSection.style.display = 'none';
+  } else if (tab === 'assignments' && state.currentAssignmentId) {
+    // Show tasks section when returning to assignments if an assignment was selected
+    if (tasksSection) tasksSection.style.display = 'block';
+  }
 }
 
 async function loadProjects() {
@@ -72,28 +87,75 @@ async function loadProjects() {
 async function loadAssignments() {
   const data = await requestJson('../api/assignments/list.php?all=1');
   state.assignments = data.assignments || [];
+  renderAssignments();
+}
 
+function renderAssignments() {
+  // Filter
+  let filtered = state.assignments;
+  if (state.assignmentsFilter) {
+    const filter = state.assignmentsFilter.toLowerCase();
+    filtered = filtered.filter(a => 
+      a.title.toLowerCase().includes(filter) ||
+      a.difficulty.toLowerCase().includes(filter) ||
+      String(a.id).includes(filter)
+    );
+  }
+
+  // Sort
+  filtered.sort((a, b) => {
+    const aVal = a[state.assignmentsSortBy];
+    const bVal = b[state.assignmentsSortBy];
+    const dir = state.assignmentsSortDir === 'asc' ? 1 : -1;
+    if (aVal < bVal) return -1 * dir;
+    if (aVal > bVal) return 1 * dir;
+    return 0;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filtered.length / state.assignmentsPerPage);
+  const start = (state.assignmentsPage - 1) * state.assignmentsPerPage;
+  const page = filtered.slice(start, start + state.assignmentsPerPage);
+
+  // Render rows
   const body = $('assignments-body');
   body.innerHTML = '';
 
-  state.assignments.forEach((a) => {
+  page.forEach((a) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="mono">${a.id}</td>
       <td>${escapeHtml(a.title)}</td>
       <td>${escapeHtml(a.difficulty)}</td>
-      <td>${a.is_active ? 'true' : 'false'}</td>
-      <td>${a.task_count}</td>
+      <td>${a.is_active ? '✓' : '✗'}</td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>${a.task_count}</span>
+          <button class="icon-btn" data-action="select-assignment" data-id="${a.id}" title="View Tasks">�</button>
+        </div>
+      </td>
       <td>
         <div class="row-actions">
-          <button class="btn" data-action="select-assignment" data-id="${a.id}">Tasks</button>
-          <button class="btn" data-action="edit-assignment" data-id="${a.id}">Edit</button>
-          <button class="btn" data-action="export-assignment" data-id="${a.id}" data-title="${escapeHtml(a.title)}">📤 Export</button>
-          <button class="btn warn" data-action="delete-assignment" data-id="${a.id}">Delete</button>
+          <button class="icon-btn" data-action="edit-assignment" data-id="${a.id}" title="Edit">✏️</button>
+          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">�</button>
+          <button class="icon-btn danger" data-action="delete-assignment" data-id="${a.id}" title="Delete">🗑️</button>
         </div>
       </td>
     `;
     body.appendChild(tr);
+  });
+
+  // Update pagination
+  $('assignments-page-info').textContent = `Page ${state.assignmentsPage} of ${totalPages || 1}`;
+  $('assignments-prev').disabled = state.assignmentsPage <= 1;
+  $('assignments-next').disabled = state.assignmentsPage >= totalPages;
+
+  // Update sort indicators
+  document.querySelectorAll('#assignments-table th.sortable').forEach(th => {
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    if (th.dataset.sort === state.assignmentsSortBy) {
+      th.classList.add(state.assignmentsSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    }
   });
 }
 
@@ -103,6 +165,10 @@ async function loadTasks(assignmentId, assignmentTitle) {
   state.tasks = data.tasks || [];
   state.currentAssignmentId = assignmentId;
   state.currentAssignmentTitle = assignmentTitle;
+
+  // Show tasks section when assignment is selected
+  const tasksSection = $('tasks-section');
+  if (tasksSection) tasksSection.style.display = 'block';
 
   $('tasks-title').textContent = `Tasks: ${assignmentTitle}`;
   $('tasks-hint').textContent = '';
@@ -119,6 +185,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
     
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td><input type="checkbox" class="task-checkbox" data-task-id="${t.id}"></td>
       <td>
         <span class="task-move-controls">
           <button class="task-move-btn" data-action="move-task-up" data-id="${t.id}" ${isFirst ? 'disabled' : ''} aria-label="Move task up">&uarr;</button>
@@ -699,15 +766,25 @@ function bindEvents() {
       $('assignment-modal').classList.add('active');
     }
 
+    if (action === 'clone-assignment') {
+      if (!confirm('Clone this assignment with all tasks?')) return;
+      try {
+        const response = await requestJson(`../api/admin/assignments/clone.php?id=${id}`);
+        if (response.ok) {
+          alert(`Assignment cloned successfully!\\n${response.task_count} tasks copied.`);
+          await loadAssignments();
+        } else {
+          throw new Error(response.error);
+        }
+      } catch (err) {
+        alert('Clone failed: ' + err.message);
+      }
+    }
+
     if (action === 'delete-assignment') {
       if (!confirm('Delete assignment?')) return;
       await requestJson(`../api/assignments/delete.php?id=${id}`, { method: 'DELETE' });
       await loadAssignments();
-    }
-
-    if (action === 'export-assignment') {
-      const title = e.target.dataset.title || `assignment_${id}`;
-      await exportAssignment(id, title);
     }
 
     if (action === 'select-assignment') {
@@ -1825,37 +1902,8 @@ function migrateLegacyTestCases(testCases) {
 }
 
 // ========================================
-// EXPORT / IMPORT FUNCTIONS
+// IMPORT FUNCTION
 // ========================================
-
-async function exportAssignment(assignmentId, title) {
-  try {
-    const response = await fetch(`../api/admin/assignments/export.php?id=${assignmentId}`, {
-      credentials: 'include'
-    });
-    
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-    
-    const jsonData = await response.json();
-    
-    // Create download
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `assignment_${sanitizeFilename(title)}_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    alert('Assignment exported successfully!');
-  } catch (err) {
-    alert('Export failed: ' + err.message);
-  }
-}
 
 async function importTask(jsonData, assignmentId) {
   try {
@@ -1900,4 +1948,123 @@ function sanitizeFilename(name) {
 document.addEventListener('DOMContentLoaded', () => {
   initTestCasesBuilder();
   initEditTestCasesBuilder();
+  
+  // Assignments search filter
+  const searchInput = $('assignments-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      state.assignmentsFilter = e.target.value;
+      state.assignmentsPage = 1;
+      renderAssignments();
+    });
+  }
+  
+  // Assignments pagination
+  const prevBtn = $('assignments-prev');
+  const nextBtn = $('assignments-next');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (state.assignmentsPage > 1) {
+        state.assignmentsPage--;
+        renderAssignments();
+      }
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      state.assignmentsPage++;
+      renderAssignments();
+    });
+  }
+  
+  // Assignments sorting
+  document.querySelectorAll('#assignments-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const sortBy = th.dataset.sort;
+      if (state.assignmentsSortBy === sortBy) {
+        state.assignmentsSortDir = state.assignmentsSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.assignmentsSortBy = sortBy;
+        state.assignmentsSortDir = 'asc';
+      }
+      renderAssignments();
+    });
+  });
+  
+  // Select All Tasks checkbox
+  const selectAllTasks = $('select-all-tasks');
+  if (selectAllTasks) {
+    selectAllTasks.addEventListener('change', (e) => {
+      const checkboxes = document.querySelectorAll('.task-checkbox');
+      checkboxes.forEach(cb => cb.checked = e.target.checked);
+    });
+  }
+  
+  // Export Selected Tasks
+  const exportTasksBtn = $('export-tasks-btn');
+  if (exportTasksBtn) {
+    exportTasksBtn.addEventListener('click', async () => {
+      const selectedCheckboxes = document.querySelectorAll('.task-checkbox:checked');
+      if (selectedCheckboxes.length === 0) {
+        alert('Please select at least one task to export.');
+        return;
+      }
+      
+      const selectedTaskIds = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.taskId));
+      const selectedTasks = state.tasks.filter(t => selectedTaskIds.includes(t.id));
+      
+      if (selectedTasks.length === 1) {
+        // Export single task
+        const task = selectedTasks[0];
+        const exportData = {
+          version: '1.0',
+          title: task.title,
+          description: task.description || '',
+          problem_type: task.problem_type,
+          difficulty: task.difficulty || 'medium',
+          starter_code: task.starter_code || '',
+          solution_code: task.solution_code || '',
+          test_cases: task.test_cases || [],
+          hints: task.hints || '',
+          validation_mode: task.validation_mode || 'output',
+          expected_output: task.expected_output || '',
+          input_mode: task.input_mode || 'none',
+          timeout: task.timeout || 5000
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `task_${task.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Export multiple tasks as array
+        const exportData = selectedTasks.map(task => ({
+          version: '1.0',
+          title: task.title,
+          description: task.description || '',
+          problem_type: task.problem_type,
+          difficulty: task.difficulty || 'medium',
+          starter_code: task.starter_code || '',
+          solution_code: task.solution_code || '',
+          test_cases: task.test_cases || [],
+          hints: task.hints || '',
+          validation_mode: task.validation_mode || 'output',
+          expected_output: task.expected_output || '',
+          input_mode: task.input_mode || 'none',
+          timeout: task.timeout || 5000
+        }));
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tasks_export_${selectedTasks.length}_tasks.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    });
+  }
 });

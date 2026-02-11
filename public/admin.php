@@ -116,21 +116,127 @@ if ($displayName === '') {
     
     th, td {
       text-align: left;
-      padding: 12px 8px;
+      padding: 6px 8px;
       border-bottom: 1px solid var(--hspf-border);
-      vertical-align: top;
+      vertical-align: middle;
     }
     
     th {
       color: var(--hspf-text-secondary);
       font-weight: 600;
       background-color: var(--hspf-bg-secondary);
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      padding-right: 24px;
+    }
+    
+    tbody tr:nth-child(even) {
+      background-color: var(--hspf-gray-50);
+    }
+    
+    tbody tr:hover {
+      background-color: var(--hspf-gray-100);
+    }
+    
+    th:hover {
+      background-color: var(--hspf-gray-200);
+    }
+    
+    th.sortable::after {
+      content: '\2195';
+      position: absolute;
+      right: 8px;
+      opacity: 0.3;
+      font-size: 12px;
+    }
+    
+    th.sorted-asc::after {
+      content: '\2191';
+      opacity: 1;
+    }
+    
+    th.sorted-desc::after {
+      content: '\2193';
+      opacity: 1;
     }
     
     .row-actions {
       display: flex;
-      gap: var(--hspf-spacing-xs);
-      flex-wrap: wrap;
+      gap: 4px;
+      flex-wrap: nowrap;
+    }
+    
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 16px;
+      color: var(--hspf-text-secondary);
+      transition: var(--hspf-transition);
+      border-radius: var(--hspf-radius-sm);
+    }
+    
+    .icon-btn:hover {
+      background-color: var(--hspf-bg-secondary);
+      color: var(--hspf-text-primary);
+    }
+    
+    .icon-btn.danger:hover {
+      background-color: #fee2e2;
+      color: #dc2626;
+    }
+    
+    .search-filter {
+      display: flex;
+      gap: var(--hspf-spacing-md);
+      margin-bottom: var(--hspf-spacing-md);
+      align-items: center;
+    }
+    
+    .search-filter input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 2px solid var(--hspf-border);
+      border-radius: var(--hspf-radius);
+      font-size: 14px;
+    }
+    
+    .search-filter input:focus {
+      outline: none;
+      border-color: var(--hspf-accent);
+    }
+    
+    .pagination {
+      display: flex;
+      gap: var(--hspf-spacing-sm);
+      align-items: center;
+      justify-content: center;
+      margin-top: var(--hspf-spacing-md);
+    }
+    
+    .pagination button {
+      padding: 6px 12px;
+      border: 1px solid var(--hspf-border);
+      background: var(--hspf-surface);
+      cursor: pointer;
+      border-radius: var(--hspf-radius-sm);
+      font-size: 13px;
+    }
+    
+    .pagination button:hover:not(:disabled) {
+      background: var(--hspf-bg-secondary);
+    }
+    
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .pagination .page-info {
+      font-size: 13px;
+      color: var(--hspf-text-secondary);
     }
     
     .field {
@@ -358,35 +464,46 @@ if ($displayName === '') {
 
     <section class="panel" id="tab-assignments">
       <div class="admin-card">
-        <h2>Assignments</h2>
-        <div class="admin-card-subtitle">Create, update, delete assignments.</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
+          <h2 style="margin: 0;">Assignments</h2>
+          <button class="hspf-btn hspf-btn-primary" type="button" id="open-assignment-modal">+ New Assignment</button>
+        </div>
+        
+        <div class="search-filter">
+          <input type="text" id="assignments-search" placeholder="Search assignments..." />
+        </div>
+        
         <div style="overflow:auto;">
-          <table>
+          <table id="assignments-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Title</th>
-                <th>Difficulty</th>
-                <th>Active</th>
-                <th>Tasks</th>
+                <th class="sortable" data-sort="id">ID</th>
+                <th class="sortable" data-sort="title">Title</th>
+                <th class="sortable" data-sort="difficulty">Difficulty</th>
+                <th class="sortable" data-sort="is_active">Active</th>
+                <th class="sortable" data-sort="task_count">Tasks</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="assignments-body"></tbody>
           </table>
         </div>
-        <div style="margin-top:var(--hspf-spacing-md);">
-          <button class="hspf-btn hspf-btn-primary" type="button" id="open-assignment-modal">+ New Assignment</button>
+        
+        <div class="pagination" id="assignments-pagination">
+          <button id="assignments-prev">Previous</button>
+          <span class="page-info" id="assignments-page-info">Page 1 of 1</span>
+          <button id="assignments-next">Next</button>
         </div>
       </div>
 
-      <div class="admin-card">
-        <h3 id="tasks-title">Tasks</h3>
+      <div class="admin-card" id="tasks-section" style="display:none;">
+        <h3 id="tasks-title">📚 Tasks</h3>
         <div class="admin-card-subtitle" id="tasks-hint">Select an assignment to manage tasks.</div>
         <div style="overflow:auto;">
-          <table>
+          <table id="tasks-table">
             <thead>
               <tr>
+                <th style="width: 40px;"><input type="checkbox" id="select-all-tasks" title="Select All"></th>
                 <th>Pos</th>
                 <th>Title</th>
                 <th>Type</th>
@@ -401,7 +518,8 @@ if ($displayName === '') {
         </div>
         <div style="margin-top:var(--hspf-spacing-md);">
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-task-modal">+ New Task</button>
-          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Task (JSON)</button>
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Tasks (JSON)</button>
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="export-tasks-btn" style="margin-left:var(--hspf-spacing-sm);">Export Selected Tasks (JSON)</button>
           <input type="file" id="import-task-file-input" accept=".json" style="display:none;">
         </div>
       </div>
