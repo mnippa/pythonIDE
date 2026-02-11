@@ -326,6 +326,13 @@ function renderAssignmentList() {
 
 // Open assignment editor view (hide list, show editor with tasks)
 function openAssignmentEditor(assignmentId) {
+  // If not in editor mode, redirect to assignment_editor.php
+  if (!window.EDITOR_MODE) {
+    window.location.href = `assignment_editor.php?assignment_id=${assignmentId}`;
+    return;
+  }
+  
+  // Editor mode: show editor inline
   const listView = $('assignment-list-view');
   const editorView = $('editor-view');
   const dashboardBtn = $('dashboard-btn');
@@ -359,6 +366,12 @@ function openAssignmentEditor(assignmentId) {
 
 // Go back to assignment list
 function backToAssignmentList() {
+  // If in editor mode, redirect to assignments.php
+  if (window.EDITOR_MODE) {
+    window.location.href = 'assignments.php';
+    return;
+  }
+  
   const listView = $('assignment-list-view');
   const editorView = $('editor-view');
   const dashboardBtn = $('dashboard-btn');
@@ -2649,10 +2662,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  // Auto-load assignments if on assignments.php
-  if (window.location.pathname.includes('assignments.php')) {
+  // Auto-load assignments if on assignments.php or assignment_editor.php
+  if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor.php')) {
     console.log('On assignments page - loading assignments');
-    // Load assignments (this will show the list)
-    loadAssignments();
+    // Load assignments (this will show the list or load editor)
+    loadAssignments().then(() => {
+      // If in editor mode with assignment ID, load it directly
+      if (window.EDITOR_MODE && window.ASSIGNMENT_ID) {
+        console.log('Editor mode detected - loading assignment', window.ASSIGNMENT_ID);
+        openAssignmentEditor(window.ASSIGNMENT_ID);
+      }
+    });
   }
 });

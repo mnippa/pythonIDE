@@ -2,6 +2,8 @@
 
 Eine leistungsstarke, browserbasierte Python-IDE mit **Monaco Editor**, **Pyodide**, **intelligenten Autocompletion**, und **automatisiertem Test-System**. Ideal für Programmier-Unterricht mit integriertem Assignment- und Help-System.
 
+**HS Pforzheim Edition** - Mit vollständigem Admin-Dashboard und Semester-Management.
+
 ---
 
 ## ✨ Hauptfunktionen
@@ -16,6 +18,16 @@ Eine leistungsstarke, browserbasierte Python-IDE mit **Monaco Editor**, **Pyodid
 - ✅ **Integriertes Help-System** - Instant-Dokumentation für 220+ Funktionen und Methoden
 - ✅ **Matplotlib-Integration** - Plots direkt im IDE rendern
 - ✅ **Multi-Package-Support** - NumPy, Matplotlib und weitere Libraries laden
+
+### 🎓 Admin-Features (NEU)
+- ✅ **Admin Dashboard** - Zentrale Verwaltung für Assignments, Tasks und User
+- ✅ **Assignment Management** - CRUD mit Clone/Duplicate, Import/Export (JSON)
+- ✅ **Task Management** - Inline-Edit, Reorder (Position), Batch-Export
+- ✅ **User Authentication** - Bcrypt-Password-Hashing, Session-Management
+- ✅ **HS PF Branding** - Hochschule Pforzheim Theme Integration
+- ✅ **Search & Filter** - Echtzeit-Suche, Sortierung, Pagination (10 Items/Page)
+- ✅ **Progress Tracking** - User-Task-Status (pending/passed/failed)
+- ✅ **Responsive Design** - Zebra-Striping, Icon-Buttons, kompakte Tabellenansicht
 
 ### 🎓 Assignment & Testing System
 
@@ -440,14 +452,60 @@ code_without_init = re.sub(pattern, '', user_code, flags=re.DOTALL)
 - ✅ **Code-Validierung** - Automatische Tests mit granularem Feedback
 
 ### Geplante Features
+
+#### 🔜 Phase 1: User-Management & Assignment-Zuweisung
+**Priorität: HOCH**
+
+**User-Verwaltung:**
+- [ ] **User-Filter nach Semester** - Dropdown/Multi-Select für Semesterzuordnung
+- [ ] **User-Suche** - Echtzeit-Filter: Name, Email, Matrikelnummer
+- [ ] **Bulk-Assignment-Zuweisung** - Assignments an ganze Gruppen/Semester auf einmal zuweisen
+- [ ] **Semester-/Gruppen-Management** - Semester als Entität mit User-Zuordnung
+
+**Assignment-Auswertung:**
+- [ ] **Progress-Dashboard** - Übersicht: Wieviel % aller Aufgaben hat jeder Student geschafft
+- [ ] **Detaillierte Reports** - Pro Assignment: Completion-Rate, durchschnittliche Versuche
+- [ ] **Export-Funktion** - CSV/Excel-Export für externe Auswertung
+
+#### 🔜 Phase 2: Task-Preview & Test-Editor
+**Priorität: HOCH**
+
+**Admin-Task-Vorschau:**
+- [ ] **Direct-to-Editor Link** - Aus Admin-Ansicht direkt in spezielle Editor-Sicht springen
+- [ ] **Exakte Student-Kopie** - Identische Code-View wie Student sieht (Template, Tests)
+- [ ] **Read-Only Modus** - Versuche werden NICHT hochgezählt, keine Abgabe möglich
+- [ ] **Solution-Toggle** - Zwischen Student-Template und Musterlösung hin- und herspringen
+- [ ] **Inline Solution-Edit** - Musterlösung direkt im Preview bearbeiten und speichern
+- [ ] **Test-Validation Live** - Sofort sehen ob Test-Cases korrekt konfiguriert sind
+
+**Nutzen:**
+- ✅ Schnell überprüfen wie Student die Aufgabe sieht
+- ✅ Tests direkt validieren ohne separaten Student-Account
+- ✅ Musterlösung im Context der Task anpassen
+
+#### 🔜 Phase 3: Test-/Prüfungs-Modus
+**Priorität: MITTEL**
+
+**Test-Szenario (zeitlich begrenzt):**
+- [ ] **Test-Assignment-Typ** - Neuer Assignment-Type: "exam" vs. "practice"
+- [ ] **Zeitbeschränkung** - Konfigurierbare Zeitlimits pro Test (z.B. 90 Minuten)
+- [ ] **Timer-Display** - Sichtbarer Countdown, Warnung bei < 5 Minuten
+- [ ] **Auto-Submit** - Automatische Abgabe wenn Zeit abläuft
+- [ ] **Copy-Paste-Unterdrückung** - JavaScript-Handler blockiert Strg+C/V
+- [ ] **Fokus-Tracking** - Protokollierung wenn Student Fenster verlässt (Tab-Switch, Minimize)
+- [ ] **Session-Lock** - Test kann nur einmal gestartet werden (keine Wiederholung)
+
+**Anwendung auch für normale Assignments:**
+- [ ] **Copy-Paste-Warning** - Optionales Flag für jedes Assignment
+- [ ] **Activity-Log** - Optional: Fenster-Fokus-Verlust protokollieren (Lern-Statistik)
+
+#### 🔧 Phase 4: Weitere Features
 - [ ] **Code-Sharing** - Teilbare Links generieren
 - [ ] **Mehr Libraries** - SciPy, Pandas, Scikit-learn
 - [ ] **Dark/Light Toggle** - Theme-Umschalter
 - [ ] **Shell-Modus** - Interaktive REPL
 - [ ] **Linting** - Echtzeit Code-Analyse
-- [ ] **Export** - Download von Code/Plots
-- [ ] **Leaderboard** - Gamification
-- [ ] **Code-Review** - Instructor Feedback
+- [ ] **Code-Review** - Instructor Feedback direkt im Code
 
 ---
 
@@ -534,16 +592,24 @@ php scripts/scrape_w3schools.php
 
 ## 📈 Version & Status
 
-**Status**: ✅ Produktiv-ready (v2.0)  
-**Letzte Aktualisierung**: 9. Februar 2026  
-**Neue Features (v2.0)**:
+**Status**: ✅ Produktiv-ready (v2.1)  
+**Letzte Aktualisierung**: 11. Februar 2026  
+**Neue Features (v2.1)**:
+- ✅ Admin Dashboard mit Assignment/Task/User-Management
+- ✅ Clone/Duplicate für Assignments mit allen Tasks
+- ✅ Search, Filter, Sortierung, Pagination
+- ✅ HS Pforzheim Branding (Custom Theme)
+- ✅ Bcrypt Passwort-Hashing
+- ✅ Import/Export Tasks (JSON)
+
+**Features (v2.0)**:
 - ✅ Assignment-System mit Datenbank
 - ✅ 3 Test-Typen (OUTPUT, FUNCTION, VARIABLE)
 - ✅ INIT-Block System für VARIABLE Tests
 - ✅ User Authentication & Progress Tracking
 - ✅ Automatische Test-Validierung
 
-**Team**: Python IDE Contributors
+**Team**: Python IDE Contributors @ HS Pforzheim
 
 ---
 
