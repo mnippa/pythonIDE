@@ -88,6 +88,7 @@ async function loadAssignments() {
         <div class="row-actions">
           <button class="btn" data-action="select-assignment" data-id="${a.id}">Tasks</button>
           <button class="btn" data-action="edit-assignment" data-id="${a.id}">Edit</button>
+          <button class="btn" data-action="export-assignment" data-id="${a.id}" data-title="${escapeHtml(a.title)}">📤 Export</button>
           <button class="btn warn" data-action="delete-assignment" data-id="${a.id}">Delete</button>
         </div>
       </td>
@@ -104,19 +105,27 @@ async function loadTasks(assignmentId, assignmentTitle) {
   state.currentAssignmentTitle = assignmentTitle;
 
   $('tasks-title').textContent = `Tasks: ${assignmentTitle}`;
-  $('tasks-hint').textContent = `Assignment ID ${assignmentId}`;
+  $('tasks-hint').textContent = '';
 
   const body = $('tasks-body');
   body.innerHTML = '';
 
-  state.tasks.forEach((t) => {
+  state.tasks.forEach((t, index) => {
     const hasTests = t.test_cases ? '✓' : '✗';
     const hasSolution = t.solution_code ? '✓' : '✗';
     const modeLabel = t.validation_mode || '-';
+    const isFirst = index === 0;
+    const isLast = index === state.tasks.length - 1;
     
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${t.position}</td>
+      <td>
+        <span class="task-move-controls">
+          <button class="task-move-btn" data-action="move-task-up" data-id="${t.id}" ${isFirst ? 'disabled' : ''} aria-label="Move task up">&uarr;</button>
+          <button class="task-move-btn" data-action="move-task-down" data-id="${t.id}" ${isLast ? 'disabled' : ''} aria-label="Move task down">&darr;</button>
+        </span>
+        <span class="mono">${t.position}</span>
+      </td>
       <td>${escapeHtml(t.title)}</td>
       <td><span class="tag">${escapeHtml(t.problem_type)}</span></td>
       <td>${hasTests}</td>
@@ -132,6 +141,30 @@ async function loadTasks(assignmentId, assignmentTitle) {
     `;
     body.appendChild(tr);
   });
+}
+
+async function moveTask(taskId, direction) {
+  const index = state.tasks.findIndex((t) => t.id === taskId);
+  if (index === -1) return;
+
+  const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= state.tasks.length) return;
+
+  const current = state.tasks[index];
+  const target = state.tasks[targetIndex];
+
+  await requestJson('../api/tasks/update.php', {
+    method: 'POST',
+    body: JSON.stringify({ id: current.id, position: target.position })
+  });
+
+  await requestJson('../api/tasks/update.php', {
+    method: 'POST',
+    body: JSON.stringify({ id: target.id, position: current.position })
+  });
+
+  await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+  await loadAssignments();
 }
 
 async function loadUsers() {
@@ -178,12 +211,10 @@ function resetTaskForm() {
   $('task-description').value = '';
   $('task-position').value = '';
   $('task-template').value = '';
-  $('task-hint').value = '';
   $('task-hint1').value = '';
   $('task-hint2').value = '';
   $('task-hint3').value = '';
   $('task-stoff').value = '';
-  $('task-expected').value = '';
   $('task-validation-mode').value = '';
   $('task-test-cases').value = '';
   $('task-solution').value = '';
@@ -193,11 +224,11 @@ function resetTaskForm() {
 
 function openAssignmentModal() {
   resetAssignmentForm();
-  $('assignment-modal').style.display = 'block';
+  $('assignment-modal').classList.add('active');
 }
 
 function closeAssignmentModal() {
-  $('assignment-modal').style.display = 'none';
+  $('assignment-modal').classList.remove('active');
   resetAssignmentForm();
 }
 
@@ -207,11 +238,11 @@ function openNewTaskModal() {
     return;
   }
   resetTaskForm();
-  $('task-create-modal').style.display = 'block';
+  $('task-create-modal').classList.add('active');
 }
 
 function closeNewTaskModal() {
-  $('task-create-modal').style.display = 'none';
+  $('task-create-modal').classList.remove('active');
 }
 
 async function handleAssignmentSubmit(e) {
@@ -451,12 +482,12 @@ function openEditTaskModal(taskId) {
   // Render test cases in the builder
   renderTestCases(editTestCasesData, 'edit-tests-container');
 
-  $('task-modal').style.display = 'block';
+  $('task-modal').classList.add('active');
   $('modal-title').textContent = `Edit Task: ${task.title}`;
 }
 
 function closeEditTaskModal() {
-  $('task-modal').style.display = 'none';
+  $('task-modal').classList.remove('active');
   $('edit-task-id').value = '';
   editTestCasesData = [];
 }
@@ -556,6 +587,42 @@ function bindEvents() {
     openTaskBtn.addEventListener('click', openNewTaskModal);
   }
 
+  // Import task button (only visible when tasks are loaded)
+  const importTaskBtn = $('import-task-btn');
+  const importTaskFileInput = $('import-task-file-input');
+  
+  if (importTaskBtn && importTaskFileInput) {
+    importTaskBtn.addEventListener('click', () => {
+      if (!state.currentAssignmentId) {
+        alert('Bitte wählen Sie zuerst ein Assignment aus (Tasks-Button klicken)');
+        return;
+      }
+      importTaskFileInput.click();
+    });
+    
+    importTaskFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      if (!state.currentAssignmentId) {
+        alert('Kein Assignment ausgewählt');
+        importTaskFileInput.value = '';
+        return;
+      }
+      
+      try {
+        const text = await file.text();
+        const jsonData = JSON.parse(text);
+        await importTask(jsonData, state.currentAssignmentId);
+      } catch (err) {
+        alert('Fehler beim Lesen der Datei: ' + err.message);
+      }
+      
+      // Reset input
+      importTaskFileInput.value = '';
+    });
+  }
+
   const taskCreateCloseBtn = $('task-create-close-btn');
   if (taskCreateCloseBtn) {
     taskCreateCloseBtn.addEventListener('click', closeNewTaskModal);
@@ -629,7 +696,7 @@ function bindEvents() {
       $('assignment-difficulty').value = a.difficulty || 'beginner';
       $('assignment-active').value = a.is_active ? 'true' : 'false';
       $('assignment-modal-title').textContent = `Edit Assignment #${a.id}`;
-      $('assignment-modal').style.display = 'block';
+      $('assignment-modal').classList.add('active');
     }
 
     if (action === 'delete-assignment') {
@@ -638,10 +705,23 @@ function bindEvents() {
       await loadAssignments();
     }
 
+    if (action === 'export-assignment') {
+      const title = e.target.dataset.title || `assignment_${id}`;
+      await exportAssignment(id, title);
+    }
+
     if (action === 'select-assignment') {
       const a = state.assignments.find((x) => x.id === id);
       if (!a) return;
       await loadTasks(a.id, a.title);
+    }
+
+    if (action === 'move-task-up') {
+      await moveTask(id, 'up');
+    }
+
+    if (action === 'move-task-down') {
+      await moveTask(id, 'down');
     }
 
     if (action === 'delete-task') {
@@ -1742,6 +1822,78 @@ function migrateLegacyTestCases(testCases) {
   
   // No migration needed for OUTPUT type
   return testCases;
+}
+
+// ========================================
+// EXPORT / IMPORT FUNCTIONS
+// ========================================
+
+async function exportAssignment(assignmentId, title) {
+  try {
+    const response = await fetch(`../api/admin/assignments/export.php?id=${assignmentId}`, {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+    
+    const jsonData = await response.json();
+    
+    // Create download
+    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `assignment_${sanitizeFilename(title)}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert('Assignment exported successfully!');
+  } catch (err) {
+    alert('Export failed: ' + err.message);
+  }
+}
+
+async function importTask(jsonData, assignmentId) {
+  try {
+    const response = await fetch(`../api/admin/assignments/import.php?assignment_id=${assignmentId}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(jsonData)
+    });
+    
+    // Get response text first
+    const text = await response.text();
+    
+    // Try to parse as JSON
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch (parseErr) {
+      console.error('Server response:', text);
+      throw new Error('Invalid JSON response from server. Check console for details.');
+    }
+    
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || `Server error: ${response.status}`);
+    }
+    
+    alert(`Task erfolgreich importiert!\nTask-ID: ${result.task_id}`);
+    await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+    await loadAssignments();
+    
+  } catch (err) {
+    console.error('Import error:', err);
+    alert('Import fehlgeschlagen: ' + err.message);
+  }
+}
+
+function sanitizeFilename(name) {
+  return name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
 }
 
 // Initialize on page load

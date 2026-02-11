@@ -25,99 +25,57 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Python IDE - Dashboard</title>
+  <title>Dashboard - HS PF Python IDE</title>
+  <link rel="stylesheet" href="css/hspf-theme.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, 
+        rgba(255, 190, 49, 0.02) 0%, 
+        rgba(125, 115, 105, 0.03) 100%
+      ),
+      var(--hspf-bg);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
-    .header {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      padding: 16px 32px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .header-left h1 {
-      font-size: 24px;
-      font-weight: 700;
-      color: white;
-      margin: 0;
-    }
-
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .user-info {
-      color: white;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .user-info .name {
-      font-weight: 600;
-    }
-
-    .btn-logout {
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      padding: 8px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.2s;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn-logout:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    .container {
+    .dashboard-container {
       flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 32px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: var(--hspf-spacing-2xl) var(--hspf-spacing-lg);
+      width: 100%;
+    }
+
+    .welcome-section {
+      margin-bottom: var(--hspf-spacing-2xl);
+    }
+
+    .welcome-section h2 {
+      font-size: 32px;
+      font-weight: 300;
+      color: var(--hspf-primary);
+      margin-bottom: var(--hspf-spacing-xs);
+    }
+
+    .welcome-section p {
+      font-size: 16px;
+      color: var(--hspf-text-secondary);
     }
 
     .dashboard-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 400px));
-      gap: 32px;
-      max-width: 1200px;
-      width: 100%;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: var(--hspf-spacing-xl);
     }
 
     .dashboard-card {
-      background: white;
-      border-radius: 16px;
-      padding: 40px 32px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-      cursor: pointer;
-      transition: all 0.3s ease;
+      background: var(--hspf-surface);
+      border: 2px solid var(--hspf-border);
+      border-radius: var(--hspf-radius-lg);
+      padding: var(--hspf-spacing-2xl);
+      box-shadow: var(--hspf-shadow-lg);
+      transition: var(--hspf-transition);
       text-decoration: none;
       display: flex;
       flex-direction: column;
@@ -133,15 +91,16 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
       top: 0;
       left: 0;
       right: 0;
-      height: 5px;
-      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      height: 4px;
+      background: var(--hspf-accent);
       transform: scaleX(0);
       transition: transform 0.3s ease;
     }
 
     .dashboard-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+      transform: translateY(-4px);
+      box-shadow: var(--hspf-shadow-xl);
+      border-color: var(--hspf-accent);
     }
 
     .dashboard-card:hover::before {
@@ -149,31 +108,30 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
     }
 
     .card-icon {
-      font-size: 72px;
-      margin-bottom: 24px;
+      font-size: 64px;
+      margin-bottom: var(--hspf-spacing-lg);
       line-height: 1;
     }
 
     .card-title {
-      font-size: 28px;
-      font-weight: 700;
-      color: #1f2937;
-      margin-bottom: 12px;
+      font-size: 26px;
+      font-weight: 300;
+      color: var(--hspf-primary);
+      margin-bottom: var(--hspf-spacing-md);
     }
 
     .card-description {
       font-size: 15px;
-      color: #6b7280;
+      color: var(--hspf-text-secondary);
       line-height: 1.6;
-      margin-bottom: 20px;
+      margin-bottom: var(--hspf-spacing-lg);
     }
 
     .card-stats {
       display: flex;
-      gap: 24px;
-      margin-top: 16px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
+      gap: var(--hspf-spacing-xl);
+      padding-top: var(--hspf-spacing-lg);
+      border-top: 1px solid var(--hspf-border);
       width: 100%;
       justify-content: center;
     }
@@ -183,124 +141,114 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
     }
 
     .stat-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: #667eea;
+      font-size: 28px;
+      font-weight: 300;
+      color: var(--hspf-primary);
     }
 
     .stat-label {
       font-size: 12px;
-      color: #9ca3af;
+      color: var(--hspf-text-muted);
       margin-top: 4px;
       text-transform: uppercase;
       font-weight: 600;
       letter-spacing: 0.05em;
     }
 
-    .welcome-section {
-      text-align: center;
-      margin-bottom: 48px;
-      color: white;
-    }
-
-    .welcome-section h2 {
-      font-size: 36px;
-      font-weight: 700;
-      margin-bottom: 12px;
-    }
-
-    .welcome-section p {
-      font-size: 18px;
-      opacity: 0.9;
-    }
-
     @media (max-width: 768px) {
       .dashboard-grid {
         grid-template-columns: 1fr;
-        gap: 24px;
+        gap: var(--hspf-spacing-lg);
       }
 
       .welcome-section h2 {
-        font-size: 28px;
-      }
-
-      .welcome-section p {
-        font-size: 16px;
+        font-size: 26px;
       }
 
       .card-title {
-        font-size: 24px;
+        font-size: 22px;
       }
 
       .card-icon {
-        font-size: 60px;
+        font-size: 56px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-left">
-      <h1>🐍 Python IDE</h1>
+  <?php 
+  $pageTitle = 'Dashboard';
+  $showUser = true;
+  $userInfo = [
+    'name' => $displayName,
+    'role' => $user['role'] ?? 'user'
+  ];
+  $headerActions = '<button class="hspf-btn hspf-btn-secondary" onclick="logout()">Abmelden</button>';
+  
+  include(__DIR__ . '/../components/header.php');
+  ?>
+
+  <div class="dashboard-container">
+    <div class="welcome-section">
+      <h2>Willkommen zurück, <?= htmlspecialchars($user['first_name'] ?? 'Student') ?>!</h2>
+      <p>Wähle einen Bereich, um loszulegen</p>
     </div>
-    <div class="header-right">
-      <div class="user-info">
-        <span>👤</span>
-        <span class="name"><?= htmlspecialchars($displayName) ?></span>
-      </div>
+
+    <div class="dashboard-grid">
+      <!-- Projects Card -->
+      <a href="projects.php" class="dashboard-card" id="projects-card">
+        <div class="card-icon">📁</div>
+        <div class="card-title">Projekte</div>
+        <div class="card-description">
+          Erstelle und bearbeite eigene Python-Projekte. Schreibe Code, teste Programme und speichere deine Arbeit.
+        </div>
+        <div class="card-stats">
+          <div class="stat-item">
+            <div class="stat-value" id="projects-count">-</div>
+            <div class="stat-label">Projekte</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="projects-last">-</div>
+            <div class="stat-label">Zuletzt</div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Assignments Card -->
+      <a href="assignments.php" class="dashboard-card" id="assignments-card">
+        <div class="card-icon">📚</div>
+        <div class="card-title">Aufgaben</div>
+        <div class="card-description">
+          Bearbeite zugewiesene Übungsaufgaben. Löse Programmieraufgaben mit automatischer Prüfung.
+        </div>
+        <div class="card-stats">
+          <div class="stat-item">
+            <div class="stat-value" id="assignments-count">-</div>
+            <div class="stat-label">Aufgaben</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="assignments-progress">-</div>
+            <div class="stat-label">Erledigt</div>
+          </div>
+        </div>
+      </a>
+
       <?php if ($isAdmin): ?>
-      <a href="admin.php" class="btn-logout">⚙️ Admin</a>
+      <!-- Admin Card -->
+      <a href="admin.php" class="dashboard-card">
+        <div class="card-icon">⚙️</div>
+        <div class="card-title">Verwalten</div>
+        <div class="card-description">
+          Verwalte Assignments, Tasks und Benutzer. Administrationsbereich für Dozenten.
+        </div>
+        <div class="card-stats">
+          <div class="stat-item">
+            <div class="stat-value">Admin</div>
+            <div class="stat-label">Zugriff</div>
+          </div>
+        </div>
+      </a>
       <?php endif; ?>
-      <button class="btn-logout" onclick="logout()">Abmelden</button>
-    </div>
-  </div>
-
-  <div class="container">
-    <div style="max-width: 1200px; width: 100%;">
-      <div class="welcome-section">
-        <h2>Willkommen zurück, <?= htmlspecialchars($user['first_name'] ?? 'Student') ?>!</h2>
-        <p>Wähle einen Bereich, um loszulegen</p>
-      </div>
-
-      <div class="dashboard-grid">
-        <!-- Projects Card -->
-        <a href="projects.php" class="dashboard-card" id="projects-card">
-          <div class="card-icon">📁</div>
-          <div class="card-title">Projekte</div>
-          <div class="card-description">
-            Erstelle und bearbeite eigene Python-Projekte. Schreibe Code, teste Programme und speichere deine Arbeit.
-          </div>
-          <div class="card-stats">
-            <div class="stat-item">
-              <div class="stat-value" id="projects-count">-</div>
-              <div class="stat-label">Projekte</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-value" id="projects-last">-</div>
-              <div class="stat-label">Zuletzt</div>
-            </div>
-          </div>
-        </a>
-
-        <!-- Assignments Card -->
-        <a href="assignments.php" class="dashboard-card" id="assignments-card">
-          <div class="card-icon">📚</div>
-          <div class="card-title">Aufgaben</div>
-          <div class="card-description">
-            Bearbeite zugewiesene Übungsaufgaben. Löse Programmieraufgaben mit automatischer Prüfung.
-          </div>
-          <div class="card-stats">
-            <div class="stat-item">
-              <div class="stat-value" id="assignments-count">-</div>
-              <div class="stat-label">Aufgaben</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-value" id="assignments-progress">-</div>
-              <div class="stat-label">Erledigt</div>
-            </div>
-          </div>
-        </a>
-      </div>
     </div>
   </div>
 

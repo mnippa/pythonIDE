@@ -1,0 +1,97 @@
+{
+  "version": "1.0",
+  "exported_at": "2026-02-10 12:00:00",
+  "assignment": {
+    "title": "Python Grundlagen - Variablen und Datentypen",
+    "description": "Einführung in Python: Lernen Sie die grundlegenden Datentypen und Variablen kennen.",
+    "difficulty": "beginner",
+    "is_active": true
+  },
+  "tasks": [
+    {
+      "position": 1,
+      "title": "Variablen deklarieren",
+      "description": "Erstellen Sie drei Variablen: name (String), alter (Integer) und groesse (Float).",
+      "type": "code_completion",
+      "template": "# Erstellen Sie hier Ihre Variablen\n",
+      "hint1": "Verwenden Sie den Zuweisungsoperator =",
+      "hint2": "Strings müssen in Anführungszeichen stehen",
+      "hint3": "Floats benötigen einen Dezimalpunkt",
+      "stoff": "Kapitel 2: Variablen und Zuweisungen",
+      "validation_mode": "intelligent",
+      "test_cases": [
+        {
+          "type": "variable",
+          "init_var_names": [],
+          "expected_var_names": ["name", "alter", "groesse"],
+          "test_cases": [
+            {
+              "init_values": [],
+              "expected_values": ["Max", 25, 1.75]
+            }
+          ]
+        }
+      ],
+      "solution": "name = \"Max\"\nalter = 25\ngroesse = 1.75"
+    },
+    {
+      "position": 2,
+      "title": "Funktion: Summe berechnen",
+      "description": "Schreiben Sie eine Funktion addiere(a, b), die zwei Zahlen addiert und das Ergebnis zurückgibt.",
+      "type": "code_completion",
+      "template": "def addiere(a, b):\n    # Ihr Code hier\n    pass\n",
+      "hint1": "Verwenden Sie den + Operator",
+      "hint2": "Nutzen Sie return um das Ergebnis zurückzugeben",
+      "hint3": null,
+      "stoff": "Kapitel 3: Funktionen",
+      "validation_mode": "intelligent",
+      "test_cases": [
+        {
+          "type": "function",
+          "function": {
+            "name": "addiere",
+            "test_cases": [
+              {
+                "args": [2, 3],
+                "expected": 5
+              },
+              {
+                "args": [10, 20],
+                "expected": 30
+              },
+              {
+                "args": [-5, 5],
+                "expected": 0
+              }
+            ]
+          }
+        }
+      ],
+      "solution": "def addiere(a, b):\n    return a + b"
+    },
+    {
+      "position": 3,
+      "title": "Listen ausgeben",
+      "description": "Erstellen Sie eine Liste mit 5 Früchten und geben Sie jede Frucht aus.",
+      "type": "code_completion",
+      "template": "# Erstellen Sie die Liste hier\nfrüchte = []\n\n# Geben Sie jede Frucht aus\n",
+      "hint1": "Verwenden Sie eine for-Schleife",
+      "hint2": "print() gibt Werte aus",
+      "hint3": null,
+      "stoff": "Kapitel 4: Listen und Schleifen",
+      "validation_mode": "intelligent",
+      "test_cases": [
+        {
+          "type": "output",
+          "test_cases": [
+            {
+              "input": "",
+              "expected": "Apfel\nBanane\nOrange\nTraube\nKirsche"
+            }
+          ]
+        }
+      ],
+      "solution": "früchte = [\"Apfel\", \"Banane\", \"Orange\", \"Traube\", \"Kirsche\"]\n\nfor frucht in früchte:\n    print(frucht)"
+    }
+  ]
+}

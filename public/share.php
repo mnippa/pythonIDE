@@ -102,7 +102,7 @@ if ($ownerName === '') {
     .settings-panel.open{ display:flex; }
     .settings-title{
       font-size:12px;
-      font-weight:700;
+      font-weight:300;
       letter-spacing:0.04em;
       text-transform:uppercase;
       color:var(--text-secondary);
@@ -148,9 +148,9 @@ if ($ownerName === '') {
       background: #252526;
       color: #cccccc;
     }
-    #lint-container .lint-checking{ color:var(--text-secondary); font-weight:500; }
+    #lint-container .lint-checking{ color:var(--text-secondary); font-weight:250; }
     #lint-container .lint-ok{ color:var(--text-primary); font-weight:600; }
-    #lint-container .lint-checkmark{ color:#22c55e; font-weight:700; }
+    #lint-container .lint-checkmark{ color:#22c55e; font-weight:300; }
     #lint-container .lint-fix-label{ color:var(--text-primary); font-weight:600; }
     #lint-container .lint-fix-link{ cursor:pointer; text-decoration:underline; color:#2563eb; }
     html.dark-mode #lint-container .lint-fix-link{ color:#60a5fa; }
@@ -258,7 +258,7 @@ if ($ownerName === '') {
     }
 
     .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
-    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:700; border-bottom:1px solid var(--border); }
+    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:300; border-bottom:1px solid var(--border); }
     .plot-img{ width:100%; height:auto; display:block; }
 
     /* Share Header */

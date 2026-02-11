@@ -1,169 +1,182 @@
-<!DOCTYPE html>
-<html lang="de">
+﻿<!DOCTYPE html>
+<html lang='de'>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Python IDE - Login</title>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Login - HS PF Python IDE</title>
+  <link rel='stylesheet' href='css/hspf-theme.css'>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, 
+        rgba(255, 190, 49, 0.03) 0%, 
+        rgba(125, 115, 105, 0.05) 100%
+      ),
+      var(--hspf-bg);
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .auth-wrapper {
+      flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: var(--hspf-spacing-2xl) var(--hspf-spacing-lg);
     }
+
     .auth-container {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      background: var(--hspf-surface);
+      border-radius: var(--hspf-radius-lg);
+      box-shadow: var(--hspf-shadow-xl);
       width: 100%;
-      max-width: 420px;
-      padding: 40px;
+      max-width: 450px;
+      padding: var(--hspf-spacing-2xl);
+      border: 1px solid var(--hspf-border);
     }
-    h1 {
+
+    .auth-header {
+      text-align: center;
+      margin-bottom: var(--hspf-spacing-xl);
+    }
+
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--hspf-spacing-md);
+      margin-bottom: var(--hspf-spacing-lg);
+    }
+
+    .auth-logo img {
+      height: 48px;
+      width: auto;
+    }
+
+    .auth-logo-text {
+      font-size: 24px;
+      font-weight: 300;
+      color: var(--hspf-primary);
+    }
+
+    .auth-title {
       font-size: 28px;
-      margin-bottom: 8px;
-      color: #1f2937;
+      font-weight: 300;
+      color: var(--hspf-text-primary);
+      margin-bottom: var(--hspf-spacing-xs);
     }
-    .subtitle {
-      color: #6b7280;
-      margin-bottom: 32px;
-      font-size: 14px;
-    }
-    .form-group {
-      margin-bottom: 20px;
-    }
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 500;
-      color: #374151;
-      font-size: 14px;
-    }
-    input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
+
+    .auth-subtitle {
       font-size: 15px;
-      transition: border-color 0.2s;
+      color: var(--hspf-text-secondary);
     }
-    input:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .error {
-      background: #fee;
-      color: #c00;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      border: 1px solid #fcc;
-    }
-    .success {
-      background: #efe;
-      color: #060;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      border: 1px solid #cfc;
-    }
+
     .switch-mode {
       text-align: center;
-      margin-top: 24px;
+      margin-top: var(--hspf-spacing-lg);
+      padding-top: var(--hspf-spacing-lg);
+      border-top: 1px solid var(--hspf-border);
       font-size: 14px;
-      color: #6b7280;
+      color: var(--hspf-text-secondary);
     }
+
     .switch-mode a {
-      color: #667eea;
+      color: var(--hspf-accent);
       text-decoration: none;
       font-weight: 600;
+      transition: var(--hspf-transition);
     }
+
     .switch-mode a:hover {
+      color: var(--hspf-accent-hover);
       text-decoration: underline;
     }
+
     .free-editor-link {
       text-align: center;
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid #e5e7eb;
+      margin-top: var(--hspf-spacing-md);
+      padding-top: var(--hspf-spacing-md);
     }
+
     .free-editor-link a {
-      color: #6b7280;
+      color: var(--hspf-text-muted);
       text-decoration: none;
       font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: var(--hspf-transition);
     }
+
     .free-editor-link a:hover {
-      color: #374151;
-      text-decoration: underline;
+      color: var(--hspf-text-secondary);
+    }
+
+    @media (max-width: 480px) {
+      .auth-container {
+        padding: var(--hspf-spacing-lg);
+      }
+      
+      .auth-title {
+        font-size: 24px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="auth-container">
-    <h1 id="page-title">Anmelden</h1>
-    <p class="subtitle" id="page-subtitle">Bei Python IDE anmelden</p>
-    
-    <div id="message-container"></div>
-    
-    <form id="auth-form">
-      <div class="form-group">
-        <label for="email">E-Mail-Adresse</label>
-        <input type="email" id="email" placeholder="deine@email.de" required>
-      </div>
+  <?php 
+    $pageTitle = 'Python IDE';
+    $showUser = false;
+    include(__DIR__ . '/../components/header.php');  
+  ?>
 
-      <div class="form-group" id="first-name-group" style="display:none;">
-        <label for="first-name">Vorname</label>
-        <input type="text" id="first-name" placeholder="Max">
-      </div>
-
-      <div class="form-group" id="last-name-group" style="display:none;">
-        <label for="last-name">Nachname</label>
-        <input type="text" id="last-name" placeholder="Mustermann">
+  <div class='auth-wrapper'>
+    <div class='auth-container'>
+      <div class='auth-header'>
+        <div class='auth-logo'>
+          <span class='auth-logo-text'>HS PF</span>
+          <img src='assets/logo.svg' alt='HS Pforzheim'>
+        </div>
+        <h1 class='auth-title' id='page-title'>Anmelden</h1>
+        <p class='auth-subtitle' id='page-subtitle'>Bei der Python IDE anmelden</p>
       </div>
       
-      <div class="form-group">
-        <label for="password">Passwort</label>
-        <input type="password" id="password" placeholder="••••••••" required>
+      <div id='message-container'></div>
+      
+      <form id='auth-form'>
+        <div class='hspf-form-group'>
+          <label class='hspf-label' for='email'>E-Mail-Adresse</label>
+          <input type='email' id='email' class='hspf-input' placeholder='deine@email.de' required>
+        </div>
+
+        <div class='hspf-form-group' id='first-name-group' style='display:none;'>
+          <label class='hspf-label' for='first-name'>Vorname</label>
+          <input type='text' id='first-name' class='hspf-input' placeholder='Max'>
+        </div>
+
+        <div class='hspf-form-group' id='last-name-group' style='display:none;'>
+          <label class='hspf-label' for='last-name'>Nachname</label>
+          <input type='text' id='last-name' class='hspf-input' placeholder='Mustermann'>
+        </div>
+        
+        <div class='hspf-form-group'>
+          <label class='hspf-label' for='password'>Passwort</label>
+          <input type='password' id='password' class='hspf-input' placeholder='••••••••' required>
+        </div>
+        
+        <button type='submit' id='submit-btn' class='hspf-btn hspf-btn-primary' style='width: 100%;'>
+          Anmelden
+        </button>
+      </form>
+      
+      <div class='switch-mode'>
+        <span id='switch-text'>Noch kein Konto?</span>
+        <a href='#' id='switch-link'>Registrieren</a>
       </div>
       
-      <button type="submit" id="submit-btn">Anmelden</button>
-    </form>
-    
-    <div class="switch-mode">
-      <span id="switch-text">Noch kein Konto?</span>
-      <a href="#" id="switch-link">Registrieren</a>
-    </div>
-    
-    <div class="free-editor-link">
-      <a href="free.php">→ Zum Free Editor (ohne Anmeldung)</a>
+      <div class='free-editor-link'>
+        <a href='free.php'>→ Zum Free Editor (ohne Anmeldung)</a>
+      </div>
     </div>
   </div>
 
@@ -179,14 +192,13 @@
     const switchLink = document.getElementById('switch-link');
     const messageContainer = document.getElementById('message-container');
 
-    // Switch between login and register
     switchLink.addEventListener('click', (e) => {
       e.preventDefault();
       isLoginMode = !isLoginMode;
       
       if (isLoginMode) {
         pageTitle.textContent = 'Anmelden';
-        pageSubtitle.textContent = 'Bei Python IDE anmelden';
+        pageSubtitle.textContent = 'Bei der Python IDE anmelden';
         firstNameGroup.style.display = 'none';
         lastNameGroup.style.display = 'none';
         submitBtn.textContent = 'Anmelden';
@@ -205,7 +217,6 @@
       messageContainer.innerHTML = '';
     });
 
-    // Handle form submission
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -234,17 +245,17 @@
         const data = await response.json();
         
         if (data.ok) {
-          messageContainer.innerHTML = `<div class="success">${isLoginMode ? 'Anmeldung' : 'Registrierung'} erfolgreich!</div>`;
+          messageContainer.innerHTML = `<div class='hspf-alert hspf-alert-success'>${isLoginMode ? 'Anmeldung' : 'Registrierung'} erfolgreich!</div>`;
           setTimeout(() => {
             window.location.href = 'dashboard.php';
           }, 500);
         } else {
-          messageContainer.innerHTML = `<div class="error">${data.error || 'Ein Fehler ist aufgetreten'}</div>`;
+          messageContainer.innerHTML = `<div class='hspf-alert hspf-alert-error'>${data.error || 'Ein Fehler ist aufgetreten'}</div>`;
           submitBtn.disabled = false;
           submitBtn.textContent = isLoginMode ? 'Anmelden' : 'Registrieren';
         }
       } catch (err) {
-        messageContainer.innerHTML = '<div class="error">Verbindungsfehler. Bitte versuche es erneut.</div>';
+        messageContainer.innerHTML = '<div class="hspf-alert hspf-alert-error">Verbindungsfehler. Bitte versuche es erneut.</div>';
         submitBtn.disabled = false;
         submitBtn.textContent = isLoginMode ? 'Anmelden' : 'Registrieren';
       }

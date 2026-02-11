@@ -24,6 +24,7 @@ if ($displayName === '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Python IDE - Meine Aufgaben</title>
+  <link rel="stylesheet" href="css/hspf-theme.css">
   <link rel="stylesheet" href="css/ide.css">
   <link rel="stylesheet" href="css/file-tree.css">
   <style>
@@ -54,8 +55,8 @@ if ($displayName === '') {
 
     .toolbar{
       display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:10px; border-bottom:1px solid var(--border);
-      background:var(--bg);
+      padding:6px 10px;
+      background:transparent;
     }
     .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
@@ -64,37 +65,9 @@ if ($displayName === '') {
     #submitted-info.show{ display:flex; }
     #submitted-status.status-passed{ background-color:#34d399; }
     #submitted-status.status-failed{ background-color:#f87171; }
-    #settings-toggle{ width:34px; height:34px; padding:0; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
     #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
     #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
     html.dark-mode #theme-toggle::after{ content:'☀️'; }
-    .toolcheck{ display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:var(--panel); color:var(--text-primary); }
-    .toolcheck input{ transform: translateY(0.5px); }
-
-    .settings-panel{
-      position:fixed;
-      top:58px;
-      right:10px;
-      z-index:120;
-      background:var(--panel);
-      color:var(--text-primary);
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:10px;
-      min-width:190px;
-      display:none;
-      flex-direction:column;
-      gap:8px;
-      box-shadow:0 12px 30px rgba(0,0,0,0.12);
-    }
-    .settings-panel.open{ display:flex; }
-    .settings-title{
-      font-size:12px;
-      font-weight:700;
-      letter-spacing:0.04em;
-      text-transform:uppercase;
-      color:var(--text-secondary);
-    }
 
     /* MASTER GRID: left sidebar | editor | right output */
     .app{
@@ -257,7 +230,7 @@ if ($displayName === '') {
     }
     .task-hints-counter {
       color: var(--text-secondary);
-      font-weight: 500;
+      font-weight: 250;
     }
     .task-hints-empty {
       margin: 0 0 10px;
@@ -360,9 +333,9 @@ if ($displayName === '') {
       background: #252526;
       color: #cccccc;
     }
-    #lint-container .lint-checking{ color:var(--text-secondary); font-weight:500; }
+    #lint-container .lint-checking{ color:var(--text-secondary); font-weight:250; }
     #lint-container .lint-ok{ color:var(--text-primary); font-weight:600; }
-    #lint-container .lint-checkmark{ color:#22c55e; font-weight:700; }
+    #lint-container .lint-checkmark{ color:#22c55e; font-weight:300; }
     #lint-container .lint-fix-label{ color:var(--text-primary); font-weight:600; }
     #lint-container .lint-fix-link{ cursor:pointer; text-decoration:underline; color:#2563eb; }
     html.dark-mode #lint-container .lint-fix-link{ color:#60a5fa; }
@@ -470,7 +443,7 @@ if ($displayName === '') {
     }
 
     .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
-    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:700; border-bottom:1px solid var(--border); }
+    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:300; border-bottom:1px solid var(--border); }
     .plot-img{ width:100%; height:auto; display:block; }
 
     /* User bar & projects panel */
@@ -727,7 +700,7 @@ if ($displayName === '') {
     }
     .success-stat-value {
       font-size: 24px;
-      font-weight: 700;
+      font-weight: 300;
       color: #10b981;
     }
     .success-stat-label {
@@ -841,65 +814,52 @@ if ($displayName === '') {
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <button id="dashboard-btn" onclick="window.location.href='dashboard.php'">⬅ Dashboard</button>
-    <button id="back-to-list-btn" style="display:none;">⬅ Zurück zur Liste</button>
-    <button id="run-btn" style="display:none;">Run</button>
-    <button id="check-btn" style="display:none; background:#667eea; color:#fff; border-color:transparent;">🔍 Überprüfen (0/10)</button>
-    <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
-    <span id="attempts-counter" style="display:none;"></span>
-    <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
-    <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
-    <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
-    <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
-    <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
-      <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
-      <span>Abgegeben: <span id="submitted-date"></span></span>
-      <span>Checks <span id="submitted-checks"></span></span>
-      <span>Hints <span id="submitted-hints"></span></span>
-    </div>
-
-    <div style="flex:1"></div>
-    
-    <div class="user-bar">
-      <div class="user-info">
-        <span><?= htmlspecialchars($displayName) ?></span>
-        <?php if ($user['role'] === 'admin'): ?>
-        <span class="user-badge">Admin</span>
-        <?php endif; ?>
+  <?php
+  $pageTitle = 'Assignments';
+  $showUser = false;
+  $userInfo = [];
+  $headerActions = <<<HTML
+    <div class="toolbar">
+      <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
+      <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
+      <button id="run-btn" style="display:none;">Run</button>
+      <button id="check-btn" style="display:none; background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
+      <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
+      <span id="attempts-counter" style="display:none;"></span>
+      <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
+      <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
+      <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
+      <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
+      <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
+        <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
+        <span>Abgegeben: <span id="submitted-date"></span></span>
+        <span>Checks <span id="submitted-checks"></span></span>
+        <span>Hints <span id="submitted-hints"></span></span>
       </div>
-      <?php if ($user['role'] === 'admin'): ?>
-      <a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>
-      <?php endif; ?>
-      <button id="settings-toggle" title="Module" aria-label="Module settings">⚙</button>
-      <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-      <button id="logout-btn" title="Abmelden">🚪</button>
+      <div style="flex:1"></div>
+      <div class="user-bar">
+        <div class="user-info">
+          <span><?= htmlspecialchars(
+            $displayName
+          ) ?></span>
+          <?php if (
+            $user['role'] === 'admin'
+          ): ?>
+          <span class="user-badge">Admin</span>
+          <?php endif; ?>
+        </div>
+        <?php if (
+          $user['role'] === 'admin'
+        ): ?>
+        <a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>
+        <?php endif; ?>
+        <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
+        <button id="logout-btn" title="Abmelden">🚪</button>
+      </div>
     </div>
-  </div>
-
-  <div id="settings-panel" class="settings-panel" aria-hidden="true">
-    <div class="settings-title">Module</div>
-    <label class="toolcheck" title="NumPy laden">
-      <input id="pkg-numpy" type="checkbox" checked>
-      <span>NumPy</span>
-    </label>
-    <label class="toolcheck" title="Matplotlib laden">
-      <input id="pkg-matplotlib" type="checkbox" checked>
-      <span>Matplotlib</span>
-    </label>
-    <label class="toolcheck" title="Pandas laden">
-      <input id="pkg-pandas" type="checkbox">
-      <span>Pandas</span>
-    </label>
-    <label class="toolcheck" title="Panel nicht verfuegbar in Pyodide">
-      <input id="pkg-panel" type="checkbox" disabled>
-      <span>Panel (nicht verfuegbar)</span>
-    </label>
-    <label class="toolcheck" title="Seaborn nicht verfuegbar in Pyodide">
-      <input id="pkg-seaborn" type="checkbox" disabled>
-      <span>Seaborn (nicht verfuegbar)</span>
-    </label>
-  </div>
+HTML;
+  include(__DIR__ . '/../components/header.php');
+  ?>
 
   <div class="current-project-bar" id="current-project-bar" style="display:none;">
     <span>Projekt: <span class="current-project-name" id="current-project-name">Ungespeichert</span></span>
@@ -995,23 +955,6 @@ if ($displayName === '') {
         html.classList.toggle('dark-mode');
         const isDark = html.classList.contains('dark-mode');
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
-      });
-    })();
-
-    // Settings Toggle
-    (function() {
-      const settingsBtn = document.getElementById('settings-toggle');
-      const settingsPanel = document.getElementById('settings-panel');
-      
-      settingsBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        settingsPanel.classList.toggle('open');
-      });
-      
-      document.addEventListener('click', (e) => {
-        if (settingsPanel && !settingsPanel.contains(e.target)) {
-          settingsPanel.classList.remove('open');
-        }
       });
     })();
 

@@ -1,0 +1,183 @@
+/**
+ * HS PF Theme - Admin Dashboard Compatibility Shim
+ * Maps old button classes to new HS PF classes for backward compatibility
+ */
+
+/* Button class mapping */
+.btn:not(.hspf-btn):not(.btn-remove-test):not(.btn-add-pattern):not(.btn-remove-pattern):not(.btn-add-function-tc):not(.btn-remove-function-tc):not(.btn-add-fn-input):not(.btn-remove-fn-input) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hspf-spacing-sm);
+  padding: 8px 16px;
+  font-family: var(--hspf-font-family);
+  font-size: 14px;
+  font-weight: 250;
+  text-decoration: none;
+  border: 1px solid var(--hspf-border);
+  border-radius: var(--hspf-radius);
+  background-color: var(--hspf-surface);
+  color: var(--hspf-text-primary);
+  cursor: pointer;
+  transition: var(--hspf-transition);
+  white-space: nowrap;
+}
+
+.btn:not(.hspf-btn):hover {
+  background-color: var(--hspf-gray-50);
+  border-color: var(--hspf-border-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--hspf-shadow);
+}
+
+.btn.primary {
+  background-color: var(--hspf-accent);
+  border-color: var(--hspf-accent);
+  color: #333;
+  font-weight: 600;
+}
+
+.btn.primary:hover {
+  background-color: var(--hspf-accent-hover);
+  border-color: var(--hspf-accent-hover);
+}
+
+.btn.warn {
+  background-color: var(--hspf-error);
+  border-color: var(--hspf-error);
+  color: white;
+}
+
+.btn.warn:hover {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.btn.ghost {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.btn.ghost:hover {
+  background-color: var(--hspf-gray-100);
+}
+
+/* Task move arrows (no visible button chrome) */
+.task-move-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.task-move-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 12px;
+  color: var(--hspf-text-primary);
+  cursor: pointer;
+}
+
+.task-move-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Badge mapping */
+.badge:not(.hspf-badge):not(.status-badge) {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--hspf-radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background-color: var(--hspf-accent);
+  color: #333;
+}
+
+/* Status badge mapping */
+.status {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--hspf-radius-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status:not(.arch):not(.archived) {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status.arch,
+.status.archived {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Field mapping */
+.field {
+  margin-bottom: var(--hspf-spacing-lg);
+}
+
+.field label {
+  display: block;
+  margin-bottom: var(--hspf-spacing-sm);
+  font-weight: 250;
+  font-size: 14px;
+  color: var(--hspf-text-primary);
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  padding: 10px 14px;
+  font-family: var(--hsfont-family);
+  font-size: 15px;
+  color: var(--hspf-text-primary);
+  background-color: var(--hspf-surface);
+  border: 1px solid var(--hspf-border);
+  border-radius: var(--hspf-radius);
+  transition: var(--hspf-transition);
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--hspf-accent);
+  box-shadow: 0 0 0 3px rgba(0, 119, 200, 0.1);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Hint text */
+.hint {
+  font-size: 12px;
+  color: var(--hspf-text-muted);
+  margin-top: 4px;
+}
+
+/* Muted text */
+.muted {
+  color: var(--hspf-text-secondary);
+  font-size: 14px;
+}
+
+/* Tag */
+.tag {
+  padding: 4px 8px;
+  border-radius: var(--hspf-radius);
+  background: #fef3c7;
+  font-size: 12px;
+  color: #92400e;
+}

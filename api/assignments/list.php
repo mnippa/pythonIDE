@@ -23,7 +23,6 @@ $sql = '
         a.updated_at,
         a.is_active,
         a.difficulty,
-        a.time_limit_minutes,
         u.first_name,
         u.last_name,
         u.email,
@@ -63,7 +62,6 @@ while ($row = $result->fetch_assoc()) {
         'updated_at' => $row['updated_at'],
         'is_active' => (bool)$row['is_active'],
         'difficulty' => $row['difficulty'],
-        'time_limit_minutes' => $row['time_limit_minutes'] !== null ? (int)$row['time_limit_minutes'] : null,
         'task_count' => (int)$row['task_count'],
         'user_status' => $row['user_status']
     ];

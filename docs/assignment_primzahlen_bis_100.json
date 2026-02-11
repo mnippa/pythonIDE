@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "exported_at": "2026-02-10 14:30:00",
+  "position": 1,
+  "title": "Primzahlen bis 100",
+  "problem_type": "code_completion",
+  "description": "Schreiben Sie ein Programm, das alle Primzahlen von 2 bis 100 findet und ausgibt.\n\n**Was sind Primzahlen?**\nEine Primzahl ist eine natürliche Zahl größer als 1, die nur durch 1 und sich selbst ohne Rest teilbar ist. Die ersten Primzahlen sind: 2, 3, 5, 7, 11, 13, ...\n\n**Beispiele:**\n- 2 ist eine Primzahl (nur durch 1 und 2 teilbar)\n- 4 ist KEINE Primzahl (durch 1, 2 und 4 teilbar)\n- 7 ist eine Primzahl (nur durch 1 und 7 teilbar)\n- 9 ist KEINE Primzahl (durch 1, 3 und 9 teilbar)\n\n**Ihre Aufgabe:**\nSchreiben Sie Code, der alle Primzahlen von 2 bis 100 findet und jede Primzahl in einer eigenen Zeile ausgibt.",
+  "code_template": "# Finden Sie alle Primzahlen von 2 bis 100\n# und geben Sie jede Primzahl aus\n\n",
+  "hint1": "Verwenden Sie eine äußere Schleife für die Zahlen von 2 bis 100: for zahl in range(2, 101)",
+  "hint2": "Für jede Zahl prüfen Sie mit einer inneren Schleife, ob es einen Teiler gibt: for teiler in range(2, zahl). Wenn zahl % teiler == 0, dann ist die Zahl NICHT prim.",
+  "hint3": "Tipp: Sie können die Prüfung optimieren, indem Sie nur bis zur Quadratwurzel der Zahl testen: range(2, int(zahl**0.5) + 1). Wenn Sie einen Teiler finden, können Sie mit 'break' abbrechen.",
+  "stoff": "Kapitel: Schleifen, Modulo-Operator, Primzahlen-Algorithmus",
+  "validation_mode": "intelligent",
+  "solution_code": "for zahl in range(2, 101):\n    ist_primzahl = True\n    for teiler in range(2, zahl):\n        if zahl % teiler == 0:\n            ist_primzahl = False\n            break\n    if ist_primzahl:\n        print(zahl)",
+  "test_cases": [
+    {
+      "type": "OUTPUT",
+      "test_cases": [
+        {
+          "input": "",
+          "expected": "2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n31\n37\n41\n43\n47\n53\n59\n61\n67\n71\n73\n79\n83\n89\n97"
+        }
+      ]
+    }
+  ]
+}

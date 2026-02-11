@@ -644,7 +644,7 @@ function updateAttemptsCounter(task) {
   // Update check button text with attempts
   const checkBtn = $('check-btn');
   if (checkBtn) {
-    checkBtn.textContent = `🔍 Überprüfen (${attempts}/${maxAttempts})`;
+    checkBtn.textContent = `🔍 Check (${attempts}/${maxAttempts})`;
   }
 }
 

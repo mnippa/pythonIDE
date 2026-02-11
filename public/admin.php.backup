@@ -25,308 +25,200 @@ if ($displayName === '') {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Python IDE - Admin Dashboard</title>
-  <link rel="stylesheet" href="css/hspf-theme.css">
-  <link rel="stylesheet" href="css/admin-compat.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    body {
-      padding: 0;
-      min-height: 100vh;
+    :root {
+      --bg:#f6f1ea;
+      --panel:#fffaf4;
+      --ink:#1c1b1a;
+      --muted:#6c6762;
+      --accent:#0f766e;
+      --accent-2:#f59e0b;
+      --border:#e6ddd4;
+      --shadow:0 18px 60px rgba(15, 23, 42, 0.12);
     }
-    
-    .admin-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: var(--hspf-spacing-lg);
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family:"Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      color:var(--ink);
+      background:radial-gradient(1200px 600px at 20% -10%, #e5f6f2, transparent),
+                 radial-gradient(900px 500px at 110% 10%, #fef3c7, transparent),
+                 var(--bg);
+      min-height:100vh;
+      padding:24px;
     }
-    
-    .admin-actions {
-      display: flex;
-      align-items: center;
-      gap: var(--hspf-spacing-sm);
+    .shell{
+      max-width:1200px;
+      margin:0 auto;
     }
-    
-    .tabs {
-      display: flex;
-      gap: var(--hspf-spacing-sm);
-      margin: var(--hspf-spacing-lg) 0;
-      border-bottom: 2px solid var(--hspf-border);
-      padding-bottom: 0;
+    .topbar{
+      display:flex;
+      align-items:center;
+      gap:16px;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:12px 16px;
+      box-shadow:var(--shadow);
     }
-    
-    .tab {
-      padding: 12px 20px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      font-weight: 250;
-      font-size: 15px;
-      color: var(--hspf-text-secondary);
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-      transition: var(--hspf-transition);
+    .brand{
+      font-weight:700;
+      letter-spacing:0.4px;
     }
-    
-    .tab:hover {
-      color: var(--hspf-text-primary);
-      background-color: var(--hspf-bg-secondary);
+    .spacer{ flex:1; }
+    .user{
+      font-size:14px;
+      color:var(--muted);
+      display:flex;
+      align-items:center;
+      gap:10px;
     }
-    
-    .tab.active {
-      color: var(--hspf-text-primary);
-      border-bottom-color: var(--hspf-accent);
-      font-weight: 600;
+    .badge{
+      padding:3px 8px;
+      background:var(--accent);
+      color:#fff;
+      border-radius:6px;
+      font-size:11px;
+      font-weight:600;
+      text-transform:uppercase;
     }
-    
-    .panel {
-      display: none;
-      margin-top: var(--hspf-spacing-lg);
+    .btn{
+      border:1px solid var(--border);
+      background:var(--panel);
+      padding:8px 12px;
+      border-radius:8px;
+      cursor:pointer;
+      font-weight:600;
     }
-    
-    .panel.active {
-      display: block;
+    .btn.primary{
+      background:var(--accent);
+      color:#fff;
+      border-color:transparent;
     }
-    
-    .admin-card {
-      background: var(--hspf-surface);
-      border: 2px solid var(--hspf-border);
-      border-radius: var(--hspf-radius-md);
-      padding: var(--hspf-spacing-lg);
-      margin-bottom: var(--hspf-spacing-lg);
-      box-shadow: var(--hspf-shadow);
+    .btn.warn{
+      background:#b91c1c;
+      color:#fff;
+      border-color:transparent;
     }
-    
-    .admin-card h2, .admin-card h3 {
-      margin: 0 0 var(--hspf-spacing-sm);
-      color: var(--hspf-text-primary);
-      font-weight: 300;
+    .btn.ghost{
+      background:transparent;
     }
-    
-    .admin-card-subtitle {
-      font-size: 14px;
-      color: var(--hspf-text-secondary);
-      margin-bottom: var(--hspf-spacing-md);
+    .tabs{
+      display:flex;
+      gap:8px;
+      margin:20px 0 12px;
     }
-    
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-      margin-top: var(--hspf-spacing-md);
+    .tab{
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:var(--panel);
+      cursor:pointer;
+      font-weight:600;
+      font-size:14px;
     }
-    
-    th, td {
-      text-align: left;
-      padding: 12px 8px;
-      border-bottom: 1px solid var(--hspf-border);
-      vertical-align: top;
+    .tab.active{
+      background:var(--accent);
+      color:#fff;
+      border-color:transparent;
     }
-    
-    th {
-      color: var(--hspf-text-secondary);
-      font-weight: 600;
-      background-color: var(--hspf-bg-secondary);
+    .panel{
+      display:none;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px;
+      box-shadow:var(--shadow);
     }
-    
-    .row-actions {
-      display: flex;
-      gap: var(--hspf-spacing-xs);
-      flex-wrap: wrap;
+    .panel.active{ display:block; }
+    .grid{
+      display:grid;
+      gap:16px;
     }
-    
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: var(--hspf-spacing-xs);
-      margin-bottom: var(--hspf-spacing-md);
+    .grid.two{ grid-template-columns: 1.2fr 0.8fr; }
+    .card{
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:12px;
+      background:#fff;
     }
-    
-    .field label {
-      font-size: 14px;
-      font-weight: 250;
-      color: var(--hspf-text-primary);
+    h2,h3{ margin:0 0 10px; }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:14px;
     }
-    
-    .field input,
-    .field select,
-    .field textarea {
-      width: 100%;
-      padding: 10px 14px;
-      border: 2px solid var(--hspf-border);
-      border-radius: var(--hspf-radius);
-      font-size: 14px;
-      font-family: var(--hspf-font-family);
-      transition: var(--hspf-transition);
+    th,td{
+      text-align:left;
+      padding:8px 6px;
+      border-bottom:1px solid var(--border);
+      vertical-align:top;
     }
-    
-    .field input:focus,
-    .field select:focus,
-    .field textarea:focus {
-      outline: none;
-      border-color: var(--hspf-accent);
-      box-shadow: 0 0 0 3px rgba(255, 190, 49, 0.2);
+    th{ color:var(--muted); font-weight:600; }
+    .muted{ color:var(--muted); font-size:12px; }
+    .row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+    .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+    .field label{ font-size:12px; color:var(--muted); }
+    .field input, .field select, .field textarea{
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:8px;
+      font-size:14px;
+      font-family:inherit;
     }
-    
-    .field textarea {
-      min-height: 100px;
-      resize: vertical;
-      font-family: var(--hspf-font-mono);
-    }
-    
-    .hint {
-      font-size: 12px;
-      color: var(--hspf-text-muted);
-      margin-top: 4px;
-    }
-    
-    .tag {
-      padding: 4px 8px;
-      border-radius: var(--hspf-radius-sm);
-      background-color: #fef3c7;
-      font-size: 11px;
-      font-weight: 250;
-    }
-    
-    .mono {
-      font-family: var(--hspf-font-mono);
-      font-size: 12px;
-    }
-    
-    .status {
-      padding: 4px 10px;
-      border-radius: var(--hspf-radius-full);
-      font-size: 11px;
-      font-weight: 600;
-      background-color: #dcfce7;
-      color: #166534;
-    }
-    
-    .status.arch {
-      background-color: #fee2e2;
-      color: #991b1b;
-    }
-    
-    /* Modal Styles */
-    .modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      padding: var(--hspf-spacing-lg);
-      overflow: auto;
-      animation: fadeIn 0.2s ease-in;
-    }
-    
-    .modal.active {
-      display: block;
-    }
-    
-    .modal-content {
-      background: var(--hspf-surface);
-      border-radius: var(--hspf-radius-md);
-      padding: var(--hspf-spacing-xl);
-      max-width: 800px;
-      margin: 40px auto;
-      border: 2px solid var(--hspf-border);
-      box-shadow: var(--hspf-shadow-xl);
-    }
-    
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--hspf-spacing-lg);
-      padding-bottom: var(--hspf-spacing-md);
-      border-bottom: 2px solid var(--hspf-accent);
-    }
-    
-    .modal-header h3 {
-      margin: 0;
-      color: var(--hspf-text-primary);
-      font-weight: 300;
-    }
-    
-    .modal-close {
-      font-size: 24px;
-      font-weight: bold;
-      color: var(--hspf-text-secondary);
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 0;
-      line-height: 1;
-    }
-    
-    .modal-close:hover {
-      color: var(--hspf-text-primary);
-    }
+    .field textarea{ min-height:80px; resize:vertical; }
+    .hint{ font-size:12px; color:var(--muted); }
+    .tag{ padding:2px 6px; border-radius:6px; background:#fef3c7; font-size:11px; }
+    .mono{ font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+    .status{ padding:2px 8px; border-radius:999px; font-size:11px; background:#e5f6f2; }
+    .status.arch{ background:#fde2e2; }
     
     /* Test Cases Builder GUI */
-    .test-cases-builder {
-      background: var(--hspf-surface);
-      border: 2px solid var(--hspf-border);
-      border-radius: var(--hspf-radius);
-      padding: var(--hspf-spacing-md);
-      margin-bottom: var(--hspf-spacing-md);
+    .test-cases-builder{ 
+      background:#ffffff; 
+      border:1px solid #e5e7eb; 
+      border-radius:8px; 
+      padding:16px; 
+      margin-bottom:12px;
+    }
+    .builder-header{ 
+      display:flex; 
+      align-items:center; 
+      flex-wrap:wrap; 
+      gap:8px;
+      padding-bottom:12px;
+      border-bottom:2px solid #e5e7eb;
+    }
+    .test-case-item{
+      transition: all 0.2s ease;
+    }
+    .test-case-item:hover{
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .btn-remove-test:hover{
+      background:#dc2626 !important;
     }
     
-    .builder-header {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: var(--hspf-spacing-sm);
-      padding-bottom: var(--hspf-spacing-md);
-      border-bottom: 2px solid var(--hspf-border-accent);
-    }
-    
-    .test-case-item {
-      transition: var(--hspf-transition);
-      padding: var(--hspf-spacing-sm);
-      border: 1px solid var(--hspf-border);
-      border-radius: var(--hspf-radius);
-      margin-bottom: var(--hspf-spacing-sm);
-    }
-    
-    .test-case-item:hover {
-      box-shadow: var(--hspf-shadow-md);
-      border-color: var(--hspf-accent);
-    }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
-    @media (max-width: 768px) {
-      .admin-container {
-        padding: var(--hspf-spacing-md);
-      }
-      
-      .tabs {
-        overflow-x: auto;
-      }
+    @media (max-width: 980px){
+      .grid.two{ grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <?php
-  $pageTitle = 'Admin Dashboard';
-  $showUser = true;
-  $userInfo = [
-    'name' => $displayName,
-    'role' => 'admin'
-  ];
-  $headerActions = '
-    <a class="hspf-btn hspf-btn-ghost" href="dashboard.php">← Dashboard</a>
-    <button class="hspf-btn hspf-btn-ghost" id="logout-btn">Logout</button>
-  ';
-  include(__DIR__ . '/../components/header.php');
-  ?>
-  
-  <div class="admin-container">
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand">Python IDE Admin</div>
+      <div class="spacer"></div>
+      <div class="user">
+        <span><?= htmlspecialchars($displayName) ?></span>
+        <span class="badge">Admin</span>
+        <button class="btn ghost" id="logout-btn">Logout</button>
+        <a class="btn" href="editor.php">Back to editor</a>
+      </div>
+    </div>
 
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="projects">Projects</button>
@@ -335,10 +227,10 @@ if ($displayName === '') {
     </div>
 
     <section class="panel active" id="tab-projects">
-      <div class="admin-card">
+      <div class="card">
         <h2>Projects</h2>
-        <div class="admin-card-subtitle">Alle Projekte mit Besitzer. Löschen ist Admin-only.</div>
-        <div style="overflow:auto;">
+        <div class="muted">Alle Projekte mit Besitzer. Loeschen ist Admin-only.</div>
+        <div style="margin-top:10px; overflow:auto;">
           <table>
             <thead>
               <tr>
@@ -357,10 +249,10 @@ if ($displayName === '') {
     </section>
 
     <section class="panel" id="tab-assignments">
-      <div class="admin-card">
+      <div class="card">
         <h2>Assignments</h2>
-        <div class="admin-card-subtitle">Create, update, delete assignments.</div>
-        <div style="overflow:auto;">
+        <div class="muted">Create, update, delete assignments.</div>
+        <div style="margin-top:10px; overflow:auto;">
           <table>
             <thead>
               <tr>
@@ -375,15 +267,15 @@ if ($displayName === '') {
             <tbody id="assignments-body"></tbody>
           </table>
         </div>
-        <div style="margin-top:var(--hspf-spacing-md);">
-          <button class="hspf-btn hspf-btn-primary" type="button" id="open-assignment-modal">+ New Assignment</button>
+        <div style="margin-top:16px;">
+          <button class="btn primary" type="button" id="open-assignment-modal">+ New Assignment</button>
         </div>
       </div>
 
-      <div class="admin-card">
+      <div class="card" style="margin-top:16px;">
         <h3 id="tasks-title">Tasks</h3>
-        <div class="admin-card-subtitle" id="tasks-hint">Select an assignment to manage tasks.</div>
-        <div style="overflow:auto;">
+        <div class="muted" id="tasks-hint">Select an assignment to manage tasks.</div>
+        <div style="margin-top:10px; overflow:auto;">
           <table>
             <thead>
               <tr>
@@ -399,19 +291,17 @@ if ($displayName === '') {
             <tbody id="tasks-body"></tbody>
           </table>
         </div>
-        <div style="margin-top:var(--hspf-spacing-md);">
-          <button class="hspf-btn hspf-btn-primary" type="button" id="open-task-modal">+ New Task</button>
-          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Task (JSON)</button>
-          <input type="file" id="import-task-file-input" accept=".json" style="display:none;">
+        <div style="margin-top:12px;">
+          <button class="btn primary" type="button" id="open-task-modal">+ New Task</button>
         </div>
       </div>
     </section>
 
     <section class="panel" id="tab-users">
-      <div class="admin-card">
+      <div class="card">
         <h2>Users</h2>
-        <div class="admin-card-subtitle">Set status to aktiv or archiviert.</div>
-        <div style="overflow:auto;">
+        <div class="muted">Set status to aktiv or archiviert.</div>
+        <div style="margin-top:10px; overflow:auto;">
           <table>
             <thead>
               <tr>
@@ -430,25 +320,25 @@ if ($displayName === '') {
     </section>
   </div>
 
-  <div id="assignment-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 id="assignment-modal-title">New Assignment</h3>
-        <button id="assignment-close-btn" class="modal-close">✕</button>
+  <div id="assignment-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:600px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="assignment-modal-title" style="margin:0;">New Assignment</h3>
+        <button id="assignment-close-btn" class="btn ghost" style="font-size:20px;">✕</button>
       </div>
       <form id="assignment-form">
         <input type="hidden" id="assignment-id" />
         <div class="field">
           <label for="assignment-title">Title</label>
-          <input id="assignment-title" class="hspf-input" required />
+          <input id="assignment-title" required />
         </div>
         <div class="field">
           <label for="assignment-description">Description</label>
-          <textarea id="assignment-description" class="hspf-textarea"></textarea>
+          <textarea id="assignment-description"></textarea>
         </div>
         <div class="field">
           <label for="assignment-difficulty">Difficulty</label>
-          <select id="assignment-difficulty" class="hspf-select">
+          <select id="assignment-difficulty">
             <option value="beginner">Beginner</option>
             <option value="intermediate">Intermediate</option>
             <option value="advanced">Advanced</option>
@@ -456,24 +346,24 @@ if ($displayName === '') {
         </div>
         <div class="field">
           <label for="assignment-active">Active</label>
-          <select id="assignment-active" class="hspf-select">
+          <select id="assignment-active">
             <option value="true">true</option>
             <option value="false">false</option>
           </select>
         </div>
         <div class="row-actions">
-          <button class="hspf-btn hspf-btn-primary" type="submit">Save</button>
-          <button class="hspf-btn" type="button" id="assignment-cancel">Cancel</button>
+          <button class="btn primary" type="submit">Save</button>
+          <button class="btn" type="button" id="assignment-cancel">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
-  <div id="task-create-modal" class="modal">
-    <div class="modal-content" style="max-width: 900px;">
-      <div class="modal-header">
-        <h3>New Task</h3>
-        <button id="task-create-close-btn" class="modal-close">✕</button>
+  <div id="task-create-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:800px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0;">New Task</h3>
+        <button id="task-create-close-btn" class="btn ghost" style="font-size:20px;">✕</button>
       </div>
       <form id="task-form">
         <div class="field">
@@ -539,8 +429,8 @@ if ($displayName === '') {
                 <option value="intelligent">INTELLIGENT (Musterloesung)</option>
                 <option value="code_check">CODE CHECK (Keywords) ✨</option>
               </select>
-              <button type="button" class="hspf-btn" id="add-test-btn" style="margin-left:10px;">+ Add Test</button>
-              <button type="button" class="hspf-btn hspf-btn-primary" id="generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
+              <button type="button" class="btn" id="add-test-btn" style="margin-left:10px;">+ Add Test</button>
+              <button type="button" class="btn primary" id="generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
             </div>
             
             <div id="tests-container" style="margin-top:15px;"></div>
@@ -555,18 +445,18 @@ if ($displayName === '') {
           <textarea id="task-solution" placeholder="Musterlösung"></textarea>
         </div>
         <div class="row-actions">
-          <button class="hspf-btn hspf-btn-primary" type="submit">Add Task</button>
-          <button class="hspf-btn" type="button" id="task-create-cancel-btn">Cancel</button>
+          <button class="btn primary" type="submit">Add Task</button>
+          <button class="btn" type="button" id="task-create-cancel-btn">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
-  <div id="task-modal" class="modal">
-    <div class="modal-content" style="max-width: 900px;">
-      <div class="modal-header">
-        <h3 id="modal-title">Edit Task</h3>
-        <button id="close-modal-btn" class="modal-close">✕</button>
+  <div id="task-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; padding:20px; overflow:auto;">
+    <div style="background:var(--panel); border-radius:12px; padding:20px; max-width:600px; margin:40px auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="modal-title" style="margin:0;">Edit Task</h3>
+        <button id="close-modal-btn" class="btn ghost" style="font-size:20px;">✕</button>
       </div>
       <form id="task-edit-form">
         <input type="hidden" id="edit-task-id" />
@@ -633,8 +523,8 @@ if ($displayName === '') {
                 <option value="intelligent">INTELLIGENT (Musterloesung)</option>
                 <option value="code_check">CODE CHECK (Keywords) ✨</option>
               </select>
-              <button type="button" class="hspf-btn" id="edit-add-test-btn" style="margin-left:10px;">+ Add Test</button>
-              <button type="button" class="hspf-btn hspf-btn-primary" id="edit-generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
+              <button type="button" class="btn" id="edit-add-test-btn" style="margin-left:10px;">+ Add Test</button>
+              <button type="button" class="btn primary" id="edit-generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
             </div>
             
             <div id="edit-tests-container" style="margin-top:15px;"></div>
@@ -649,8 +539,8 @@ if ($displayName === '') {
           <textarea id="edit-task-solution" placeholder="Musterlösung"></textarea>
         </div>
         <div class="row-actions">
-          <button class="hspf-btn hspf-btn-primary" type="submit">Save Changes</button>
-          <button class="hspf-btn" type="button" id="cancel-modal-btn">Cancel</button>
+          <button class="btn primary" type="submit">Save Changes</button>
+          <button class="btn" type="button" id="cancel-modal-btn">Cancel</button>
         </div>
       </form>
     </div>
