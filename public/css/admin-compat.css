@@ -133,6 +133,23 @@
   color: var(--hspf-text-primary);
 }
 
+.field.checkbox-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.field.checkbox-field input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+.field.checkbox-field span {
+  user-select: none;
+}
+
 .field input,
 .field textarea,
 .field select {
@@ -145,6 +162,31 @@
   border: 1px solid var(--hspf-border);
   border-radius: var(--hspf-radius);
   transition: var(--hspf-transition);
+}
+
+/* Options builder: keep controls readable in flex rows */
+#task-options-container input[type="radio"],
+#task-options-container input[type="checkbox"],
+#edit-task-options-container input[type="radio"],
+#edit-task-options-container input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 8px 6px 0 0;
+  flex: 0 0 auto;
+}
+
+#task-options-container input[type="file"],
+#edit-task-options-container input[type="file"] {
+  width: auto;
+  padding: 0;
+  font-size: 12px;
+}
+
+#task-options-container textarea,
+#edit-task-options-container textarea {
+  width: 100%;
+  min-height: 70px;
+  line-height: 1.4;
 }
 
 .field input:focus,
@@ -165,6 +207,13 @@
   font-size: 12px;
   color: var(--hspf-text-muted);
   margin-top: 4px;
+}
+
+/* Inline validation hints */
+.field-error {
+  font-size: 12px;
+  color: var(--hspf-error);
+  margin-top: 6px;
 }
 
 /* Muted text */

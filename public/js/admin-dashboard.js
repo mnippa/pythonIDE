@@ -9,7 +9,9 @@ const state = {
   assignmentsPerPage: 10,
   assignmentsSortBy: 'id',
   assignmentsSortDir: 'asc',
-  assignmentsFilter: ''
+  assignmentsFilter: '',
+  tasksFilterText: '',
+  tasksFilterType: 'all'
 };
 
 function $(id) {
@@ -143,7 +145,8 @@ function renderAssignments() {
       <td>
         <div class="row-actions">
           <button class="icon-btn" data-action="edit-assignment" data-id="${a.id}" title="Edit">✏️</button>
-          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">🔄</button>
+          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">�</button>
+          <button class="icon-btn warn" data-action="reset-assignment-attempts" data-id="${a.id}" title="Reset all attempts">↺</button>
           <button class="icon-btn danger" data-action="delete-assignment" data-id="${a.id}" title="Delete">🗑️</button>
         </div>
       </td>
@@ -182,12 +185,23 @@ async function loadTasks(assignmentId, assignmentTitle) {
   const body = $('tasks-body');
   body.innerHTML = '';
 
-  state.tasks.forEach((t, index) => {
+  const filterText = (state.tasksFilterText || '').toLowerCase();
+  const filterType = state.tasksFilterType || 'all';
+  const filteredTasks = state.tasks.filter((t) => {
+    const matchesText = !filterText || String(t.title || '').toLowerCase().includes(filterText);
+    const matchesType = filterType === 'all' || t.task_type === filterType;
+    return matchesText && matchesType;
+  });
+
+  filteredTasks.forEach((t) => {
     const hasTests = t.test_cases ? '✓' : '✗';
     const hasSolution = t.solution_code ? '✓' : '✗';
     const modeLabel = t.validation_mode || '-';
-    const isFirst = index === 0;
-    const isLast = index === state.tasks.length - 1;
+    const fullIndex = state.tasks.findIndex((task) => task.id === t.id);
+    const isFirst = fullIndex === 0;
+    const isLast = fullIndex === state.tasks.length - 1;
+    const taskTypeLabel = t.task_type || 'code';
+    const isQuizType = taskTypeLabel !== 'code';
     
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -200,6 +214,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
         <span class="mono">${t.position}</span>
       </td>
       <td>${escapeHtml(t.title)}</td>
+      <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
       <td><span class="tag">${escapeHtml(t.problem_type)}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
@@ -291,8 +306,31 @@ function resetTaskForm() {
   $('task-validation-mode').value = '';
   $('task-test-cases').value = '';
   $('task-solution').value = '';
+  if ($('task-max-attempts')) $('task-max-attempts').value = '1';
+  
+  // NEW: Reset quiz fields
+  if ($('new-task-type')) $('new-task-type').value = 'code';
+  if ($('task-question')) $('task-question').value = '';
+  if ($('task-image-url')) $('task-image-url').value = '';
+  if ($('task-image-preview')) $('task-image-preview').innerHTML = '';
+  if ($('task-image-upload')) $('task-image-upload').value = '';
+  if ($('task-keywords')) $('task-keywords').value = '';
+  if ($('task-correct-answer')) $('task-correct-answer').value = '';
+  if ($('task-var-overrides')) $('task-var-overrides').value = '';
+  
+  // Reset options builder
+  if (window.currentOptionsBuilder) {
+    window.currentOptionsBuilder.setOptions([]);
+  }
+  
+  // Reset test cases
   testCasesData = [];
   renderTestCases(testCasesData, 'tests-container');
+  
+  // Reset field visibility
+  if (window.TaskTypeManager) {
+    TaskTypeManager.updateFieldVisibility(document.getElementById('task-form'), 'code');
+  }
 }
 
 function openAssignmentModal() {
@@ -312,6 +350,13 @@ function openNewTaskModal() {
   }
   resetTaskForm();
   $('task-create-modal').classList.add('active');
+  
+  // Update field visibility based on current task type
+  const taskForm = $('task-form');
+  const taskType = $('new-task-type').value;
+  if (window.TaskTypeManager && taskForm) {
+    window.TaskTypeManager.updateFieldVisibility(taskForm, taskType);
+  }
 }
 
 function closeNewTaskModal() {
@@ -359,12 +404,17 @@ async function handleTaskSubmit(e) {
     return;
   }
 
+  const taskType = $('new-task-type').value;
+  
   const payload = {
     assignment_id: state.currentAssignmentId,
     title: $('task-title').value.trim(),
     description: $('task-description').value.trim(),
     position: $('task-position').value ? parseInt($('task-position').value, 10) : null,
+    max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
+    show_solution: $('task-show-solution').checked ? 1 : 0,
     problem_type: $('task-type').value,
+    task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     code_template: $('task-template').value,
     hint1: $('task-hint1').value,
     hint2: $('task-hint2').value,
@@ -374,9 +424,50 @@ async function handleTaskSubmit(e) {
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
   };
+  
+  // NEW: Add quiz-specific fields
+  if (taskType === 'single_choice' || taskType === 'multiple_choice' || taskType === 'free_text') {
+    payload.question_text = $('task-question').value.trim();
+    payload.image_url = $('task-image-url').value.trim() || null;
+  }
+  
+  // NEW: Add options for single/multiple choice
+  if (taskType === 'single_choice' || taskType === 'multiple_choice') {
+    if (window.currentOptionsBuilder) {
+      payload.options = window.currentOptionsBuilder.getOptions();
+      const validationError = validateChoiceOptions(taskType, payload.options);
+      if (validationError) {
+        setChoiceValidationError('task-options-error', validationError);
+        return;
+      }
+      setChoiceValidationError('task-options-error', '');
+    }
+  }
+  
+  // NEW: Add keywords for free text
+  if (taskType === 'free_text') {
+    const keywords = $('task-keywords').value.trim();
+    payload.correct_answer = keywords; // Store as correct_answer
+    const minKeywords = $('task-min-keywords').value.trim();
+    payload.min_keywords_required = minKeywords ? parseInt(minKeywords, 10) : null;
+  }
+  
+  // NEW: Add fields for code reading
+  if (taskType === 'code_reading') {
+    payload.correct_answer = $('task-correct-answer').value.trim();
+    const varOverrides = $('task-var-overrides').value.trim();
+    if (varOverrides) {
+      try {
+        payload.variable_overrides = JSON.parse(varOverrides);
+      } catch (err) {
+        alert('Variable Overrides: Ungültiges JSON-Format');
+        return;
+      }
+    }
+  }
 
-  // If builder has data, prefer it over manual JSON
-  if (Array.isArray(testCasesData) && testCasesData.length > 0) {
+  // If builder has data, prefer it over manual JSON (for code tasks)
+  if (taskType === 'code' && Array.isArray(testCasesData) && testCasesData.length > 0) {
     // Special case: if single intelligent test, save as object (not array)
     if (testCasesData.length === 1 && testCasesData[0].type === 'intelligent') {
       const intelligentConfig = {...testCasesData[0]};
@@ -394,8 +485,8 @@ async function handleTaskSubmit(e) {
     return;
   }
 
-  // Validate test_cases JSON if provided
-  if (payload.test_cases) {
+  // Validate test_cases JSON if provided (for code tasks)
+  if (taskType === 'code' && payload.test_cases) {
     try {
       const parsed = JSON.parse(payload.test_cases);
       const error = validateIntelligentTests(parsed, payload.solution_code);
@@ -414,11 +505,60 @@ async function handleTaskSubmit(e) {
     body: JSON.stringify(payload)
   });
 
+  setChoiceValidationError('task-options-error', '');
   resetTaskForm();
 
   await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
   await loadAssignments();
   closeNewTaskModal();
+}
+
+function validateChoiceOptions(taskType, options) {
+  if (!Array.isArray(options) || options.length < 2) {
+    return 'Bitte mindestens zwei Antwortoptionen hinzufügen';
+  }
+
+  const normalizedTexts = options
+    .map(opt => (opt.text || '').trim())
+    .filter(text => text !== '')
+    .map(text => text.toLowerCase());
+
+  if (normalizedTexts.length === 0) {
+    return 'Bitte mindestens einen Antworttext angeben';
+  }
+
+  const duplicates = normalizedTexts.filter((text, idx) => normalizedTexts.indexOf(text) !== idx);
+  if (duplicates.length > 0) {
+    return 'Antworttexte duplizieren sich. Bitte eindeutige Texte verwenden.';
+  }
+
+  const correctCount = options.filter(opt => opt.is_correct).length;
+  if (correctCount === 0) {
+    return 'Bitte mindestens eine richtige Antwort markieren';
+  }
+
+  if (taskType === 'single_choice' && correctCount !== 1) {
+    return 'Single-Choice: Bitte genau eine richtige Antwort markieren';
+  }
+
+  if (taskType === 'multiple_choice' && correctCount < 2) {
+    return 'Multiple-Choice: Bitte mindestens zwei richtige Antworten markieren';
+  }
+
+  return null;
+}
+
+function setChoiceValidationError(elementId, message) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const text = (message || '').trim();
+  if (text) {
+    el.textContent = text;
+    el.style.display = 'block';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
 }
 
 function escapeHtml(input) {
@@ -519,11 +659,19 @@ function openEditTaskModal(taskId) {
   const task = state.tasks.find((t) => t.id === taskId);
   if (!task) return;
 
+  // Basic fields
   $('edit-task-id').value = task.id;
   $('edit-task-title').value = task.title || '';
   $('edit-task-description').value = task.description || '';
   $('edit-task-position').value = task.position || '';
-  $('edit-task-type').value = task.problem_type || 'code_completion';
+  if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
+  if ($('edit-task-show-solution')) $('edit-task-show-solution').checked = task.show_solution !== 0;
+  
+  // Task type - use task_type if available, fallback to problem_type
+  const taskType = task.task_type || task.problem_type || 'code';
+  $('edit-task-type').value = taskType;
+  
+  // Code fields
   $('edit-task-template').value = task.code_template || '';
   $('edit-task-hint1').value = task.hint1 || '';
   $('edit-task-hint2').value = task.hint2 || '';
@@ -532,6 +680,40 @@ function openEditTaskModal(taskId) {
   $('edit-task-validation-mode').value = task.validation_mode || '';
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
+  
+  // Quiz fields
+  if ($('edit-task-question')) $('edit-task-question').value = task.question_text || '';
+  if ($('edit-task-keywords')) {
+    // For free_text, load correct_answer into keywords field
+    if (taskType === 'free_text') {
+      $('edit-task-keywords').value = task.correct_answer || '';
+    } else {
+      $('edit-task-keywords').value = task.keywords || '';
+    }
+  }
+  if ($('edit-task-min-keywords')) $('edit-task-min-keywords').value = task.min_keywords_required || '';
+  if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
+  if ($('edit-task-var-overrides')) $('edit-task-var-overrides').value = task.variable_overrides || '';
+  
+  // Image
+  if ($('edit-task-image-url')) {
+    $('edit-task-image-url').value = task.image_url || '';
+    if (task.image_url) {
+      $('edit-task-image-preview').innerHTML = `
+        <img src="${task.image_url}" style="max-width: 300px; max-height: 200px; margin-top: 8px; border: 1px solid #ddd; border-radius: 3px;" />
+        <br/><button type="button" onclick="document.getElementById('edit-task-image-url').value=''; document.getElementById('edit-task-image-preview').innerHTML=''; document.getElementById('edit-task-image-upload').value='';" 
+          style="margin-top: 4px; font-size: 12px;">Bild entfernen</button>
+      `;
+    } else {
+      $('edit-task-image-preview').innerHTML = '';
+    }
+  }
+  
+  // Options for Single/Multiple Choice
+  if (window.editOptionsBuilder && (taskType === 'single_choice' || taskType === 'multiple_choice')) {
+    window.editOptionsBuilder.setTaskType(taskType);
+    window.editOptionsBuilder.setOptions(task.options || []);
+  }
   
   // Initialize editTestCasesData from JSON
   try {
@@ -557,6 +739,12 @@ function openEditTaskModal(taskId) {
 
   $('task-modal').classList.add('active');
   $('modal-title').textContent = `Edit Task: ${task.title}`;
+  
+  // Update field visibility based on task type
+  const editForm = $('task-edit-form');
+  if (window.TaskTypeManager && editForm) {
+    window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
+  }
 }
 
 function closeEditTaskModal() {
@@ -571,12 +759,17 @@ async function handleEditTaskSubmit(e) {
   const taskId = parseInt($('edit-task-id').value, 10);
   if (!taskId) return;
 
+  const taskType = $('edit-task-type').value;
+  
   const payload = {
     id: taskId,
     title: $('edit-task-title').value.trim(),
     description: $('edit-task-description').value.trim(),
     position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
-    problem_type: $('edit-task-type').value,
+    max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
+    show_solution: $('edit-task-show-solution').checked ? 1 : 0,
+    task_type: taskType,
+    problem_type: taskType,  // Keep for backwards compatibility
     code_template: $('edit-task-template').value,
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
@@ -584,8 +777,32 @@ async function handleEditTaskSubmit(e) {
     stoff: $('edit-task-stoff').value,
     validation_mode: $('edit-task-validation-mode').value || null,
     test_cases: $('edit-task-test-cases').value.trim() || null,
-    solution_code: $('edit-task-solution').value.trim() || null
+    solution_code: $('edit-task-solution').value.trim() || null,
+    
+    // Quiz fields
+    question_text: $('edit-task-question') ? $('edit-task-question').value.trim() : null,
+    image_url: $('edit-task-image-url') ? $('edit-task-image-url').value.trim() : null,
+    keywords: $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null,
+    correct_answer: $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null,
+    variable_overrides: $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null,
+    min_keywords_required: $('edit-task-min-keywords') ? (($('edit-task-min-keywords').value.trim() !== '') ? parseInt($('edit-task-min-keywords').value, 10) : null) : null
   };
+  
+  // For free_text, use keywords field as correct_answer
+  if (taskType === 'free_text') {
+    payload.correct_answer = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
+  }
+  
+  // Handle options for Single/Multiple Choice
+  if ((taskType === 'single_choice' || taskType === 'multiple_choice') && window.editOptionsBuilder) {
+    payload.options = window.editOptionsBuilder.getOptions();
+    const validationError = validateChoiceOptions(taskType, payload.options);
+    if (validationError) {
+      setChoiceValidationError('edit-task-options-error', validationError);
+      return;
+    }
+    setChoiceValidationError('edit-task-options-error', '');
+  }
 
   // If builder has data, prefer it over manual JSON
   if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
@@ -684,11 +901,38 @@ function bindEvents() {
       }
       
       try {
-        const text = await file.text();
-        const jsonData = JSON.parse(text);
-        await importTask(jsonData, state.currentAssignmentId);
+        // Process import with new importer
+        const { tasks, images, manifest } = await window.taskImporter.processImport(file);
+        
+        // Add assignment ID to each task (ensure it's an integer)
+        tasks.forEach(task => {
+          task.assignment_id = parseInt(state.currentAssignmentId, 10);
+        });
+        
+        // Import tasks with images
+        const results = await window.taskImporter.importTasks(tasks, images);
+        
+        // Show results
+        const createdCount = results.created.length;
+        const failedCount = results.failed.length;
+        let message = `✓ ${createdCount} task(s) imported successfully`;
+        
+        if (failedCount > 0) {
+          message += `\n✗ ${failedCount} task(s) failed:\n`;
+          results.failed.forEach(f => {
+            message += `\n• ${f.title}: ${f.error}`;
+          });
+        }
+        
+        alert(message);
+        
+        // Reload tasks
+        await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+        await loadAssignments();
+        
       } catch (err) {
-        alert('Fehler beim Lesen der Datei: ' + err.message);
+        console.error('Import error:', err);
+        alert('Import failed: ' + err.message);
       }
       
       // Reset input
@@ -791,6 +1035,25 @@ function bindEvents() {
       if (!confirm('Delete assignment?')) return;
       await requestJson(`../api/assignments/delete.php?id=${id}`, { method: 'DELETE' });
       await loadAssignments();
+    }
+
+    if (action === 'reset-assignment-attempts') {
+      const a = state.assignments.find((x) => x.id === id);
+      if (!a) return;
+      if (!confirm(`ACHTUNG: Alle Versuche und Fortschritte für "${a.title}" werden zurückgesetzt!\\n\\nSind Sie sicher?`)) return;
+      try {
+        const response = await requestJson('../api/assignments/reset_attempts.php', {
+          method: 'POST',
+          body: JSON.stringify({ assignment_id: id })
+        });
+        if (response.ok) {
+          alert(`Erfolg! ${response.affected_rows} Einträge zurückgesetzt.`);
+        } else {
+          throw new Error(response.error);
+        }
+      } catch (err) {
+        alert('Fehler beim Zurücksetzen: ' + err.message);
+      }
     }
 
     if (action === 'select-assignment') {
@@ -1916,41 +2179,6 @@ function migrateLegacyTestCases(testCases) {
 // IMPORT FUNCTION
 // ========================================
 
-async function importTask(jsonData, assignmentId) {
-  try {
-    const response = await fetch(`../api/admin/assignments/import.php?assignment_id=${assignmentId}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(jsonData)
-    });
-    
-    // Get response text first
-    const text = await response.text();
-    
-    // Try to parse as JSON
-    let result;
-    try {
-      result = JSON.parse(text);
-    } catch (parseErr) {
-      console.error('Server response:', text);
-      throw new Error('Invalid JSON response from server. Check console for details.');
-    }
-    
-    if (!response.ok || !result.ok) {
-      throw new Error(result.error || `Server error: ${response.status}`);
-    }
-    
-    alert(`Task erfolgreich importiert!\nTask-ID: ${result.task_id}`);
-    await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
-    await loadAssignments();
-    
-  } catch (err) {
-    console.error('Import error:', err);
-    alert('Import fehlgeschlagen: ' + err.message);
-  }
-}
-
 function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
 }
@@ -1959,6 +2187,147 @@ function sanitizeFilename(name) {
 document.addEventListener('DOMContentLoaded', () => {
   initTestCasesBuilder();
   initEditTestCasesBuilder();
+  
+  // Initialize Task Type Manager for new task modal
+  if (window.TaskTypeManager) {
+    TaskTypeManager.init('task-form');
+    TaskTypeManager.init('task-edit-form');  // Also for edit modal
+  }
+  
+  // Initialize Options Builder for NEW task modal
+  if (window.OptionsBuilder) {
+    window.currentOptionsBuilder = new OptionsBuilder('task-options-container');
+    window.editOptionsBuilder = new OptionsBuilder('edit-task-options-container');
+  }
+
+  // Clear options validation errors on change
+  window.onOptionsBuilderChange = (taskType, options, containerId) => {
+    if (containerId === 'task-options-container') {
+      setChoiceValidationError('task-options-error', '');
+    }
+    if (containerId === 'edit-task-options-container') {
+      setChoiceValidationError('edit-task-options-error', '');
+    }
+  };
+  
+  // Image Upload Handler (NEW task)
+  const taskImageUpload = $('task-image-upload');
+  if (taskImageUpload) {
+    taskImageUpload.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      try {
+        const response = await fetch('../api/admin/tasks/upload_image.php', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        
+        if (data.ok) {
+          $('task-image-url').value = data.image_url;
+          $('task-image-preview').innerHTML = `
+            <img src="${data.image_url}" style="max-width: 300px; max-height: 200px; margin-top: 8px; border: 1px solid #ddd; border-radius: 3px;" />
+            <br/><button type="button" onclick="document.getElementById('task-image-url').value=''; document.getElementById('task-image-preview').innerHTML=''; document.getElementById('task-image-upload').value='';" 
+              style="margin-top: 4px; font-size: 12px;">Bild entfernen</button>
+          `;
+        } else {
+          alert('Upload failed: ' + data.error);
+        }
+      } catch (err) {
+        alert('Upload error: ' + err.message);
+      }
+      
+      e.target.value = ''; // Reset input
+    });
+  }
+  
+  // Image Upload Handler (EDIT task)
+  const editTaskImageUpload = $('edit-task-image-upload');
+  if (editTaskImageUpload) {
+    editTaskImageUpload.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      try {
+        const response = await fetch('../api/admin/tasks/upload_image.php', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        
+        if (data.ok) {
+          $('edit-task-image-url').value = data.image_url;
+          $('edit-task-image-preview').innerHTML = `
+            <img src="${data.image_url}" style="max-width: 300px; max-height: 200px; margin-top: 8px; border: 1px solid #ddd; border-radius: 3px;" />
+            <br/><button type="button" onclick="document.getElementById('edit-task-image-url').value=''; document.getElementById('edit-task-image-preview').innerHTML=''; document.getElementById('edit-task-image-upload').value='';" 
+              style="margin-top: 4px; font-size: 12px;">Bild entfernen</button>
+          `;
+        } else {
+          alert('Upload failed: ' + data.error);
+        }
+      } catch (err) {
+        alert('Upload error: ' + err.message);
+      }
+      
+      e.target.value = ''; // Reset input
+    });
+  }
+  
+  // Task Type Change Handler (NEW task)
+  const newTaskType = $('new-task-type');
+  if (newTaskType) {
+    newTaskType.addEventListener('change', () => {
+      const taskType = newTaskType.value;
+      
+      // Update OptionsBuilder task type
+      if (window.currentOptionsBuilder) {
+        window.currentOptionsBuilder.setTaskType(taskType);
+      }
+      
+      // Update legacy problem_type for compatibility
+      $('task-type').value = taskType === 'code' ? 'code_completion' : taskType;
+    });
+  }
+  
+  // Task Type Change Handler (EDIT task)
+  const editTaskType = $('edit-task-type');
+  if (editTaskType) {
+    editTaskType.addEventListener('change', () => {
+      const taskType = editTaskType.value;
+      
+      // Update OptionsBuilder task type
+      if (window.editOptionsBuilder) {
+        window.editOptionsBuilder.setTaskType(taskType);
+      }
+    });
+  }
+
+  // Tasks filter
+  const tasksFilterText = $('tasks-filter-text');
+  const tasksFilterType = $('tasks-filter-type');
+  if (tasksFilterText) {
+    tasksFilterText.addEventListener('input', (e) => {
+      state.tasksFilterText = e.target.value || '';
+      if (state.currentAssignmentId) {
+        loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+      }
+    });
+  }
+  if (tasksFilterType) {
+    tasksFilterType.addEventListener('change', (e) => {
+      state.tasksFilterType = e.target.value || 'all';
+      if (state.currentAssignmentId) {
+        loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+      }
+    });
+  }
   
   // Assignments search filter
   const searchInput = $('assignments-search');
@@ -2026,56 +2395,12 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (selectedTasks.length === 1) {
         // Export single task
-        const task = selectedTasks[0];
-        const exportData = {
-          version: '1.0',
-          title: task.title,
-          description: task.description || '',
-          problem_type: task.problem_type,
-          difficulty: task.difficulty || 'medium',
-          starter_code: task.starter_code || '',
-          solution_code: task.solution_code || '',
-          test_cases: task.test_cases || [],
-          hints: task.hints || '',
-          validation_mode: task.validation_mode || 'output',
-          expected_output: task.expected_output || '',
-          input_mode: task.input_mode || 'none',
-          timeout: task.timeout || 5000
-        };
-        
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `task_${task.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        await window.taskExporter.exportSingleTask(selectedTasks[0]);
       } else {
-        // Export multiple tasks as array
-        const exportData = selectedTasks.map(task => ({
-          version: '1.0',
-          title: task.title,
-          description: task.description || '',
-          problem_type: task.problem_type,
-          difficulty: task.difficulty || 'medium',
-          starter_code: task.starter_code || '',
-          solution_code: task.solution_code || '',
-          test_cases: task.test_cases || [],
-          hints: task.hints || '',
-          validation_mode: task.validation_mode || 'output',
-          expected_output: task.expected_output || '',
-          input_mode: task.input_mode || 'none',
-          timeout: task.timeout || 5000
-        }));
-        
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `tasks_export_${selectedTasks.length}_tasks.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        // Export multiple tasks
+        await window.taskExporter.exportMultipleTasks(selectedTasks);
       }
     });
   }
+
 });

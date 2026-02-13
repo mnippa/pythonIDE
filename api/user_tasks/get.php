@@ -30,7 +30,7 @@ $runSelect = $hasRunCount ? ', run_count' : '';
 if ($taskId) {
     // Get single task progress
     $stmt = $conn->prepare(
-        'SELECT id, user_id, task_id, status, attempts' . $runSelect . ', current_code, hints_revealed, started_at, completed_at, updated_at
+        'SELECT id, user_id, task_id, status, attempts' . $runSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
          FROM user_tasks 
          WHERE user_id = ? AND task_id = ?'
     );
@@ -55,7 +55,7 @@ if ($taskId) {
 } elseif ($assignmentId) {
     // Get all tasks progress for assignment
     $stmt = $conn->prepare(
-        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . ', ut.current_code, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
+        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
          FROM user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
          WHERE ut.user_id = ? AND t.assignment_id = ?

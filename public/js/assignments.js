@@ -10,6 +10,7 @@ const assignmentState = {
   currentUserAssignmentId: null,
   taskStatuses: {},
   taskAttempts: {},
+  taskUserAnswers: {}, // Store user answers: { taskId: { selected_options: [], text_answer: '', variable_values: {} } }
   taskRuns: {},
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
@@ -202,6 +203,11 @@ function showTaskDetails(task, activeTab = 'details') {
   panel.classList.add('active');
   if (app) app.classList.add('with-task-details');
 
+  // Get status and attempts for header
+  const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
+  const attempts = assignmentState.taskAttempts[task.id] || 0;
+  const maxAttempts = task.max_attempts || 1;
+
   const availableHints = [];
   if (task.hint1) {
     availableHints.push({ id: 1, text: task.hint1 });
@@ -222,6 +228,12 @@ function showTaskDetails(task, activeTab = 'details') {
 
   let detailsHtml = '';
 
+  // Status and attempts header
+  detailsHtml += `<div class="task-status-header">
+    <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
+    ${task.task_type !== 'code' ? `<span class="task-attempts-info">Versuche: ${attempts}/${maxAttempts}</span>` : ''}
+  </div>`;
+
   // Stoff (Learning Content)
   if (task.stoff) {
     detailsHtml += `<div class="stoff-section">
@@ -235,7 +247,7 @@ function showTaskDetails(task, activeTab = 'details') {
     detailsHtml += `<h4>Aufgabenstellung</h4><p>${escapeHtml(task.description)}</p>`;
   }
 
-  if (!detailsHtml) {
+  if (detailsHtml === '') {
     detailsHtml = '<p>Keine Details vorhanden.</p>';
   }
 
@@ -331,6 +343,9 @@ function getStatusLabel(status) {
   return labels[status] || status;
 }
 
+// Export showTaskDetails for access from quiz-renderer
+window.showTaskDetails = showTaskDetails;
+
 // Render task navigation in left panel (compact task list)
 function renderTaskNavigation() {
   const navEl = $('task-navigation');
@@ -400,6 +415,12 @@ async function loadAssignments() {
           userTasks.forEach(ut => {
             assignmentState.taskStatuses[ut.task_id] = ut.status;
             assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+            // Store user answers
+            assignmentState.taskUserAnswers[ut.task_id] = {
+              selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+              text_answer: ut.text_answer || '',
+              variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+            };
             if (ut.run_count !== undefined && ut.run_count !== null) {
               assignmentState.taskRuns[ut.task_id] = ut.run_count;
             }
@@ -495,6 +516,17 @@ function openAssignmentEditor(assignmentId) {
   
   // Set current assignment
   assignmentState.currentAssignmentId = assignmentId;
+  
+  // Update page title with assignment name
+  const assignmentDetails = assignmentState.assignmentDetails[assignmentId];
+  const titleEl = document.getElementById('assignment-page-title');
+  if (titleEl) {
+    if (assignmentDetails && assignmentDetails.title) {
+      titleEl.textContent = assignmentDetails.title;
+    } else {
+      titleEl.textContent = 'Assignments';
+    }
+  }
   
   // Get tasks for this assignment
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
@@ -614,8 +646,11 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
 
+  // Check if this is a quiz-style task
+  const isQuizTask = task.task_type && task.task_type !== 'code';
+  
   const editor = window.editorInstance;
-  if (!editor) {
+  if (!isQuizTask && !editor) {
     alert('Editor not ready yet');
     return;
   }
@@ -655,15 +690,60 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     console.warn(`No user_assignment found for assignment ${assignmentId}. Will be created on first save.`);
   }
 
-  // Load saved code from user_tasks if available
-  loadSavedCode(taskId).then(savedCode => {
-    const code = savedCode || task.code_template || '# Start here';
-    editor.setValue(code);
-  }).catch(err => {
-    console.warn('Failed to load saved code, using template:', err);
-    const code = task.code_template || '# Start here';
-    editor.setValue(code);
-  });
+  // Handle Quiz Tasks
+  if (isQuizTask) {
+    // Hide code editor, show quiz container
+    const editorContainer = document.getElementById('editor-container');
+    const quizContainer = document.getElementById('quiz-container');
+    const leftBottom = document.getElementById('left-bottom');
+    const leftSection = document.querySelector('.left');
+    
+    if (editorContainer) editorContainer.style.display = 'none';
+    if (leftBottom) leftBottom.style.display = 'none';
+    if (leftSection) leftSection.classList.add('quiz-mode');
+    
+    if (quizContainer) {
+      quizContainer.style.display = 'block';
+      
+      // Render quiz UI
+      if (window.QuizRenderer) {
+        window.QuizRenderer.render(task, quizContainer);
+      } else {
+        quizContainer.innerHTML = '<p>Quiz renderer not loaded</p>';
+      }
+    }
+    
+    // Hide code-specific buttons
+    const runBtn = document.getElementById('run-btn');
+    const checkBtn = document.getElementById('check-btn');
+    const submitBtn = document.getElementById('submit-btn');
+    
+    if (runBtn) runBtn.style.display = 'none';
+    if (checkBtn) checkBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
+    
+  } else {
+    // Handle Code Tasks - show editor
+    const editorContainer = document.getElementById('editor-container');
+    const quizContainer = document.getElementById('quiz-container');
+    const leftBottom = document.getElementById('left-bottom');
+    const leftSection = document.querySelector('.left');
+    
+    if (editorContainer) editorContainer.style.display = 'block';
+    if (quizContainer) quizContainer.style.display = 'none';
+    if (leftBottom) leftBottom.style.display = 'grid';
+    if (leftSection) leftSection.classList.remove('quiz-mode');
+    
+    // Load saved code from user_tasks if available
+    loadSavedCode(taskId).then(savedCode => {
+      const code = savedCode || task.code_template || '# Start here';
+      editor.setValue(code);
+    }).catch(err => {
+      console.warn('Failed to load saved code, using template:', err);
+      const code = task.code_template || '# Start here';
+      editor.setValue(code);
+    });
+  }
 
   // Show task details
   showTaskDetails(task);
@@ -674,13 +754,15 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   // Show/update attempts counter if task has test_cases
   updateAttemptsCounter(task);
 
-  // Auto-save when task is loaded (mark as in_progress)
-  setTimeout(() => {
-    saveCode();
-  }, 500);
+  // Auto-save when task is loaded (mark as in_progress) - only for code tasks
+  if (!isQuizTask) {
+    setTimeout(() => {
+      saveCode();
+    }, 500);
+  }
 
   // Hide file tree initially, show only if needed
-  const fileTreeWrapper = $('file-tree-wrapper');
+  const fileTreeWrapper = document.getElementById('file-tree-wrapper');
   if (fileTreeWrapper) {
     fileTreeWrapper.classList.remove('active');
   }
@@ -690,23 +772,25 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     outputEl.textContent = `Task geladen: ${task.title}`;
   }
 
-  // Show check button if test cases OR validation mode exist
-  const checkBtn = $('check-btn');
-  const submitBtn = $('submit-btn');
-  if (checkBtn) {
-    // Debug: Log task data
-    console.log(`[RENDER] Task ${task.id} (${task.title}): test_cases=${!!task.test_cases} validation_mode='${task.validation_mode}'`);
-    
-    // Show button if either test cases exist OR validation mode is set
-    if (task.test_cases || task.validation_mode) {
-      checkBtn.style.display = 'inline-block';
-      if (submitBtn) submitBtn.style.display = 'inline-block';
-      checkBtn.disabled = false;
-      checkBtn.style.opacity = '1';
-      checkBtn.style.cursor = 'pointer';
-    } else {
-      checkBtn.style.display = 'none';
-      if (submitBtn) submitBtn.style.display = 'none';
+  // Show check button if test cases OR validation mode exist (code tasks only)
+  if (!isQuizTask) {
+    const checkBtn = document.getElementById('check-btn');
+    const submitBtn = document.getElementById('submit-btn');
+    if (checkBtn) {
+      // Debug: Log task data
+      console.log(`[RENDER] Task ${task.id} (${task.title}): test_cases=${!!task.test_cases} validation_mode='${task.validation_mode}'`);
+      
+      // Show button if either test cases exist OR validation mode is set
+      if (task.test_cases || task.validation_mode) {
+        checkBtn.style.display = 'inline-block';
+        if (submitBtn) submitBtn.style.display = 'inline-block';
+        checkBtn.disabled = false;
+        checkBtn.style.opacity = '1';
+        checkBtn.style.cursor = 'pointer';
+      } else {
+        checkBtn.style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'none';
+      }
     }
   }
 
@@ -714,17 +798,19 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   // (currentStatus and isFinalized already computed above)
   
   // Get elements
-  const saveTaskBtn = $('save-task-btn');
-  const downloadBtn = $('download-btn');
-  const undoBtn = $('undo-btn');
-  const redoBtn = $('redo-btn');
-  const attemptsCounter = $('attempts-counter');
-  const submittedInfo = $('submitted-info');
-  const submittedStatus = $('submitted-status');
-  const submittedDate = $('submitted-date');
+  const saveTaskBtn = document.getElementById('save-task-btn');
+  const downloadBtn = document.getElementById('download-btn');
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  const attemptsCounter = document.getElementById('attempts-counter');
+  const submittedInfo = document.getElementById('submitted-info');
+  const submittedStatus = document.getElementById('submitted-status');
+  const submittedDate = document.getElementById('submitted-date');
   
   if (isFinalized) {
     // Task finalized - hide buttons (but keep download), lock editor, show submitted info
+    const checkBtn = document.getElementById('check-btn');
+    const submitBtn = document.getElementById('submit-btn');
     if (checkBtn) checkBtn.style.display = 'none';
     if (submitBtn) submitBtn.style.display = 'none';
     if (saveTaskBtn) saveTaskBtn.style.display = 'none';

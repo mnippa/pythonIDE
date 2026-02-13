@@ -1,0 +1,289 @@
+<?php
+/**
+ * Submit Quiz Answer (Single-Choice, Multiple-Choice, Free-Text, Code-Reading)
+ * POST /api/user_tasks/submit_quiz.php
+ */
+
+session_start();
+require_once __DIR__ . '/../../config/database.php';
+
+header('Content-Type: application/json');
+
+// Check authentication
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+    exit;
+}
+
+$userId = $_SESSION['user_id'];
+$conn = getDbConnection();
+
+function compareAnswers($userAnswer, $expected) {
+    $userAnswer = trim((string)$userAnswer);
+
+    if (is_array($expected) || is_object($expected)) {
+        $expected = json_encode($expected);
+    }
+    $expected = trim((string)$expected);
+
+    if ($userAnswer === '' || $expected === '') {
+        return false;
+    }
+
+    if (is_numeric($userAnswer) && is_numeric($expected)) {
+        $ua = (float)$userAnswer;
+        $ex = (float)$expected;
+        return abs($ua - $ex) < 1e-9;
+    }
+
+    return strtolower($userAnswer) === strtolower($expected);
+}
+
+// Get JSON input
+$input = json_decode(file_get_contents('php://input'), true);
+if (!$input) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'Invalid JSON']);
+    exit;
+}
+
+$taskId = isset($input['task_id']) ? (int)$input['task_id'] : null;
+if (!$taskId) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'task_id required']);
+    exit;
+}
+
+// Get task details
+$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, min_keywords_required FROM tasks WHERE id = ?');
+$stmt->bind_param('i', $taskId);
+$stmt->execute();
+$task = $stmt->get_result()->fetch_assoc();
+
+if (!$task) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'Task not found']);
+    exit;
+}
+
+$taskType = $task['task_type'];
+$maxAttempts = isset($task['max_attempts']) && (int)$task['max_attempts'] > 0 ? (int)$task['max_attempts'] : 1;
+
+// Current user task state (attempts/status)
+$stmt = $conn->prepare('SELECT status, attempts FROM user_tasks WHERE user_id = ? AND task_id = ?');
+$stmt->bind_param('ii', $userId, $taskId);
+$stmt->execute();
+$userTask = $stmt->get_result()->fetch_assoc();
+$currentAttempts = $userTask ? (int)$userTask['attempts'] : 0;
+$currentStatus = $userTask ? $userTask['status'] : null;
+
+if ($currentStatus === 'passed') {
+    echo json_encode([
+        'ok' => true,
+        'is_correct' => true,
+        'status' => 'passed',
+        'attempts' => $currentAttempts,
+        'max_attempts' => $maxAttempts,
+        'message' => 'Bereits bestanden'
+    ]);
+    exit;
+}
+
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading']) && $currentAttempts >= $maxAttempts) {
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Maximale Anzahl Versuche erreicht',
+        'status' => 'failed',
+        'attempts' => $currentAttempts,
+        'max_attempts' => $maxAttempts
+    ]);
+    exit;
+}
+$isCorrect = false;
+$message = '';
+
+// Validate and grade based on task type
+if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
+    $selectedOptions = $input['selected_options'] ?? [];
+    if (empty($selectedOptions)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No options selected']);
+        exit;
+    }
+    
+    // Get correct options
+    $stmt = $conn->prepare('SELECT id FROM task_options WHERE task_id = ? AND is_correct = 1');
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    $correctOptionIds = [];
+    while ($row = $result->fetch_assoc()) {
+        $correctOptionIds[] = (int)$row['id'];
+    }
+    
+    // Compare
+    sort($selectedOptions);
+    sort($correctOptionIds);
+    $isCorrect = ($selectedOptions === $correctOptionIds);
+    
+    // Store selected options as JSON
+    $selectedOptionsJson = json_encode($selectedOptions);
+    
+} elseif ($taskType === 'free_text') {
+    $textAnswer = trim($input['text_answer'] ?? '');
+    if ($textAnswer === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No answer provided']);
+        exit;
+    }
+    
+    // Keyword matching
+    $keywords = $task['correct_answer'] ? explode(',', $task['correct_answer']) : [];
+    $keywords = array_map('trim', $keywords);
+    $keywords = array_map('strtolower', $keywords);
+    $keywords = array_filter($keywords); // Remove empty strings
+    
+    $textLower = strtolower($textAnswer);
+    $foundKeywords = 0;
+    $foundKeywordsList = [];
+    foreach ($keywords as $keyword) {
+        if ($keyword !== '' && strpos($textLower, $keyword) !== false) {
+            $foundKeywords++;
+            $foundKeywordsList[] = $keyword;
+        }
+    }
+    
+    // Determine if passed based on min_keywords_required
+    $totalKeywords = count($keywords);
+    $minRequired = isset($task['min_keywords_required']) && $task['min_keywords_required'] !== null 
+        ? (int)$task['min_keywords_required'] 
+        : $totalKeywords; // Default: all required
+    
+    // Ensure minRequired doesn't exceed total keywords
+    if ($minRequired > $totalKeywords) {
+        $minRequired = $totalKeywords;
+    }
+    
+    $isCorrect = ($foundKeywords >= $minRequired && $totalKeywords > 0);
+    $message = $isCorrect 
+        ? "Genügend Schlüsselwörter gefunden! ($foundKeywords / $totalKeywords, min. $minRequired erforderlich)" 
+        : "Nicht genügend Schlüsselwörter gefunden ($foundKeywords / $totalKeywords, min. $minRequired erforderlich)";
+    
+} elseif ($taskType === 'code_reading') {
+    $textAnswer = trim($input['text_answer'] ?? '');
+    $variableValues = $input['variable_values'] ?? [];
+    $computedValue = $input['computed_value'] ?? null;
+    
+    if ($textAnswer === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No answer provided']);
+        exit;
+    }
+    
+    // Get task code template and variable overrides
+    $stmt = $conn->prepare('SELECT code_template, variable_overrides, correct_answer FROM tasks WHERE id = ?');
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $taskData = $stmt->get_result()->fetch_assoc();
+    
+    $codeTemplate = $taskData['code_template'];
+    $varName = $taskData['correct_answer']; // Variable name to check
+    
+    // Evaluate using computed value from Pyodide (client-side)
+    if ($computedValue === null) {
+        $isCorrect = false;
+        $message = 'Keine Auswertung verfuegbar';
+    } else {
+        $isCorrect = compareAnswers($textAnswer, $computedValue);
+        $message = $isCorrect ? 'Richtig' : 'Falsch';
+    }
+    
+} else {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'Invalid task type for quiz submission']);
+    exit;
+}
+
+// Determine status based on attempts rules
+$newAttempts = $currentAttempts + 1;
+$status = $isCorrect ? 'passed' : 'failed';
+
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading'])) {
+    if ($isCorrect) {
+        $status = 'passed';
+    } elseif ($newAttempts >= $maxAttempts) {
+        $status = 'failed';
+    } else {
+        $status = 'in-progress';
+    }
+}
+
+// Create or update user_tasks entry
+$stmt = $conn->prepare(
+        'INSERT INTO user_tasks (user_id, task_id, status, selected_options, text_answer, variable_values, attempts)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE 
+             status = VALUES(status),
+             selected_options = VALUES(selected_options),
+             text_answer = VALUES(text_answer),
+             variable_values = VALUES(variable_values),
+             attempts = VALUES(attempts)'
+);
+
+$selectedOptionsJson = isset($selectedOptionsJson) ? $selectedOptionsJson : json_encode($input['selected_options'] ?? []);
+$textAnswerValue = isset($input['text_answer']) ? $input['text_answer'] : null;
+$variableValuesJson = !empty($variableValues) ? json_encode($variableValues) : null;
+
+$stmt->bind_param(
+    'iissssi',
+    $userId,
+    $taskId,
+    $status,
+    $selectedOptionsJson,
+    $textAnswerValue,
+    $variableValuesJson,
+    $newAttempts
+);
+
+if ($stmt->execute()) {
+    $response = [
+        'ok' => true,
+        'is_correct' => $isCorrect,
+        'status' => $status,
+        'attempts' => $newAttempts,
+        'max_attempts' => $maxAttempts,
+        'message' => $message
+    ];
+    
+    // For choice tasks, include options with is_correct after submission
+    if (in_array($taskType, ['single_choice', 'multiple_choice'])) {
+        $optionsStmt = $conn->prepare(
+            'SELECT id, option_text, image_url, is_correct, order_num FROM task_options WHERE task_id = ? ORDER BY order_num ASC'
+        );
+        $optionsStmt->bind_param('i', $taskId);
+        $optionsStmt->execute();
+        $optionsResult = $optionsStmt->get_result();
+        
+        $options = [];
+        while ($optionRow = $optionsResult->fetch_assoc()) {
+            $options[] = [
+                'id' => (int)$optionRow['id'],
+                'text' => $optionRow['option_text'],
+                'image_url' => $optionRow['image_url'],
+                'is_correct' => (bool)$optionRow['is_correct'],
+                'order_num' => (int)$optionRow['order_num']
+            ];
+        }
+        $optionsStmt->close();
+        
+        $response['options'] = $options;
+    }
+    
+    echo json_encode($response);
+} else {
+    http_response_code(500);
+    error_log("submit_quiz.php SQL error: " . $stmt->error);
+    echo json_encode(['ok' => false, 'error' => 'Failed to save answer: ' . $stmt->error]);
+}

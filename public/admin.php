@@ -183,6 +183,11 @@ if ($displayName === '') {
       color: var(--hspf-text-primary);
     }
     
+    .icon-btn.warn:hover {
+      background-color: #fef3c7;
+      color: #d97706;
+    }
+    
     .icon-btn.danger:hover {
       background-color: #fee2e2;
       color: #dc2626;
@@ -290,6 +295,11 @@ if ($displayName === '') {
       background-color: #fef3c7;
       font-size: 11px;
       font-weight: 250;
+    }
+
+    .tag.quiz {
+      background-color: #e0f2fe;
+      color: #075985;
     }
     
     .mono {
@@ -501,6 +511,17 @@ if ($displayName === '') {
       <div class="admin-card" id="tasks-section" style="display:none;">
         <h3 id="tasks-title">📚 Tasks</h3>
         <div class="admin-card-subtitle" id="tasks-hint">Select an assignment to manage tasks.</div>
+        <div class="search-filter" style="margin-top: var(--hspf-spacing-sm);">
+          <input type="text" id="tasks-filter-text" placeholder="Filter by title..." style="max-width: 260px;" />
+          <select id="tasks-filter-type" style="max-width: 220px;">
+            <option value="all">All task types</option>
+            <option value="code">Code (Python)</option>
+            <option value="single_choice">Single-Choice</option>
+            <option value="multiple_choice">Multiple-Choice</option>
+            <option value="free_text">Freitext</option>
+            <option value="code_reading">Code-Lesequest</option>
+          </select>
+        </div>
         <div style="overflow:auto;">
           <table id="tasks-table">
             <thead>
@@ -508,7 +529,8 @@ if ($displayName === '') {
                 <th style="width: 40px;"><input type="checkbox" id="select-all-tasks" title="Select All"></th>
                 <th>Pos</th>
                 <th>Title</th>
-                <th>Type</th>
+                <th>Task Type</th>
+                <th>Legacy</th>
                 <th>Tests</th>
                 <th>Solution</th>
                 <th>Mode</th>
@@ -520,9 +542,9 @@ if ($displayName === '') {
         </div>
         <div style="margin-top:var(--hspf-spacing-md);">
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-task-modal">+ New Task</button>
-          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Tasks (JSON)</button>
-          <button class="hspf-btn hspf-btn-secondary" type="button" id="export-tasks-btn" style="margin-left:var(--hspf-spacing-sm);">Export Selected Tasks (JSON)</button>
-          <input type="file" id="import-task-file-input" accept=".json" style="display:none;">
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Tasks (ZIP or JSON)</button>
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="export-tasks-btn" style="margin-left:var(--hspf-spacing-sm);">Export Selected Tasks (ZIP)</button>
+          <input type="file" id="import-task-file-input" accept=".json,.zip" style="display:none;">
         </div>
       </div>
 
@@ -643,7 +665,7 @@ if ($displayName === '') {
           <input id="task-title" />
         </div>
         <div class="field">
-          <label for="task-description">Description</label>
+          <label for="task-description">Description (wird bei allen Types angezeigt)</label>
           <textarea id="task-description"></textarea>
         </div>
         <div class="field">
@@ -651,35 +673,110 @@ if ($displayName === '') {
           <input id="task-position" type="number" min="1" />
         </div>
         <div class="field">
-          <label for="task-type">Problem type</label>
-          <select id="task-type">
-            <option value="code_completion">code_completion</option>
-            <option value="code_fix">code_fix</option>
-            <option value="multiple_choice">multiple_choice</option>
-            <option value="essay">essay</option>
+          <label for="task-max-attempts">Max Versuche</label>
+          <input id="task-max-attempts" type="number" min="1" value="1" />
+        </div>
+        
+        <div class="field checkbox-field">
+          <label>
+            <input id="task-show-solution" type="checkbox" checked />
+            <span>Lösung anzeigen bei max Versuchen</span>
+          </label>
+        </div>
+        
+        <!-- NEW: Task Type Selector -->
+        <div class="field">
+          <label for="new-task-type">Task Type</label>
+          <select id="new-task-type">
+            <option value="code">Code (Python)</option>
+            <option value="single_choice">Single-Choice</option>
+            <option value="multiple_choice">Multiple-Choice</option>
+            <option value="free_text">Freitext</option>
+            <option value="code_reading">Code-Lesequest</option>
           </select>
         </div>
-        <div class="field">
+        
+        <!-- Legacy problem_type (hidden, for compatibility) -->
+        <input type="hidden" id="task-type" value="code_completion" />
+        
+        <!-- Dynamic Fields -->
+        
+        <!-- Question Text (for quiz tasks) -->
+        <div class="field" data-field="question">
+          <label for="task-question">Fragestellung</label>
+          <textarea id="task-question" placeholder="Die Frage / Aufgabenstellung"></textarea>
+        </div>
+        
+        <!-- Image Upload (for quiz tasks) -->
+        <div class="field" data-field="image-upload">
+          <label for="task-image">Bild hochladen (optional)</label>
+          <input type="file" id="task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
+          <div id="task-image-preview"></div>
+          <input type="hidden" id="task-image-url" />
+        </div>
+        
+        <!-- Options Builder (for single/multiple choice) -->
+        <div class="field" data-field="options-builder">
+          <label>Antwortoptionen</label>
+          <div id="task-options-container"></div>
+          <div id="task-options-error" class="field-error" style="display:none;"></div>
+        </div>
+        
+        <!-- Keywords (for free text) -->
+        <div class="field" data-field="keywords">
+          <label for="task-keywords">Schlüsselwörter (kommagetrennt)</label>
+          <input id="task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
+          <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
+        </div>
+        
+        <div class="field" data-field="min-keywords">
+          <label for="task-min-keywords">Mindestanzahl Schlüsselwörter</label>
+          <input id="task-min-keywords" type="number" min="1" placeholder="Leer = alle erforderlich" />
+          <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
+        </div>
+        
+        <!-- Correct Answer (for code reading) -->
+        <div class="field" data-field="correct-answer">
+          <label for="task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
+          <input id="task-correct-answer" placeholder="z.B. 'x' oder '42'" />
+          <div class="hint">Name der Variable deren Wert geprüft wird, oder erwarteter Wert</div>
+        </div>
+        
+        <!-- Variable Overrides (for code reading) -->
+        <div class="field" data-field="variable-overrides">
+          <label for="task-var-overrides">Variable Overrides (JSON)</label>
+          <textarea id="task-var-overrides" placeholder='{"x": [1, 5, 10], "y": [2, 4, 8]}'></textarea>
+          <div class="hint">Variablen mit zufälligen Werten. Format: {"varName": [value1, value2, ...]}</div>
+        </div>
+        
+        <!-- Code Template (for code and code_reading) -->
+        <div class="field" data-field="code-template">
           <label for="task-template">Code template</label>
           <textarea id="task-template"></textarea>
         </div>
-        <div class="field">
-          <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
-          <textarea id="task-hint1"></textarea>
+        
+        <!-- Hints -->
+        <div data-field="hints-section">
+          <div class="field">
+            <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+            <textarea id="task-hint1"></textarea>
+          </div>
+          <div class="field">
+            <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+            <textarea id="task-hint2"></textarea>
+          </div>
+          <div class="field">
+            <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+            <textarea id="task-hint3"></textarea>
+          </div>
+          <div class="field">
+            <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
+            <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+          </div>
         </div>
-        <div class="field">
-          <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
-          <textarea id="task-hint2"></textarea>
-        </div>
-        <div class="field">
-          <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
-          <textarea id="task-hint3"></textarea>
-        </div>
-        <div class="field">
-          <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
-          <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-        </div>
-        <div class="field">
+        
+        <!-- Validation Mode (for code tasks) -->
+        <div class="field" data-field="validation-mode">
           <label for="task-validation-mode">Validation Mode</label>
           <select id="task-validation-mode">
             <option value="">-- none --</option>
@@ -687,7 +784,9 @@ if ($displayName === '') {
             <option value="loose">loose (whitespace tolerant)</option>
           </select>
         </div>
-        <div class="field">
+        
+        <!-- Test Cases (for code tasks) -->
+        <div class="field" data-field="test-cases-section">
           <label for="task-test-cases">Test Cases (JSON)</label>
           
           <!-- Test Cases GUI Builder -->
@@ -708,14 +807,25 @@ if ($displayName === '') {
             <div id="tests-container" style="margin-top:15px;"></div>
           </div>
           
-          <label for="task-test-cases" style="margin-top:20px; display:block;">JSON (Manual Edit):</label>
-          <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
-          <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
+          <div style="margin-top:15px;">
+            <button type="button" class="hspf-btn" onclick="document.getElementById('task-json-manual').style.display = document.getElementById('task-json-manual').style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent.includes('▼') ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';" style="font-size: 12px;">
+              ▼ JSON manuell bearbeiten
+            </button>
+          </div>
+          
+          <div id="task-json-manual" style="display:none; margin-top:10px;">
+            <label for="task-test-cases" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+            <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+            <div class="hint">Format: [{"input":"test input","expected":"output"}]</div>
+          </div>
         </div>
-        <div class="field">
+        
+        <!-- Solution Code (for code tasks) -->
+        <div class="field" data-field="solution">
           <label for="task-solution">Solution Code</label>
           <textarea id="task-solution" placeholder="Musterlösung"></textarea>
         </div>
+        
         <div class="row-actions">
           <button class="hspf-btn hspf-btn-primary" type="submit">Add Task</button>
           <button class="hspf-btn" type="button" id="task-create-cancel-btn">Cancel</button>
@@ -737,7 +847,7 @@ if ($displayName === '') {
           <input id="edit-task-title" required />
         </div>
         <div class="field">
-          <label for="edit-task-description">Description</label>
+          <label for="edit-task-description">Description (wird bei allen Types angezeigt)</label>
           <textarea id="edit-task-description"></textarea>
         </div>
         <div class="field">
@@ -745,35 +855,107 @@ if ($displayName === '') {
           <input id="edit-task-position" type="number" min="1" />
         </div>
         <div class="field">
-          <label for="edit-task-type">Problem type</label>
+          <label for="edit-task-max-attempts">Max Versuche</label>
+          <input id="edit-task-max-attempts" type="number" min="1" value="1" />
+        </div>
+        
+        <div class="field checkbox-field">
+          <label>
+            <input id="edit-task-show-solution" type="checkbox" checked />
+            <span>Lösung anzeigen bei max Versuchen</span>
+          </label>
+        </div>
+        
+        <!-- Task Type Selector -->
+        <div class="field">
+          <label for="edit-task-type">Task Type</label>
           <select id="edit-task-type">
-            <option value="code_completion">code_completion</option>
-            <option value="code_fix">code_fix</option>
-            <option value="multiple_choice">multiple_choice</option>
-            <option value="essay">essay</option>
+            <option value="code">Code (Python)</option>
+            <option value="single_choice">Single-Choice</option>
+            <option value="multiple_choice">Multiple-Choice</option>
+            <option value="free_text">Freitext</option>
+            <option value="code_reading">Code-Lesequest</option>
           </select>
         </div>
-        <div class="field">
+        
+        <!-- Dynamic Fields -->
+        
+        <!-- Question Text (for quiz tasks) -->
+        <div class="field" data-field="question">
+          <label for="edit-task-question">Fragestellung</label>
+          <textarea id="edit-task-question" placeholder="Die Frage / Aufgabenstellung"></textarea>
+        </div>
+        
+        <!-- Image Upload (for quiz tasks) -->
+        <div class="field" data-field="image-upload">
+          <label for="edit-task-image">Bild hochladen (optional)</label>
+          <input type="file" id="edit-task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
+          <div id="edit-task-image-preview"></div>
+          <input type="hidden" id="edit-task-image-url" />
+        </div>
+        
+        <!-- Options Builder (for single/multiple choice) -->
+        <div class="field" data-field="options-builder">
+          <label>Antwortoptionen</label>
+          <div id="edit-task-options-container"></div>
+          <div id="edit-task-options-error" class="field-error" style="display:none;"></div>
+        </div>
+        
+        <!-- Keywords (for free text) -->
+        <div class="field" data-field="keywords">
+          <label for="edit-task-keywords">Schlüsselwörter (kommagetrennt)</label>
+          <input id="edit-task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
+          <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
+        </div>
+        
+        <div class="field" data-field="min-keywords">
+          <label for="edit-task-min-keywords">Mindestanzahl Schlüsselwörter</label>
+          <input id="edit-task-min-keywords" type="number" min="1" placeholder="Leer = alle erforderlich" />
+          <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
+        </div>
+        
+        <!-- Correct Answer (for code reading) -->
+        <div class="field" data-field="correct-answer">
+          <label for="edit-task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
+          <input id="edit-task-correct-answer" placeholder="z.B. 'x' oder '42'" />
+          <div class="hint">Name der Variable deren Wert geprüft wird, oder erwarteter Wert</div>
+        </div>
+        
+        <!-- Variable Overrides (for code reading) -->
+        <div class="field" data-field="variable-overrides">
+          <label for="edit-task-var-overrides">Variable Overrides (JSON)</label>
+          <textarea id="edit-task-var-overrides" placeholder='{"x": [1, 5, 10], "y": [2, 4, 8]}'></textarea>
+          <div class="hint">Variablen mit zufälligen Werten. Format: {"varName": [value1, value2, ...]}</div>
+        </div>
+        
+        <!-- Code Template (for code and code_reading) -->
+        <div class="field" data-field="code-template">
           <label for="edit-task-template">Code template</label>
           <textarea id="edit-task-template"></textarea>
         </div>
-        <div class="field">
-          <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
-          <textarea id="edit-task-hint1"></textarea>
+        
+        <!-- Hints -->
+        <div data-field="hints-section">
+          <div class="field">
+            <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+            <textarea id="edit-task-hint1"></textarea>
+          </div>
+          <div class="field">
+            <label for="edit-task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+            <textarea id="edit-task-hint2"></textarea>
+          </div>
+          <div class="field">
+            <label for="edit-task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+            <textarea id="edit-task-hint3"></textarea>
+          </div>
+          <div class="field">
+            <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
+            <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+          </div>
         </div>
-        <div class="field">
-          <label for="edit-task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
-          <textarea id="edit-task-hint2"></textarea>
-        </div>
-        <div class="field">
-          <label for="edit-task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
-          <textarea id="edit-task-hint3"></textarea>
-        </div>
-        <div class="field">
-          <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
-          <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-        </div>
-        <div class="field">
+        
+        <!-- Validation Mode (for code tasks) -->
+        <div class="field" data-field="validation-mode">
           <label for="edit-task-validation-mode">Validation Mode</label>
           <select id="edit-task-validation-mode">
             <option value="">-- none --</option>
@@ -781,7 +963,9 @@ if ($displayName === '') {
             <option value="loose">loose (whitespace tolerant)</option>
           </select>
         </div>
-        <div class="field">
+        
+        <!-- Test Cases (for code tasks) -->
+        <div class="field" data-field="test-cases-section">
           <label for="edit-task-test-cases">Test Cases (JSON)</label>
           
           <!-- Test Cases GUI Builder (Edit) -->
@@ -802,11 +986,21 @@ if ($displayName === '') {
             <div id="edit-tests-container" style="margin-top:15px;"></div>
           </div>
           
-          <label for="edit-task-test-cases" style="margin-top:20px; display:block;">JSON (Manual Edit):</label>
-          <textarea id="edit-task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
-          <div class="hint">Format: [{"input":"test input","expected":"expected output"}]</div>
+          <div style="margin-top:15px;">
+            <button type="button" class="hspf-btn" onclick="document.getElementById('edit-json-manual').style.display = document.getElementById('edit-json-manual').style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent.includes('▼') ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';" style="font-size: 12px;">
+              ▼ JSON manuell bearbeiten
+            </button>
+          </div>
+          
+          <div id="edit-json-manual" style="display:none; margin-top:10px;">
+            <label for="edit-task-test-cases" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+            <textarea id="edit-task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+            <div class="hint">Format: [{"input":"test input","expected":"output"}]</div>
+          </div>
         </div>
-        <div class="field">
+        
+        <!-- Solution Code (for code tasks) -->
+        <div class="field" data-field="solution">
           <label for="edit-task-solution">Solution Code</label>
           <textarea id="edit-task-solution" placeholder="Musterlösung"></textarea>
         </div>
@@ -828,6 +1022,13 @@ if ($displayName === '') {
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   </style>
 
+  <!-- JSZip Library for ZIP export/import -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script src="js/task-type-manager.js"></script>
+  <script src="js/options-builder.js"></script>
+  <script src="js/export-tasks.js"></script>
+  <script src="js/import-tasks.js"></script>
   <script src="js/admin-dashboard.js"></script>
   <script src="js/admin-teams-users.js"></script>
 </body>

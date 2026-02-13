@@ -25,7 +25,7 @@ $headerActions = $headerActions ?? '';
       </a>
       <?php if ($pageTitle): ?>
         <div class="hspf-divider"></div>
-        <span class="hspf-page-title"><?= htmlspecialchars($pageTitle) ?></span>
+        <span class="hspf-page-title" style="font-size: 14px;"><?= $pageTitle ?></span>
       <?php endif; ?>
     </div>
     

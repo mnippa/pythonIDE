@@ -65,6 +65,37 @@ if (isset($input['position'])) {
     $types .= 'i';
 }
 
+if (isset($input['max_attempts'])) {
+    $maxAttempts = (int)$input['max_attempts'];
+    if ($maxAttempts < 1) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid max_attempts'], 400);
+    }
+    $updates[] = 'max_attempts = ?';
+    $params[] = $maxAttempts;
+    $types .= 'i';
+}
+
+if (isset($input['show_solution'])) {
+    $showSolution = (int)$input['show_solution'];
+    $updates[] = 'show_solution = ?';
+    $params[] = $showSolution;
+    $types .= 'i';
+}
+
+if (array_key_exists('min_keywords_required', $input)) {
+    $minKeywords = $input['min_keywords_required'] !== null && $input['min_keywords_required'] !== '' ? (int)$input['min_keywords_required'] : null;
+    $updates[] = 'min_keywords_required = ?';
+    $params[] = $minKeywords;
+    $types .= 'i';
+}
+
+if (isset($input['show_solution'])) {
+    $showSolution = (int)$input['show_solution'];
+    $updates[] = 'show_solution = ?';
+    $params[] = $showSolution;
+    $types .= 'i';
+}
+
 if (isset($input['problem_type'])) {
     $problemType = $input['problem_type'];
     if (!in_array($problemType, $allowedTypes, true)) {
@@ -135,6 +166,43 @@ if (array_key_exists('solution_code', $input)) {
     $types .= 's';
 }
 
+// New fields for quiz-style tasks
+if (isset($input['task_type'])) {
+    $taskType = $input['task_type'];
+    $allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading'];
+    if (!in_array($taskType, $allowedTaskTypes, true)) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
+    }
+    $updates[] = 'task_type = ?';
+    $params[] = $taskType;
+    $types .= 's';
+}
+
+if (array_key_exists('question_text', $input)) {
+    $updates[] = 'question_text = ?';
+    $params[] = trim($input['question_text']);
+    $types .= 's';
+}
+
+if (array_key_exists('image_url', $input)) {
+    $updates[] = 'image_url = ?';
+    $params[] = trim($input['image_url']) ?: null;
+    $types .= 's';
+}
+
+if (array_key_exists('correct_answer', $input)) {
+    $updates[] = 'correct_answer = ?';
+    $params[] = trim($input['correct_answer']) ?: null;
+    $types .= 's';
+}
+
+if (array_key_exists('variable_overrides', $input)) {
+    $updates[] = 'variable_overrides = ?';
+    $variableOverridesJson = $input['variable_overrides'] ? json_encode($input['variable_overrides']) : null;
+    $params[] = $variableOverridesJson;
+    $types .= 's';
+}
+
 if (empty($updates)) {
     jsonResponse(['ok' => false, 'error' => 'No fields to update'], 400);
 }
@@ -147,6 +215,31 @@ $stmt = $conn->prepare($sql);
 $stmt->bind_param($types, ...$params);
 
 if ($stmt->execute()) {
+    // Update task options if provided (for single/multiple choice)
+    if (isset($input['options'])) {
+        // Delete existing options
+        $deleteStmt = $conn->prepare('DELETE FROM task_options WHERE task_id = ?');
+        $deleteStmt->bind_param('i', $taskId);
+        $deleteStmt->execute();
+        
+        // Insert new options
+        if (!empty($input['options'])) {
+            $optionStmt = $conn->prepare(
+                'INSERT INTO task_options (task_id, option_text, image_url, is_correct, order_num) VALUES (?, ?, ?, ?, ?)'
+            );
+            
+            foreach ($input['options'] as $index => $option) {
+                $optionText = trim($option['text'] ?? '');
+                $optionImage = trim($option['image_url'] ?? '') ?: null;
+                $isCorrect = !empty($option['is_correct']) ? 1 : 0;
+                $orderNum = $index + 1;
+                
+                $optionStmt->bind_param('issii', $taskId, $optionText, $optionImage, $isCorrect, $orderNum);
+                $optionStmt->execute();
+            }
+        }
+    }
+    
     jsonResponse(['ok' => true, 'message' => 'Task updated']);
 } else {
     jsonResponse(['ok' => false, 'error' => 'Failed to update task'], 500);

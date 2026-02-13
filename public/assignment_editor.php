@@ -34,6 +34,7 @@ if ($displayName === '') {
   <link rel="stylesheet" href="css/hspf-theme.css">
   <link rel="stylesheet" href="css/ide.css">
   <link rel="stylesheet" href="css/file-tree.css">
+  <link rel="stylesheet" href="css/quiz.css">
   <style>
     :root {
       --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
@@ -316,7 +317,12 @@ if ($displayName === '') {
       grid-template-rows: 1fr 180px;
       min-width:0; min-height:0;
     }
+    .left.quiz-mode{
+      grid-template-rows: 1fr 0px;
+    }
+    .editor-quiz-wrapper { position: relative; width: 100%; height: 100%; min-width:0; min-height:0; }
     #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
+    #quiz-container{ width:100%; height:100%; min-width:0; min-height:0; display: none; overflow: auto; padding: 20px; }
 
     .left-bottom{
       border-top:1px solid var(--border);
@@ -822,7 +828,7 @@ if ($displayName === '') {
 </head>
 <body>
   <?php
-  $pageTitle = 'Assignments';
+  $pageTitle = '<span id="assignment-page-title">Assignments</span>';
   $showUser = false;
   $userInfo = [];
   
@@ -891,7 +897,10 @@ HTML;
     </div>
 
     <div class="left">
-      <div id="editor-container"></div>
+      <div class="editor-quiz-wrapper">
+        <div id="editor-container"></div>
+        <div id="quiz-container"></div>
+      </div>
 
       <div class="left-bottom">
         <div id="lint-container"></div>
@@ -939,6 +948,9 @@ HTML;
   <!-- File Tree & Validation -->
   <script src="js/file-tree.js"></script>
   <script src="js/code-validator.js"></script>
+  
+  <!-- Quiz Renderer -->
+  <script src="js/quiz-renderer.js"></script>
 
   <script type="module" src="js/editor-setup.js"></script>
 

@@ -227,12 +227,15 @@ if ($displayName === '') {
       font-size: 12px;
     }
 
-    /* LEFT COLUMN: file tree + editor + lint/help */
+    /* LEFT COLUMN: file tree + editor/quiz + lint/help */
     .left{
       border-right:1px solid var(--border);
       display:grid;
       grid-template-rows: auto 1fr 180px;
       min-width:0; min-height:0;
+    }
+    .left.quiz-mode{
+      grid-template-rows: auto 1fr 0px;
     }
     .file-tree-wrapper {
       border-bottom: 1px solid var(--border);
@@ -249,6 +252,8 @@ if ($displayName === '') {
       padding: 8px;
     }
     #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
+    #quiz-container{ width:100%; height:100%; min-width:0; min-height:0; display: none; overflow: auto; padding: 20px; }
+    .editor-quiz-wrapper { position: relative; width: 100%; height: 100%; min-width:0; min-height:0; }
 
     .left-bottom{
       border-top:1px solid var(--border);
@@ -744,9 +749,12 @@ if ($displayName === '') {
 
     <div class="left">
       <div class="file-tree-wrapper" id="file-tree-wrapper"></div>
-      <div id="editor-container"></div>
+      <div class="editor-quiz-wrapper">
+        <div id="editor-container"></div>
+        <div id="quiz-container"></div>
+      </div>
 
-      <div class="left-bottom">
+      <div class="left-bottom" id="left-bottom">
         <div id="lint-container"></div>
         <div id="help-container"></div>
       </div>
