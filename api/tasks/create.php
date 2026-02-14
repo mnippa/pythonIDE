@@ -27,6 +27,7 @@ $description = trim($input['description'] ?? '');
 $position = isset($input['position']) ? (int)$input['position'] : null;
 $maxAttempts = isset($input['max_attempts']) ? (int)$input['max_attempts'] : 1;
 $showSolution = isset($input['show_solution']) ? (int)$input['show_solution'] : 1;
+$showGeneratorCode = isset($input['show_generator_code']) ? (int)$input['show_generator_code'] : 0;
 $minKeywordsRequired = isset($input['min_keywords_required']) ? (int)$input['min_keywords_required'] : null;
 $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
@@ -62,14 +63,22 @@ if (!in_array($problemType, $allowedTypes, true)) {
 }
 
 // Validate task_type
-$allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading'];
+$allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
 if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
 }
 
 // Validate quiz tasks have question_text
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text']) && empty($questionText)) {
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_random_complex']) && empty($questionText)) {
     jsonResponse(['ok' => false, 'error' => 'question_text required for ' . $taskType], 400);
+}
+
+if ($taskType === 'code_random_complex' && empty($codeTemplate)) {
+    jsonResponse(['ok' => false, 'error' => 'code_template required for ' . $taskType], 400);
+}
+
+if ($taskType === 'code_random_complex' && empty($solutionCode)) {
+    jsonResponse(['ok' => false, 'error' => 'solution_code required for ' . $taskType], 400);
 }
 
 // Validate choice tasks have options
@@ -115,8 +124,8 @@ $testCases = is_string($testCases) ? $testCases : '';
 $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, show_solution, min_keywords_required, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -130,6 +139,7 @@ $types .= 'ss';    // title, description
 $types .= 'i';     // position
 $types .= 'i';     // max_attempts
 $types .= 'i';     // show_solution
+$types .= 'i';     // show_generator_code
 $types .= 'i';     // min_keywords_required
 $types .= 's';     // problem_type
 $types .= 's';     // code_template
@@ -156,6 +166,7 @@ $bindResult = @$stmt->bind_param(
     $position,
     $maxAttempts,
     $showSolution,
+    $showGeneratorCode,
     $minKeywordsRequired,
     $problemType,
     $codeTemplate,

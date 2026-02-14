@@ -5,7 +5,7 @@ USE pythonide;
 
 -- Add new columns to tasks table for quiz-style tasks
 ALTER TABLE tasks 
-ADD COLUMN task_type ENUM('code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading') 
+ADD COLUMN task_type ENUM('code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex') 
     NOT NULL DEFAULT 'code' AFTER position,
 ADD COLUMN question_text TEXT NULL AFTER task_type,
 ADD COLUMN image_url VARCHAR(512) NULL AFTER question_text,

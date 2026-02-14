@@ -72,9 +72,9 @@ while ($row = $result->fetch_assoc()) {
         'variable_overrides' => $row['variable_overrides']
     ];
     
-    // Include solution_code for intelligent tests (needed for execution)
+    // Include solution_code for intelligent tests and code_random_complex tasks (needed for execution)
     // Also include if admin requested it explicitly
-    if ($includeExpected || $row['validation_mode'] === 'intelligent') {
+    if ($includeExpected || $row['validation_mode'] === 'intelligent' || $row['task_type'] === 'code_random_complex') {
         $task['expected_output'] = $row['expected_output'];
         $task['solution_code'] = $row['solution_code'];
     }

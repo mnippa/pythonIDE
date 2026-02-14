@@ -520,6 +520,7 @@ if ($displayName === '') {
             <option value="multiple_choice">Multiple-Choice</option>
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code-Lesequest</option>
+            <option value="code_random_complex">Code (versteckt)</option>
           </select>
         </div>
         <div style="overflow:auto;">
@@ -530,7 +531,6 @@ if ($displayName === '') {
                 <th>Pos</th>
                 <th>Title</th>
                 <th>Task Type</th>
-                <th>Legacy</th>
                 <th>Tests</th>
                 <th>Solution</th>
                 <th>Mode</th>
@@ -614,6 +614,42 @@ if ($displayName === '') {
     </section>
   </div>
 
+  <div id="bulk-assign-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📋 Assignments verteilen</h3>
+        <button id="bulk-assign-close-btn" class="modal-close">✕</button>
+      </div>
+      <div class="modal-body" style="padding: var(--hspf-spacing-lg);">
+        <form id="bulk-assign-form">
+          <div class="field">
+            <label for="bulk-assign-assignment">Assignment wählen</label>
+            <select id="bulk-assign-assignment" required style="width: 100%; padding: 8px;">
+              <option value="">-- Assignment auswählen --</option>
+            </select>
+          </div>
+          
+          <div class="field">
+            <label for="bulk-assign-due-date">Fälligkeitsdatum (optional)</label>
+            <input type="datetime-local" id="bulk-assign-due-date" style="width: 100%; padding: 8px;" />
+          </div>
+          
+          <div style="background: var(--hspf-bg-secondary); padding: var(--hspf-spacing-md); border-radius: var(--hspf-radius-sm); margin: var(--hspf-spacing-md) 0;">
+            <p style="margin: 0 0 var(--hspf-spacing-sm); font-weight: 600;">Ausgewählte Benutzer:</p>
+            <div id="bulk-assign-users-list" style="max-height: 150px; overflow-y: auto; padding: var(--hspf-spacing-sm); background: var(--hspf-surface); border-radius: var(--hspf-radius-sm);"></div>
+            <p id="bulk-assign-count" style="margin: var(--hspf-spacing-sm) 0 0; font-size: 14px; color: var(--hspf-text-secondary);">0 Benutzer ausgewählt</p>
+          </div>
+          
+          <div class="row-actions">
+            <button type="submit" class="hspf-btn hspf-btn-primary">✓ Verteilen</button>
+            <button type="button" id="bulk-assign-cancel-btn" class="hspf-btn">Abbrechen</button>
+          </div>
+          <div id="bulk-assign-status" style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); border-radius: var(--hspf-radius-sm); display: none;"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div id="assignment-modal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -684,6 +720,13 @@ if ($displayName === '') {
           </label>
         </div>
         
+        <div class="field checkbox-field" data-field="show-generator-code">
+          <label>
+            <input id="task-show-generator" type="checkbox" />
+            <span>Generator-Code anzeigen (nur code_random_complex)</span>
+          </label>
+        </div>
+        
         <!-- NEW: Task Type Selector -->
         <div class="field">
           <label for="new-task-type">Task Type</label>
@@ -693,6 +736,7 @@ if ($displayName === '') {
             <option value="multiple_choice">Multiple-Choice</option>
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code-Lesequest</option>
+            <option value="code_random_complex">Code (versteckt)</option>
           </select>
         </div>
         
@@ -866,6 +910,13 @@ if ($displayName === '') {
           </label>
         </div>
         
+        <div class="field checkbox-field" data-field="show-generator-code">
+          <label>
+            <input id="edit-task-show-generator" type="checkbox" />
+            <span>Generator-Code anzeigen (nur code_random_complex)</span>
+          </label>
+        </div>
+        
         <!-- Task Type Selector -->
         <div class="field">
           <label for="edit-task-type">Task Type</label>
@@ -875,6 +926,7 @@ if ($displayName === '') {
             <option value="multiple_choice">Multiple-Choice</option>
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code-Lesequest</option>
+            <option value="code_random_complex">Code (versteckt)</option>
           </select>
         </div>
         

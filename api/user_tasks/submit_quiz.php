@@ -90,7 +90,7 @@ if ($currentStatus === 'passed') {
     exit;
 }
 
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading']) && $currentAttempts >= $maxAttempts) {
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex']) && $currentAttempts >= $maxAttempts) {
     echo json_encode([
         'ok' => false,
         'error' => 'Maximale Anzahl Versuche erreicht',
@@ -102,6 +102,7 @@ if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_
 }
 $isCorrect = false;
 $message = '';
+$variableValues = [];
 
 // Validate and grade based on task type
 if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
@@ -199,6 +200,24 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         $isCorrect = compareAnswers($textAnswer, $computedValue);
         $message = $isCorrect ? 'Richtig' : 'Falsch';
     }
+} elseif ($taskType === 'code_random_complex') {
+    $textAnswer = trim($input['text_answer'] ?? '');
+    $computedValue = $input['computed_value'] ?? null;
+    $variableValues = $input['variable_values'] ?? [];
+
+    if ($textAnswer === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No answer provided']);
+        exit;
+    }
+
+    if ($computedValue === null) {
+        $isCorrect = false;
+        $message = 'Keine Auswertung verfuegbar';
+    } else {
+        $isCorrect = compareAnswers($textAnswer, $computedValue);
+        $message = $isCorrect ? 'Richtig' : 'Falsch';
+    }
     
 } else {
     http_response_code(400);
@@ -210,7 +229,7 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
 $newAttempts = $currentAttempts + 1;
 $status = $isCorrect ? 'passed' : 'failed';
 
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading'])) {
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'])) {
     if ($isCorrect) {
         $status = 'passed';
     } elseif ($newAttempts >= $maxAttempts) {

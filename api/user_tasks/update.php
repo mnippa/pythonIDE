@@ -145,6 +145,14 @@ if (isset($input['hints_revealed']) && is_array($input['hints_revealed'])) {
     $types .= 's';
 }
 
+// Variable values (for generated tasks)
+if (array_key_exists('variable_values', $input)) {
+    $updates[] = 'variable_values = ?';
+    $variableValuesJson = $input['variable_values'] ? json_encode($input['variable_values']) : null;
+    $params[] = $variableValuesJson;
+    $types .= 's';
+}
+
 // Start time - only set if not already set
 if (!$existing && isset($input['started_at'])) {
     $updates[] = 'started_at = ?';
@@ -173,18 +181,21 @@ if ($existing) {
     }
 } else {
     // Create new record
-    $status = isset($input['status']) ? $input['status'] : 'in-progress';
+    $status = isset($input['status'])
+        ? $input['status']
+        : (array_key_exists('variable_values', $input) ? 'unbearbeitet' : 'in-progress');
     $attempts = isset($input['attempts']) ? (int)$input['attempts'] : 0;
     $runCount = isset($input['run_count']) ? (int)$input['run_count'] : 0;
     $currentCode = isset($input['current_code']) ? $input['current_code'] : null;
     $hintsRevealed = isset($input['hints_revealed']) ? json_encode($input['hints_revealed']) : '[]';
+    $variableValues = array_key_exists('variable_values', $input) ? (json_encode($input['variable_values']) ?: null) : null;
     $startedAt = isset($input['started_at']) ? $input['started_at'] : date('Y-m-d H:i:s');
     
     $stmt = $conn->prepare(
-        'INSERT INTO user_tasks (user_id, task_id, status, attempts, run_count, current_code, hints_revealed, started_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO user_tasks (user_id, task_id, status, attempts, run_count, current_code, hints_revealed, variable_values, started_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    $stmt->bind_param('iisiisss', $userId, $taskId, $status, $attempts, $runCount, $currentCode, $hintsRevealed, $startedAt);
+    $stmt->bind_param('iisiissss', $userId, $taskId, $status, $attempts, $runCount, $currentCode, $hintsRevealed, $variableValues, $startedAt);
     
     if ($stmt->execute()) {
         $markAssignmentInProgress();

@@ -215,7 +215,6 @@ async function loadTasks(assignmentId, assignmentTitle) {
       </td>
       <td>${escapeHtml(t.title)}</td>
       <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
-      <td><span class="tag">${escapeHtml(t.problem_type)}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
       <td><span class="tag">${escapeHtml(modeLabel)}</span></td>
@@ -413,6 +412,7 @@ async function handleTaskSubmit(e) {
     position: $('task-position').value ? parseInt($('task-position').value, 10) : null,
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
+    show_generator_code: $('task-show-generator').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     code_template: $('task-template').value,
@@ -426,7 +426,7 @@ async function handleTaskSubmit(e) {
   };
   
   // NEW: Add quiz-specific fields
-  if (taskType === 'single_choice' || taskType === 'multiple_choice' || taskType === 'free_text') {
+  if (taskType === 'single_choice' || taskType === 'multiple_choice' || taskType === 'free_text' || taskType === 'code_random_complex') {
     payload.question_text = $('task-question').value.trim();
     payload.image_url = $('task-image-url').value.trim() || null;
   }
@@ -453,8 +453,11 @@ async function handleTaskSubmit(e) {
   }
   
   // NEW: Add fields for code reading
-  if (taskType === 'code_reading') {
+  if (taskType === 'code_reading' || taskType === 'code_random_complex') {
     payload.correct_answer = $('task-correct-answer').value.trim();
+  }
+  
+  if (taskType === 'code_reading') {
     const varOverrides = $('task-var-overrides').value.trim();
     if (varOverrides) {
       try {
@@ -666,6 +669,7 @@ function openEditTaskModal(taskId) {
   $('edit-task-position').value = task.position || '';
   if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
   if ($('edit-task-show-solution')) $('edit-task-show-solution').checked = task.show_solution !== 0;
+  if ($('edit-task-show-generator')) $('edit-task-show-generator').checked = task.show_generator_code !== 0;
   
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
@@ -768,6 +772,7 @@ async function handleEditTaskSubmit(e) {
     position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
+    show_generator_code: $('edit-task-show-generator').checked ? 1 : 0,
     task_type: taskType,
     problem_type: taskType,  // Keep for backwards compatibility
     code_template: $('edit-task-template').value,

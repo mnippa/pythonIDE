@@ -12,6 +12,8 @@ window.QuizRenderer = {
       this.renderFreeText(task, container);
     } else if (taskType === 'code_reading') {
       this.renderCodeReading(task, container);
+    } else if (taskType === 'code_random_complex') {
+      this.renderHiddenCode(task, container);
     }
   },
 
@@ -250,6 +252,108 @@ window.QuizRenderer = {
     `;
   },
 
+  renderHiddenCode(task, container) {
+    const attemptsInfo = this.getAttemptsInfo(task);
+    const disableSubmit = attemptsInfo.blocked;
+    const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
+    const userTextAnswer = userAnswer?.text_answer || '';
+    const isCompleted = attemptsInfo.blocked || attemptsInfo.isPassed;
+    const isPassed = attemptsInfo.isPassed;
+    const values = userAnswer?.variable_values || {};
+    const hasValues = values && Object.keys(values).length > 0;
+
+    if (!hasValues) {
+      container.innerHTML = `
+        <div class="quiz-container">
+          <div class="quiz-question">
+            ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+            ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+          </div>
+          <div class="quiz-values loading">Werte werden geladen...</div>
+        </div>
+      `;
+
+      this.ensureGeneratedValues(task)
+        .then(() => this.renderHiddenCode(task, container))
+        .catch(err => {
+          container.innerHTML = `
+            <div class="quiz-container">
+              <div class="quiz-feedback">
+                <div class="error">Generator-Fehler: ${this.escapeHtml(String(err))}</div>
+              </div>
+            </div>
+          `;
+        });
+      return;
+    }
+
+    const answerClass = isCompleted ? (isPassed ? 'user-answer-correct' : 'user-answer-incorrect') : '';
+    const valuesHtml = Object.entries(values).map(([key, value]) => {
+      const formatted = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      return `<li><code>${this.escapeHtml(key)} = ${this.escapeHtml(formatted)}</code></li>`;
+    }).join('');
+    
+    // Show generator code if enabled
+    const showGenerator = task.show_generator_code === 1 || task.show_generator_code === true;
+    const generatorCodeHtml = showGenerator && task.code_template ? `
+      <div class="quiz-code-section">
+        <details>
+          <summary><strong>🔧 Generator-Code</strong></summary>
+          <pre><code>${this.escapeHtml(task.code_template)}</code></pre>
+        </details>
+      </div>
+    ` : '';
+    
+    // Show solution code as part of task description (learning material)
+    const solutionCodeHtml = task.solution_code ? `
+      <div class="quiz-code-section compact">
+        <details>
+          <summary><strong>✓ Lösungs-Algorithmus</strong></summary>
+          <pre><code>${this.escapeHtml(task.solution_code)}</code></pre>
+        </details>
+      </div>
+    ` : '';
+
+    container.innerHTML = `
+      <div class="quiz-container">
+        <div class="quiz-question">
+          ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+          ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+        </div>
+        
+        ${generatorCodeHtml}
+        ${solutionCodeHtml}
+
+        <div class="quiz-values">
+          <strong>Gegebene Werte:</strong>
+          <ul>
+            ${valuesHtml}
+          </ul>
+        </div>
+        
+        ${solutionCodeHtml}
+
+        <div class="quiz-answer ${answerClass}">
+          <label for="code-hidden-answer-${task.id}">Antwort</label>
+          <input 
+            type="text" 
+            id="code-hidden-answer-${task.id}" 
+            value="${this.escapeHtml(isCompleted ? userTextAnswer : '')}"
+            placeholder="Ergebnis eingeben..."
+            ${disableSubmit ? 'disabled' : ''}
+          />
+        </div>
+
+        <div class="quiz-actions">
+          <button id="quiz-submit-${task.id}" class="hspf-btn hspf-btn-primary" onclick="window.QuizRenderer.submitQuiz(${task.id}, 'code_random_complex')" ${disableSubmit ? 'disabled' : ''}>
+            Absenden
+          </button>
+        </div>
+        <div id="quiz-feedback-${task.id}" class="quiz-feedback"></div>
+      </div>
+    `;
+  },
+
   async submitQuiz(taskId, taskType) {
     const feedbackEl = document.getElementById(`quiz-feedback-${taskId}`);
     const submitBtn = document.getElementById(`quiz-submit-${taskId}`);
@@ -313,6 +417,50 @@ window.QuizRenderer = {
       answer = {
         text_answer: value,
         variable_values: window.currentCodeReadingVars,
+        computed_value: computedValue
+      };
+    } else if (taskType === 'code_random_complex') {
+      const input = document.getElementById(`code-hidden-answer-${taskId}`);
+      const value = input.value.trim();
+      if (!value) {
+        feedbackEl.innerHTML = '<div class="error">Bitte das Ergebnis eingeben</div>';
+        return;
+      }
+
+      const task = window.assignmentState?.currentTask;
+      if (!task || !task.solution_code) {
+        feedbackEl.innerHTML = '<div class="error">Loesungs-Code fehlt</div>';
+        return;
+      }
+
+      const values = window.assignmentState?.taskUserAnswers?.[taskId]?.variable_values || {};
+      if (!values || Object.keys(values).length === 0) {
+        feedbackEl.innerHTML = '<div class="error">Werte sind noch nicht geladen</div>';
+        return;
+      }
+
+      const pyodide = window.pyodide;
+      if (!pyodide) {
+        feedbackEl.innerHTML = '<div class="error">Pyodide ist noch nicht bereit</div>';
+        return;
+      }
+
+      let computedValue = null;
+      try {
+        computedValue = await this.evaluateHiddenSolution(
+          pyodide,
+          task.solution_code,
+          task.correct_answer,
+          values
+        );
+      } catch (err) {
+        feedbackEl.innerHTML = `<div class="error">Code-Auswertung fehlgeschlagen: ${this.escapeHtml(String(err))}</div>`;
+        return;
+      }
+
+      answer = {
+        text_answer: value,
+        variable_values: values,
         computed_value: computedValue
       };
     }
@@ -398,8 +546,10 @@ window.QuizRenderer = {
           }
         }
         
-        // Re-render quiz to show final state (passed, or solution if max attempts reached)
-        if (data.status === 'passed' || (data.status === 'failed' && data.attempts >= data.max_attempts)) {
+        // Re-render quiz to show solution if max attempts reached
+        // For code_random_complex, keep the feedback visible (don't re-render on success)
+        const taskType = window.assignmentState?.currentTask?.task_type;
+        if (data.status === 'failed' && data.attempts >= data.max_attempts) {
           const task = window.assignmentState?.currentTask;
           const quizContainer = document.getElementById('quiz-container');
           if (task && quizContainer) {
@@ -426,7 +576,7 @@ window.QuizRenderer = {
     const maxAttempts = task && typeof task.max_attempts === 'number' ? task.max_attempts : 1;
     const attempts = window.assignmentState && task ? (window.assignmentState.taskAttempts[task.id] || 0) : 0;
     const status = window.assignmentState && task ? (window.assignmentState.taskStatuses[task.id] || '') : '';
-    const isLimitedType = ['single_choice', 'multiple_choice', 'free_text', 'code_reading'].includes(task.task_type);
+    const isLimitedType = ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'].includes(task.task_type);
     
     // Block if already passed
     if (status === 'passed') {
@@ -454,6 +604,86 @@ window.QuizRenderer = {
     return div.innerHTML;
   },
 
+  async ensureGeneratedValues(task) {
+    const existing = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
+    if (existing && Object.keys(existing).length > 0) {
+      return existing;
+    }
+
+    const pyodide = window.pyodide;
+    if (!pyodide) {
+      throw new Error('Pyodide ist noch nicht bereit');
+    }
+
+    const code = (task.code_template || '').trim();
+    if (!code) {
+      throw new Error('Kein Generator-Code hinterlegt');
+    }
+
+    const python = `
+import json
+values = {}
+${code}
+json.dumps(values)
+`;
+
+    const resultJson = await pyodide.runPythonAsync(python);
+    let values = {};
+    try {
+      values = JSON.parse(resultJson);
+    } catch (err) {
+      throw new Error('Generator muss ein JSON-dict liefern');
+    }
+
+    if (!values || typeof values !== 'object' || Array.isArray(values)) {
+      throw new Error('Generator muss ein dict liefern');
+    }
+
+    if (!window.assignmentState.taskUserAnswers[task.id]) {
+      window.assignmentState.taskUserAnswers[task.id] = {};
+    }
+    window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+
+    await fetch('../api/user_tasks/update.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: task.id,
+        variable_values: values,
+        started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+      })
+    });
+
+    return values;
+  },
+
+  async evaluateHiddenSolution(pyodide, code, varName, varValues) {
+    const varsJson = JSON.stringify(varValues || {});
+    const varsB64 = btoa(unescape(encodeURIComponent(varsJson)));
+    const safeVarName = String(varName || 'result').trim() || 'result';
+
+    const python = `
+import base64, json
+_vars = json.loads(base64.b64decode('${varsB64}').decode('utf-8'))
+values = _vars  # Make values dict available to solution_code
+for k, v in _vars.items():
+    globals()[k] = v
+
+${code}
+
+_value = globals().get('${safeVarName}', None)
+json.dumps(_value)
+`;
+
+    const resultJson = await pyodide.runPythonAsync(python);
+    try {
+      return JSON.parse(resultJson);
+    } catch (err) {
+      return resultJson;
+    }
+  },
+
   async evaluateCodeReading(pyodide, code, varName, varValues) {
     const varsJson = JSON.stringify(varValues || {});
     const varsB64 = btoa(unescape(encodeURIComponent(varsJson)));
@@ -465,6 +695,7 @@ window.QuizRenderer = {
     const python = `
 import base64, json
 _vars = json.loads(base64.b64decode('${varsB64}').decode('utf-8'))
+values = _vars  # Make values dict available
 for k, v in _vars.items():
     globals()[k] = v
 

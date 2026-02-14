@@ -82,17 +82,17 @@ if (isset($input['show_solution'])) {
     $types .= 'i';
 }
 
+if (isset($input['show_generator_code'])) {
+    $showGeneratorCode = (int)$input['show_generator_code'];
+    $updates[] = 'show_generator_code = ?';
+    $params[] = $showGeneratorCode;
+    $types .= 'i';
+}
+
 if (array_key_exists('min_keywords_required', $input)) {
     $minKeywords = $input['min_keywords_required'] !== null && $input['min_keywords_required'] !== '' ? (int)$input['min_keywords_required'] : null;
     $updates[] = 'min_keywords_required = ?';
     $params[] = $minKeywords;
-    $types .= 'i';
-}
-
-if (isset($input['show_solution'])) {
-    $showSolution = (int)$input['show_solution'];
-    $updates[] = 'show_solution = ?';
-    $params[] = $showSolution;
     $types .= 'i';
 }
 
@@ -169,7 +169,7 @@ if (array_key_exists('solution_code', $input)) {
 // New fields for quiz-style tasks
 if (isset($input['task_type'])) {
     $taskType = $input['task_type'];
-    $allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading'];
+    $allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
     if (!in_array($taskType, $allowedTaskTypes, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
     }

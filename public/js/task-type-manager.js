@@ -24,6 +24,10 @@
     code_reading: {
       label: 'Code-Lesequest',
       fields: ['code_template', 'variable_overrides', 'correct_answer']
+    },
+    code_random_complex: {
+      label: 'Code (versteckt)',
+      fields: ['question', 'code_template', 'solution', 'correct_answer']
     }
   };
 
@@ -58,6 +62,7 @@
       this.hideField(form, 'validation-mode');
       this.hideField(form, 'solution');
       this.hideField(form, 'correct-answer');
+      this.hideField(form, 'show-generator-code');
 
       // Show required fields
       config.fields.forEach(field => {
@@ -97,6 +102,11 @@
             break;
         }
       });
+      
+      // Show generator code option only for code_random_complex
+      if (taskType === 'code_random_complex') {
+        this.showField(form, 'show-generator-code');
+      }
     },
 
     hideField(form, fieldId) {

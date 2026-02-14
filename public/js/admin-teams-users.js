@@ -148,7 +148,7 @@ function renderUsers() {
   if (!tbody) return;
   
   tbody.innerHTML = '';
-  selectedUserIds.clear();
+  // Don't clear selectedUserIds - keep selections across re-renders
   
   usersData.forEach(user => {
     const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || '-';
@@ -157,9 +157,11 @@ function renderUsers() {
     const stats = user.assignment_stats || { total: 0, unstarted: 0, in_progress: 0, passed: 0, failed: 0 };
     const statsText = `${stats.total} (⚪:${stats.unstarted} 🟡:${stats.in_progress} 🟢:${stats.passed} ⚫:${stats.failed})`;
     
+    const isChecked = selectedUserIds.has(user.id);
+    
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="checkbox" class="user-checkbox" data-user-id="${user.id}"></td>
+      <td><input type="checkbox" class="user-checkbox" data-user-id="${user.id}" ${isChecked ? 'checked' : ''}></td>
       <td class="mono">${user.id}</td>
       <td>${escapeHtml(user.email)}</td>
       <td>${escapeHtml(fullName)}</td>
@@ -179,7 +181,7 @@ function renderUsers() {
   // Update select-all checkbox
   const selectAll = $('select-all-users');
   if (selectAll) {
-    selectAll.checked = false;
+    selectAll.checked = usersData.length > 0 && selectedUserIds.size === usersData.length;
   }
 }
 
@@ -207,33 +209,107 @@ document.addEventListener('click', (e) => {
 });
 
 // Bulk assign users to assignment
-async function bulkAssignUsers() {
+async function openBulkAssignModal() {
   if (selectedUserIds.size === 0) {
-    alert('Please select at least one user');
+    alert('Bitte mindestens einen Benutzer auswählen');
     return;
   }
   
-  const assignmentId = prompt('Enter Assignment ID to assign:');
-  if (!assignmentId) return;
+  // Show selected users
+  const modal = document.getElementById('bulk-assign-modal');
+  const usersList = document.getElementById('bulk-assign-users-list');
+  const countDiv = document.getElementById('bulk-assign-count');
+  
+  usersList.innerHTML = '';
+  selectedUserIds.forEach(userId => {
+    const user = usersData.find(u => u.id === userId);
+    if (user) {
+      const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || '-';
+      const div = document.createElement('div');
+      div.style.padding = '4px 8px';
+      div.style.marginBottom = '4px';
+      div.style.backgroundColor = 'var(--hspf-bg-secondary)';
+      div.style.borderRadius = '4px';
+      div.textContent = `${user.email} (${fullName})`;
+      usersList.appendChild(div);
+    }
+  });
+  countDiv.textContent = `${selectedUserIds.size} Benutzer ausgewählt`;
+  
+  // Load assignments
+  try {
+    const response = await requestJson('../api/assignments/list.php?all=1');
+    if (response.ok && response.assignments) {
+      const select = document.getElementById('bulk-assign-assignment');
+      select.innerHTML = '<option value="">-- Assignment auswählen --</option>';
+      
+      response.assignments
+        .sort((a, b) => a.id - b.id)
+        .forEach(assignment => {
+          const option = document.createElement('option');
+          option.value = assignment.id;
+          option.textContent = `[${assignment.id}] ${assignment.title}`;
+          select.appendChild(option);
+        });
+    }
+  } catch (err) {
+    console.error('Load assignments failed:', err);
+  }
+  
+  // Show modal
+  modal.style.display = 'flex';
+}
+
+async function submitBulkAssign(e) {
+  e.preventDefault();
+  
+  const assignmentId = document.getElementById('bulk-assign-assignment').value;
+  const dueDate = document.getElementById('bulk-assign-due-date').value;
+  const statusDiv = document.getElementById('bulk-assign-status');
+  
+  if (!assignmentId) {
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'error';
+    statusDiv.textContent = 'Bitte eine Assignment auswählen';
+    return;
+  }
+  
+  statusDiv.style.display = 'block';
+  statusDiv.className = 'info';
+  statusDiv.textContent = 'Verteile...';
   
   try {
+    const body = {
+      assignment_id: parseInt(assignmentId),
+      user_ids: Array.from(selectedUserIds)
+    };
+    if (dueDate) {
+      // Convert to MySQL datetime format
+      const d = new Date(dueDate);
+      body.due_date = d.toISOString().slice(0, 19).replace('T', ' ');
+    }
+    
     const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
       method: 'POST',
-      body: JSON.stringify({
-        assignment_id: parseInt(assignmentId),
-        user_ids: Array.from(selectedUserIds)
-      })
+      body: JSON.stringify(body)
     });
     
     if (response.ok) {
-      alert(`Assigned to ${response.assigned_count} users`);
-      selectedUserIds.clear();
-      renderUsers();
+      statusDiv.className = 'success';
+      statusDiv.textContent = `✓ ${response.assigned_count || selectedUserIds.size} Benutzer zugewiesen`;
+      
+      setTimeout(() => {
+        document.getElementById('bulk-assign-modal').style.display = 'none';
+        selectedUserIds.clear();
+        renderUsers();
+      }, 1500);
     } else {
-      alert('Error: ' + response.error);
+      statusDiv.className = 'error';
+      statusDiv.textContent = 'Fehler: ' + response.error;
     }
   } catch (err) {
-    alert('Bulk assign failed: ' + err.message);
+    statusDiv.className = 'error';
+    statusDiv.textContent = 'Fehler: ' + err.message;
   }
 }
 
@@ -272,7 +348,19 @@ $('users-search')?.addEventListener('input', () => {
 
 // Bulk assign button
 $('bulk-assign-btn')?.addEventListener('click', () => {
-  bulkAssignUsers();
+  openBulkAssignModal();
+});
+
+// Bulk assign modal form
+document.getElementById('bulk-assign-form')?.addEventListener('submit', submitBulkAssign);
+
+// Close bulk assign modal
+document.getElementById('bulk-assign-close-btn')?.addEventListener('click', () => {
+  document.getElementById('bulk-assign-modal').style.display = 'none';
+});
+
+document.getElementById('bulk-assign-cancel-btn')?.addEventListener('click', () => {
+  document.getElementById('bulk-assign-modal').style.display = 'none';
 });
 
 // Table click delegation
