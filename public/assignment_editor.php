@@ -35,6 +35,7 @@ if ($displayName === '') {
   <link rel="stylesheet" href="css/ide.css">
   <link rel="stylesheet" href="css/file-tree.css">
   <link rel="stylesheet" href="css/quiz.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     :root {
       --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
@@ -59,11 +60,22 @@ if ($displayName === '') {
     }
     
     *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text-primary); transition:background 0.2s, color 0.2s; }
+    html { height: 100vh; overflow: hidden; }
+    body{ 
+      margin:0; 
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; 
+      background:var(--bg); 
+      color:var(--text-primary); 
+      transition:background 0.2s, color 0.2s; 
+      height: 100vh; 
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
 
     .toolbar{
       display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:6px 10px;
+      padding:3px 10px;
       background:transparent;
     }
     .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
@@ -79,10 +91,11 @@ if ($displayName === '') {
 
     /* MASTER GRID: left sidebar | editor | right output */
     .app{
-      height: calc(100vh - 52px);
+      height: 100%;
       display:grid;
       grid-template-columns: 1fr 240px;
       min-height:0;
+      overflow: hidden;
     }
     
     /* Medium: Navigation 264px, Code Rest, Output 240px (base) */
@@ -118,7 +131,7 @@ if ($displayName === '') {
       border-right: 1px solid var(--border);
       background: var(--bg);
       display: none;
-      flex-direction: column;
+      flex-direction: column-reverse;
       min-height:0;
     }
     #task-details-panel.active {
@@ -129,7 +142,7 @@ if ($displayName === '') {
     .task-navigation {
       border-bottom: 2px solid var(--border);
       background: var(--panel);
-      max-height: 40vh;
+      max-height: 48vh;
       overflow-y: auto;
       padding: 8px;
     }
@@ -172,6 +185,20 @@ if ($displayName === '') {
       color: #9ca3af;
       min-width: 20px;
       text-align: right;
+    }
+    .task-nav-icon {
+      font-size: 14px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      width: 20px;
+      text-align: center;
+    }
+    .task-nav-icon i {
+      opacity: 0.7;
+    }
+    .task-nav-item:hover .task-nav-icon i,
+    .task-nav-item.active .task-nav-icon i {
+      opacity: 1;
     }
     .task-nav-status.status-unbearbeitet {
       background-color: #9ca3af;
@@ -320,9 +347,9 @@ if ($displayName === '') {
     .left.quiz-mode{
       grid-template-rows: 1fr 0px;
     }
-    .editor-quiz-wrapper { position: relative; width: 100%; height: 100%; min-width:0; min-height:0; }
+    .editor-quiz-wrapper { position: relative; width: 100%; height: 100%; min-width:0; min-height:0; overflow: hidden; }
     #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
-    #quiz-container{ width:100%; height:100%; min-width:0; min-height:0; display: none; overflow: auto; padding: 20px; }
+    #quiz-container{ width:100%; height:100%; min-width:0; min-height:0; display: none; overflow: hidden; box-sizing: border-box; }
 
     .left-bottom{
       border-top:1px solid var(--border);

@@ -108,7 +108,7 @@ body {
 .hspf-header-content {
   max-width: 1400px;
   margin: 0 auto;
-  padding: var(--hspf-spacing-md) var(--hspf-spacing-lg);
+  padding: 4px var(--hspf-spacing-lg);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -470,7 +470,7 @@ body {
 
 @media (max-width: 768px) {
   .hspf-header-content {
-    padding: var(--hspf-spacing-sm) var(--hspf-spacing-md);
+    padding: 4px var(--hspf-spacing-md);
   }
   
   .hspf-brand-text {

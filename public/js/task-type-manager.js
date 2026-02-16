@@ -23,11 +23,11 @@
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['code_template', 'variable_overrides', 'correct_answer']
+      fields: ['code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution']
     },
     code_random_complex: {
-      label: 'Code (versteckt)',
-      fields: ['question', 'code_template', 'solution', 'correct_answer']
+      label: 'Code mit zufälligen Werten',
+      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints']
     }
   };
 

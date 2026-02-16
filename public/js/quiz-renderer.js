@@ -3,6 +3,62 @@
  */
 
 window.QuizRenderer = {
+  getTaskDetailsAndHints(task) {
+    let html = '';
+    
+    // Stoff (Learning Content)
+    if (task.stoff) {
+      html += `<div class="stoff-section">
+        <h4>📚 Lerninhalt (Stoff)</h4>
+        <p>${this.escapeHtml(task.stoff)}</p>
+      </div>`;
+    }
+    
+    // Description
+    if (task.description) {
+      html += `<div class="task-description-section">
+        <h4>Aufgabenstellung</h4>
+        <p>${this.escapeHtml(task.description)}</p>
+      </div>`;
+    }
+    
+    // Hints
+    const availableHints = [];
+    if (task.hint1) availableHints.push({ id: 1, text: task.hint1 });
+    if (task.hint2) availableHints.push({ id: 2, text: task.hint2 });
+    if (task.hint3) availableHints.push({ id: 3, text: task.hint3 });
+    
+    if (availableHints.length > 0) {
+      const revealedRaw = window.assignmentState?.hintsRevealed?.[task.id] || [];
+      const revealedSet = new Set(revealedRaw);
+      const revealedHints = availableHints.filter(hint => revealedSet.has(hint.id));
+      const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
+      
+      html += `<div class="task-hints-section">
+        <h4>💡 Hinweise (${revealedHints.length}/${availableHints.length})</h4>`;
+      
+      if (revealedHints.length === 0) {
+        html += '<p style="color:var(--text-secondary); font-size:14px;">Noch keine Hinweise freigeschaltet.</p>';
+      }
+      
+      revealedHints.forEach((hint) => {
+        const displayIndex = availableHints.findIndex(item => item.id === hint.id) + 1;
+        html += `<div class="hint-item" style="padding:8px; margin:8px 0; background:var(--bg-secondary); border-left:3px solid var(--accent); border-radius:4px;">
+          <strong>Hinweis ${displayIndex}:</strong> ${this.escapeHtml(hint.text)}
+        </div>`;
+      });
+      
+      if (nextHint) {
+        const nextIndex = availableHints.findIndex(item => item.id === nextHint.id) + 1;
+        html += `<button type="button" class="hint-reveal-btn-inline" data-task-id="${task.id}" data-hint-id="${nextHint.id}" style="margin-top:8px; padding:6px 12px; background:var(--accent); color:white; border:none; border-radius:4px; cursor:pointer; font-size:13px;">Hinweis ${nextIndex} freischalten</button>`;
+      }
+      
+      html += '</div>';
+    }
+    
+    return html;
+  },
+
   render(task, container) {
     const taskType = task.task_type;
     
@@ -322,24 +378,38 @@ window.QuizRenderer = {
       return `<li><code>${this.escapeHtml(key)} = ${this.escapeHtml(formatted)}</code></li>`;
     }).join('');
     
-    // Show generator code if enabled
-    const showGenerator = task.show_generator_code === 1 || task.show_generator_code === true;
-    const generatorCodeHtml = showGenerator && task.code_template ? `
-      <div class="quiz-code-section">
-        <details>
-          <summary><strong>🔧 Generator-Code</strong></summary>
-          <pre><code>${this.escapeHtml(task.code_template)}</code></pre>
-        </details>
-      </div>
-    ` : '';
+    // Show solution code only if show_generator_code is enabled
+    const showGenerator =
+      task.show_generator_code === 1 ||
+      task.show_generator_code === true ||
+      task.show_generator_code === '1' ||
+      task.show_generator_code === 'true';
     
-    // Show solution code as part of task description (learning material)
-    const solutionCodeHtml = task.solution_code ? `
-      <div class="quiz-code-section compact">
-        <details>
-          <summary><strong>✓ Lösungs-Algorithmus</strong></summary>
-          <pre><code>${this.escapeHtml(task.solution_code)}</code></pre>
-        </details>
+    // Build code display with solution or template code (formatted like code_reading)
+    let codeDisplay = '';
+    const rawCode = task.solution_code || task.code_template || '';
+    if (showGenerator && rawCode) {
+      codeDisplay = rawCode;
+      
+      // Replace placeholders with actual values
+      for (const [varName, value] of Object.entries(values)) {
+        const placeholder = `{${varName}}`;
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        codeDisplay = codeDisplay.replace(regex, String(value));
+      }
+      
+      // Highlight variables in the code
+      for (const varName in values) {
+        codeDisplay = codeDisplay.replace(
+          new RegExp(`\\b${varName}\\b`, 'g'),
+          `<span class="var-highlight" title="${varName} = ${values[varName]}">${varName}</span>`
+        );
+      }
+    }
+    
+    const solutionCodeHtml = showGenerator && rawCode ? `
+      <div class="code-reading-code">
+        <pre><code>${codeDisplay}</code></pre>
       </div>
     ` : '';
 
@@ -350,15 +420,14 @@ window.QuizRenderer = {
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
-        ${generatorCodeHtml}
-        ${solutionCodeHtml}
-
         <div class="quiz-values">
           <strong>Gegebene Werte:</strong>
           <ul>
             ${valuesHtml}
           </ul>
         </div>
+        
+        ${solutionCodeHtml}
 
         <div class="quiz-answer ${answerClass}">
           <label for="code-hidden-answer-${task.id}">Antwort</label>
@@ -837,5 +906,50 @@ json.dumps(_value)
     } catch (err) {
       return resultJson;
     }
-  }
+  },
+
+  attachHintRevealListeners(container) {
+    const hintBtns = container.querySelectorAll('.hint-reveal-btn-inline');
+    hintBtns.forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const taskId = parseInt(btn.dataset.taskId);
+        const hintId = parseInt(btn.dataset.hintId);
+        
+        if (!window.assignmentState?.hintsRevealed) {
+          window.assignmentState.hintsRevealed = {};
+        }
+        if (!window.assignmentState.hintsRevealed[taskId]) {
+          window.assignmentState.hintsRevealed[taskId] = [];
+        }
+        
+        if (!window.assignmentState.hintsRevealed[taskId].includes(hintId)) {
+          window.assignmentState.hintsRevealed[taskId].push(hintId);
+        }
+        
+        try {
+          const payload = {
+            task_id: taskId,
+            hints_revealed: window.assignmentState.hintsRevealed[taskId]
+          };
+          console.log('[HINT] Revealing hint - Payload:', payload);
+          const response = await fetch('../api/user_tasks/update.php', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          console.log('[HINT] Response:', data);
+          
+          // Re-render the task to show newly revealed hint
+          const task = window.assignmentState?.currentTask;
+          if (task && task.id === taskId) {
+            this.render(task, container);
+          }
+        } catch (err) {
+          console.error('Failed to save hints progress:', err);
+        }
+      });
+    });  }
 };

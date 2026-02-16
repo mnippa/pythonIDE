@@ -33,7 +33,21 @@ if ($stmt->get_result()->num_rows === 0) {
     jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
 }
 
-$allowedTypes = ['code_completion', 'code_fix', 'multiple_choice', 'essay'];
+$allowedTypes = [
+    'code_completion',
+    'code_fix',
+    'multiple_choice',
+    'essay'
+];
+
+$problemTypeMap = [
+    'code' => 'code_completion',
+    'code_reading' => 'code_completion',
+    'code_random_complex' => 'code_completion',
+    'single_choice' => 'multiple_choice',
+    'multiple_choice' => 'multiple_choice',
+    'free_text' => 'essay'
+];
 
 $updates = [];
 $params = [];
@@ -98,6 +112,9 @@ if (array_key_exists('min_keywords_required', $input)) {
 
 if (isset($input['problem_type'])) {
     $problemType = $input['problem_type'];
+    if (isset($problemTypeMap[$problemType])) {
+        $problemType = $problemTypeMap[$problemType];
+    }
     if (!in_array($problemType, $allowedTypes, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid problem_type'], 400);
     }
@@ -198,7 +215,14 @@ if (array_key_exists('correct_answer', $input)) {
 
 if (array_key_exists('variable_overrides', $input)) {
     $updates[] = 'variable_overrides = ?';
-    $variableOverridesJson = $input['variable_overrides'] ? json_encode($input['variable_overrides']) : null;
+    $variableOverridesValue = $input['variable_overrides'];
+    if ($variableOverridesValue === null || $variableOverridesValue === '') {
+        $variableOverridesJson = null;
+    } elseif (is_string($variableOverridesValue)) {
+        $variableOverridesJson = $variableOverridesValue;
+    } else {
+        $variableOverridesJson = json_encode($variableOverridesValue);
+    }
     $params[] = $variableOverridesJson;
     $types .= 's';
 }
@@ -212,7 +236,14 @@ $types .= 'i';
 
 $sql = 'UPDATE tasks SET ' . implode(', ', $updates) . ' WHERE id = ?';
 $stmt = $conn->prepare($sql);
-$stmt->bind_param($types, ...$params);
+if (!$stmt) {
+    jsonResponse(['ok' => false, 'error' => 'Database prepare error: ' . $conn->error], 500);
+}
+
+$bindResult = $stmt->bind_param($types, ...$params);
+if (!$bindResult) {
+    jsonResponse(['ok' => false, 'error' => 'Database bind error: ' . $stmt->error], 500);
+}
 
 if ($stmt->execute()) {
     // Update task options if provided (for single/multiple choice)
@@ -242,5 +273,5 @@ if ($stmt->execute()) {
     
     jsonResponse(['ok' => true, 'message' => 'Task updated']);
 } else {
-    jsonResponse(['ok' => false, 'error' => 'Failed to update task'], 500);
+    jsonResponse(['ok' => false, 'error' => 'Failed to update task: ' . $stmt->error], 500);
 }

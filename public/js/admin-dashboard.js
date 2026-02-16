@@ -668,8 +668,20 @@ function openEditTaskModal(taskId) {
   $('edit-task-description').value = task.description || '';
   $('edit-task-position').value = task.position || '';
   if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
-  if ($('edit-task-show-solution')) $('edit-task-show-solution').checked = task.show_solution !== 0;
-  if ($('edit-task-show-generator')) $('edit-task-show-generator').checked = task.show_generator_code !== 0;
+  if ($('edit-task-show-solution')) {
+    $('edit-task-show-solution').checked =
+      task.show_solution === 1 ||
+      task.show_solution === true ||
+      task.show_solution === '1' ||
+      task.show_solution === 'true';
+  }
+  if ($('edit-task-show-generator')) {
+    $('edit-task-show-generator').checked =
+      task.show_generator_code === 1 ||
+      task.show_generator_code === true ||
+      task.show_generator_code === '1' ||
+      task.show_generator_code === 'true';
+  }
   
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
@@ -742,7 +754,7 @@ function openEditTaskModal(taskId) {
   renderTestCases(editTestCasesData, 'edit-tests-container');
 
   $('task-modal').classList.add('active');
-  $('modal-title').textContent = `Edit Task: ${task.title}`;
+  $('modal-title').textContent = `Edit Task #${task.id}: ${task.title}`;
   
   // Update field visibility based on task type
   const editForm = $('task-edit-form');

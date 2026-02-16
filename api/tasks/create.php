@@ -49,6 +49,19 @@ $correctAnswer = trim($input['correct_answer'] ?? '') ?: null;
 $variableOverrides = $input['variable_overrides'] ?? null;
 $options = $input['options'] ?? [];
 
+$problemTypeMap = [
+    'code' => 'code_completion',
+    'code_reading' => 'code_completion',
+    'code_random_complex' => 'code_completion',
+    'single_choice' => 'multiple_choice',
+    'multiple_choice' => 'multiple_choice',
+    'free_text' => 'essay'
+];
+
+if (isset($problemTypeMap[$problemType])) {
+    $problemType = $problemTypeMap[$problemType];
+}
+
 if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
 }
@@ -57,7 +70,12 @@ if ($title === '') {
     jsonResponse(['ok' => false, 'error' => 'Title is required'], 400);
 }
 
-$allowedTypes = ['code_completion', 'code_fix', 'multiple_choice', 'essay'];
+$allowedTypes = [
+    'code_completion',
+    'code_fix',
+    'multiple_choice',
+    'essay'
+];
 if (!in_array($problemType, $allowedTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid problem_type'], 400);
 }

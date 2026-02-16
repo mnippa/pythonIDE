@@ -779,24 +779,37 @@ if ($displayName === '') {
           <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
         </div>
         
-        <!-- Correct Answer (for code reading) -->
+        <!-- Correct Answer (for code reading & code_random_complex) -->
         <div class="field" data-field="correct-answer">
           <label for="task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
-          <input id="task-correct-answer" placeholder="z.B. 'x' oder '42'" />
-          <div class="hint">Name der Variable deren Wert geprüft wird, oder erwarteter Wert</div>
+          <input id="task-correct-answer" placeholder="z.B. 'result' oder '42'" />
+          <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
         </div>
         
-        <!-- Variable Overrides (for code reading) -->
+        <!-- Variable Overrides (for code reading & code_random_complex) -->
         <div class="field" data-field="variable-overrides">
           <label for="task-var-overrides">Variable Overrides (JSON)</label>
-          <textarea id="task-var-overrides" placeholder='{"x": [1, 5, 10], "y": [2, 4, 8]}'></textarea>
-          <div class="hint">Variablen mit zufälligen Werten. Format: {"varName": [value1, value2, ...]}</div>
+          <textarea id="task-var-overrides" placeholder='{"binary":["1010","1101","10011"]} ODER [{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          <div class="hint" style="margin-top:8px;">
+            <strong>💡 Für code_reading:</strong> FESTE Wert-Paare (✓ EMPFOHLEN)<br>
+            <strong>💡 Für code_random_complex:</strong> Optional (nur wenn KEINE Zufallsfunktion verwendet wird)<br><br>
+            <strong>2 Formate:</strong><br>
+            • <strong>Objekt mit Arrays:</strong> <code>{"varName": [val1, val2, ...]}</code> → random aus Array wählen<br>
+            • <strong>Array von Objekten:</strong> <code>[{"var1": val1, "var2": val2}, {...}]</code> → random ein Objekt wählen<br><br>
+            <strong>Im Code Template/Solution:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
+          </div>
         </div>
         
         <!-- Code Template (for code and code_reading) -->
         <div class="field" data-field="code-template">
-          <label for="task-template">Code template</label>
-          <textarea id="task-template"></textarea>
+          <label for="task-template">Code Template</label>
+          <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: random.randint(0, 255)"></textarea>
+          <div class="hint">
+            <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
+            <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+            <strong>Für code_random_complex:</strong> ✓ ZUFALLSFUNKTION (z.B. <code>random.randint(0, 255)</code>)<br>
+            → Generiert bei jedem Laden neue Zufallswerte
+          </div>
         </div>
         
         <!-- Hints -->
@@ -864,10 +877,15 @@ if ($displayName === '') {
           </div>
         </div>
         
-        <!-- Solution Code (for code tasks) -->
+        <!-- Solution Code (for code & code_random_complex tasks) -->
         <div class="field" data-field="solution">
-          <label for="task-solution">Solution Code</label>
-          <textarea id="task-solution" placeholder="Musterlösung"></textarea>
+          <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(mit Platzhaltern für code_random_complex)</span></label>
+          <textarea id="task-solution" placeholder="Beispiel code_random_complex:\ndef binary_to_decimal(b):\n    return int(b, 2)\nbinary = \"{binary}\"\nresult = binary_to_decimal(binary)"></textarea>
+          <div class="hint">
+            <strong>Für code_random_complex:</strong> Verwende {varName} für dynamische Werte<br>
+            Beispiel: <code>binary = \"{binary}\"</code> wird zu <code>binary = \"1010\"</code><br>
+            <strong>Tipp:</strong> Strings müssen escaped sein: <code>\"{varName}\"</code> nicht nur <code>{varName}</code>
+          </div>
         </div>
         
         <div class="row-actions">
@@ -966,24 +984,37 @@ if ($displayName === '') {
           <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
         </div>
         
-        <!-- Correct Answer (for code reading) -->
+        <!-- Correct Answer (for code reading & code_random_complex) -->
         <div class="field" data-field="correct-answer">
           <label for="edit-task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
-          <input id="edit-task-correct-answer" placeholder="z.B. 'x' oder '42'" />
-          <div class="hint">Name der Variable deren Wert geprüft wird, oder erwarteter Wert</div>
+          <input id="edit-task-correct-answer" placeholder="z.B. 'result' oder '42'" />
+          <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
         </div>
         
-        <!-- Variable Overrides (for code reading) -->
+        <!-- Variable Overrides (for code reading & code_random_complex) -->
         <div class="field" data-field="variable-overrides">
-          <label for="edit-task-var-overrides">Variable Overrides (JSON)</label>
-          <textarea id="edit-task-var-overrides" placeholder='{"x": [1, 5, 10], "y": [2, 4, 8]}'></textarea>
-          <div class="hint">Variablen mit zufälligen Werten. Format: {"varName": [value1, value2, ...]}</div>
+          <label for="edit-task-var-overrides">Variable Overrides (JSON) <strong>✓ EMPFOHLEN</strong></label>
+          <textarea id="edit-task-var-overrides" placeholder='{"binary":["1010","1101","10011"]} ODER [{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          <div class="hint" style="margin-top:8px;">
+            <strong>💡 Für code_reading:</strong> FESTE Wert-Paare (✓ EMPFOHLEN)<br>
+            <strong>💡 Für code_random_complex:</strong> Optional (nur wenn KEINE Zufallsfunktion verwendet wird)<br><br>
+            <strong>2 Formate:</strong><br>
+            • <strong>Objekt mit Arrays:</strong> <code>{"varName": [val1, val2, ...]}</code> → random aus Array wählen<br>
+            • <strong>Array von Objekten:</strong> <code>[{"var1": val1, "var2": val2}, {...}]</code> → random ein Objekt wählen<br><br>
+            <strong>Im Code Template/Solution:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = \"{binary}\"</code>
+          </div>
         </div>
         
         <!-- Code Template (for code and code_reading) -->
         <div class="field" data-field="code-template">
-          <label for="edit-task-template">Code template</label>
-          <textarea id="edit-task-template"></textarea>
+          <label for="edit-task-template">Code Template</label>
+          <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: random.randint(0, 255)"></textarea>
+          <div class="hint">
+            <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
+            <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+            <strong>Für code_random_complex:</strong> ✓ ZUFALLSFUNKTION (z.B. <code>random.randint(0, 255)</code>)<br>
+            → Generiert bei jedem Laden neue Zufallswerte
+          </div>
         </div>
         
         <!-- Hints -->
@@ -1051,10 +1082,15 @@ if ($displayName === '') {
           </div>
         </div>
         
-        <!-- Solution Code (for code tasks) -->
+        <!-- Solution Code (for code & code_random_complex tasks) -->
         <div class="field" data-field="solution">
-          <label for="edit-task-solution">Solution Code</label>
-          <textarea id="edit-task-solution" placeholder="Musterlösung"></textarea>
+          <label for="edit-task-solution">Solution Code <span style="color:#999; font-size:12px;">(mit Platzhaltern für code_random_complex)</span></label>
+          <textarea id="edit-task-solution" placeholder="Beispiel code_random_complex:\ndef binary_to_decimal(b):\n    return int(b, 2)\nbinary = \"{binary}\"\nresult = binary_to_decimal(binary)"></textarea>
+          <div class="hint">
+            <strong>Für code_random_complex:</strong> Verwende {varName} für dynamische Werte<br>
+            Beispiel: <code>binary = \"{binary}\"</code> wird zu <code>binary = \"1010\"</code><br>
+            <strong>Tipp:</strong> Strings müssen escaped sein: <code>\"{varName}\"</code> nicht nur <code>{varName}</code>
+          </div>
         </div>
         <div class="row-actions">
           <button class="hspf-btn hspf-btn-primary" type="submit">Save Changes</button>

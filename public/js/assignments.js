@@ -226,29 +226,34 @@ function showTaskDetails(task, activeTab = 'details') {
   const revealedCount = revealedHints.length;
   const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
 
-  let detailsHtml = '';
+  // Aufgabenbeschreibung - IMMER OBEN, nicht in einem Tab
+  let descriptionHtml = '';
+  if (task.description) {
+    descriptionHtml = `<div class="task-description-box">
+      <h4>Aufgabenstellung</h4>
+      <p>${escapeHtml(task.description)}</p>
+    </div>`;
+  }
 
-  // Status and attempts header
+  // Details Tab Content (Status header + Stoff)
+  let detailsHtml = '';
   detailsHtml += `<div class="task-status-header">
     <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
     ${task.task_type !== 'code' ? `<span class="task-attempts-info">Versuche: ${attempts}/${maxAttempts}</span>` : ''}
   </div>`;
-
-  // Stoff (Learning Content)
+  
   if (task.stoff) {
     detailsHtml += `<div class="stoff-section">
       <h4>📚 Lerninhalt (Stoff)</h4>
       <p>${escapeHtml(task.stoff)}</p>
     </div>`;
   }
-  
-  // Description
-  if (task.description) {
-    detailsHtml += `<h4>Aufgabenstellung</h4><p>${escapeHtml(task.description)}</p>`;
-  }
 
-  if (detailsHtml === '') {
-    detailsHtml = '<p>Keine Details vorhanden.</p>';
+  if (detailsHtml === '' || detailsHtml.trim() === `<div class="task-status-header">
+    <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
+    ${task.task_type !== 'code' ? `<span class="task-attempts-info">Versuche: ${attempts}/${maxAttempts}</span>` : ''}
+  </div>`) {
+    detailsHtml += '<p>Keine weiteren Details vorhanden.</p>';
   }
 
   let hintsHtml = '';
@@ -282,7 +287,8 @@ function showTaskDetails(task, activeTab = 'details') {
   }
   tabsHtml += `</div>`;
 
-  let html = tabsHtml;
+  // Build final HTML: Description first, then tabs
+  let html = descriptionHtml + tabsHtml;
   html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
@@ -364,15 +370,27 @@ function renderTaskNavigation() {
     return;
   }
 
+  // Task type icon mapping
+  const taskTypeIcons = {
+    'single_choice': '<i class="fas fa-circle-dot"></i>',
+    'multiple_choice': '<i class="fas fa-square-check"></i>',
+    'free_text': '<i class="fas fa-file-alt"></i>',
+    'code': '<i class="fas fa-code"></i>',
+    'code_reading': '<i class="fas fa-eye"></i>',
+    'code_random_complex': '<i class="fas fa-random"></i>'
+  };
+
   navEl.innerHTML = tasks.map((task, idx) => {
     const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
     const isActive = task.id === assignmentState.currentTaskId;
+    const taskIcon = taskTypeIcons[task.task_type] || '<i class="fas fa-question-circle"></i>';
     
     return `
       <div class="task-nav-item ${isActive ? 'active' : ''}" data-task-id="${task.id}">
         <span class="task-nav-position">${idx + 1}. (#${task.id})</span>
         <span class="task-nav-status status-${status}"></span>
         <span class="task-nav-title">${escapeHtml(task.title)}</span>
+        <span class="task-nav-icon">${taskIcon}</span>
       </div>
     `;
   }).join('');
