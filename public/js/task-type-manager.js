@@ -23,7 +23,7 @@
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution']
+      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
@@ -51,7 +51,8 @@
       const config = TASK_TYPES[taskType] || TASK_TYPES.code;
       
       // Hide all dynamic fields first
-      this.hideField(form, 'question');
+      this.hideField(form, 'description');  // Show only for code tasks
+      this.hideField(form, 'question');     // Show only for quiz tasks
       this.hideField(form, 'image-upload');
       this.hideField(form, 'options-builder');
       this.hideField(form, 'keywords');
@@ -63,6 +64,17 @@
       this.hideField(form, 'solution');
       this.hideField(form, 'correct-answer');
       this.hideField(form, 'show-generator-code');
+      
+      // Handle description vs question based on task type
+      if (taskType === 'code') {
+        // Code task: show description, hide question
+        this.showField(form, 'description');
+        this.hideField(form, 'question');
+      } else {
+        // Quiz tasks: show question, hide description
+        this.hideField(form, 'description');
+        this.showField(form, 'question');
+      }
 
       // Show required fields
       config.fields.forEach(field => {

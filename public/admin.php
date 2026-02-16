@@ -700,8 +700,8 @@ if ($displayName === '') {
           <label for="task-title">Title</label>
           <input id="task-title" />
         </div>
-        <div class="field">
-          <label for="task-description">Description (wird bei allen Types angezeigt)</label>
+        <div class="field" data-field="description">
+          <label for="task-description">Description (Kontext/Lernmaterial für Code-Tasks)</label>
           <textarea id="task-description"></textarea>
         </div>
         <div class="field">
@@ -908,8 +908,8 @@ if ($displayName === '') {
           <label for="edit-task-title">Title</label>
           <input id="edit-task-title" required />
         </div>
-        <div class="field">
-          <label for="edit-task-description">Description (wird bei allen Types angezeigt)</label>
+        <div class="field" data-field="description">
+          <label for="edit-task-description">Description (Kontext/Lernmaterial für Code-Tasks)</label>
           <textarea id="edit-task-description"></textarea>
         </div>
         <div class="field">

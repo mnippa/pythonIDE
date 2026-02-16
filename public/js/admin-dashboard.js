@@ -408,7 +408,6 @@ async function handleTaskSubmit(e) {
   const payload = {
     assignment_id: state.currentAssignmentId,
     title: $('task-title').value.trim(),
-    description: $('task-description').value.trim(),
     position: $('task-position').value ? parseInt($('task-position').value, 10) : null,
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
@@ -425,8 +424,13 @@ async function handleTaskSubmit(e) {
     solution_code: $('task-solution').value.trim() || null
   };
   
-  // NEW: Add quiz-specific fields
-  if (taskType === 'single_choice' || taskType === 'multiple_choice' || taskType === 'free_text' || taskType === 'code_random_complex') {
+  // For code tasks: use description, not question_text
+  if (taskType === 'code') {
+    payload.description = $('task-description').value.trim();
+    payload.question_text = null;
+  } else {
+    // For quiz tasks: use question_text, clear description
+    payload.description = '';  // Clear description for quiz tasks
     payload.question_text = $('task-question').value.trim();
     payload.image_url = $('task-image-url').value.trim() || null;
   }
@@ -665,7 +669,6 @@ function openEditTaskModal(taskId) {
   // Basic fields
   $('edit-task-id').value = task.id;
   $('edit-task-title').value = task.title || '';
-  $('edit-task-description').value = task.description || '';
   $('edit-task-position').value = task.position || '';
   if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
   if ($('edit-task-show-solution')) {
@@ -687,6 +690,17 @@ function openEditTaskModal(taskId) {
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
   
+  // Description vs Question Text: depends on task type
+  if (taskType === 'code') {
+    // Code task: use description
+    $('edit-task-description').value = task.description || '';
+    if ($('edit-task-question')) $('edit-task-question').value = '';
+  } else {
+    // Quiz task: use question_text
+    $('edit-task-description').value = '';
+    if ($('edit-task-question')) $('edit-task-question').value = task.question_text || '';
+  }
+  
   // Code fields
   $('edit-task-template').value = task.code_template || '';
   $('edit-task-hint1').value = task.hint1 || '';
@@ -698,7 +712,6 @@ function openEditTaskModal(taskId) {
   $('edit-task-solution').value = task.solution_code || '';
   
   // Quiz fields
-  if ($('edit-task-question')) $('edit-task-question').value = task.question_text || '';
   if ($('edit-task-keywords')) {
     // For free_text, load correct_answer into keywords field
     if (taskType === 'free_text') {
@@ -780,7 +793,6 @@ async function handleEditTaskSubmit(e) {
   const payload = {
     id: taskId,
     title: $('edit-task-title').value.trim(),
-    description: $('edit-task-description').value.trim(),
     position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
@@ -794,16 +806,25 @@ async function handleEditTaskSubmit(e) {
     stoff: $('edit-task-stoff').value,
     validation_mode: $('edit-task-validation-mode').value || null,
     test_cases: $('edit-task-test-cases').value.trim() || null,
-    solution_code: $('edit-task-solution').value.trim() || null,
-    
-    // Quiz fields
-    question_text: $('edit-task-question') ? $('edit-task-question').value.trim() : null,
-    image_url: $('edit-task-image-url') ? $('edit-task-image-url').value.trim() : null,
-    keywords: $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null,
-    correct_answer: $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null,
-    variable_overrides: $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null,
-    min_keywords_required: $('edit-task-min-keywords') ? (($('edit-task-min-keywords').value.trim() !== '') ? parseInt($('edit-task-min-keywords').value, 10) : null) : null
+    solution_code: $('edit-task-solution').value.trim() || null
   };
+  
+  // For code tasks: use description, not question_text
+  if (taskType === 'code') {
+    payload.description = $('edit-task-description').value.trim();
+    payload.question_text = null;
+  } else {
+    // For quiz tasks: use question_text, clear description
+    payload.description = '';  // Clear description for quiz tasks
+    payload.question_text = $('edit-task-question') ? $('edit-task-question').value.trim() : null;
+    payload.image_url = $('edit-task-image-url') ? $('edit-task-image-url').value.trim() : null;
+  }
+  
+  // Add quiz-specific fields
+  payload.keywords = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
+  payload.correct_answer = $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null;
+  payload.variable_overrides = $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null;
+  payload.min_keywords_required = $('edit-task-min-keywords') ? (($('edit-task-min-keywords').value.trim() !== '') ? parseInt($('edit-task-min-keywords').value, 10) : null) : null;
   
   // For free_text, use keywords field as correct_answer
   if (taskType === 'free_text') {

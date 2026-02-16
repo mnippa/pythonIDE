@@ -226,12 +226,17 @@ function showTaskDetails(task, activeTab = 'details') {
   const revealedCount = revealedHints.length;
   const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
 
-  // Aufgabenbeschreibung - IMMER OBEN, nicht in einem Tab
+  // Aufgabenbeschreibung/Fragestellung - IMMER OBEN, nicht in einem Tab
+  // For code tasks: show description (learning material)
+  // For quiz tasks: show question_text (the actual question)
   let descriptionHtml = '';
-  if (task.description) {
+  const isQuizTask = task.task_type && task.task_type !== 'code';
+  const taskContent = isQuizTask ? task.question_text : task.description;
+  
+  if (taskContent) {
     descriptionHtml = `<div class="task-description-box">
       <h4>Aufgabenstellung</h4>
-      <p>${escapeHtml(task.description)}</p>
+      <p>${escapeHtml(taskContent)}</p>
     </div>`;
   }
 
