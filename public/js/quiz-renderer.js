@@ -47,7 +47,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
@@ -157,7 +157,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
           ${keywordsHint}
         </div>
@@ -187,6 +187,14 @@ window.QuizRenderer = {
   renderCodeReading(task, container) {
     const attemptsInfo = this.getAttemptsInfo(task);
     const disableSubmit = attemptsInfo.blocked;
+    const isCompleted = attemptsInfo.blocked || attemptsInfo.isPassed;
+    const isPassed = attemptsInfo.isPassed;
+    
+    // Get previous answer if task was already attempted
+    const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
+    const userTextAnswer = userAnswer?.text_answer || '';
+    const answerClass = isCompleted && !isPassed ? 'user-answer-incorrect' : (isCompleted && isPassed ? 'user-answer-correct' : '');
+    
     // Generate random variable values if not already stored
     let varValues = {};
     if (task.variable_overrides) {
@@ -195,10 +203,18 @@ window.QuizRenderer = {
           ? JSON.parse(task.variable_overrides) 
           : task.variable_overrides;
         
-        for (const varName in overrides) {
-          const possibleValues = overrides[varName];
-          if (Array.isArray(possibleValues) && possibleValues.length > 0) {
-            varValues[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+        // Handle array of objects (e.g., [{"start":1,"end":5}, {...}])
+        if (Array.isArray(overrides) && overrides.length > 0) {
+          const selectedSet = overrides[Math.floor(Math.random() * overrides.length)];
+          varValues = selectedSet;
+        } 
+        // Handle object with array values (e.g., {"x": [1,2,3], "y": [4,5,6]})
+        else if (typeof overrides === 'object' && !Array.isArray(overrides)) {
+          for (const varName in overrides) {
+            const possibleValues = overrides[varName];
+            if (Array.isArray(possibleValues) && possibleValues.length > 0) {
+              varValues[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+            }
           }
         }
       } catch (err) {
@@ -209,8 +225,18 @@ window.QuizRenderer = {
     // Store var values for later verification
     window.currentCodeReadingVars = varValues;
     
-    // Build code display with highlighted variables
+    // Build code display with template string replacement AND variable highlighting
     let codeDisplay = task.code_template || '';
+    
+    // FIRST: Replace template strings {varName} with actual values
+    for (const varName in varValues) {
+      const placeholder = `{${varName}}`;
+      const value = varValues[varName];
+      const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      codeDisplay = codeDisplay.replace(regex, String(value));
+    }
+    
+    // SECOND: Highlight variables in the code
     for (const varName in varValues) {
       codeDisplay = codeDisplay.replace(
         new RegExp(`\\b${varName}\\b`, 'g'),
@@ -238,7 +264,10 @@ window.QuizRenderer = {
           <input 
             type="text" 
             id="code-reading-answer-${task.id}" 
+            class="${answerClass}"
+            value="${this.escapeHtml(isCompleted ? userTextAnswer : '')}"
             placeholder="Ergebnis eingeben..."
+            ${disableSubmit ? 'disabled' : ''}
           />
         </div>
         
@@ -266,7 +295,7 @@ window.QuizRenderer = {
       container.innerHTML = `
         <div class="quiz-container">
           <div class="quiz-question">
-            ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+            ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
             ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
           </div>
           <div class="quiz-values loading">Werte werden geladen...</div>
@@ -317,7 +346,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.escapeHtml(task.question_text)}</div>` : ''}
+          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
@@ -330,8 +359,6 @@ window.QuizRenderer = {
             ${valuesHtml}
           </ul>
         </div>
-        
-        ${solutionCodeHtml}
 
         <div class="quiz-answer ${answerClass}">
           <label for="code-hidden-answer-${task.id}">Antwort</label>
@@ -401,13 +428,24 @@ window.QuizRenderer = {
         return;
       }
 
+      const varValues = window.currentCodeReadingVars || {};
+      let codeToEvaluate = task.code_template;
+      
+      // Replace template placeholders with actual values
+      for (const varName in varValues) {
+        const placeholder = `{${varName}}`;
+        const value = varValues[varName];
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        codeToEvaluate = codeToEvaluate.replace(regex, String(value));
+      }
+
       let computedValue = null;
       try {
         computedValue = await this.evaluateCodeReading(
           pyodide,
-          task.code_template,
+          codeToEvaluate,
           task.correct_answer,
-          window.currentCodeReadingVars || {}
+          varValues
         );
       } catch (err) {
         feedbackEl.innerHTML = `<div class="error">Code-Auswertung fehlgeschlagen: ${this.escapeHtml(String(err))}</div>`;
@@ -467,17 +505,20 @@ window.QuizRenderer = {
     
     // Submit to API
     try {
+      const payload = {
+        task_id: taskId,
+        ...answer
+      };
+      console.log('[QUIZ] Submitting quiz answer - Payload:', payload);
       const response = await fetch('../api/user_tasks/submit_quiz.php', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          task_id: taskId,
-          ...answer
-        })
+        body: JSON.stringify(payload)
       });
       
       const data = await response.json();
+      console.log('[QUIZ] Response:', data);
       
       if (data.ok) {
         const isPassed = data.is_correct;
@@ -546,20 +587,41 @@ window.QuizRenderer = {
           }
         }
         
-        // Re-render quiz to show solution if max attempts reached
-        // For code_random_complex, keep the feedback visible (don't re-render on success)
+        // Update task status in state and refresh task navigation list immediately
+        console.log('[QUIZ] Task status updated - Status:', data.status, 'Attempts:', data.attempts);
+        window.assignmentState.taskStatuses[taskId] = data.status;
+        window.assignmentState.taskAttempts[taskId] = data.attempts;
+        if (window.renderTaskNavigation) {
+          console.log('[QUIZ] Refreshing task navigation list');
+          window.renderTaskNavigation();
+        }
+        
+        // Show success modal for passed quiz tasks
+        if (data.status === 'passed' && window.showSuccessModal) {
+          const task = window.assignmentState?.currentTask;
+          if (task) {
+            console.log('[QUIZ] Showing success modal for task:', task.id);
+            window.showSuccessModal(task, data.attempts, data.max_attempts);
+          }
+        }
+        
+        // Re-render quiz to show solution or disable form after submission
+        // For code_random_complex, keep feedback but re-render on success to disable form
         const taskType = window.assignmentState?.currentTask?.task_type;
-        if (data.status === 'failed' && data.attempts >= data.max_attempts) {
+        if (data.status === 'passed' || (data.status === 'failed' && data.attempts >= data.max_attempts)) {
           const task = window.assignmentState?.currentTask;
           const quizContainer = document.getElementById('quiz-container');
           if (task && quizContainer) {
+            console.log('[QUIZ] Re-rendering quiz after submission');
             setTimeout(() => this.render(task, quizContainer), 100);
           }
         }
         
-        // Reload assignment to update status in list
+        // Reload assignment in background to update any other data
         if (window.loadAssignments) {
-          setTimeout(() => window.loadAssignments(), 1000);
+          console.log('[QUIZ] Reloading assignments in background');
+          // Don't wait - just trigger in background
+          window.loadAssignments().catch(err => console.error('Failed to reload assignments:', err));
         }
       } else {
         feedbackEl.innerHTML = `<div class="error">Fehler: ${data.error}</div>`;
@@ -604,10 +666,57 @@ window.QuizRenderer = {
     return div.innerHTML;
   },
 
+  formatText(text) {
+    if (!text) return '';
+    // First escape HTML special characters
+    const escaped = this.escapeHtml(text);
+    // Then convert newlines (both \n and actual newlines) to <br>
+    return escaped.replace(/\n/g, '<br>').replace(/\r\n/g, '<br>');
+  },
+
   async ensureGeneratedValues(task) {
     const existing = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
     if (existing && Object.keys(existing).length > 0) {
       return existing;
+    }
+
+    // Check if variable_overrides exist (alternative to generator code)
+    if (task.variable_overrides) {
+      const overrides = typeof task.variable_overrides === 'string' 
+        ? JSON.parse(task.variable_overrides) 
+        : task.variable_overrides;
+      
+      const values = {};
+      for (const varName in overrides) {
+        const possibleValues = overrides[varName];
+        if (Array.isArray(possibleValues) && possibleValues.length > 0) {
+          values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+        }
+      }
+      
+      if (Object.keys(values).length > 0) {
+        if (!window.assignmentState.taskUserAnswers[task.id]) {
+          window.assignmentState.taskUserAnswers[task.id] = {};
+        }
+        window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+
+        const payload = {
+          task_id: task.id,
+          variable_values: values,
+          started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        };
+        console.log('[CODE_RANDOM] Saving generated values (from overrides) - Payload:', payload);
+        const response = await fetch('../api/user_tasks/update.php', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        console.log('[CODE_RANDOM] Response:', data);
+
+        return values;
+      }
     }
 
     const pyodide = window.pyodide;
@@ -617,7 +726,7 @@ window.QuizRenderer = {
 
     const code = (task.code_template || '').trim();
     if (!code) {
-      throw new Error('Kein Generator-Code hinterlegt');
+      throw new Error('Kein Generator-Code oder variable_overrides hinterlegt');
     }
 
     const python = `
@@ -644,16 +753,20 @@ json.dumps(values)
     }
     window.assignmentState.taskUserAnswers[task.id].variable_values = values;
 
-    await fetch('../api/user_tasks/update.php', {
+    const payload = {
+      task_id: task.id,
+      variable_values: values,
+      started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+    };
+    console.log('[CODE_RANDOM] Saving generated values - Payload:', payload);
+    const response = await fetch('../api/user_tasks/update.php', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        task_id: task.id,
-        variable_values: values,
-        started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
-      })
+      body: JSON.stringify(payload)
     });
+    const data = await response.json();
+    console.log('[CODE_RANDOM] Response:', data);
 
     return values;
   },
@@ -663,6 +776,19 @@ json.dumps(values)
     const varsB64 = btoa(unescape(encodeURIComponent(varsJson)));
     const safeVarName = String(varName || 'result').trim() || 'result';
 
+    // Replace template strings {variable} with actual values
+    let processedCode = code;
+    for (const [key, value] of Object.entries(varValues || {})) {
+      const placeholder = `{${key}}`;
+      // For strings from variable_overrides, use the value directly (template already has quotes)
+      // Escape any quotes within the value itself
+      const escapedValue = typeof value === 'string' ? value.replace(/"/g, '\\"') : String(value);
+      const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      processedCode = processedCode.replace(regex, escapedValue);
+    }
+
+    console.log('[CODE_RANDOM] Processed code:', processedCode);
+
     const python = `
 import base64, json
 _vars = json.loads(base64.b64decode('${varsB64}').decode('utf-8'))
@@ -670,7 +796,7 @@ values = _vars  # Make values dict available to solution_code
 for k, v in _vars.items():
     globals()[k] = v
 
-${code}
+${processedCode}
 
 _value = globals().get('${safeVarName}', None)
 json.dumps(_value)

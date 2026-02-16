@@ -317,13 +317,16 @@ function showTaskDetails(task, activeTab = 'details') {
       }
 
       try {
-        await requestJson('../api/user_tasks/update.php', {
+        const payload = {
+          task_id: task.id,
+          hints_revealed: assignmentState.hintsRevealed[task.id]
+        };
+        console.log('[HINT] Revealing hint - Payload:', payload);
+        const response = await requestJson('../api/user_tasks/update.php', {
           method: 'POST',
-          body: JSON.stringify({
-            task_id: task.id,
-            hints_revealed: assignmentState.hintsRevealed[task.id]
-          })
+          body: JSON.stringify(payload)
         });
+        console.log('[HINT] Response:', response);
       } catch (err) {
         console.warn('Failed to save hints progress:', err);
       }
@@ -367,7 +370,7 @@ function renderTaskNavigation() {
     
     return `
       <div class="task-nav-item ${isActive ? 'active' : ''}" data-task-id="${task.id}">
-        <span class="task-nav-position">${idx + 1}.</span>
+        <span class="task-nav-position">${idx + 1}. (#${task.id})</span>
         <span class="task-nav-status status-${status}"></span>
         <span class="task-nav-title">${escapeHtml(task.title)}</span>
       </div>
@@ -728,11 +731,13 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     const quizContainer = document.getElementById('quiz-container');
     const leftBottom = document.getElementById('left-bottom');
     const leftSection = document.querySelector('.left');
+    const runBtn = document.getElementById('run-btn');
     
     if (editorContainer) editorContainer.style.display = 'block';
     if (quizContainer) quizContainer.style.display = 'none';
     if (leftBottom) leftBottom.style.display = 'grid';
     if (leftSection) leftSection.classList.remove('quiz-mode');
+    if (runBtn) runBtn.style.display = 'inline-block';
     
     // Load saved code from user_tasks if available
     loadSavedCode(taskId).then(savedCode => {
@@ -1054,13 +1059,16 @@ async function incrementRunCount(taskId) {
   assignmentState.taskRuns[taskId] = (assignmentState.taskRuns[taskId] || 0) + 1;
 
   try {
-    await requestJson('../api/user_tasks/update.php', {
+    const payload = {
+      task_id: taskId,
+      run_count: assignmentState.taskRuns[taskId]
+    };
+    console.log('[RUN_COUNT] Incrementing run count - Payload:', payload);
+    const response = await requestJson('../api/user_tasks/update.php', {
       method: 'POST',
-      body: JSON.stringify({
-        task_id: taskId,
-        run_count: assignmentState.taskRuns[taskId]
-      })
+      body: JSON.stringify(payload)
     });
+    console.log('[RUN_COUNT] Response:', response);
   } catch (err) {
     console.warn('Failed to update run_count:', err);
   }
@@ -1211,15 +1219,20 @@ async function checkTask() {
     // Parse test cases
     let testCases = [];
     try {
-      testCases = JSON.parse(task.test_cases);
-      
-      // Handle intelligent test config (single object with mode, tests, etc.)
-      if (!Array.isArray(testCases) && testCases.mode) {
-        testCases = [{type: 'intelligent', ...testCases}];
+      // Only parse if test_cases exists and is not null/empty
+      if (task.test_cases) {
+        testCases = JSON.parse(task.test_cases);
+        
+        // Handle intelligent test config (single object with mode, tests, etc.)
+        if (testCases && !Array.isArray(testCases) && testCases.mode) {
+          testCases = [{type: 'intelligent', ...testCases}];
+        }
+        
+        // Migrate legacy FUNCTION structure to new structure
+        testCases = migrateLegacyTestCases(testCases);
+      } else {
+        testCases = [];
       }
-      
-      // Migrate legacy FUNCTION structure to new structure
-      testCases = migrateLegacyTestCases(testCases);
     } catch (e) {
       console.error('Failed to parse test cases:', e);
       testCases = [];
@@ -1266,6 +1279,36 @@ async function checkTask() {
       }
     }
 
+    // If no tests were run but validation_mode is set, run a basic syntax check
+    if (allResults.length === 0 && task.validation_mode) {
+      console.log(`[CHECK] No test cases, using validation_mode='${task.validation_mode}' basic check`);
+      
+      try {
+        // Execute code to check for syntax errors
+        await pyodide.runPythonAsync(code);
+        
+        // If it runs without error, that's a pass for loose validation
+        allResults.push({
+          passed: true,
+          test: 'Syntax Check',
+          expected: 'Code executes without errors',
+          actual: 'Code executed successfully',
+          error: null,
+          mode: task.validation_mode
+        });
+      } catch (err) {
+        // Code has an error
+        allResults.push({
+          passed: false,
+          test: 'Syntax Check',
+          expected: 'Code executes without errors',
+          actual: `Error: ${err.message}`,
+          error: err.message,
+          mode: task.validation_mode
+        });
+      }
+    }
+
     if (allResults.length === 0) {
       outputEl.innerHTML = '<span style="color:#c00;">No test results</span>';
       return;
@@ -1299,10 +1342,12 @@ async function checkTask() {
         hints_revealed: assignmentState.hintsRevealed[task.id] || []
       };
       
-      await requestJson('../api/user_tasks/update.php', {
+      console.log('[CHECK] Saving attempts - Payload:', savePayload);
+      const saveResponse = await requestJson('../api/user_tasks/update.php', {
         method: 'POST',
         body: JSON.stringify(savePayload)
       });
+      console.log('[CHECK] Attempts save response:', saveResponse);
     } catch (err) {
       console.error('[CHECK] Failed to save attempts:', err);
     }
@@ -2944,4 +2989,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Expose functions to window for external access (e.g., from quiz-renderer.js)
+  window.showSuccessModal = showSuccessModal;
+  window.closeSuccessModal = closeSuccessModal;
+  window.renderTaskNavigation = renderTaskNavigation;
 });

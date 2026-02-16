@@ -840,7 +840,7 @@ if ($displayName === '') {
     <div class="toolbar">
       <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
       <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
-      <button id="run-btn" style="display:none;">Run</button>
+      <button id="run-btn">Run</button>
       <button id="check-btn" style="display:none; background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
       <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
       <span id="attempts-counter" style="display:none;"></span>
