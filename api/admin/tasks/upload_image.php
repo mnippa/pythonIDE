@@ -49,13 +49,14 @@ if ($file['size'] > $maxSize) {
 }
 
 // Generate unique filename
-$extension = match($mimeType) {
-    'image/jpeg', 'image/jpg' => 'jpg',
+$extensionMap = [
+    'image/jpeg' => 'jpg',
+    'image/jpg' => 'jpg',
     'image/png' => 'png',
     'image/gif' => 'gif',
-    'image/webp' => 'webp',
-    default => 'jpg'
-};
+    'image/webp' => 'webp'
+];
+$extension = isset($extensionMap[$mimeType]) ? $extensionMap[$mimeType] : 'jpg';
 
 $filename = uniqid('task_', true) . '_' . time() . '.' . $extension;
 $uploadDir = __DIR__ . '/../../../storage/task_images/';

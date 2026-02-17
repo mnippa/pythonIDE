@@ -39,7 +39,7 @@ if (!$canAccess) {
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 
 // Always fetch solution_code and expected_output (needed for intelligent tests)
-$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, show_solution, show_generator_code, test_cases, validation_mode, expected_output, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
+$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_generator_code, test_cases, validation_mode, expected_output, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $assignmentId);
@@ -63,6 +63,7 @@ while ($row = $result->fetch_assoc()) {
         'hint3' => $row['hint3'],
         'stoff' => $row['stoff'],
         'max_attempts' => (int)$row['max_attempts'],
+        'max_iterations' => isset($row['iterations_count']) ? (int)$row['iterations_count'] : null,
         'show_solution' => (int)$row['show_solution'],
         'show_generator_code' => (int)$row['show_generator_code'],
         'test_cases' => $row['test_cases'],

@@ -47,7 +47,7 @@ console.log('====================================\n');
 
 const validator2 = new CodeValidator();
 const actualOutput2 = `5\n`;
-const result Strict = validator2.validate(actualOutput2, testCases, 'strict');
+const resultStrict = validator2.validate(actualOutput2, testCases, 'strict');
 console.log('Validation Result (strict):', resultStrict);
 console.log('✓ Strict mode test completed!\n');
 

@@ -52,6 +52,7 @@ $problemTypeMap = [
 $updates = [];
 $params = [];
 $types = '';
+$taskTypeInput = $input['task_type'] ?? null;
 
 if (isset($input['title'])) {
     $title = trim($input['title']);
@@ -86,6 +87,16 @@ if (isset($input['max_attempts'])) {
     }
     $updates[] = 'max_attempts = ?';
     $params[] = $maxAttempts;
+    $types .= 'i';
+}
+
+if (isset($input['max_iterations'])) {
+    $maxIterations = (int)$input['max_iterations'];
+    if ($maxIterations < 1) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid max_iterations'], 400);
+    }
+    $updates[] = 'iterations_count = ?';
+    $params[] = $maxIterations;
     $types .= 'i';
 }
 
@@ -225,6 +236,23 @@ if (array_key_exists('variable_overrides', $input)) {
     }
     $params[] = $variableOverridesJson;
     $types .= 's';
+
+        if ($taskTypeInput === 'code_reading') {
+            if (is_string($variableOverridesValue)) {
+                $decodedOverrides = json_decode($variableOverridesValue, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decodedOverrides)) {
+                    $maxIterationsFromOverrides = max(1, count($decodedOverrides));
+                    $updates[] = 'iterations_count = ?';
+                    $params[] = $maxIterationsFromOverrides;
+                    $types .= 'i';
+                }
+            } elseif (is_array($variableOverridesValue)) {
+                $maxIterationsFromOverrides = max(1, count($variableOverridesValue));
+                $updates[] = 'iterations_count = ?';
+                $params[] = $maxIterationsFromOverrides;
+                $types .= 'i';
+            }
+        }
 }
 
 if (empty($updates)) {

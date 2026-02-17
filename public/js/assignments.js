@@ -10,6 +10,7 @@ const assignmentState = {
   currentUserAssignmentId: null,
   taskStatuses: {},
   taskAttempts: {},
+  taskIterations: {},
   taskUserAnswers: {}, // Store user answers: { taskId: { selected_options: [], text_answer: '', variable_values: {} } }
   taskRuns: {},
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
@@ -242,9 +243,11 @@ function showTaskDetails(task, activeTab = 'details') {
 
   // Details Tab Content (Status header + Stoff)
   let detailsHtml = '';
+  const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
+  const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
   detailsHtml += `<div class="task-status-header">
     <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
-    ${task.task_type !== 'code' ? `<span class="task-attempts-info">Versuche: ${attempts}/${maxAttempts}</span>` : ''}
+    ${task.task_type !== 'code' ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
   </div>`;
   
   if (task.stoff) {
@@ -256,7 +259,7 @@ function showTaskDetails(task, activeTab = 'details') {
 
   if (detailsHtml === '' || detailsHtml.trim() === `<div class="task-status-header">
     <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
-    ${task.task_type !== 'code' ? `<span class="task-attempts-info">Versuche: ${attempts}/${maxAttempts}</span>` : ''}
+    ${task.task_type !== 'code' ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
   </div>`) {
     detailsHtml += '<p>Keine weiteren Details vorhanden.</p>';
   }
@@ -441,6 +444,9 @@ async function loadAssignments() {
           userTasks.forEach(ut => {
             assignmentState.taskStatuses[ut.task_id] = ut.status;
             assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+            if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+              assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+            }
             // Store user answers
             assignmentState.taskUserAnswers[ut.task_id] = {
               selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
@@ -1114,6 +1120,10 @@ function showSuccessModal(task, attempts, maxAttempts) {
   // Count hints revealed for this task
   const hintsRevealedCount = assignmentState.hintsRevealed[task.id] ? assignmentState.hintsRevealed[task.id].length : 0;
 
+  // Determine attempts label based on task type
+  const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
+  const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
+
   // Build stats HTML (4 stats in 2x2 grid)
   const statsHtml = `
     <div class="success-stat">
@@ -1122,7 +1132,7 @@ function showSuccessModal(task, attempts, maxAttempts) {
     </div>
     <div class="success-stat">
       <div class="success-stat-value">${attempts}/${maxAttempts}</div>
-      <div class="success-stat-label">Versuche</div>
+      <div class="success-stat-label">${attemptsLabel}</div>
     </div>
     <div class="success-stat">
       <div class="success-stat-value">${timeString}</div>

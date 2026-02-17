@@ -712,6 +712,11 @@ if ($displayName === '') {
           <label for="task-max-attempts">Max Versuche</label>
           <input id="task-max-attempts" type="number" min="1" value="1" />
         </div>
+        <div class="field" data-field="max-iterations">
+          <label for="task-max-iterations">Iterationen</label>
+          <input id="task-max-iterations" type="number" min="1" value="3" />
+          <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+        </div>
         
         <div class="field checkbox-field">
           <label>
@@ -788,14 +793,21 @@ if ($displayName === '') {
         
         <!-- Variable Overrides (for code reading & code_random_complex) -->
         <div class="field" data-field="variable-overrides">
-          <label for="task-var-overrides">Variable Overrides (JSON)</label>
-          <textarea id="task-var-overrides" placeholder='{"binary":["1010","1101","10011"]} ODER [{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          <label>Iterationen (Variablenwerte)</label>
+          <div id="task-var-overrides-builder" class="overrides-builder"></div>
+          <div class="overrides-actions">
+            <button type="button" class="hspf-btn" id="task-add-iteration">+ Iteration</button>
+            <button type="button" class="hspf-btn" id="task-apply-overrides-json">JSON → Builder</button>
+            <button type="button" class="hspf-btn" id="task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
+          </div>
+          <div id="task-var-overrides-json" class="overrides-json" style="display:none;">
+            <label for="task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+            <textarea id="task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          </div>
           <div class="hint" style="margin-top:8px;">
-            <strong>💡 Für code_reading:</strong> FESTE Wert-Paare (✓ EMPFOHLEN)<br>
+            <strong>💡 Für code_reading:</strong> FESTE Wert-Sets (Iteration = Set-Reihenfolge)<br>
             <strong>💡 Für code_random_complex:</strong> Optional (nur wenn KEINE Zufallsfunktion verwendet wird)<br><br>
-            <strong>2 Formate:</strong><br>
-            • <strong>Objekt mit Arrays:</strong> <code>{"varName": [val1, val2, ...]}</code> → random aus Array wählen<br>
-            • <strong>Array von Objekten:</strong> <code>[{"var1": val1, "var2": val2}, {...}]</code> → random ein Objekt wählen<br><br>
+            <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
             <strong>Im Code Template/Solution:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
           </div>
         </div>
@@ -920,6 +932,11 @@ if ($displayName === '') {
           <label for="edit-task-max-attempts">Max Versuche</label>
           <input id="edit-task-max-attempts" type="number" min="1" value="1" />
         </div>
+        <div class="field" data-field="max-iterations">
+          <label for="edit-task-max-iterations">Iterationen</label>
+          <input id="edit-task-max-iterations" type="number" min="1" value="3" />
+          <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+        </div>
         
         <div class="field checkbox-field">
           <label>
@@ -993,15 +1010,22 @@ if ($displayName === '') {
         
         <!-- Variable Overrides (for code reading & code_random_complex) -->
         <div class="field" data-field="variable-overrides">
-          <label for="edit-task-var-overrides">Variable Overrides (JSON) <strong>✓ EMPFOHLEN</strong></label>
-          <textarea id="edit-task-var-overrides" placeholder='{"binary":["1010","1101","10011"]} ODER [{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          <label>Iterationen (Variablenwerte)</label>
+          <div id="edit-task-var-overrides-builder" class="overrides-builder"></div>
+          <div class="overrides-actions">
+            <button type="button" class="hspf-btn" id="edit-task-add-iteration">+ Iteration</button>
+            <button type="button" class="hspf-btn" id="edit-task-apply-overrides-json">JSON → Builder</button>
+            <button type="button" class="hspf-btn" id="edit-task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
+          </div>
+          <div id="edit-task-var-overrides-json" class="overrides-json" style="display:none;">
+            <label for="edit-task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+            <textarea id="edit-task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+          </div>
           <div class="hint" style="margin-top:8px;">
-            <strong>💡 Für code_reading:</strong> FESTE Wert-Paare (✓ EMPFOHLEN)<br>
+            <strong>💡 Für code_reading:</strong> FESTE Wert-Sets (Iteration = Set-Reihenfolge)<br>
             <strong>💡 Für code_random_complex:</strong> Optional (nur wenn KEINE Zufallsfunktion verwendet wird)<br><br>
-            <strong>2 Formate:</strong><br>
-            • <strong>Objekt mit Arrays:</strong> <code>{"varName": [val1, val2, ...]}</code> → random aus Array wählen<br>
-            • <strong>Array von Objekten:</strong> <code>[{"var1": val1, "var2": val2}, {...}]</code> → random ein Objekt wählen<br><br>
-            <strong>Im Code Template/Solution:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = \"{binary}\"</code>
+            <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
+            <strong>Im Code Template/Solution:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
           </div>
         </div>
         
@@ -1107,6 +1131,53 @@ if ($displayName === '') {
     #task-modal,
     #task-create-modal,
     #assignment-modal { animation: fadeIn 0.2s ease-in; }
+    .overrides-builder {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--hspf-border);
+      border-radius: 6px;
+      background: var(--hspf-bg-secondary);
+    }
+    .override-iteration {
+      background: #fff;
+      border: 1px solid var(--hspf-border);
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .override-iteration-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--hspf-text-secondary);
+    }
+    .override-variables {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .override-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .override-row input {
+      flex: 1;
+      min-width: 0;
+    }
+    .overrides-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .overrides-json textarea {
+      min-height: 120px;
+    }
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   </style>
 

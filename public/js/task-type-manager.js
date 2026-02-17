@@ -23,11 +23,11 @@
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution']
+      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution', 'max_iterations']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints']
+      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints', 'max_iterations']
     }
   };
 
@@ -63,6 +63,7 @@
       this.hideField(form, 'validation-mode');
       this.hideField(form, 'solution');
       this.hideField(form, 'correct-answer');
+      this.hideField(form, 'max-iterations');
       this.hideField(form, 'show-generator-code');
       
       // Handle description vs question based on task type
@@ -111,6 +112,9 @@
             break;
           case 'correct_answer':
             this.showField(form, 'correct-answer');
+            break;
+          case 'max_iterations':
+            this.showField(form, 'max-iterations');
             break;
         }
       });

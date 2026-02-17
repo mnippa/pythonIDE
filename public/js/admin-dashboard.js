@@ -306,6 +306,7 @@ function resetTaskForm() {
   $('task-test-cases').value = '';
   $('task-solution').value = '';
   if ($('task-max-attempts')) $('task-max-attempts').value = '1';
+  if ($('task-max-iterations')) $('task-max-iterations').value = '3';
   
   // NEW: Reset quiz fields
   if ($('new-task-type')) $('new-task-type').value = 'code';
@@ -316,6 +317,12 @@ function resetTaskForm() {
   if ($('task-keywords')) $('task-keywords').value = '';
   if ($('task-correct-answer')) $('task-correct-answer').value = '';
   if ($('task-var-overrides')) $('task-var-overrides').value = '';
+  if (overridesBuilders.task) {
+    overridesBuilders.task.iterations = [{ vars: [{ key: '', value: '' }] }];
+    renderOverridesBuilder('task');
+    syncOverridesJson('task');
+    updateMaxIterationsFromBuilder('task');
+  }
   
   // Reset options builder
   if (window.currentOptionsBuilder) {
@@ -356,6 +363,7 @@ function openNewTaskModal() {
   if (window.TaskTypeManager && taskForm) {
     window.TaskTypeManager.updateFieldVisibility(taskForm, taskType);
   }
+  updateMaxIterationsFromBuilder('task');
 }
 
 function closeNewTaskModal() {
@@ -460,17 +468,27 @@ async function handleTaskSubmit(e) {
   if (taskType === 'code_reading' || taskType === 'code_random_complex') {
     payload.correct_answer = $('task-correct-answer').value.trim();
   }
-  
-  if (taskType === 'code_reading') {
-    const varOverrides = $('task-var-overrides').value.trim();
-    if (varOverrides) {
-      try {
-        payload.variable_overrides = JSON.parse(varOverrides);
-      } catch (err) {
-        alert('Variable Overrides: Ungültiges JSON-Format');
-        return;
-      }
+
+  if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+    const overridesPayload = getOverridesPayload('task');
+    if (overridesPayload === null && $('task-var-overrides').value.trim() !== '') {
+      return;
     }
+    if (overridesPayload) {
+      payload.variable_overrides = overridesPayload;
+    }
+  }
+
+  if (taskType === 'code_reading') {
+    const overridesPayload = getOverridesPayload('task');
+    const overridesArray = Array.isArray(overridesPayload)
+      ? overridesPayload
+      : (overridesPayload ? [overridesPayload] : buildOverridesArray('task'));
+    payload.max_iterations = Math.max(1, overridesArray.length || 1);
+  } else if (taskType === 'code_random_complex') {
+    payload.max_iterations = $('task-max-iterations').value
+      ? parseInt($('task-max-iterations').value, 10)
+      : 3;
   }
 
   // If builder has data, prefer it over manual JSON (for code tasks)
@@ -553,6 +571,226 @@ function validateChoiceOptions(taskType, options) {
   }
 
   return null;
+}
+
+const overridesBuilders = {};
+
+function parseOverrideValue(rawValue) {
+  const trimmed = String(rawValue ?? '').trim();
+  if (trimmed === '') return '';
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false') return false;
+  if (trimmed === 'null') return null;
+  if (!Number.isNaN(Number(trimmed))) {
+    return trimmed.includes('.') ? parseFloat(trimmed) : parseInt(trimmed, 10);
+  }
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (err) {
+      return trimmed;
+    }
+  }
+  return trimmed;
+}
+
+function buildOverridesArray(prefix) {
+  const builderState = overridesBuilders[prefix];
+  if (!builderState) return [];
+  return builderState.iterations.map(iter => {
+    const obj = {};
+    iter.vars.forEach(v => {
+      const key = String(v.key ?? '').trim();
+      if (!key) return;
+      obj[key] = parseOverrideValue(v.value);
+    });
+    return obj;
+  });
+}
+
+function syncOverridesJson(prefix) {
+  const textarea = $(`${prefix}-var-overrides`);
+  if (!textarea) return;
+  const overridesArray = buildOverridesArray(prefix);
+  textarea.value = overridesArray.length ? JSON.stringify(overridesArray, null, 2) : '';
+}
+
+function getOverridesPayload(prefix) {
+  const textarea = $(`${prefix}-var-overrides`);
+  if (!textarea) return null;
+  const raw = textarea.value.trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    alert('Variable Overrides: Ungültiges JSON-Format');
+    return null;
+  }
+}
+
+function setOverridesFromJson(prefix, rawJson) {
+  let parsed = null;
+  if (!rawJson) {
+    overridesBuilders[prefix].iterations = [];
+    renderOverridesBuilder(prefix);
+    syncOverridesJson(prefix);
+    return;
+  }
+
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (err) {
+    alert('Variable Overrides: Ungültiges JSON-Format');
+    return;
+  }
+
+  const normalized = Array.isArray(parsed) ? parsed : [parsed];
+  overridesBuilders[prefix].iterations = normalized.map(item => {
+    const vars = [];
+    if (item && typeof item === 'object') {
+      Object.keys(item).forEach(key => {
+        const rawValue = item[key];
+        const displayValue = (rawValue && typeof rawValue === 'object') ? JSON.stringify(rawValue) : rawValue;
+        vars.push({ key, value: displayValue });
+      });
+    }
+    return { vars: vars.length ? vars : [{ key: '', value: '' }] };
+  });
+
+  renderOverridesBuilder(prefix);
+  syncOverridesJson(prefix);
+  updateMaxIterationsFromBuilder(prefix);
+}
+
+function renderOverridesBuilder(prefix) {
+  const builder = $(`${prefix}-var-overrides-builder`);
+  const builderState = overridesBuilders[prefix];
+  if (!builder || !builderState) return;
+
+  builder.innerHTML = builderState.iterations.map((iter, iterIdx) => {
+    const rows = iter.vars.map((v, varIdx) => `
+      <div class="override-row">
+        <input type="text" placeholder="Variable" data-iter-idx="${iterIdx}" data-var-idx="${varIdx}" data-override-field="key" value="${escapeHtml(v.key)}" />
+        <input type="text" placeholder="Wert" data-iter-idx="${iterIdx}" data-var-idx="${varIdx}" data-override-field="value" value="${escapeHtml(v.value)}" />
+        <button type="button" class="hspf-btn" data-action="remove-var" data-iter-idx="${iterIdx}" data-var-idx="${varIdx}">✕</button>
+      </div>
+    `).join('');
+
+    return `
+      <div class="override-iteration" data-iter="${iterIdx}">
+        <div class="override-iteration-header">
+          <span>Iteration ${iterIdx + 1}</span>
+          <button type="button" class="hspf-btn" data-action="remove-iteration" data-iter-idx="${iterIdx}">Entfernen</button>
+        </div>
+        <div class="override-variables">
+          ${rows}
+        </div>
+        <div style="margin-top:6px;">
+          <button type="button" class="hspf-btn" data-action="add-var" data-iter-idx="${iterIdx}">+ Variable</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function getTaskTypeValue(prefix) {
+  if (prefix === 'task') {
+    return $('new-task-type')?.value || 'code';
+  }
+  if (prefix === 'edit-task') {
+    return $('edit-task-type')?.value || 'code';
+  }
+  return $(`${prefix}-type`)?.value || 'code';
+}
+
+function updateMaxIterationsFromBuilder(prefix) {
+  const taskType = getTaskTypeValue(prefix);
+  const maxIterInput = $(`${prefix}-max-iterations`);
+  if (!maxIterInput) return;
+
+  const iterationsCount = overridesBuilders[prefix]?.iterations?.length || 0;
+  if (taskType === 'code_reading') {
+    maxIterInput.value = Math.max(1, iterationsCount || 1);
+    maxIterInput.readOnly = true;
+  } else {
+    maxIterInput.readOnly = false;
+  }
+}
+
+function initOverridesBuilder(prefix) {
+  const builder = $(`${prefix}-var-overrides-builder`);
+  const addIterationBtn = $(`${prefix}-add-iteration`);
+  const applyJsonBtn = $(`${prefix}-apply-overrides-json`);
+  const toggleJsonBtn = $(`${prefix}-toggle-overrides-json`);
+  const jsonContainer = $(`${prefix}-var-overrides-json`);
+  const jsonTextarea = $(`${prefix}-var-overrides`);
+
+  if (!builder || !addIterationBtn || !jsonTextarea) return;
+
+  overridesBuilders[prefix] = { iterations: [] };
+
+  addIterationBtn.addEventListener('click', () => {
+    overridesBuilders[prefix].iterations.push({ vars: [{ key: '', value: '' }] });
+    renderOverridesBuilder(prefix);
+    syncOverridesJson(prefix);
+    updateMaxIterationsFromBuilder(prefix);
+  });
+
+  if (applyJsonBtn) {
+    applyJsonBtn.addEventListener('click', () => {
+      setOverridesFromJson(prefix, jsonTextarea.value.trim());
+    });
+  }
+
+  if (toggleJsonBtn && jsonContainer) {
+    toggleJsonBtn.addEventListener('click', () => {
+      const show = jsonContainer.style.display === 'none';
+      jsonContainer.style.display = show ? 'block' : 'none';
+      toggleJsonBtn.textContent = show ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';
+    });
+  }
+
+  builder.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const action = target.dataset.action;
+    const iterIdx = parseInt(target.dataset.iterIdx || '-1', 10);
+    const varIdx = parseInt(target.dataset.varIdx || '-1', 10);
+
+    if (action === 'add-var' && iterIdx >= 0) {
+      overridesBuilders[prefix].iterations[iterIdx].vars.push({ key: '', value: '' });
+    }
+    if (action === 'remove-var' && iterIdx >= 0 && varIdx >= 0) {
+      overridesBuilders[prefix].iterations[iterIdx].vars.splice(varIdx, 1);
+      if (overridesBuilders[prefix].iterations[iterIdx].vars.length === 0) {
+        overridesBuilders[prefix].iterations[iterIdx].vars.push({ key: '', value: '' });
+      }
+    }
+    if (action === 'remove-iteration' && iterIdx >= 0) {
+      overridesBuilders[prefix].iterations.splice(iterIdx, 1);
+    }
+
+    renderOverridesBuilder(prefix);
+    syncOverridesJson(prefix);
+    updateMaxIterationsFromBuilder(prefix);
+  });
+
+  builder.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const field = target.dataset.overrideField;
+    const iterIdx = parseInt(target.dataset.iterIdx || '-1', 10);
+    const varIdx = parseInt(target.dataset.varIdx || '-1', 10);
+    if (!field || iterIdx < 0 || varIdx < 0) return;
+
+    overridesBuilders[prefix].iterations[iterIdx].vars[varIdx][field] = target.value;
+    syncOverridesJson(prefix);
+  });
+
+  overridesBuilders[prefix].iterations.push({ vars: [{ key: '', value: '' }] });
+  renderOverridesBuilder(prefix);
+  syncOverridesJson(prefix);
+  updateMaxIterationsFromBuilder(prefix);
 }
 
 function setChoiceValidationError(elementId, message) {
@@ -671,6 +909,10 @@ function openEditTaskModal(taskId) {
   $('edit-task-title').value = task.title || '';
   $('edit-task-position').value = task.position || '';
   if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
+  if ($('edit-task-max-iterations')) {
+    const iterValue = task.max_iterations ? task.max_iterations : 3;
+    $('edit-task-max-iterations').value = iterValue;
+  }
   if ($('edit-task-show-solution')) {
     $('edit-task-show-solution').checked =
       task.show_solution === 1 ||
@@ -722,7 +964,13 @@ function openEditTaskModal(taskId) {
   }
   if ($('edit-task-min-keywords')) $('edit-task-min-keywords').value = task.min_keywords_required || '';
   if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
-  if ($('edit-task-var-overrides')) $('edit-task-var-overrides').value = task.variable_overrides || '';
+  if ($('edit-task-var-overrides')) {
+    const overridesValue = task.variable_overrides
+      ? (typeof task.variable_overrides === 'string' ? task.variable_overrides : JSON.stringify(task.variable_overrides))
+      : '';
+    $('edit-task-var-overrides').value = overridesValue;
+    setOverridesFromJson('edit-task', overridesValue.trim());
+  }
   
   // Image
   if ($('edit-task-image-url')) {
@@ -774,6 +1022,7 @@ function openEditTaskModal(taskId) {
   if (window.TaskTypeManager && editForm) {
     window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
   }
+  updateMaxIterationsFromBuilder('edit-task');
 }
 
 function closeEditTaskModal() {
@@ -829,6 +1078,26 @@ async function handleEditTaskSubmit(e) {
   // For free_text, use keywords field as correct_answer
   if (taskType === 'free_text') {
     payload.correct_answer = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
+  }
+
+  if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+    const overridesPayload = getOverridesPayload('edit-task');
+    if (overridesPayload === null && $('edit-task-var-overrides')?.value.trim() !== '') {
+      return;
+    }
+    payload.variable_overrides = overridesPayload || null;
+  }
+
+  if (taskType === 'code_reading') {
+    const overridesPayload = getOverridesPayload('edit-task');
+    const overridesArray = Array.isArray(overridesPayload)
+      ? overridesPayload
+      : (overridesPayload ? [overridesPayload] : buildOverridesArray('edit-task'));
+    payload.max_iterations = Math.max(1, overridesArray.length || 1);
+  } else if (taskType === 'code_random_complex') {
+    payload.max_iterations = $('edit-task-max-iterations')?.value
+      ? parseInt($('edit-task-max-iterations').value, 10)
+      : 3;
   }
   
   // Handle options for Single/Multiple Choice
@@ -2238,6 +2507,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.editOptionsBuilder = new OptionsBuilder('edit-task-options-container');
   }
 
+  // Initialize variable overrides builders
+  initOverridesBuilder('task');
+  initOverridesBuilder('edit-task');
+
   // Clear options validation errors on change
   window.onOptionsBuilderChange = (taskType, options, containerId) => {
     if (containerId === 'task-options-container') {
@@ -2331,6 +2604,13 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update legacy problem_type for compatibility
       $('task-type').value = taskType === 'code' ? 'code_completion' : taskType;
+      if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+        const attemptsInput = $('task-max-attempts');
+        if (attemptsInput && (!attemptsInput.value || attemptsInput.value === '1')) {
+          attemptsInput.value = '5';
+        }
+      }
+      updateMaxIterationsFromBuilder('task');
     });
   }
   
@@ -2344,6 +2624,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.editOptionsBuilder) {
         window.editOptionsBuilder.setTaskType(taskType);
       }
+      updateMaxIterationsFromBuilder('edit-task');
     });
   }
 

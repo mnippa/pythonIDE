@@ -26,11 +26,13 @@ $columnExists = function (mysqli $conn, string $table, string $column): bool {
 
 $hasRunCount = $columnExists($conn, 'user_tasks', 'run_count');
 $runSelect = $hasRunCount ? ', run_count' : '';
+$hasCurrentIteration = $columnExists($conn, 'user_tasks', 'current_iteration');
+$iterationSelect = $hasCurrentIteration ? ', current_iteration' : '';
 
 if ($taskId) {
     // Get single task progress
     $stmt = $conn->prepare(
-        'SELECT id, user_id, task_id, status, attempts' . $runSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
+        'SELECT id, user_id, task_id, status, attempts' . $runSelect . $iterationSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
          FROM user_tasks 
          WHERE user_id = ? AND task_id = ?'
     );
@@ -47,6 +49,9 @@ if ($taskId) {
         if ($hasRunCount) {
             $task['run_count'] = (int)$task['run_count'];
         }
+        if ($hasCurrentIteration) {
+            $task['current_iteration'] = (int)$task['current_iteration'];
+        }
         $task['hints_revealed'] = $task['hints_revealed'] ? json_decode($task['hints_revealed'], true) : [];
         jsonResponse(['ok' => true, 'task' => $task]);
     } else {
@@ -55,7 +60,7 @@ if ($taskId) {
 } elseif ($assignmentId) {
     // Get all tasks progress for assignment
     $stmt = $conn->prepare(
-        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
+        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . $iterationSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
          FROM user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
          WHERE ut.user_id = ? AND t.assignment_id = ?
@@ -73,6 +78,9 @@ if ($taskId) {
         $row['attempts'] = (int)$row['attempts'];
         if ($hasRunCount) {
             $row['run_count'] = (int)$row['run_count'];
+        }
+        if ($hasCurrentIteration) {
+            $row['current_iteration'] = (int)$row['current_iteration'];
         }
         $row['hints_revealed'] = $row['hints_revealed'] ? json_decode($row['hints_revealed'], true) : [];
         $tasks[] = $row;

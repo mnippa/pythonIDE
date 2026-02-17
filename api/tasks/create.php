@@ -26,6 +26,7 @@ $title = trim($input['title'] ?? '');
 $description = trim($input['description'] ?? '');
 $position = isset($input['position']) ? (int)$input['position'] : null;
 $maxAttempts = isset($input['max_attempts']) ? (int)$input['max_attempts'] : 1;
+$maxIterationsInput = isset($input['max_iterations']) ? (int)$input['max_iterations'] : null;  // API param is max_iterations, but DB column is iterations_count
 $showSolution = isset($input['show_solution']) ? (int)$input['show_solution'] : 1;
 $showGeneratorCode = isset($input['show_generator_code']) ? (int)$input['show_generator_code'] : 0;
 $minKeywordsRequired = isset($input['min_keywords_required']) ? (int)$input['min_keywords_required'] : null;
@@ -125,12 +126,32 @@ if ($maxAttempts < 1) {
 
 // Encode JSON fields
 $variableOverridesJson = null;
+$variableOverridesParsed = null;
 if ($variableOverrides) {
     if (is_string($variableOverrides)) {
         $variableOverridesJson = $variableOverrides;
+        $decodedOverrides = json_decode($variableOverrides, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            $variableOverridesParsed = $decodedOverrides;
+        }
     } else {
+        $variableOverridesParsed = $variableOverrides;
         $variableOverridesJson = json_encode($variableOverrides);
     }
+}
+
+$maxIterations = ($maxIterationsInput && $maxIterationsInput > 0) ? $maxIterationsInput : 1;
+if ($taskType === 'code_reading') {
+    $maxIterations = 1;
+    if (is_array($variableOverridesParsed)) {
+        $maxIterations = max(1, count($variableOverridesParsed));
+    }
+}
+if ($taskType === 'code_random_complex' && $maxIterations < 1) {
+    $maxIterations = 3;
+}
+if ($taskType === 'code_random_complex' && !$maxIterationsInput) {
+    $maxIterations = 3;
 }
 
 // Ensure all string values are strings (not null or array)
@@ -142,8 +163,8 @@ $testCases = is_string($testCases) ? $testCases : '';
 $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -156,6 +177,7 @@ $types = 'i';      // assignment_id
 $types .= 'ss';    // title, description
 $types .= 'i';     // position
 $types .= 'i';     // max_attempts
+$types .= 'i';     // iterations_count
 $types .= 'i';     // show_solution
 $types .= 'i';     // show_generator_code
 $types .= 'i';     // min_keywords_required
@@ -183,6 +205,7 @@ $bindResult = @$stmt->bind_param(
     $description,
     $position,
     $maxAttempts,
+    $maxIterations,
     $showSolution,
     $showGeneratorCode,
     $minKeywordsRequired,

@@ -245,6 +245,8 @@ window.QuizRenderer = {
     const disableSubmit = attemptsInfo.blocked;
     const isCompleted = attemptsInfo.blocked || attemptsInfo.isPassed;
     const isPassed = attemptsInfo.isPassed;
+    const iterationInfo = this.getIterationInfo(task);
+    const currentIteration = iterationInfo ? iterationInfo.current : 1;
     
     // Get previous answer if task was already attempted
     const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
@@ -255,21 +257,27 @@ window.QuizRenderer = {
     let varValues = {};
     if (task.variable_overrides) {
       try {
-        const overrides = typeof task.variable_overrides === 'string' 
-          ? JSON.parse(task.variable_overrides) 
+        const overrides = typeof task.variable_overrides === 'string'
+          ? JSON.parse(task.variable_overrides)
           : task.variable_overrides;
-        
-        // Handle array of objects (e.g., [{"start":1,"end":5}, {...}])
+
+        // Array of fixed sets (preferred format)
         if (Array.isArray(overrides) && overrides.length > 0) {
-          const selectedSet = overrides[Math.floor(Math.random() * overrides.length)];
-          varValues = selectedSet;
-        } 
-        // Handle object with array values (e.g., {"x": [1,2,3], "y": [4,5,6]})
-        else if (typeof overrides === 'object' && !Array.isArray(overrides)) {
+          const idx = Math.max(0, currentIteration - 1) % overrides.length;
+          const selectedSet = overrides[idx];
+          if (selectedSet && typeof selectedSet === 'object') {
+            varValues = selectedSet;
+          }
+        }
+        // Legacy object with arrays: pick deterministic value per iteration
+        else if (typeof overrides === 'object' && overrides !== null) {
           for (const varName in overrides) {
             const possibleValues = overrides[varName];
             if (Array.isArray(possibleValues) && possibleValues.length > 0) {
-              varValues[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+              const idx = Math.max(0, currentIteration - 1) % possibleValues.length;
+              varValues[varName] = possibleValues[idx];
+            } else {
+              varValues[varName] = possibleValues;
             }
           }
         }
@@ -280,6 +288,13 @@ window.QuizRenderer = {
     
     // Store var values for later verification
     window.currentCodeReadingVars = varValues;
+    if (window.assignmentState && task) {
+      if (!window.assignmentState.taskUserAnswers[task.id]) {
+        window.assignmentState.taskUserAnswers[task.id] = {};
+      }
+      window.assignmentState.taskUserAnswers[task.id].variable_values = varValues;
+      window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+    }
     
     // Build code display with template string replacement AND variable highlighting
     let codeDisplay = task.code_template || '';
@@ -302,6 +317,7 @@ window.QuizRenderer = {
     
     container.innerHTML = `
       <div class="quiz-container">
+        ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
         <div class="code-reading-vars">
           <strong>Variablenwerte:</strong>
           <ul>
@@ -344,12 +360,16 @@ window.QuizRenderer = {
     const userTextAnswer = userAnswer?.text_answer || '';
     const isCompleted = attemptsInfo.blocked || attemptsInfo.isPassed;
     const isPassed = attemptsInfo.isPassed;
+    const iterationInfo = this.getIterationInfo(task);
+    const currentIteration = iterationInfo ? iterationInfo.current : 1;
     const values = userAnswer?.variable_values || {};
-    const hasValues = values && Object.keys(values).length > 0;
+    const valuesIteration = userAnswer?.iteration || currentIteration;
+    const hasValues = values && Object.keys(values).length > 0 && valuesIteration === currentIteration;
 
     if (!hasValues) {
       container.innerHTML = `
         <div class="quiz-container">
+          ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
           <div class="quiz-question">
             ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
             ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
@@ -415,6 +435,7 @@ window.QuizRenderer = {
 
     container.innerHTML = `
       <div class="quiz-container">
+        ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
         <div class="quiz-question">
           ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
@@ -593,7 +614,9 @@ window.QuizRenderer = {
         const isPassed = data.is_correct;
         let attemptsInfo = '';
         if (typeof data.attempts === 'number' && typeof data.max_attempts === 'number') {
-          attemptsInfo = `<br/>Versuch: ${data.attempts}/${data.max_attempts}`;
+          const isIterative = ['code_reading', 'code_random_complex'].includes(window.assignmentState?.currentTask?.task_type);
+          const attemptsLabel = isIterative ? 'Fehlversuch' : 'Versuch';
+          attemptsInfo = `<br/>${attemptsLabel}: ${data.attempts}/${data.max_attempts}`;
         }
 
         feedbackEl.innerHTML = `
@@ -614,6 +637,10 @@ window.QuizRenderer = {
         if (window.assignmentState && taskId) {
           window.assignmentState.taskAttempts[taskId] = data.attempts;
           window.assignmentState.taskStatuses[taskId] = data.status;
+          const currentTaskType = window.assignmentState?.currentTask?.task_type;
+          if (typeof data.current_iteration === 'number') {
+            window.assignmentState.taskIterations[taskId] = data.current_iteration;
+          }
           
           // Update options with is_correct from response (for choice tasks)
           if (data.options) {
@@ -635,6 +662,9 @@ window.QuizRenderer = {
           if (!window.assignmentState.taskUserAnswers[taskId]) {
             window.assignmentState.taskUserAnswers[taskId] = {};
           }
+          if (typeof data.current_iteration === 'number') {
+            window.assignmentState.taskUserAnswers[taskId].iteration = data.current_iteration;
+          }
           
           // Save the submitted answer
           if (answer.selected_options) {
@@ -645,6 +675,13 @@ window.QuizRenderer = {
           }
           if (answer.variable_values) {
             window.assignmentState.taskUserAnswers[taskId].variable_values = answer.variable_values;
+          }
+          if (data.is_correct && data.status === 'in_progress' && ['code_reading', 'code_random_complex'].includes(currentTaskType)) {
+            window.assignmentState.taskUserAnswers[taskId].text_answer = '';
+          }
+          if (data.reset_values) {
+            window.assignmentState.taskUserAnswers[taskId].variable_values = {};
+            window.assignmentState.taskUserAnswers[taskId].text_answer = '';
           }
         }
         
@@ -677,12 +714,19 @@ window.QuizRenderer = {
         // Re-render quiz to show solution or disable form after submission
         // For code_random_complex, keep feedback but re-render on success to disable form
         const taskType = window.assignmentState?.currentTask?.task_type;
-        if (data.status === 'passed' || (data.status === 'failed' && data.attempts >= data.max_attempts)) {
+        if (
+          data.status === 'passed' ||
+          (data.status === 'failed' && data.attempts >= data.max_attempts) ||
+          data.reset_values ||
+          (data.is_correct && data.status === 'in_progress' && ['code_reading', 'code_random_complex'].includes(taskType))
+        ) {
           const task = window.assignmentState?.currentTask;
           const quizContainer = document.getElementById('quiz-container');
           if (task && quizContainer) {
             console.log('[QUIZ] Re-rendering quiz after submission');
-            setTimeout(() => this.render(task, quizContainer), 100);
+            // Show feedback for 2 seconds before re-rendering to allow user to see result
+            const delay = (data.is_correct && data.status === 'in_progress') ? 2000 : 1500;
+            setTimeout(() => this.render(task, quizContainer), delay);
           }
         }
         
@@ -728,6 +772,57 @@ window.QuizRenderer = {
     return { blocked, isFailed, isPassed };
   },
 
+  getCurrentIteration(task) {
+    const iter = window.assignmentState && task
+      ? window.assignmentState.taskIterations[task.id]
+      : null;
+    return iter && iter > 0 ? iter : 1;
+  },
+
+  getMaxIterations(task) {
+    if (!task) return 1;
+    const maxFromTask = task.max_iterations;
+    if (typeof maxFromTask === 'number' && maxFromTask > 0) {
+      return maxFromTask;
+    }
+    if (task.variable_overrides) {
+      try {
+        const overrides = typeof task.variable_overrides === 'string'
+          ? JSON.parse(task.variable_overrides)
+          : task.variable_overrides;
+        if (Array.isArray(overrides) && overrides.length > 0) {
+          return overrides.length;
+        }
+      } catch (err) {
+        console.warn('Failed to parse variable_overrides for max_iterations:', err);
+      }
+    }
+    return 1;
+  },
+
+  getIterationInfo(task) {
+    const isIterative = task && (task.task_type === 'code_reading' || task.task_type === 'code_random_complex');
+    if (!isIterative) return null;
+    const current = this.getCurrentIteration(task);
+    const max = this.getMaxIterations(task);
+    return { current, max };
+  },
+
+  getIterationHtml(iterationInfo) {
+    if (!iterationInfo) return '';
+    const percentage = Math.round((iterationInfo.current / iterationInfo.max) * 100);
+    return `
+      <div class="quiz-iteration-bar">
+        <div class="iteration-header">
+          📊 Iteration ${iterationInfo.current} / ${iterationInfo.max}
+        </div>
+        <div class="iteration-progress-bar">
+          <div class="iteration-progress-fill" style="width: ${percentage}%"></div>
+        </div>
+      </div>
+    `;
+  },
+
   escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -744,8 +839,11 @@ window.QuizRenderer = {
   },
 
   async ensureGeneratedValues(task) {
-    const existing = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
-    if (existing && Object.keys(existing).length > 0) {
+    const currentIteration = this.getCurrentIteration(task);
+    const existingAnswer = window.assignmentState?.taskUserAnswers?.[task.id] || {};
+    const existing = existingAnswer.variable_values || {};
+    const existingIteration = existingAnswer.iteration || currentIteration;
+    if (existing && Object.keys(existing).length > 0 && existingIteration === currentIteration) {
       return existing;
     }
 
@@ -768,10 +866,12 @@ window.QuizRenderer = {
           window.assignmentState.taskUserAnswers[task.id] = {};
         }
         window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+        window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
 
         const payload = {
           task_id: task.id,
           variable_values: values,
+          current_iteration: currentIteration,
           started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
         };
         console.log('[CODE_RANDOM] Saving generated values (from overrides) - Payload:', payload);
@@ -821,10 +921,12 @@ json.dumps(values)
       window.assignmentState.taskUserAnswers[task.id] = {};
     }
     window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+    window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
 
     const payload = {
       task_id: task.id,
       variable_values: values,
+      current_iteration: currentIteration,
       started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
     console.log('[CODE_RANDOM] Saving generated values - Payload:', payload);

@@ -47,6 +47,7 @@ $stmt = $conn->prepare(
      INNER JOIN tasks t ON t.id = ut.task_id
      SET ut.status = \'unbearbeitet\',
          ut.attempts = 0,
+         ut.current_iteration = 1,
          ut.selected_options = NULL,
          ut.text_answer = NULL,
          ut.variable_values = NULL,

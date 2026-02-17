@@ -56,7 +56,7 @@ if (!$taskId) {
 }
 
 // Get task details
-$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, min_keywords_required FROM tasks WHERE id = ?');
+$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, iterations_count, min_keywords_required, variable_overrides FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 $stmt->execute();
 $task = $stmt->get_result()->fetch_assoc();
@@ -69,13 +69,26 @@ if (!$task) {
 
 $taskType = $task['task_type'];
 $maxAttempts = isset($task['max_attempts']) && (int)$task['max_attempts'] > 0 ? (int)$task['max_attempts'] : 1;
+$isIterative = in_array($taskType, ['code_reading', 'code_random_complex'], true);
+
+$maxIterations = isset($task['iterations_count']) && (int)$task['iterations_count'] > 0 ? (int)$task['iterations_count'] : 3;
+if ($taskType === 'code_reading') {
+    $maxIterations = 1;
+    if (!empty($task['variable_overrides'])) {
+        $decodedOverrides = json_decode($task['variable_overrides'], true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decodedOverrides)) {
+            $maxIterations = max(1, count($decodedOverrides));
+        }
+    }
+}
 
 // Current user task state (attempts/status)
-$stmt = $conn->prepare('SELECT status, attempts FROM user_tasks WHERE user_id = ? AND task_id = ?');
+$stmt = $conn->prepare('SELECT status, attempts, current_iteration FROM user_tasks WHERE user_id = ? AND task_id = ?');
 $stmt->bind_param('ii', $userId, $taskId);
 $stmt->execute();
 $userTask = $stmt->get_result()->fetch_assoc();
 $currentAttempts = $userTask ? (int)$userTask['attempts'] : 0;
+$currentIteration = $userTask && isset($userTask['current_iteration']) ? (int)$userTask['current_iteration'] : 1;
 $currentStatus = $userTask ? $userTask['status'] : null;
 
 if ($currentStatus === 'passed') {
@@ -85,7 +98,10 @@ if ($currentStatus === 'passed') {
         'status' => 'passed',
         'attempts' => $currentAttempts,
         'max_attempts' => $maxAttempts,
-        'message' => 'Bereits bestanden'
+        'message' => 'Bereits bestanden',
+        'current_iteration' => $isIterative ? $currentIteration : null,
+        'max_iterations' => $isIterative ? $maxIterations : null,
+        'reset_values' => false
     ]);
     exit;
 }
@@ -225,11 +241,29 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
     exit;
 }
 
-// Determine status based on attempts rules
-$newAttempts = $currentAttempts + 1;
+// Determine status based on attempts and iteration rules
+$newAttempts = $currentAttempts + (($isIterative && $isCorrect) ? 0 : 1);
 $status = $isCorrect ? 'passed' : 'failed';
+$nextIteration = $currentIteration;
+$resetValues = false;
 
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'])) {
+if ($isIterative) {
+    if ($isCorrect) {
+        if ($currentIteration >= $maxIterations) {
+            $status = 'passed';
+            $nextIteration = $maxIterations;
+        } else {
+            $status = 'in-progress';
+            $nextIteration = $currentIteration + 1;
+            $resetValues = in_array($taskType, ['code_reading', 'code_random_complex']);
+            $message = $message ?: 'Iteration abgeschlossen. Neue Werte werden geladen.';
+        }
+    } elseif ($newAttempts >= $maxAttempts) {
+        $status = 'failed';
+    } else {
+        $status = 'in-progress';
+    }
+} elseif (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text'])) {
     if ($isCorrect) {
         $status = 'passed';
     } elseif ($newAttempts >= $maxAttempts) {
@@ -241,29 +275,34 @@ if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_
 
 // Create or update user_tasks entry
 $stmt = $conn->prepare(
-        'INSERT INTO user_tasks (user_id, task_id, status, selected_options, text_answer, variable_values, attempts)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        'INSERT INTO user_tasks (user_id, task_id, status, selected_options, text_answer, variable_values, attempts, current_iteration)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE 
              status = VALUES(status),
              selected_options = VALUES(selected_options),
              text_answer = VALUES(text_answer),
              variable_values = VALUES(variable_values),
-             attempts = VALUES(attempts)'
+             attempts = VALUES(attempts),
+             current_iteration = VALUES(current_iteration)'
 );
 
 $selectedOptionsJson = isset($selectedOptionsJson) ? $selectedOptionsJson : json_encode($input['selected_options'] ?? []);
 $textAnswerValue = isset($input['text_answer']) ? $input['text_answer'] : null;
 $variableValuesJson = !empty($variableValues) ? json_encode($variableValues) : null;
+if ($resetValues) {
+    $variableValuesJson = null;
+}
 
 $stmt->bind_param(
-    'iissssi',
+    'iissssii',
     $userId,
     $taskId,
     $status,
     $selectedOptionsJson,
     $textAnswerValue,
     $variableValuesJson,
-    $newAttempts
+    $newAttempts,
+    $nextIteration
 );
 
 if ($stmt->execute()) {
@@ -273,7 +312,10 @@ if ($stmt->execute()) {
         'status' => $status,
         'attempts' => $newAttempts,
         'max_attempts' => $maxAttempts,
-        'message' => $message
+        'message' => $message,
+        'current_iteration' => $isIterative ? $nextIteration : null,
+        'max_iterations' => $isIterative ? $maxIterations : null,
+        'reset_values' => $resetValues
     ];
     
     // For choice tasks, include options with is_correct after submission

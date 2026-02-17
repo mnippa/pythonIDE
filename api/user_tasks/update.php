@@ -120,6 +120,17 @@ if (isset($input['attempts'])) {
     $types .= 'i';
 }
 
+// Current iteration (for iterative quiz tasks)
+if (isset($input['current_iteration'])) {
+    $currentIteration = (int)$input['current_iteration'];
+    if ($currentIteration < 1) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid current_iteration'], 400);
+    }
+    $updates[] = 'current_iteration = ?';
+    $params[] = $currentIteration;
+    $types .= 'i';
+}
+
 // Runs
 if (isset($input['run_count'])) {
     $runCount = (int)$input['run_count'];
@@ -190,12 +201,13 @@ if ($existing) {
     $hintsRevealed = isset($input['hints_revealed']) ? json_encode($input['hints_revealed']) : '[]';
     $variableValues = array_key_exists('variable_values', $input) ? (json_encode($input['variable_values']) ?: null) : null;
     $startedAt = isset($input['started_at']) ? $input['started_at'] : date('Y-m-d H:i:s');
+    $currentIteration = isset($input['current_iteration']) ? (int)$input['current_iteration'] : 1;
     
     $stmt = $conn->prepare(
-        'INSERT INTO user_tasks (user_id, task_id, status, attempts, run_count, current_code, hints_revealed, variable_values, started_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO user_tasks (user_id, task_id, status, attempts, current_iteration, run_count, current_code, hints_revealed, variable_values, started_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    $stmt->bind_param('iisiissss', $userId, $taskId, $status, $attempts, $runCount, $currentCode, $hintsRevealed, $variableValues, $startedAt);
+    $stmt->bind_param('iisiiissss', $userId, $taskId, $status, $attempts, $currentIteration, $runCount, $currentCode, $hintsRevealed, $variableValues, $startedAt);
     
     if ($stmt->execute()) {
         $markAssignmentInProgress();
