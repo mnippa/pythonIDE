@@ -414,6 +414,56 @@ function renderTaskNavigation() {
   });
 }
 
+// Optimized: Load only the specific assignment (for editor mode)
+async function loadSingleAssignment(assignmentId) {
+  try {
+    const [assignmentRes, tasksRes] = await Promise.all([
+      requestJson(`../api/assignments/get.php?id=${assignmentId}`),
+      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}`)
+    ]);
+    
+    assignmentState.assignmentDetails[assignmentId] = assignmentRes.assignment;
+    assignmentState.tasksByAssignment[assignmentId] = tasksRes.tasks || [];
+    
+    // Load user_tasks progress for this assignment
+    try {
+      const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}`);
+      const userTasks = userTasksRes.tasks || [];
+      
+      // Populate status and attempts from user_tasks
+      userTasks.forEach(ut => {
+        assignmentState.taskStatuses[ut.task_id] = ut.status;
+        assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+        if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+          assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+        }
+        // Store user answers
+        assignmentState.taskUserAnswers[ut.task_id] = {
+          selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+          text_answer: ut.text_answer || '',
+          variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+        };
+        if (ut.run_count !== undefined && ut.run_count !== null) {
+          assignmentState.taskRuns[ut.task_id] = ut.run_count;
+        }
+        if (ut.completed_at) {
+          assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+        }
+        if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+          assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+        }
+      });
+    } catch (err) {
+      console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
+    }
+    
+    return true;
+  } catch (err) {
+    console.error(`Failed to load assignment ${assignmentId}:`, err);
+    return false;
+  }
+}
+
 async function loadAssignments() {
   const containerEl = $('assignment-list-container');
   if (!containerEl) return;
@@ -3013,14 +3063,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto-load assignments if on assignments.php or assignment_editor.php
   if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor.php')) {
     console.log('On assignments page - loading assignments');
-    // Load assignments (this will show the list or load editor)
-    loadAssignments().then(() => {
-      // If in editor mode with assignment ID, load it directly
-      if (window.EDITOR_MODE && window.ASSIGNMENT_ID) {
-        console.log('Editor mode detected - loading assignment', window.ASSIGNMENT_ID);
+    
+    // If in editor mode with assignment ID, load only that assignment (optimized)
+    if (window.EDITOR_MODE && window.ASSIGNMENT_ID) {
+      console.log('Editor mode detected - loading only assignment', window.ASSIGNMENT_ID);
+      loadSingleAssignment(window.ASSIGNMENT_ID).then(() => {
         openAssignmentEditor(window.ASSIGNMENT_ID);
-      }
-    });
+      });
+    } else {
+      // Load all assignments (for list view)
+      loadAssignments().then(() => {
+        if (window.EDITOR_MODE && window.ASSIGNMENT_ID) {
+          console.log('Editor mode detected - loading assignment', window.ASSIGNMENT_ID);
+          openAssignmentEditor(window.ASSIGNMENT_ID);
+        }
+      });
+    }
   }
 
   // Expose functions to window for external access (e.g., from quiz-renderer.js)
