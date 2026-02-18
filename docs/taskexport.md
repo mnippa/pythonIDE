@@ -12,7 +12,6 @@ This document defines the JSON format for importing a single task into an existi
 - `title` (string)
 
 ## Optional Fields
-- `position` (number) - If omitted, it will be appended at the end.
 - `problem_type` (string) - Examples: `code_completion`, `code_fix`, `multiple_choice`, `essay`.
 - `description` (string)
 - `code_template` (string)
@@ -31,7 +30,6 @@ This document defines the JSON format for importing a single task into an existi
 ```json
 {
   "version": "1.0",
-  "position": 1,
   "title": "Primzahlen bis 100",
   "problem_type": "code_completion",
   "description": "Schreiben Sie ein Programm, das alle Primzahlen von 2 bis 100 findet und ausgibt.",

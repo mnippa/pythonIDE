@@ -920,18 +920,29 @@ window.QuizRenderer = {
 
     // Check if variable_overrides exist (alternative to generator code)
     if (task.variable_overrides) {
-      const overrides = typeof task.variable_overrides === 'string' 
-        ? JSON.parse(task.variable_overrides) 
+      const overrides = typeof task.variable_overrides === 'string'
+        ? JSON.parse(task.variable_overrides)
         : task.variable_overrides;
-      
-      const values = {};
-      for (const varName in overrides) {
-        const possibleValues = overrides[varName];
-        if (Array.isArray(possibleValues) && possibleValues.length > 0) {
-          values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+
+      let values = {};
+
+      if (Array.isArray(overrides) && overrides.length > 0) {
+        const idx = Math.max(0, currentIteration - 1) % overrides.length;
+        const selectedSet = overrides[idx];
+        if (selectedSet && typeof selectedSet === 'object' && !Array.isArray(selectedSet)) {
+          values = selectedSet;
+        }
+      } else if (overrides && typeof overrides === 'object') {
+        for (const varName in overrides) {
+          const possibleValues = overrides[varName];
+          if (Array.isArray(possibleValues) && possibleValues.length > 0) {
+            values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+          } else if (possibleValues !== undefined) {
+            values[varName] = possibleValues;
+          }
         }
       }
-      
+
       if (Object.keys(values).length > 0) {
         if (!window.assignmentState.taskUserAnswers[task.id]) {
           window.assignmentState.taskUserAnswers[task.id] = {};
@@ -986,6 +997,9 @@ json.dumps(values)
 
     if (!values || typeof values !== 'object' || Array.isArray(values)) {
       throw new Error('Generator muss ein dict liefern');
+    }
+    if (Object.keys(values).length === 0) {
+      throw new Error('Generator liefert leeres values-Dict');
     }
 
     if (!window.assignmentState.taskUserAnswers[task.id]) {

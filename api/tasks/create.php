@@ -41,6 +41,12 @@ $validationMode = $input['validation_mode'] ?? null;
 $testCases = $input['test_cases'] ?? null;
 $solutionCode = $input['solution_code'] ?? null;
 
+// Debug logging for test_cases
+error_log('=== TEST CASES DEBUG ===');
+error_log('test_cases received type: ' . gettype($testCases));
+error_log('test_cases value: ' . print_r($testCases, true));
+error_log('=======================');
+
 // New fields for quiz-style tasks
 $taskType = $input['task_type'] ?? 'code';
 $questionText = trim($input['question_text'] ?? '');

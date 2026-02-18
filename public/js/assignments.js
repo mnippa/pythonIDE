@@ -753,12 +753,23 @@ async function generateRandomComplexValues(task) {
     const overrides = typeof task.variable_overrides === 'string' 
       ? JSON.parse(task.variable_overrides) 
       : task.variable_overrides;
-    
-    const values = {};
-    for (const varName in overrides) {
-      const possibleValues = overrides[varName];
-      if (Array.isArray(possibleValues) && possibleValues.length > 0) {
-        values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+
+    let values = {};
+
+    if (Array.isArray(overrides) && overrides.length > 0) {
+      const idx = Math.floor(Math.random() * overrides.length);
+      const selectedSet = overrides[idx];
+      if (selectedSet && typeof selectedSet === 'object' && !Array.isArray(selectedSet)) {
+        values = selectedSet;
+      }
+    } else if (overrides && typeof overrides === 'object') {
+      for (const varName in overrides) {
+        const possibleValues = overrides[varName];
+        if (Array.isArray(possibleValues) && possibleValues.length > 0) {
+          values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+        } else if (possibleValues !== undefined) {
+          values[varName] = possibleValues;
+        }
       }
     }
     

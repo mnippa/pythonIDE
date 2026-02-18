@@ -193,18 +193,18 @@ VALUES (1, 'Schleife', 'code_reading',
 ```sql
 task_type = 'code_random_complex'
 question_text = 'Aufgabenstellung...'
-code_template = 'random.randint(0, 255)'             -- ✓ ZUFALLSFUNKTION (EMPFOHLEN)
-solution_code = 'Algorithmus mit Platzhaltern'       -- MUSS {placeholder} enthalten!
-correct_answer = 'result'                            -- Var-Name für Ergebnis
+code_template = 'Generator-Code, der values-Dict fuellt'   -- ✓ ZUFALLSFUNKTION (EMPFOHLEN)
+solution_code = 'Berechnung mit values[...]'               -- Ergebnis in result
+correct_answer = 'result'                                  -- Var-Name fuer Ergebnis
 description = 'Lernmaterial'
-variable_overrides = NULL                            -- Optional (nur für feste Arrays)
+variable_overrides = NULL                                  -- Optional (nur fuer feste Arrays)
 validation_mode = 'strict'
 max_attempts = 5
 ```
 
 ### ✅ EMPFOHLENER Ansatz: Zufallsfunktion in code_template
 
-Verwende **code_template** mit einer Zufallsfunktion!
+Verwende **code_template** mit einer Zufallsfunktion und schreibe die Werte in ein `values`-Dict.
 
 **Vorteile:**
 - ✅ Echte Zufallswerte bei jedem Laden
@@ -213,13 +213,28 @@ Verwende **code_template** mit einer Zufallsfunktion!
 - ✅ Natürliches Python (random.randint, random.choice, etc.)
 
 ```sql
-code_template = 'random.randint(0, 255)'
-solution_code = 'def binary_to_decimal(b):\n    return int(b, 2)\nbinary = format({num}, "08b")\nresult = binary_to_decimal(binary)'
+code_template = 'import random\nnum = random.randint(0, 255)\nvalues = {"num": num}'
+solution_code = 'binary = format(values["num"], "08b")\nresult = int(binary, 2)'
 correct_answer = 'result'
 variable_overrides = NULL
 ```
 
-### Alternative: Feste Arrays (wie code_reading)
+### Generator-Workflow (kurz)
+
+1. `code_template` fuehrt Python aus und setzt **values** (dict).
+2. UI zeigt Werte aus **values** im Quiz an.
+3. `solution_code` wird mit **values** evaluiert und `result` wird mit der Eingabe verglichen.
+
+### Unterstuetzte Datentypen fuer `values`
+
+Alle **JSON-serialisierbaren** Typen sind erlaubt:
+- `string`, `number`, `boolean`
+- `array` (Liste)
+- `object` (dict)
+
+Hinweis: `values` muss ein **dict** sein. Arrays oder Strings als Root sind nicht erlaubt.
+
+### Alternative: Feste Wertepaare (wie code_reading)
 
 Falls du **vordefinierte Werte** brauchst, verwende `variable_overrides` (funktioniert wie bei code_reading).
 
@@ -231,6 +246,17 @@ Falls du **vordefinierte Werte** brauchst, verwende `variable_overrides` (funkti
 variable_overrides = '{"binary":["1010","1101","10011"]}'
 code_template = NULL
 ```
+
+**Fixe Kombinationen (Paare) pro Iteration:**
+
+```json
+[
+    {"A": true, "B": false, "C": true},
+    {"A": false, "B": true, "C": false}
+]
+```
+
+Das System nutzt die Werte nach Iteration (1, 2, 3, ...). Bei mehr Iterationen als Sets wird zyklisch wiederholt.
 
 ### SQL-Beispiel (mit Zufallsfunktion)
 
@@ -279,19 +305,17 @@ solution_code = 'binary = "{binary}"\nresult = int(binary, 2)'
 
 -- ❌ FALSCH: Keine Quotes um Placeholder
 solution_code = 'binary = {binary}\nresult = int(binary, 2)'
-```
-
 ---
 
 ## Variable Overrides Vergleich
 
-| Feature | variable_overrides | code_template (legacy) |
-|---------|-------------------|----------------------|
-| Kontrolle | Hoch (vordefiniert) | Niedrig (zufällig) |
+| Feature | variable_overrides | code_template (Zufallsfunktion) |
+|---------|-------------------|--------------------------------|
+| Kontrolle | Hoch (vordefiniert) | Niedrig (zufaellig) |
 | Performance | Schnell | Langsam |
 | Vorhersehbarkeit | Hoch | Niedrig |
 | Testbarkeit | Einfach | Schwierig |
-| **Status** | **✅ VERWENDEN** | **❌ NICHT VERWENDEN** |
+| **Einsatz** | **Wenn feste Werte gebraucht werden** | **Standard fuer code_random_complex** |
 
 ---
 

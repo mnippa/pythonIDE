@@ -337,7 +337,9 @@ if ($displayName === '') {
     }
     
     .modal.active {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     
     .modal-content {
@@ -345,7 +347,7 @@ if ($displayName === '') {
       border-radius: var(--hspf-radius-md);
       padding: var(--hspf-spacing-xl);
       max-width: 800px;
-      margin: 40px auto;
+      margin: auto;
       border: 2px solid var(--hspf-border);
       box-shadow: var(--hspf-shadow-xl);
     }
@@ -542,6 +544,8 @@ if ($displayName === '') {
         </div>
         <div style="margin-top:var(--hspf-spacing-md);">
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-task-modal">+ New Task</button>
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="open-task-ai-modal" style="margin-left:var(--hspf-spacing-sm);">✨ Task AI Generator</button>
+          <button class="hspf-btn hspf-btn-secondary" type="button" id="import-json-text-btn" style="margin-left:var(--hspf-spacing-sm);">📋 Import JSON Text</button>
           <button class="hspf-btn hspf-btn-secondary" type="button" id="import-task-btn" style="margin-left:var(--hspf-spacing-sm);">Import Tasks (ZIP or JSON)</button>
           <button class="hspf-btn hspf-btn-secondary" type="button" id="export-tasks-btn" style="margin-left:var(--hspf-spacing-sm);">Export Selected Tasks (ZIP)</button>
           <input type="file" id="import-task-file-input" accept=".json,.zip" style="display:none;">
@@ -686,6 +690,30 @@ if ($displayName === '') {
           <button class="hspf-btn" type="button" id="assignment-cancel">Cancel</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Import JSON Text Modal -->
+  <div id="import-json-text-modal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h3>📋 Import JSON Text</h3>
+        <button id="import-json-text-close-btn" class="modal-close">✕</button>
+      </div>
+      <div style="padding: var(--hspf-spacing-md);">
+        <p style="color: var(--hspf-text-secondary); margin-bottom: var(--hspf-spacing-md);">
+          Kopiere das generierte JSON von der KI ein und klicke auf "Importieren".
+        </p>
+        
+        <textarea id="import-json-text-input" placeholder='{"version":"1.0","title":"...","problem_type":"..."}' style="width: 100%; min-height: 300px; font-family: 'Monaco', monospace; font-size: 12px; resize: vertical;"></textarea>
+        
+        <div id="import-json-text-error" style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); background: #fee; border: 1px solid #f99; border-radius: var(--hspf-radius-sm); color: #c33; font-size: 12px; display: none;"></div>
+        
+        <div style="margin-top: var(--hspf-spacing-lg); display: flex; gap: var(--hspf-spacing-sm);">
+          <button class="hspf-btn hspf-btn-primary" id="import-json-text-confirm-btn" style="flex: 1;">✓ Importieren</button>
+          <button class="hspf-btn" id="import-json-text-cancel-btn" style="flex: 1;">Abbrechen</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1159,7 +1187,160 @@ if ($displayName === '') {
       min-height: 120px;
     }
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    
+    /* Task AI Generator Modal Styling */
+    #task-ai-modal .modal-content {
+      display: flex;
+      flex-direction: column;
+      max-height: 90vh;
+    }
+    
+    #task-ai-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--hspf-spacing-md);
+    }
+    
+    #task-ai-content > div:first-child {
+      flex-shrink: 0;
+    }
+    
+    @media (max-width: 1200px) {
+      #task-ai-content > div:nth-child(2) {
+        grid-template-columns: 1fr !important;
+      }
+    }
+    
+    .ai-task-form-section {
+      background: var(--hspf-surface);
+      padding: var(--hspf-spacing-md);
+      border-radius: var(--hspf-radius-sm);
+      border: 1px solid var(--hspf-border);
+    }
+    
+    .ai-prompt-section {
+      background: var(--hspf-bg-secondary);
+      padding: var(--hspf-spacing-md);
+      border-radius: var(--hspf-radius-sm);
+      border: 2px solid var(--hspf-accent);
+    }
+    
   </style>
+
+  <!-- Task AI Generator Modal -->
+  <div id="task-ai-modal" class="modal">
+    <div class="modal-content" style="max-width: 1200px;">
+      <div class="modal-header">
+        <h3>✨ Task AI Generator</h3>
+        <button id="task-ai-close-btn" class="modal-close">✕</button>
+      </div>
+      <div id="task-ai-content">
+        <!-- Description -->
+        <div class="admin-card" style="margin-bottom: var(--hspf-spacing-md);">
+          <p style="margin: 0; color: var(--hspf-text-secondary); font-size: 14px;">
+            Beschreiben Sie Ihre Aufgabe in natürlicher Sprache. Der KI-Prompt-Generator erzeugt dann ein gültiges JSON-Format, das Sie mit einer externen KI (z.B. Claude, ChatGPT) verwenden können, um die Aufgabe zu generieren.
+          </p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--hspf-spacing-lg);">
+          <!-- Left Column: Form -->
+          <div class="ai-task-form-section">
+            <h4 style="margin-top: 0; margin-bottom: var(--hspf-spacing-md);">1. Aufgabe beschreiben</h4>
+            
+            <div class="field">
+              <label for="ai-task-type">Aufgabentyp</label>
+              <select id="ai-task-type" style="width: 100%;">
+                <option value="code">📝 Code (Python)</option>
+                <option value="single_choice">🎯 Single-Choice</option>
+                <option value="multiple_choice">☑️ Multiple-Choice</option>
+                <option value="free_text">📄 Freitext</option>
+                <option value="code_reading">👀 Code-Lesequest</option>
+                <option value="code_random_complex">🎲 Code (versteckt)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="ai-task-title">Titel (optional - wird von KI generiert, wenn leer)</label>
+              <input type="text" id="ai-task-title" placeholder="z.B. 'Schaltjahr prüfen' (optional)" style="width: 100%;" />
+            </div>
+
+            <div class="field">
+              <label for="ai-task-topic">Thema/Topic für die KI</label>
+              <textarea id="ai-task-topic" placeholder="z.B. 'Array Slicing', 'Rekursion mit Fibonacci', 'String-Manipulation', 'Dictionary Comprehensions'" style="width: 100%; min-height: 100px; resize: vertical;"></textarea>
+              <small style="color: var(--hspf-text-secondary); margin-top: 4px; display: block;">💡 Die KI erstellt basierend auf diesem Thema die komplette Aufgabenbeschreibung.</small>
+            </div>
+
+            <div class="field">
+              <label for="ai-attempts">Max. Versuche</label>
+              <input type="number" id="ai-attempts" value="3" min="1" style="width: 100%;" />
+            </div>
+
+            <div class="field checkbox-field">
+              <label style="display: flex; align-items: center;">
+                <input type="checkbox" id="ai-with-hints" checked />
+                <span style="margin-left: 8px;">Mit Hinweisen generieren</span>
+              </label>
+            </div>
+
+            <div class="field checkbox-field">
+              <label style="display: flex; align-items: center;">
+                <input type="checkbox" id="ai-with-solution" checked />
+                <span style="margin-left: 8px;">Mit Lösungscode</span>
+              </label>
+            </div>
+
+            <button class="hspf-btn hspf-btn-primary" id="generate-prompt-btn" style="width: 100%; margin-top: var(--hspf-spacing-md);">→ Prompt generieren</button>
+          </div>
+
+          <!-- Right Column: Prompt Preview -->
+          <div class="ai-prompt-section">
+            <h4 style="margin-top: 0; margin-bottom: var(--hspf-spacing-md);">2. KI-Prompt & Import</h4>
+            
+            <!-- Tabs for Prompt / JSON Import -->
+            <div style="display: flex; gap: var(--hspf-spacing-sm); margin-bottom: var(--hspf-spacing-md);">
+              <button class="hspf-btn" id="ai-tab-prompt" style="flex: 1; background: var(--hspf-accent); color: white; font-weight: bold; cursor: pointer; border: none; padding: 10px;">📋 Prompt</button>
+              <button class="hspf-btn" id="ai-tab-import" style="flex: 1; background: var(--hspf-bg-secondary); color: var(--hspf-text-primary); cursor: pointer; border: 1px solid var(--hspf-border); padding: 10px; font-weight: normal;">📥 JSON Import</button>
+            </div>
+            
+            <!-- Prompt Display -->
+            <div id="ai-prompt-section" style="display: block;">
+              <div style="border: 1px solid var(--hspf-border); border-radius: var(--hspf-radius-sm); background: var(--hspf-surface); padding: var(--hspf-spacing-md); min-height: 300px; max-height: 400px; overflow-y: auto; position: relative;">
+                <pre id="prompt-preview" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; font-family: 'Monaco', monospace; line-height: 1.4;">
+(Prompt wird hier angezeigt)
+                </pre>
+                <button class="hspf-btn hspf-btn-secondary" id="copy-prompt-btn" style="position: absolute; top: var(--hspf-spacing-sm); right: var(--hspf-spacing-sm); font-size: 12px; padding: 6px 12px;">📋 Copy</button>
+              </div>
+
+              <div style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); background: var(--hspf-surface); border-left: 4px solid var(--hspf-accent); border-radius: var(--hspf-radius-sm);">
+                <p style="margin: 0; font-size: 13px; color: var(--hspf-text-secondary); line-height: 1.5;">
+                  💡 <strong>Hinweis:</strong> Kopiere den Prompt und füge ihn in Claude, ChatGPT oder eine andere KI ein. Die KI soll das JSON generieren, das du dann im Tab "📥 JSON Import" importieren kannst.
+                </p>
+              </div>
+            </div>
+
+            <!-- JSON Import Section -->
+            <div id="ai-import-section" style="display: none;">
+              <textarea id="ai-generated-json" placeholder="Kopiere hier das generierte JSON von der KI ein..." style="width: 100%; min-height: 300px; font-family: 'Monaco', monospace; font-size: 12px; resize: vertical;"></textarea>
+              
+              <div id="ai-json-error" style="margin-top: var(--hspf-spacing-sm); padding: var(--hspf-spacing-sm); background: #fee; border: 1px solid #f99; border-radius: var(--hspf-radius-sm); color: #c33; font-size: 12px; display: none;"></div>
+              
+              <button class="hspf-btn hspf-btn-primary" id="import-generated-json-btn" style="width: 100%; margin-top: var(--hspf-spacing-md);">✓ Validieren & Importieren</button>
+              
+              <div style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); background: var(--hspf-surface); border-left: 4px solid #4a9; border-radius: var(--hspf-radius-sm);">
+                <p style="margin: 0; font-size: 13px; color: var(--hspf-text-secondary); line-height: 1.5;">
+                  ✓ Das JSON wird validiert und direkt in die aktuelle Aufgabensammlung importiert.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: var(--hspf-spacing-lg); text-align: right; padding-top: var(--hspf-spacing-md); border-top: 1px solid var(--hspf-border);">
+          <button class="hspf-btn" id="task-ai-cancel-btn">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- JSZip Library for ZIP export/import -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -1168,6 +1349,7 @@ if ($displayName === '') {
   <script src="js/options-builder.js"></script>
   <script src="js/export-tasks.js"></script>
   <script src="js/import-tasks.js"></script>
+  <script src="js/task-ai-generator.js"></script>
   <script src="js/admin-dashboard.js"></script>
   <script src="js/admin-teams-users.js"></script>
 </body>

@@ -1258,6 +1258,104 @@ function bindEvents() {
     });
   }
 
+  // Import JSON Text button
+  const importJsonTextBtn = $('import-json-text-btn');
+  const importJsonTextModal = $('import-json-text-modal');
+  const importJsonTextInput = $('import-json-text-input');
+  const importJsonTextConfirmBtn = $('import-json-text-confirm-btn');
+  const importJsonTextCancelBtn = $('import-json-text-cancel-btn');
+  const importJsonTextCloseBtn = $('import-json-text-close-btn');
+  const importJsonTextError = $('import-json-text-error');
+
+  if (importJsonTextBtn && importJsonTextModal) {
+    importJsonTextBtn.addEventListener('click', () => {
+      if (!state.currentAssignmentId) {
+        alert('Bitte wählen Sie zuerst ein Assignment aus');
+        return;
+      }
+      importJsonTextModal.classList.add('active');
+      importJsonTextInput.value = '';
+      importJsonTextError.style.display = 'none';
+      importJsonTextInput.focus();
+    });
+
+    if (importJsonTextCloseBtn) {
+      importJsonTextCloseBtn.addEventListener('click', () => {
+        importJsonTextModal.classList.remove('active');
+      });
+    }
+
+    if (importJsonTextCancelBtn) {
+      importJsonTextCancelBtn.addEventListener('click', () => {
+        importJsonTextModal.classList.remove('active');
+      });
+    }
+
+    if (importJsonTextConfirmBtn) {
+      importJsonTextConfirmBtn.addEventListener('click', async () => {
+        const jsonText = importJsonTextInput.value.trim();
+
+        if (!jsonText) {
+          importJsonTextError.textContent = '⚠️ Bitte geben Sie JSON ein';
+          importJsonTextError.style.display = 'block';
+          return;
+        }
+
+        let jsonData;
+        try {
+          jsonData = JSON.parse(jsonText);
+        } catch (e) {
+          importJsonTextError.textContent = '⚠️ JSON ist nicht valid: ' + e.message;
+          importJsonTextError.style.display = 'block';
+          return;
+        }
+
+        // Validate required fields
+        if (!jsonData.version || !jsonData.title) {
+          importJsonTextError.textContent = '⚠️ JSON muss "version" und "title" enthalten';
+          importJsonTextError.style.display = 'block';
+          return;
+        }
+
+        try {
+          // Add assignment ID
+          jsonData.assignment_id = parseInt(state.currentAssignmentId, 10);
+
+          // API expects test_cases as a JSON string
+          if (jsonData.test_cases && typeof jsonData.test_cases !== 'string') {
+            jsonData.test_cases = JSON.stringify(jsonData.test_cases);
+          }
+
+          // Import single task via create endpoint
+          const response = await requestJson('../api/tasks/create.php', {
+            method: 'POST',
+            body: JSON.stringify(jsonData)
+          });
+
+          if (response.ok || response.success) {
+            alert('✓ Task erfolgreich importiert!');
+            importJsonTextModal.classList.remove('active');
+            importJsonTextInput.value = '';
+            await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+            await loadAssignments();
+          } else {
+            throw new Error(response.error || 'Import failed');
+          }
+        } catch (error) {
+          importJsonTextError.textContent = '⚠️ Fehler beim Importieren: ' + error.message;
+          importJsonTextError.style.display = 'block';
+        }
+      });
+    }
+
+    // Close modal on outside click
+    importJsonTextModal.addEventListener('click', (e) => {
+      if (e.target === importJsonTextModal) {
+        importJsonTextModal.classList.remove('active');
+      }
+    });
+  }
+
   const taskCreateCloseBtn = $('task-create-close-btn');
   if (taskCreateCloseBtn) {
     taskCreateCloseBtn.addEventListener('click', closeNewTaskModal);

@@ -239,11 +239,14 @@ class TaskImporter {
         }
 
         // Create/update task via API
+        const normalizedTestCases = taskWithImages.test_cases && typeof taskWithImages.test_cases !== 'string'
+          ? JSON.stringify(taskWithImages.test_cases)
+          : taskWithImages.test_cases;
+
         const taskPayload = {
           assignment_id: taskWithImages.assignment_id ? parseInt(taskWithImages.assignment_id, 10) : null,
           title: taskWithImages.title,
           description: taskWithImages.description || '',
-          position: taskWithImages.position ? parseInt(taskWithImages.position, 10) : null,
           max_attempts: taskWithImages.max_attempts ? parseInt(taskWithImages.max_attempts, 10) : 1,
           show_solution: taskWithImages.show_solution ? parseInt(taskWithImages.show_solution, 10) : 1,
           min_keywords_required: taskWithImages.min_keywords_required ? parseInt(taskWithImages.min_keywords_required, 10) : null,
@@ -252,7 +255,7 @@ class TaskImporter {
           code_template: taskWithImages.code_template || '',
           solution_code: taskWithImages.solution_code || '',
           validation_mode: taskWithImages.validation_mode || '',
-          test_cases: taskWithImages.test_cases || null,
+          test_cases: normalizedTestCases || null,
           hint1: taskWithImages.hint1 || '',
           hint2: taskWithImages.hint2 || '',
           hint3: taskWithImages.hint3 || '',

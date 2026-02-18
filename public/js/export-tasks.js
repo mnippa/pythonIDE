@@ -40,7 +40,6 @@ class TaskExporter {
       problem_type: task.problem_type || taskType,
       title: task.title,
       description: task.description || '',
-      position: task.position || null,
       max_attempts: typeof task.max_attempts === 'number' ? task.max_attempts : 1,
       show_solution: typeof task.show_solution === 'number' ? task.show_solution : 1,
       min_keywords_required: typeof task.min_keywords_required === 'number' ? task.min_keywords_required : null,
