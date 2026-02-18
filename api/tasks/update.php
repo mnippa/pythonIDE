@@ -140,12 +140,6 @@ if (array_key_exists('code_template', $input)) {
     $types .= 's';
 }
 
-if (array_key_exists('hint', $input)) {
-    $updates[] = 'hint = ?';
-    $params[] = $input['hint'];
-    $types .= 's';
-}
-
 if (array_key_exists('hint1', $input)) {
     $updates[] = 'hint1 = ?';
     $params[] = $input['hint1'];

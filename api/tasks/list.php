@@ -37,18 +37,88 @@ if (!$canAccess) {
 }
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
+$isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
+
+// Determine which columns to fetch based on context
+$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_generator_code, test_cases, validation_mode, task_type, question_text, image_url, correct_answer, variable_overrides';
+
+// Add solution/expected only if needed
+// Include in test mode, when include_expected is set, or for admins viewing solutions
+$needsSolution = $includeExpected || $isTestMode || ($user['role'] === 'admin');
+if ($needsSolution) {
+    $selectColumns .= ', expected_output, solution_code, generator_code';
+}
 
 // Always fetch solution_code and expected_output (needed for intelligent tests)
-$sql = 'SELECT id, assignment_id, title, description, position, problem_type, code_template, hint, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_generator_code, test_cases, validation_mode, expected_output, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides FROM tasks WHERE assignment_id = ? ORDER BY position ASC';
+$sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $assignmentId);
 $stmt->execute();
 $result = $stmt->get_result();
 
-$tasks = [];
+// First pass: collect all tasks and task IDs for batch loading
+$taskIds = [];
+$rawTasks = [];
 while ($row = $result->fetch_assoc()) {
-    $taskId = (int)$row['id'];
+    $taskIds[] = (int)$row['id'];
+    $rawTasks[(int)$row['id']] = $row;
+}
+
+// Batch load options for all choice tasks
+$choiceTaskIds = [];
+foreach ($rawTasks as $taskId => $row) {
+    if (in_array($row['task_type'], ['single_choice', 'multiple_choice'])) {
+        $choiceTaskIds[] = $taskId;
+    }
+}
+
+$optionsMap = [];  // taskId => [options]
+$userAttemptsMap = [];  // taskId => attempt data
+
+if (!empty($choiceTaskIds)) {
+    // Batch load: Get ALL options for ALL choice tasks in ONE query
+    $placeholders = implode(',', array_fill(0, count($choiceTaskIds), '?'));
+    $optionsStmt = $conn->prepare(
+        "SELECT task_id, id, option_text, image_url, is_correct, order_num 
+         FROM task_options 
+         WHERE task_id IN ($placeholders) 
+         ORDER BY task_id, order_num ASC"
+    );
+    $optionsStmt->bind_param(str_repeat('i', count($choiceTaskIds)), ...$choiceTaskIds);
+    $optionsStmt->execute();
+    $optionsResult = $optionsStmt->get_result();
+    
+    while ($optionRow = $optionsResult->fetch_assoc()) {
+        $taskId = (int)$optionRow['task_id'];
+        if (!isset($optionsMap[$taskId])) {
+            $optionsMap[$taskId] = [];
+        }
+        $optionsMap[$taskId][] = $optionRow;
+    }
+    $optionsStmt->close();
+    
+    // Batch load: Get user attempts for ALL choice tasks in ONE query (if not admin)
+    if ($user['role'] !== 'admin') {
+        $attemptsStmt = $conn->prepare(
+            "SELECT task_id, status FROM user_tasks 
+             WHERE user_id = ? AND task_id IN ($placeholders)"
+        );
+        $params = array_merge([$user['id']], $choiceTaskIds);
+        $attemptsStmt->bind_param(str_repeat('i', count($params)), ...$params);
+        $attemptsStmt->execute();
+        $attemptsResult = $attemptsStmt->get_result();
+        
+        while ($attemptRow = $attemptsResult->fetch_assoc()) {
+            $userAttemptsMap[(int)$attemptRow['task_id']] = $attemptRow;
+        }
+        $attemptsStmt->close();
+    }
+}
+
+// Second pass: build task array with loaded options
+$tasks = [];
+foreach ($rawTasks as $taskId => $row) {
     $task = [
         'id' => $taskId,
         'assignment_id' => (int)$row['assignment_id'],
@@ -57,7 +127,6 @@ while ($row = $result->fetch_assoc()) {
         'position' => (int)$row['position'],
         'problem_type' => $row['problem_type'],
         'code_template' => $row['code_template'],
-        'hint' => $row['hint'],
         'hint1' => $row['hint1'],
         'hint2' => $row['hint2'],
         'hint3' => $row['hint3'],
@@ -75,57 +144,48 @@ while ($row = $result->fetch_assoc()) {
         'variable_overrides' => $row['variable_overrides']
     ];
     
-    // Include solution_code for intelligent tests and code_random_complex tasks (needed for execution)
-    // Also include if admin requested it explicitly
-    if ($includeExpected || $row['validation_mode'] === 'intelligent' || $row['task_type'] === 'code_random_complex') {
-        $task['expected_output'] = $row['expected_output'];
-        $task['solution_code'] = $row['solution_code'];
+    // Include solution_code for testing, admin/expected views, and specific task types
+    if ($includeExpected || $isTestMode || $row['validation_mode'] === 'intelligent' || 
+        $row['task_type'] === 'code' || $row['task_type'] === 'code_random_complex') {
+        if (isset($row['expected_output'])) {
+            $task['expected_output'] = $row['expected_output'];
+        }
+        if (isset($row['solution_code'])) {
+            $task['solution_code'] = $row['solution_code'];
+        }
     }
     
-    // Load options for single/multiple choice tasks
-    $taskType = $row['task_type'];
-    if (in_array($taskType, ['single_choice', 'multiple_choice'])) {
-        // Check once if user has attempted this task
+    // Include generator_code for code_random_complex tasks
+    if ($isTestMode && isset($row['generator_code'])) {
+        $task['generator_code'] = $row['generator_code'];
+    }
+    
+    // Load options for single/multiple choice tasks (from batch-loaded data)
+    if (in_array($row['task_type'], ['single_choice', 'multiple_choice'])) {
         $showCorrectAnswers = $user['role'] === 'admin';
         
-        if (!$showCorrectAnswers) {
-            $attemptStmt = $conn->prepare(
-                'SELECT status FROM user_tasks WHERE user_id = ? AND task_id = ? LIMIT 1'
-            );
-            $attemptStmt->bind_param('ii', $user['id'], $taskId);
-            $attemptStmt->execute();
-            $attemptResult = $attemptStmt->get_result();
-            
-            if ($attemptResult->num_rows > 0) {
-                $attempt = $attemptResult->fetch_assoc();
-                // Show correct answers if user has submitted (status is not just 'unbearbeitet')
-                $showCorrectAnswers = ($attempt['status'] !== 'unbearbeitet');
-            }
-            $attemptStmt->close();
+        if (!$showCorrectAnswers && isset($userAttemptsMap[$taskId])) {
+            // User has attempted this task - show correct answers
+            $showCorrectAnswers = ($userAttemptsMap[$taskId]['status'] !== 'unbearbeitet');
         }
         
-        $optionsStmt = $conn->prepare(
-            'SELECT id, option_text, image_url, is_correct, order_num FROM task_options WHERE task_id = ? ORDER BY order_num ASC'
-        );
-        $optionsStmt->bind_param('i', $taskId);
-        $optionsStmt->execute();
-        $optionsResult = $optionsStmt->get_result();
-        
         $options = [];
-        while ($optionRow = $optionsResult->fetch_assoc()) {
-            $option = [
-                'id' => (int)$optionRow['id'],
-                'text' => $optionRow['option_text'],
-                'image_url' => $optionRow['image_url'],
-                'order_num' => (int)$optionRow['order_num']
-            ];
-            
-            // Include is_correct if allowed
-            if ($showCorrectAnswers) {
-                $option['is_correct'] = (bool)$optionRow['is_correct'];
+        if (isset($optionsMap[$taskId])) {
+            foreach ($optionsMap[$taskId] as $optionRow) {
+                $option = [
+                    'id' => (int)$optionRow['id'],
+                    'text' => $optionRow['option_text'],
+                    'image_url' => $optionRow['image_url'],
+                    'order_num' => (int)$optionRow['order_num']
+                ];
+                
+                // Include is_correct if allowed
+                if ($showCorrectAnswers) {
+                    $option['is_correct'] = (bool)$optionRow['is_correct'];
+                }
+                
+                $options[] = $option;
             }
-            
-            $options[] = $option;
         }
         
         $task['options'] = $options;

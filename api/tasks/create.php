@@ -32,7 +32,6 @@ $showGeneratorCode = isset($input['show_generator_code']) ? (int)$input['show_ge
 $minKeywordsRequired = isset($input['min_keywords_required']) ? (int)$input['min_keywords_required'] : null;
 $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
-$hint = $input['hint'] ?? null;
 $hint1 = $input['hint1'] ?? null;
 $hint2 = $input['hint2'] ?? null;
 $hint3 = $input['hint3'] ?? null;
@@ -156,15 +155,14 @@ if ($taskType === 'code_random_complex' && !$maxIterationsInput) {
 
 // Ensure all string values are strings (not null or array)
 $codeTemplate = is_string($codeTemplate) ? $codeTemplate : '';
-$hint = is_string($hint) ? $hint : '';
 $expectedOutput = is_string($expectedOutput) ? $expectedOutput : '';
 $validationMode = is_string($validationMode) ? $validationMode : '';
 $testCases = is_string($testCases) ? $testCases : '';
 $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -183,7 +181,6 @@ $types .= 'i';     // show_generator_code
 $types .= 'i';     // min_keywords_required
 $types .= 's';     // problem_type
 $types .= 's';     // code_template
-$types .= 's';     // hint
 $types .= 'sss';   // hint1, hint2, hint3
 $types .= 's';     // stoff
 $types .= 's';     // expected_output
@@ -211,7 +208,6 @@ $bindResult = @$stmt->bind_param(
     $minKeywordsRequired,
     $problemType,
     $codeTemplate,
-    $hint,
     $hint1,
     $hint2,
     $hint3,
@@ -269,7 +265,6 @@ if ($stmt->execute()) {
             'position' => $position,
             'problem_type' => $problemType,
             'code_template' => $codeTemplate,
-            'hint' => $hint,
             'expected_output' => $expectedOutput,
             'validation_mode' => $validationMode,
             'test_cases' => $testCases,

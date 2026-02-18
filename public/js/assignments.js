@@ -17,6 +17,9 @@ const assignmentState = {
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
+  solutionVisible: {}, // Track solution visibility per task: { taskId: boolean }
+  solutionMode: false, // Track if currently in solution mode (readonly)
+  savedCodeBeforeSolution: null, // Store user code before showing solution
   hasAutoLoaded: false, // Flag to prevent multiple auto-loads
   // Activity tracking: accumulated active seconds per task
   taskActiveSeconds: {}, // { taskId: totalSeconds }
@@ -52,6 +55,16 @@ function escapeHtml(str) {
 }
 
 async function requestJson(url, options = {}) {
+  const isTestMode = window.testMode === true;
+  if (isTestMode) {
+    // Intercept WRITE operations in test mode - prevent DB writes
+    if (url.includes('/api/user_tasks/update.php') || url.includes('/api/user_tasks/heartbeat.php') || url.includes('/api/user_tasks/submit.php')) {
+      // Just return success without writing to DB
+      return { ok: true };
+    }
+    // Allow READ operations to hit the real API
+  }
+
   const response = await fetch(url, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -193,11 +206,16 @@ window.trackTaskActivity = function(taskId) {
 
 // Display task details in left sidebar
 function showTaskDetails(task, activeTab = 'details') {
+  console.log('[TASK DETAILS] showTaskDetails called for task:', task.id, task.title, 'activeTab:', activeTab);
+  console.log('[TASK DETAILS] window.testMode:', window.testMode, 'task_type:', task.task_type);
+  
   assignmentState.currentTask = task;
   
   const contentEl = $('task-details-content');
   const panel = $('task-details-panel');
   const app = document.querySelector('.app');
+
+  console.log('[TASK DETAILS] Elements found - contentEl:', !!contentEl, 'panel:', !!panel, 'app:', !!app);
 
   if (!contentEl || !panel) return;
 
@@ -227,13 +245,51 @@ function showTaskDetails(task, activeTab = 'details') {
   const revealedCount = revealedHints.length;
   const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
 
-  // Aufgabenbeschreibung/Fragestellung - IMMER OBEN, nicht in einem Tab
-  // For code tasks: show description (learning material)
-  // For quiz tasks: show question_text (the actual question)
+  // --- Test Type Icons/Labels (for code tasks) ---
+  let testTypeHtml = '';
+  if (task.task_type === 'code' || task.task_type === 'code_reading' || task.task_type === 'code_random_complex') {
+    // Parse test types from test_cases and validation_mode
+    let testTypes = [];
+    try {
+      if (task.test_cases) {
+        let parsed = JSON.parse(task.test_cases);
+        // Handle intelligent test config (single object with mode, tests, etc.)
+        if (parsed && !Array.isArray(parsed) && parsed.mode) {
+          parsed = [{type: 'intelligent', ...parsed}];
+        }
+        // Migrate legacy FUNCTION structure to new structure if needed
+        if (Array.isArray(parsed)) {
+          parsed.forEach(tc => {
+            if (tc.type && !testTypes.includes(tc.type)) testTypes.push(tc.type);
+            // Legacy: if no type, default to output
+            if (!tc.type && !testTypes.includes('output')) testTypes.push('output');
+          });
+        }
+      }
+    } catch (e) {}
+    // Also check validation_mode for fallback
+    if (task.validation_mode && !testTypes.includes(task.validation_mode)) {
+      testTypes.push(task.validation_mode);
+    }
+    // Map to icons/labels
+    const typeMap = {
+      'output': {icon: '🖥️', label: 'Output'},
+      'function': {icon: 'ƒ', label: 'Function'},
+      'variable': {icon: '𝑥', label: 'Variable'},
+      'intelligent': {icon: '🤖', label: 'Intelligent'},
+      'code_check': {icon: '🔑', label: 'Keywords'},
+    };
+    if (testTypes.length > 0) {
+      testTypeHtml = `<div class="test-type-indicators" style="margin-bottom:8px; font-size:13px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span style=\"color:#888;\">Test-Typen:</span>
+        ${testTypes.map(t => `<span class="test-type-badge" style="background:#f3f4f6; border-radius:4px; padding:2px 7px; display:inline-flex; align-items:center; gap:3px; border:1px solid #e5e7eb; font-size:13px; color:#222;">${typeMap[t]?.icon || '❓'} ${typeMap[t]?.label || t}</span>`).join('')}
+      </div>`;
+    }
+  }
+
   let descriptionHtml = '';
   const isQuizTask = task.task_type && task.task_type !== 'code';
   const taskContent = isQuizTask ? task.question_text : task.description;
-  
   if (taskContent) {
     descriptionHtml = `<div class="task-description-box">
       <h4>Aufgabenstellung</h4>
@@ -256,6 +312,35 @@ function showTaskDetails(task, activeTab = 'details') {
       <p>${escapeHtml(task.stoff)}</p>
     </div>`;
   }
+
+  const canShowSolution = window.testMode === true;
+  console.log('[SOLUTION CHECK] canShowSolution:', canShowSolution, 'task_type:', task.task_type);
+  // Check if solution exists based on task type
+  let hasSolution = false;
+  if (canShowSolution) {
+    if (task.task_type === 'code') {
+      hasSolution = !!task.solution_code;
+      console.log('[SOLUTION] Code task - hasSolution:', hasSolution, 'solution_code exists:', !!task.solution_code, 'solution_code:', task.solution_code?.substring(0, 50));
+    } else if (task.task_type === 'single_choice' || task.task_type === 'multiple_choice') {
+      hasSolution = !!(task.options && task.options.some(opt => opt.is_correct));
+      console.log('[SOLUTION] Choice task - hasSolution:', hasSolution);
+    } else if (task.task_type === 'free_text') {
+      hasSolution = !!task.correct_answer;
+      console.log('[SOLUTION] Free text task - hasSolution:', hasSolution);
+    } else if (task.task_type === 'code_reading') {
+      // Code reading has solution if code_template exists (will be computed)
+      hasSolution = !!(task.code_template && task.correct_answer);
+      console.log('[SOLUTION] Code reading task - hasSolution:', hasSolution);
+    } else if (task.task_type === 'code_random_complex') {
+      // Code random complex has solution if solution_code exists
+      hasSolution = !!task.solution_code;
+      console.log('[SOLUTION] Code random complex task - hasSolution:', hasSolution, 'solution_code exists:', !!task.solution_code);
+    }
+  } else {
+    console.log('[SOLUTION] Cannot show solution - testMode:', window.testMode, 'task_type:', task.task_type);
+  }
+  
+  console.log('[SOLUTION RESULT] Final hasSolution:', hasSolution, 'for task', task.id);
 
   if (detailsHtml === '' || detailsHtml.trim() === `<div class="task-status-header">
     <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
@@ -288,15 +373,25 @@ function showTaskDetails(task, activeTab = 'details') {
     hintsHtml += `<button type="button" class="hint-reveal-btn" id="hint-reveal-btn" ${disabledAttr}>${buttonLabel}</button>`;
   }
 
+  // Build tabs - WITHOUT solution tab (solution is now a toggle button)
   let tabsHtml = `<div class="task-details-tabs">`;
   tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>`;
   if (totalHints > 0) {
     tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'hints' ? 'active' : ''}" data-tab="hints">Hinweise <span class="task-tab-count">${revealedCount}/${totalHints}</span></button>`;
   }
+  
+  // Solution toggle button (inside tabs container for proper alignment)
+  if (hasSolution) {
+    const solutionActive = assignmentState.solutionMode === true;
+    const buttonClass = solutionActive ? 'solution-toggle-active' : 'solution-toggle-inactive';
+    const buttonText = solutionActive ? '📝 Lösung AN' : '📝 Lösung';
+    tabsHtml += `<button type="button" class="solution-toggle-btn ${buttonClass}" id="solution-toggle-btn" title="Lösung ein/aus-schalten">${buttonText}</button>`;
+  }
+  
   tabsHtml += `</div>`;
 
-  // Build final HTML: Description first, then tabs
-  let html = descriptionHtml + tabsHtml;
+  // Build final HTML: Test types, then description, then tabs
+  let html = testTypeHtml + descriptionHtml + tabsHtml;
   html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
@@ -318,6 +413,24 @@ function showTaskDetails(task, activeTab = 'details') {
       });
     });
   });
+  
+  // Solution toggle button handler
+  const solToggleBtn = $('solution-toggle-btn');
+  if (solToggleBtn && hasSolution) {
+    solToggleBtn.addEventListener('click', async () => {
+      if (assignmentState.solutionMode) {
+        // Turn OFF solution mode - restore original
+        assignmentState.solutionMode = false;
+        loadTaskIntoEditor(assignmentState.currentAssignmentId, task.id);
+      } else {
+        // Turn ON solution mode
+        assignmentState.solutionMode = true;
+        await loadSolutionIntoMainArea(task);
+      }
+      // Refresh the sidebar to update button color
+      showTaskDetails(task, 'details');
+    });
+  }
 
   const revealBtn = $('hint-reveal-btn');
   if (revealBtn && nextHint) {
@@ -347,6 +460,370 @@ function showTaskDetails(task, activeTab = 'details') {
 
       showTaskDetails(task, 'hints');
     });
+  }
+}
+
+// Load solution into main editor/quiz area (not sidebar)
+async function loadSolutionIntoMainArea(task) {
+  assignmentState.solutionMode = true;
+  
+  if (task.task_type === 'code') {
+    // Save current code before showing solution
+    const editor = window.editorInstance;
+    if (editor) {
+      assignmentState.savedCodeBeforeSolution = editor.getValue();
+      if (task.solution_code) {
+        editor.setValue(task.solution_code);
+        editor.updateOptions({ readOnly: true });
+      }
+    }
+  } else if (task.task_type === 'single_choice' || task.task_type === 'multiple_choice') {
+    // Render quiz with correct answers checked and disabled
+    const quizContainer = document.getElementById('quiz-container');
+    if (quizContainer && window.QuizRenderer) {
+      window.QuizRenderer.renderSolution(task, quizContainer);
+    }
+  } else if (task.task_type === 'free_text') {
+    // Show all acceptable answers below the textarea
+    const quizContainer = document.getElementById('quiz-container');
+    if (quizContainer) {
+      const acceptableAnswers = task.correct_answer ? task.correct_answer.split(',').map(a => a.trim()) : [];
+      quizContainer.innerHTML = `
+        <div class="quiz-container solution-mode">
+          <div class="quiz-question">
+            ${task.question_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.question_text)}</div>` : ''}
+          </div>
+          <div class="quiz-freetext">
+            <textarea disabled rows="8" placeholder="(Bereich für Teilnehmerantwort)"></textarea>
+          </div>
+          <div class="solution-info" style="padding:12px; margin-top:16px; background:var(--bg-secondary, var(--panel)); border-left:3px solid #10b981; border-radius:4px;">
+            <strong>✓ Akzeptierte Antworten / Schlüsselwörter:</strong>
+            <ul style="margin:8px 0 0; padding-left:20px; list-style:disc;">
+              ${acceptableAnswers.map(ans => `<li style="margin:4px 0;">${escapeHtml(ans)}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+  } else if (task.task_type === 'code_reading') {
+    // Compute solution by running code with current variables
+    const quizContainer = document.getElementById('quiz-container');
+    if (quizContainer) {
+      const varValues = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
+      const variableName = task.correct_answer || '?';
+      
+      // Show loading state
+      quizContainer.innerHTML = `
+        <div class="quiz-container solution-mode">
+          <div class="code-reading-vars">
+            <strong>Variablenwerte:</strong>
+            <ul>
+              ${Object.entries(varValues).map(([name, value]) => 
+                `<li><code>${escapeHtml(name)} = ${value}</code></li>`
+              ).join('')}
+            </ul>
+          </div>
+          <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #f59e0b; border-radius:4px;">
+            <strong>⏳ Lösung wird berechnet...</strong>
+          </div>
+        </div>
+      `;
+      
+      // Execute code to compute solution
+      computeCodeReadingSolution(task, varValues, variableName).then(result => {
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="code-reading-vars">
+              <strong>Variablenwerte:</strong>
+              <ul>
+                ${Object.entries(varValues).map(([name, value]) => 
+                  `<li><code>${escapeHtml(name)} = ${value}</code></li>`
+                ).join('')}
+              </ul>
+            </div>
+            <div class="code-reading-code">
+              <pre><code>${escapeHtml(task.code_template || '')}</code></pre>
+            </div>
+            <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #10b981; border-radius:4px;">
+              <strong>✓ Erwartete Ausgabe:</strong>
+            </div>
+            <div class="quiz-question">
+              <label>Was ist der Wert von <code>${escapeHtml(variableName)}</code> am Ende?</label>
+              <input type="text" value="${escapeHtml(String(result))}" disabled style="width:100%; padding:8px; font-family:monospace; background:var(--code-bg);" />
+            </div>
+          </div>
+        `;
+      }).catch(err => {
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="solution-info" style="padding:12px; background:#fee2e2; border-left:3px solid #ef4444; border-radius:4px;">
+              <strong>❌ Fehler beim Berechnen der Lösung:</strong>
+              <p style="margin:4px 0 0; color:#991b1b;">${escapeHtml(String(err))}</p>
+            </div>
+          </div>
+        `;
+      });
+    }
+  } else if (task.task_type === 'code_random_complex') {
+    // Compute solution by executing solution_code with generated random values
+    const quizContainer = document.getElementById('quiz-container');
+    if (quizContainer) {
+      let varValues = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
+      
+      // If no variable_values exist yet, we need to generate them now
+      if (!varValues || Object.keys(varValues).length === 0) {
+        console.log('[SOLUTION] No varValues found, generating values now...');
+        
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #f59e0b; border-radius:4px;">
+              <strong>⏳ Werte werden generiert...</strong>
+            </div>
+          </div>
+        `;
+        
+        // Generate values using same logic as quiz renderer
+        try {
+          varValues = await generateRandomComplexValues(task);
+        } catch (err) {
+          quizContainer.innerHTML = `
+            <div class="quiz-container solution-mode">
+              <div class="solution-info" style="padding:12px; background:#fee2e2; border-left:3px solid #ef4444; border-radius:4px;">
+                <strong>❌ Fehler beim Generieren der Werte:</strong>
+                <p style="margin:4px 0 0; color:#991b1b;">${escapeHtml(String(err))}</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+      }
+      
+      // Show loading state
+      quizContainer.innerHTML = `
+        <div class="quiz-container solution-mode">
+          <div class="code-reading-vars">
+            <strong>Zufallswerte für diese Iteration:</strong>
+            <ul>
+              ${Object.entries(varValues).map(([name, value]) => {
+                const formatted = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                return `<li><code>${escapeHtml(name)} = ${escapeHtml(formatted)}</code></li>`;
+              }).join('') || '<li><em>Keine Werte gespeichert</em></li>'}
+            </ul>
+          </div>
+          <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #f59e0b; border-radius:4px;">
+            <strong>⏳ Erwartete Ausgabe wird berechnet...</strong>
+          </div>
+        </div>
+      `;
+      
+      // Compute the solution result
+      computeRandomComplexSolution(task, varValues).then(result => {
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="code-reading-vars">
+              <strong>Zufallswerte für diese Iteration:</strong>
+              <ul>
+                ${Object.entries(varValues).map(([name, value]) => {
+                  const formatted = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                  return `<li><code>${escapeHtml(name)} = ${escapeHtml(formatted)}</code></li>`;
+                }).join('') || '<li><em>Keine Werte gespeichert</em></li>'}
+              </ul>
+            </div>
+            <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #10b981; border-radius:4px;">
+              <strong>✓ Erwartete Ausgabe:</strong>
+            </div>
+            <div class="quiz-question">
+              <textarea disabled rows="8" style="width:100%; padding:8px; font-family:monospace; background:var(--code-bg); color:var(--text-primary);">${escapeHtml(String(result))}</textarea>
+            </div>
+          </div>
+        `;
+      }).catch(err => {
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="solution-info" style="padding:12px; background:#fee2e2; border-left:3px solid #ef4444; border-radius:4px;">
+              <strong>❌ Fehler beim Berechnen der Lösung:</strong>
+              <p style="margin:4px 0 0; color:#991b1b;">${escapeHtml(String(err))}</p>
+            </div>
+          </div>
+        `;
+      });
+    }
+  }
+}
+
+// Compute solution for code_random_complex tasks
+async function computeRandomComplexSolution(task, varValues) {
+  // Wait for Pyodide to be ready
+  if (!window.pyodide) {
+    let attempts = 0;
+    while (!window.pyodide && attempts < 100) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    if (!window.pyodide) {
+      throw new Error('Pyodide konnte nicht geladen werden (Timeout)');
+    }
+  }
+  
+  let solutionCode = task.solution_code || '';
+  if (!solutionCode) {
+    throw new Error('Keine Musterlösung vorhanden');
+  }
+  
+  try {
+    // Execute solution code and capture output
+    const namespace = window.pyodide.globals.get('dict')();
+    
+    // CASE 1: If variable_overrides exist, we need to replace placeholders {varName} with actual values
+    // This is for tasks like #77 that use placeholder-based generation
+    if (task.variable_overrides) {
+      console.log('[SOLUTION] Task uses variable_overrides - replacing placeholders');
+      for (const [key, value] of Object.entries(varValues)) {
+        const placeholder = `{${key}}`;
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        solutionCode = solutionCode.replace(regex, String(value));
+      }
+    } else {
+      // CASE 2: If NO variable_overrides, code_template creates a 'values' dict
+      // This is for tasks like #74 that use generator code
+      console.log('[SOLUTION] Task uses generator code - setting values dict');
+      const pyValues = window.pyodide.globals.get('dict')();
+      for (const [key, value] of Object.entries(varValues)) {
+        pyValues.set(key, value);
+      }
+      namespace.set('values', pyValues);
+    }
+    
+    // Redirect print output
+    let capturedOutput = '';
+    const originalPrint = window.pyodide.globals.get('print');
+    window.pyodide.globals.set('print', function(...args) {
+      capturedOutput += args.map(a => String(a)).join(' ') + '\n';
+    });
+    
+    // Execute the solution code
+    await window.pyodide.runPythonAsync(solutionCode, { globals: namespace });
+    
+    // Restore original print
+    window.pyodide.globals.set('print', originalPrint);
+    
+    // Try to get result variable first
+    let result;
+    if (namespace.has('result')) {
+      result = namespace.get('result');
+    } else if (capturedOutput) {
+      // Otherwise, use captured output from print statements
+      result = capturedOutput.trim();
+    } else {
+      throw new Error('Keine "result"-Variable oder print()-Ausgabe gefunden');
+    }
+    
+    return result;
+  } catch (err) {
+    throw new Error(`Python-Fehler: ${err.message || err}`);
+  }
+}
+
+// Generate random values for code_random_complex tasks (called when solution is shown before quiz execution)
+async function generateRandomComplexValues(task) {
+  if (!window.pyodide) {
+    let attempts = 0;
+    while (!window.pyodide && attempts < 100) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    if (!window.pyodide) {
+      throw new Error('Pyodide konnte nicht geladen werden');
+    }
+  }
+  
+  // CASE 1: Use variable_overrides if available
+  if (task.variable_overrides) {
+    const overrides = typeof task.variable_overrides === 'string' 
+      ? JSON.parse(task.variable_overrides) 
+      : task.variable_overrides;
+    
+    const values = {};
+    for (const varName in overrides) {
+      const possibleValues = overrides[varName];
+      if (Array.isArray(possibleValues) && possibleValues.length > 0) {
+        values[varName] = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+      }
+    }
+    
+    if (Object.keys(values).length > 0) {
+      if (!window.assignmentState.taskUserAnswers[task.id]) {
+        window.assignmentState.taskUserAnswers[task.id] = {};
+      }
+      window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+      return values;
+    }
+  }
+  
+  // CASE 2: Execute code_template to generate values
+  const code = (task.code_template || '').trim();
+  if (!code) {
+    throw new Error('Kein Generator-Code oder variable_overrides hinterlegt');
+  }
+  
+  const python = `
+import json
+values = {}
+${code}
+json.dumps(values)
+`;
+  
+  const resultJson = await window.pyodide.runPythonAsync(python);
+  let values = {};
+  try {
+    values = JSON.parse(resultJson);
+  } catch (err) {
+    throw new Error('Generator muss ein JSON-dict liefern');
+  }
+  
+  if (!values || typeof values !== 'object' || Array.isArray(values)) {
+    throw new Error('Generator muss ein dict liefern');
+  }
+  
+  if (!window.assignmentState.taskUserAnswers[task.id]) {
+    window.assignmentState.taskUserAnswers[task.id] = {};
+  }
+  window.assignmentState.taskUserAnswers[task.id].variable_values = values;
+  
+  return values;
+}
+
+// Compute solution for code_reading tasks
+async function computeCodeReadingSolution(task, varValues, variableName) {
+  // Wait for Pyodide to be ready (max 10 seconds)
+  if (!window.pyodide) {
+    let attempts = 0;
+    while (!window.pyodide && attempts < 100) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    if (!window.pyodide) {
+      throw new Error('Pyodide konnte nicht geladen werden (Timeout)');
+    }
+  }
+  
+  let code = task.code_template || '';
+  
+  // Replace template placeholders with actual values
+  for (const varName in varValues) {
+    const placeholder = `{${varName}}`;
+    const value = varValues[varName];
+    const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    code = code.replace(regex, String(value));
+  }
+  
+  try {
+    // Execute code and get the requested variable value
+    await window.pyodide.runPythonAsync(code);
+    const result = await window.pyodide.runPythonAsync(variableName);
+    return result;
+  } catch (err) {
+    throw new Error(`Python-Fehler: ${err.message || err}`);
   }
 }
 
@@ -417,13 +894,34 @@ function renderTaskNavigation() {
 // Optimized: Load only the specific assignment (for editor mode)
 async function loadSingleAssignment(assignmentId) {
   try {
+    const cachebust = `&t=${Date.now()}`;
+    const testModeParam = window.testMode ? '&test_mode=1' : '';
     const [assignmentRes, tasksRes] = await Promise.all([
-      requestJson(`../api/assignments/get.php?id=${assignmentId}`),
-      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}`)
+      requestJson(`../api/assignments/get.php?id=${assignmentId}${cachebust}`),
+      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}${testModeParam}${cachebust}`)
     ]);
     
     assignmentState.assignmentDetails[assignmentId] = assignmentRes.assignment;
     assignmentState.tasksByAssignment[assignmentId] = tasksRes.tasks || [];
+
+    if (window.testMode === true) {
+      assignmentState.tasksByAssignment[assignmentId].forEach((task) => {
+        if (assignmentState.taskStatuses[task.id] === undefined) {
+          assignmentState.taskStatuses[task.id] = 'unbearbeitet';
+        }
+        if (assignmentState.taskAttempts[task.id] === undefined) {
+          assignmentState.taskAttempts[task.id] = 0;
+        }
+        if (assignmentState.taskIterations[task.id] === undefined) {
+          assignmentState.taskIterations[task.id] = 1;
+        }
+
+        if (window.TestMode && typeof window.TestMode.initializeTask === 'function') {
+          const maxIterations = task.max_iterations || null;
+          window.TestMode.initializeTask(task.id, maxIterations);
+        }
+      });
+    }
     
     // Load user_tasks progress for this assignment
     try {
@@ -618,9 +1116,15 @@ function openAssignmentEditor(assignmentId) {
     return;
   }
   
-  // Load first task
-  const firstTask = tasks[0];
-  loadTaskIntoEditor(assignmentId, firstTask.id);
+  // Load specified task (if TASK_ID is set) or first task
+  let taskToLoad = tasks[0];
+  if (window.TASK_ID) {
+    const specifiedTask = tasks.find(t => t.id === window.TASK_ID);
+    if (specifiedTask) {
+      taskToLoad = specifiedTask;
+    }
+  }
+  loadTaskIntoEditor(assignmentId, taskToLoad.id);
 }
 
 // Go back to assignment list
@@ -728,6 +1232,9 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
 
+  // Clear solution mode when loading a task normally
+  assignmentState.solutionMode = false;
+
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && task.task_type !== 'code';
   
@@ -818,15 +1325,26 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     if (leftSection) leftSection.classList.remove('quiz-mode');
     if (runBtn) runBtn.style.display = 'inline-block';
     
-    // Load saved code from user_tasks if available
-    loadSavedCode(taskId).then(savedCode => {
-      const code = savedCode || task.code_template || '# Start here';
-      editor.setValue(code);
-    }).catch(err => {
-      console.warn('Failed to load saved code, using template:', err);
-      const code = task.code_template || '# Start here';
-      editor.setValue(code);
-    });
+    // Restore saved code if returning from solution mode, otherwise load from DB
+    if (assignmentState.savedCodeBeforeSolution !== null) {
+      editor.setValue(assignmentState.savedCodeBeforeSolution);
+      assignmentState.savedCodeBeforeSolution = null;
+      editor.updateOptions({ readOnly: false });
+    } else {
+      // Load saved code from user_tasks if available
+      loadSavedCode(taskId).then(savedCode => {
+        const code = savedCode || task.code_template || '# Start here';
+        editor.setValue(code);
+        // Ensure editor is editable (not in solution mode)
+        editor.updateOptions({ readOnly: false });
+      }).catch(err => {
+        console.warn('Failed to load saved code, using template:', err);
+        const code = task.code_template || '# Start here';
+        editor.setValue(code);
+        // Ensure editor is editable (not in solution mode)
+        editor.updateOptions({ readOnly: false });
+      });
+    }
   }
 
   // Show task details
@@ -3060,8 +3578,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  // Auto-load assignments if on assignments.php or assignment_editor.php
-  if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor.php')) {
+  // Auto-load assignments if on assignments.php or assignment_editor.php or editor_assignment_test.php
+  if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor') || window.location.pathname.includes('editor_assignment_test')) {
     console.log('On assignments page - loading assignments');
     
     // If in editor mode with assignment ID, load only that assignment (optimized)

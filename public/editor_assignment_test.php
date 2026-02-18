@@ -1,28 +1,34 @@
 <?php
 /**
- * Assignment Editor - Code editor view for working on tasks
+ * Assignment Test Editor - Admin test view (no DB persistence)
+ * Uses the same layout and script order as assignment_editor.php
  */
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../api/auth/middleware.php';
 
-// Check if user is logged in
 if (!isLoggedIn()) {
     header('Location: login.php');
     exit;
 }
 
-// Get assignment_id from URL
-$assignmentId = isset($_GET['assignment_id']) ? intval($_GET['assignment_id']) : null;
-if (!$assignmentId) {
-    header('Location: assignments.php');
+$user = getCurrentUser();
+if (($user['role'] ?? '') !== 'admin') {
+    header('Location: login.php');
     exit;
 }
 
-$user = getCurrentUser();
+$assignmentId = isset($_GET['assignment_id']) ? intval($_GET['assignment_id']) : null;
+if (!$assignmentId) {
+    header('Location: admin.php');
+    exit;
+}
+
+$taskId = isset($_GET['task_id']) ? intval($_GET['task_id']) : null;
+
 $displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
 if ($displayName === '') {
-  $displayName = $user['email'] ?? 'Benutzer';
+  $displayName = $user['email'] ?? 'Admin';
 }
 ?>
 <!DOCTYPE html>
@@ -74,11 +80,13 @@ if ($displayName === '') {
     }
 
     .toolbar{
-      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:3px 10px;
+      display:flex; gap:8px; align-items:center; flex-wrap:nowrap;
+      padding:3px 8px;
       background:transparent;
+      overflow-x: auto;
+      min-height: 44px;
     }
-    .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
+    .toolbar button{ padding:6px 10px; font-size:13px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; white-space: nowrap; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
     .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
     #submitted-info{ display:none; margin:0 12px; font-weight:600; color:var(--text-primary); align-items:center; gap:8px; }
@@ -367,6 +375,42 @@ if ($displayName === '') {
       margin: 10px 0;
       font-size: 12px;
     }
+    
+    /* Solution Section Styles */
+    .solution-section {
+      padding: 0;
+      margin: 0;
+    }
+    .solution-info {
+      padding: 8px;
+      margin-bottom: 8px;
+      background: var(--bg-secondary, var(--panel));
+      border-left: 3px solid var(--accent, #3b82f6);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .solution-info strong {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .solution-info p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    #solution-editor-container {
+      height: 400px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+    .quiz-container.solution-mode .quiz-option {
+      cursor: default;
+    }
+    .quiz-container.solution-mode input[type="checkbox"],
+    .quiz-container.solution-mode input[type="radio"] {
+      cursor: default;
+    }
 
     /* LEFT COLUMN: editor + lint/help */
     .left{
@@ -517,196 +561,6 @@ if ($displayName === '') {
     .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:300; border-bottom:1px solid var(--border); }
     .plot-img{ width:100%; height:auto; display:block; }
 
-    /* User bar & projects panel */
-    .user-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-left: auto;
-      padding: 4px 12px;
-      background: var(--panel);
-      border-radius: 8px;
-      border: 1px solid var(--border);
-    }
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      color: var(--text-primary);
-    }
-    .user-badge {
-      padding: 2px 8px;
-      background: #667eea;
-      color: white;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .admin-link {
-      padding: 6px 10px;
-      background: #0f766e;
-      color: #fff;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .admin-link:hover {
-      background: #0b5f57;
-    }
-    #projects-btn {
-      background: var(--panel);
-      border: 1px solid var(--border);
-    }
-
-    .assignments-panel {
-      position: fixed;
-      top: 0;
-      right: -420px;
-      width: 420px;
-      height: 100vh;
-      background: var(--bg);
-      border-left: 1px solid var(--border);
-      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-      transition: right 0.3s;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-    }
-    .assignments-panel.open { right: 0; }
-    .assignments-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .assignments-header h2 {
-      margin: 0;
-      font-size: 18px;
-      color: var(--text-primary);
-    }
-    .assignments-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-    .assignment-item {
-      margin-bottom: 10px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .assignment-header-bar {
-      padding: 12px;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: background 0.2s;
-    }
-    .assignment-header-bar:hover {
-      background: var(--bg);
-    }
-    .assignment-header-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-    }
-    .assignment-expand-icon {
-      transition: transform 0.2s;
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-    .assignment-item.expanded .assignment-expand-icon {
-      transform: rotate(90deg);
-    }
-    .assignment-status-summary {
-      font-size: 11px;
-      color: var(--text-secondary);
-      background: var(--bg);
-      padding: 2px 8px;
-      border-radius: 999px;
-    }
-    .assignment-tasks-list {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease-out;
-      border-top: 1px solid var(--border);
-    }
-    .assignment-item.expanded .assignment-tasks-list {
-      max-height: 600px;
-      overflow-y: auto;
-    }
-    .assignment-task-row {
-      padding: 10px 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      border-bottom: 1px solid var(--border);
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .assignment-task-row:last-child {
-      border-bottom: none;
-    }
-    .assignment-task-row:hover {
-      background: var(--bg);
-    }
-    .assignment-header-bar .assignment-title {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin: 0;
-      font-size: 14px;
-    }
-    .assignment-title {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 6px;
-    }
-    .assignment-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .status-badge {
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      background: #e5e7eb;
-      color: #111827;
-    }
-    .status-assigned { background: #e0f2fe; color: #0369a1; }
-    .status-in_progress { background: #fef3c7; color: #92400e; }
-    .status-submitted { background: #ddd6fe; color: #5b21b6; }
-    .status-passed { background: #dcfce7; color: #166534; }
-    .status-failed { background: #fee2e2; color: #b91c1c; }
-    .assignment-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .assignment-detail {
-      margin-top: 14px;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: var(--panel);
-    }
-    .task-item {
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin-top: 8px;
-      background: var(--bg);
-    }
-    .task-title { font-weight: 600; margin-bottom: 4px; }
-    .task-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-
     /* Success Modal */
     .success-modal {
       position: fixed;
@@ -818,6 +672,50 @@ if ($displayName === '') {
     .success-btn-next-assignment:hover {
       background: #7c3aed;
       transform: translateY(-2px);
+    }
+
+    /* User bar & projects panel */
+    .user-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+      padding: 4px 12px;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .user-badge {
+      padding: 2px 8px;
+      background: #667eea;
+      color: white;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .admin-link {
+      padding: 6px 10px;
+      background: #0f766e;
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .admin-link:hover {
+      background: #0b5f57;
+    }
+    #projects-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
     }
 
     /* Assignment List View */
@@ -994,6 +892,27 @@ HTML;
     </div>
   </div>
 
+  <!-- Set globals BEFORE all scripts -->
+  <script>
+    // Clear caches to ensure fresh data from server
+    sessionStorage.clear();
+    
+    window.testMode = true;
+    window.TEST_MODE = true;
+    window.EDITOR_MODE = true;
+    window.ASSIGNMENT_ID = <?= $assignmentId ?>;
+    
+    // Apply CSS classes for layout immediately
+    document.addEventListener('DOMContentLoaded', () => {
+      const app = document.querySelector('.app');
+      const panel = document.getElementById('task-details-panel');
+      if (app && panel) {
+        app.classList.add('with-task-details');
+        panel.classList.add('active');
+      }
+    });
+  </script>
+
   <!-- Monaco loader (AMD) -->
   <script src="monaco/min/vs/loader.js"></script>
   <script>
@@ -1009,6 +928,7 @@ HTML;
   
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js"></script>
+  <script src="js/test-mode.js"></script>
 
   <script type="module" src="js/editor-setup.js"></script>
 
@@ -1053,11 +973,24 @@ HTML;
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/assignments.js"></script>
+
   <script>
-    // Auto-load assignment from URL parameter
+    // TestMode initialization and cleanup
+    if (window.TestMode && typeof window.TestMode.initTestMode === 'function') {
+      window.TestMode.initTestMode(<?php echo (int)$assignmentId; ?>);
+    }
+    window.addEventListener('beforeunload', () => {
+      if (window.TestMode && typeof window.TestMode.resetTestMode === 'function') {
+        window.TestMode.resetTestMode(<?php echo (int)$assignmentId; ?>);
+      }
+    });
+    
+    // Auto-load assignment and optionally specific task from URL parameters
     window.EDITOR_MODE = true;
-    window.ASSIGNMENT_ID = <?= $assignmentId ?>;
+    window.ASSIGNMENT_ID = <?php echo (int)$assignmentId; ?>;
+    window.TASK_ID = <?php echo $taskId ? (int)$taskId : 'null'; ?>;
   </script>
+
+  <script type="module" src="js/assignments.js"></script>
 </body>
 </html>

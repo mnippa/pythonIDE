@@ -705,10 +705,6 @@ if ($displayName === '') {
           <textarea id="task-description"></textarea>
         </div>
         <div class="field">
-          <label for="task-position">Position</label>
-          <input id="task-position" type="number" min="1" />
-        </div>
-        <div class="field">
           <label for="task-max-attempts">Max Versuche</label>
           <input id="task-max-attempts" type="number" min="1" value="1" />
         </div>
@@ -776,12 +772,6 @@ if ($displayName === '') {
           <label for="task-keywords">Schlüsselwörter (kommagetrennt)</label>
           <input id="task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
           <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
-        </div>
-        
-        <div class="field" data-field="min-keywords">
-          <label for="task-min-keywords">Mindestanzahl Schlüsselwörter</label>
-          <input id="task-min-keywords" type="number" min="1" placeholder="Leer = alle erforderlich" />
-          <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
         </div>
         
         <!-- Correct Answer (for code reading & code_random_complex) -->
@@ -925,10 +915,6 @@ if ($displayName === '') {
           <textarea id="edit-task-description"></textarea>
         </div>
         <div class="field">
-          <label for="edit-task-position">Position</label>
-          <input id="edit-task-position" type="number" min="1" />
-        </div>
-        <div class="field">
           <label for="edit-task-max-attempts">Max Versuche</label>
           <input id="edit-task-max-attempts" type="number" min="1" value="1" />
         </div>
@@ -993,12 +979,6 @@ if ($displayName === '') {
           <label for="edit-task-keywords">Schlüsselwörter (kommagetrennt)</label>
           <input id="edit-task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
           <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
-        </div>
-        
-        <div class="field" data-field="min-keywords">
-          <label for="edit-task-min-keywords">Mindestanzahl Schlüsselwörter</label>
-          <input id="edit-task-min-keywords" type="number" min="1" placeholder="Leer = alle erforderlich" />
-          <div class="hint">Wie viele Schlüsselwörter müssen mindestens gefunden werden? (leer = alle)</div>
         </div>
         
         <!-- Correct Answer (for code reading & code_random_complex) -->

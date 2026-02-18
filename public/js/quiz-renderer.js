@@ -72,6 +72,48 @@ window.QuizRenderer = {
       this.renderHiddenCode(task, container);
     }
   },
+  
+  renderSolution(task, container) {
+    // Render quiz with correct answers marked (readonly, no interaction)
+    const taskType = task.task_type;
+    const isMultiple = taskType === 'multiple_choice';
+    const inputType = isMultiple ? 'checkbox' : 'radio';
+    const inputName = `quiz-solution-${task.id}`;
+    
+    container.innerHTML = `
+      <div class="quiz-container solution-mode">
+        <div class="quiz-question">
+          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+          ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+        </div>
+        
+        <div class="quiz-options">
+          ${(task.options || []).map((option, idx) => {
+            const isCorrect = option.is_correct;
+            let optionClass = 'quiz-option';
+            
+            if (isCorrect) {
+              optionClass += ' user-answer-correct';
+            }
+            
+            return `
+            <label class="${optionClass}">
+              <input 
+                type="${inputType}" 
+                name="${inputName}" 
+                value="${option.id}" 
+                ${isCorrect ? 'checked' : ''}
+                disabled
+              />
+              <span class="option-text">${this.escapeHtml(option.text)}</span>
+              ${option.image_url ? `<img src="${option.image_url}" class="option-image" alt="Option image" />` : ''}
+            </label>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  },
 
   renderChoice(task, container, isMultiple) {
     const inputType = isMultiple ? 'checkbox' : 'radio';
@@ -595,12 +637,27 @@ window.QuizRenderer = {
     
     // Submit to API
     try {
+      // Determine API endpoint and payload based on mode
+      const isTestMode = window.testMode === true;
+      const apiEndpoint = isTestMode ? '../api/user_tasks/test_submission.php' : '../api/user_tasks/submit_quiz.php';
+      
       const payload = {
         task_id: taskId,
         ...answer
       };
-      console.log('[QUIZ] Submitting quiz answer - Payload:', payload);
-      const response = await fetch('../api/user_tasks/submit_quiz.php', {
+      
+      // In test mode, include current state from TestMode
+      if (isTestMode && typeof TestMode !== 'undefined') {
+        const taskState = TestMode.getTaskState(taskId);
+        if (taskState) {
+          payload.current_attempts = taskState.attempts || 0;
+          payload.current_iteration = taskState.current_iteration || 1;
+          payload.current_status = taskState.status || 'unbearbeitet';
+        }
+      }
+      
+      console.log('[QUIZ] Submitting quiz answer - Endpoint: ' + apiEndpoint + ' - Payload:', payload);
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -609,6 +666,11 @@ window.QuizRenderer = {
       
       const data = await response.json();
       console.log('[QUIZ] Response:', data);
+      
+      // In test mode, record submission
+      if (isTestMode && typeof TestMode !== 'undefined') {
+        TestMode.recordSubmission(taskId, payload, data);
+      }
       
       if (data.ok) {
         const isPassed = data.is_correct;
@@ -640,6 +702,15 @@ window.QuizRenderer = {
           const currentTaskType = window.assignmentState?.currentTask?.task_type;
           if (typeof data.current_iteration === 'number') {
             window.assignmentState.taskIterations[taskId] = data.current_iteration;
+          }
+          
+          // In test mode, also update TestMode storage
+          if (window.testMode === true && typeof TestMode !== 'undefined') {
+            TestMode.setTaskState(taskId, {
+              status: data.status,
+              attempts: data.attempts,
+              current_iteration: typeof data.current_iteration === 'number' ? data.current_iteration : undefined
+            });
           }
           
           // Update options with is_correct from response (for choice tasks)

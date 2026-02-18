@@ -144,8 +144,9 @@ function renderAssignments() {
       </td>
       <td>
         <div class="row-actions">
+          <button class="icon-btn" data-action="test-assignment" data-id="${a.id}" title="Test Assignment">🧪</button>
           <button class="icon-btn" data-action="edit-assignment" data-id="${a.id}" title="Edit">✏️</button>
-          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">�</button>
+          <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">🗐</button>
           <button class="icon-btn warn" data-action="reset-assignment-attempts" data-id="${a.id}" title="Reset all attempts">↺</button>
           <button class="icon-btn danger" data-action="delete-assignment" data-id="${a.id}" title="Delete">🗑️</button>
         </div>
@@ -202,7 +203,25 @@ async function loadTasks(assignmentId, assignmentTitle) {
     const isLast = fullIndex === state.tasks.length - 1;
     const taskTypeLabel = t.task_type || 'code';
     const isQuizType = taskTypeLabel !== 'code';
-    
+
+    // Testtypen-Icons
+    const testTypeIcons = {
+      'output': '🖨️',
+      'function': 'ƒ',
+      'variable': '𝑥',
+      'intelligent': '🧠',
+      'code_check': '🔑'
+    };
+    let testTypes = [];
+    try {
+      if (t.test_cases) {
+        let parsed = JSON.parse(t.test_cases);
+        if (!Array.isArray(parsed)) parsed = [parsed];
+        testTypes = parsed.map(tc => tc.type).filter(Boolean);
+      }
+    } catch {}
+    const testTypeIconHtml = testTypes.map(type => testTypeIcons[type] || '').join(' ');
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><input type="checkbox" class="task-checkbox" data-task-id="${t.id}"></td>
@@ -217,7 +236,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
       <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
-      <td><span class="tag">${escapeHtml(modeLabel)}</span></td>
+      <td><span class="tag">${escapeHtml(modeLabel)} ${testTypeIconHtml}</span></td>
       <td>
         <div class="row-actions">
           <button class="btn" data-action="edit-task" data-id="${t.id}">Edit</button>
@@ -296,7 +315,6 @@ function resetAssignmentForm() {
 function resetTaskForm() {
   $('task-title').value = '';
   $('task-description').value = '';
-  $('task-position').value = '';
   $('task-template').value = '';
   $('task-hint1').value = '';
   $('task-hint2').value = '';
@@ -416,7 +434,6 @@ async function handleTaskSubmit(e) {
   const payload = {
     assignment_id: state.currentAssignmentId,
     title: $('task-title').value.trim(),
-    position: $('task-position').value ? parseInt($('task-position').value, 10) : null,
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
     show_generator_code: $('task-show-generator').checked ? 1 : 0,
@@ -460,8 +477,6 @@ async function handleTaskSubmit(e) {
   if (taskType === 'free_text') {
     const keywords = $('task-keywords').value.trim();
     payload.correct_answer = keywords; // Store as correct_answer
-    const minKeywords = $('task-min-keywords').value.trim();
-    payload.min_keywords_required = minKeywords ? parseInt(minKeywords, 10) : null;
   }
   
   // NEW: Add fields for code reading
@@ -907,7 +922,6 @@ function openEditTaskModal(taskId) {
   // Basic fields
   $('edit-task-id').value = task.id;
   $('edit-task-title').value = task.title || '';
-  $('edit-task-position').value = task.position || '';
   if ($('edit-task-max-attempts')) $('edit-task-max-attempts').value = task.max_attempts ? task.max_attempts : 1;
   if ($('edit-task-max-iterations')) {
     const iterValue = task.max_iterations ? task.max_iterations : 3;
@@ -962,7 +976,6 @@ function openEditTaskModal(taskId) {
       $('edit-task-keywords').value = task.keywords || '';
     }
   }
-  if ($('edit-task-min-keywords')) $('edit-task-min-keywords').value = task.min_keywords_required || '';
   if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
   if ($('edit-task-var-overrides')) {
     const overridesValue = task.variable_overrides
@@ -1042,7 +1055,6 @@ async function handleEditTaskSubmit(e) {
   const payload = {
     id: taskId,
     title: $('edit-task-title').value.trim(),
-    position: $('edit-task-position').value ? parseInt($('edit-task-position').value, 10) : null,
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
     show_generator_code: $('edit-task-show-generator').checked ? 1 : 0,
@@ -1073,7 +1085,6 @@ async function handleEditTaskSubmit(e) {
   payload.keywords = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
   payload.correct_answer = $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null;
   payload.variable_overrides = $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null;
-  payload.min_keywords_required = $('edit-task-min-keywords') ? (($('edit-task-min-keywords').value.trim() !== '') ? parseInt($('edit-task-min-keywords').value, 10) : null) : null;
   
   // For free_text, use keywords field as correct_answer
   if (taskType === 'free_text') {
@@ -1373,6 +1384,13 @@ function bindEvents() {
       window.location.href = `evaluation.php?assignment_id=${id}`;
     }
 
+    if (action === 'test-assignment') {
+      const a = state.assignments.find((x) => x.id === id);
+      if (!a) return;
+      // Open test view in new tab
+      window.open(`editor_assignment_test.php?assignment_id=${id}`, `test_assignment_${id}`, 'width=1200,height=800');
+    }
+
     if (action === 'move-task-up') {
       await moveTask(id, 'up');
     }
@@ -1393,36 +1411,9 @@ function bindEvents() {
     }
 
     if (action === 'view-task') {
-      const task = state.tasks.find((t) => t.id === id);
-      if (!task) return;
-      
-      const details = `
-TASK DETAILS
-============
-Title: ${task.title}
-Position: ${task.position}
-Type: ${task.problem_type}
-Validation Mode: ${task.validation_mode || 'none'}
-
-Description:
-${task.description || '(no description)'}
-
-Code Template:
-${task.code_template || '(none)'}
-
-Hints:
-Hint 1: ${task.hint1 || '(none)'}
-Hint 2: ${task.hint2 || '(none)'}
-Hint 3: ${task.hint3 || '(none)'}
-
-Test Cases:
-${task.test_cases ? JSON.stringify(JSON.parse(task.test_cases), null, 2) : '(none)'}
-
-Solution Code:
-${task.solution_code ? task.solution_code.substring(0, 200) + '...' : '(none)'}
-      `;
-      
-      alert(details);
+      if (!state.currentAssignmentId) return;
+      // Open test view in new tab/window
+      window.open(`editor_assignment_test.php?assignment_id=${state.currentAssignmentId}&task_id=${id}`, '_blank');
     }
 
     if (action === 'toggle-user') {

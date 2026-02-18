@@ -7,27 +7,27 @@
   const TASK_TYPES = {
     code: {
       label: 'Code (Python)',
-      fields: ['code_template', 'hints', 'test_cases', 'validation_mode', 'solution']
+      fields: ['code_template', 'test_cases', 'solution', 'hints']
     },
     single_choice: {
       label: 'Single-Choice',
-      fields: ['question', 'image', 'options']
+      fields: ['question', 'image', 'options', 'hints']
     },
     multiple_choice: {
       label: 'Multiple-Choice',
-      fields: ['question', 'image', 'options']
+      fields: ['question', 'image', 'options', 'hints']
     },
     free_text: {
       label: 'Freitext',
-      fields: ['question', 'image', 'keywords']
+      fields: ['question', 'image', 'keywords', 'validation_mode', 'hints']
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'hints', 'solution', 'max_iterations']
+      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'validation_mode', 'hints', 'max_iterations']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints', 'max_iterations']
+      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints']
     }
   };
 

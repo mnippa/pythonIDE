@@ -87,19 +87,18 @@ try {
     foreach ($tasks as $task) {
         $stmt = $conn->prepare('INSERT INTO tasks (
             assignment_id, title, description, problem_type, code_template, 
-            hint, hint1, hint2, hint3, stoff, 
+            hint1, hint2, hint3, stoff, 
             expected_output, solution_code, max_attempts, validation_mode, 
             test_cases, position, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
         
         $stmt->bind_param(
-            'isssssssssssissi',
+            'issssssssssissi',
             $newAssignmentId,
             $task['title'],
             $task['description'],
             $task['problem_type'],
             $task['code_template'],
-            $task['hint'],
             $task['hint1'],
             $task['hint2'],
             $task['hint3'],

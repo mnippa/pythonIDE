@@ -78,7 +78,6 @@ $title = $data['title'];
 $description = $data['description'] ?? '';
 $problemType = $data['problem_type'] ?? 'code_completion';
 $codeTemplate = $data['code_template'] ?? '';
-$hint = $data['hint'] ?? null;
 $hint1 = $data['hint1'] ?? null;
 $hint2 = $data['hint2'] ?? null;
 $hint3 = $data['hint3'] ?? null;
@@ -135,8 +134,8 @@ try {
     // Insert task
     $stmt = $conn->prepare('
         INSERT INTO tasks 
-        (assignment_id, position, title, description, problem_type, code_template, hint, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, max_attempts, validation_mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        (assignment_id, position, title, description, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, max_attempts, validation_mode, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     ');
     
     if (!$stmt) {
@@ -147,14 +146,13 @@ try {
         exit;
     }
     
-    $stmt->bind_param('iisssssssssssiss',
+    $stmt->bind_param('iisssssssssssis',
         $assignmentId,
         $position,
         $title,
         $description,
         $problemType,
         $codeTemplate,
-        $hint,
         $hint1,
         $hint2,
         $hint3,

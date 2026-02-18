@@ -4,6 +4,7 @@ async function initPyodideAndEditor() {
   /* ---------------- Pyodide ---------------- */
   const pyodide = await loadPyodide({ indexURL: "pyodide/" });
   window.pyodide = pyodide; // Make globally available for assignments.js
+  window.pyodideReady = true; // Set flag for solution computation
   console.log("Pyodide ready");
 
   const loadedPackages = new Set();
