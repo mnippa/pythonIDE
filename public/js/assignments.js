@@ -1,4 +1,4 @@
-// assignments.js - Assigned tasks panel for logged-in users
+﻿// assignments.js - Assigned tasks panel for logged-in users
 
 const assignmentState = {
   assignments: [],
@@ -245,45 +245,56 @@ function showTaskDetails(task, activeTab = 'details') {
   const revealedCount = revealedHints.length;
   const nextHint = availableHints.find(hint => !revealedSet.has(hint.id));
 
-  // --- Test Type Icons/Labels (for code tasks) ---
+  // --- Extract test types for display (code tasks only) ---
   let testTypeHtml = '';
-  if (task.task_type === 'code' || task.task_type === 'code_reading' || task.task_type === 'code_random_complex') {
-    // Parse test types from test_cases and validation_mode
-    let testTypes = [];
+  if (task.task_type === 'code' && task.test_cases) {
+    console.log('[TEST TYPES] Parsing test_cases for task:', task.id);
+    let testTypes = new Set(); // Use Set to avoid duplicates
+    
     try {
-      if (task.test_cases) {
-        let parsed = JSON.parse(task.test_cases);
-        // Handle intelligent test config (single object with mode, tests, etc.)
-        if (parsed && !Array.isArray(parsed) && parsed.mode) {
-          parsed = [{type: 'intelligent', ...parsed}];
-        }
-        // Migrate legacy FUNCTION structure to new structure if needed
-        if (Array.isArray(parsed)) {
-          parsed.forEach(tc => {
-            if (tc.type && !testTypes.includes(tc.type)) testTypes.push(tc.type);
-            // Legacy: if no type, default to output
-            if (!tc.type && !testTypes.includes('output')) testTypes.push('output');
-          });
-        }
+      let parsed = JSON.parse(task.test_cases);
+      
+      // Handle intelligent test config (single object with mode, tests, etc.)
+      if (parsed && !Array.isArray(parsed) && parsed.mode) {
+        testTypes.add(parsed.mode);
+        parsed = [{type: 'intelligent', ...parsed}];
       }
-    } catch (e) {}
-    // Also check validation_mode for fallback
-    if (task.validation_mode && !testTypes.includes(task.validation_mode)) {
-      testTypes.push(task.validation_mode);
+      
+      // Extract types from all test cases
+      if (Array.isArray(parsed)) {
+        parsed.forEach(tc => {
+          // Check both 'type' and 'mode' fields (handle inconsistency)
+          if (tc.type) testTypes.add(tc.type);
+          if (tc.mode) testTypes.add(tc.mode);
+          
+          // Legacy: if neither exists, assume 'output'
+          if (!tc.type && !tc.mode) testTypes.add('output');
+        });
+      }
+      
+      console.log('[TEST TYPES] Found test types:', Array.from(testTypes));
+    } catch (e) {
+      console.warn('[TEST TYPES] Failed to parse test_cases:', e);
     }
-    // Map to icons/labels
+    
+    // Convert Set to sorted array
+    const typeOrder = ['output', 'function', 'variable', 'intelligent', 'code_check'];
+    const sortedTypes = typeOrder.filter(t => testTypes.has(t));
+    
+    // Map to icons (requested by user)
     const typeMap = {
-      'output': {icon: '🖥️', label: 'Output'},
-      'function': {icon: 'ƒ', label: 'Function'},
-      'variable': {icon: '𝑥', label: 'Variable'},
-      'intelligent': {icon: '🤖', label: 'Intelligent'},
-      'code_check': {icon: '🔑', label: 'Keywords'},
+      'output': {icon: '🖨️', tooltip: 'Output-Test'},
+      'function': {icon: 'ƒ', tooltip: 'Function-Test'},
+      'variable': {icon: '𝑥', tooltip: 'Variable-Test'},
+      'intelligent': {icon: '🧠', tooltip: 'Intelligent-Test'},
+      'code_check': {icon: '🔑', tooltip: 'Keywords-Test'}
     };
-    if (testTypes.length > 0) {
-      testTypeHtml = `<div class="test-type-indicators" style="margin-bottom:8px; font-size:13px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <span style=\"color:#888;\">Test-Typen:</span>
-        ${testTypes.map(t => `<span class="test-type-badge" style="background:#f3f4f6; border-radius:4px; padding:2px 7px; display:inline-flex; align-items:center; gap:3px; border:1px solid #e5e7eb; font-size:13px; color:#222;">${typeMap[t]?.icon || '❓'} ${typeMap[t]?.label || t}</span>`).join('')}
-      </div>`;
+    
+    if (sortedTypes.length > 0) {
+      testTypeHtml = `<span class="test-type-indicators" style="margin-left:10px; font-weight:normal; font-variant:normal;">${sortedTypes.map(t => {
+        const extraStyle = t === 'function' ? 'font-variant:normal;text-transform:none;' : '';
+        return `<span class="test-type-icon" title="${typeMap[t]?.tooltip || t}" style="margin:0 4px; font-size:16px; cursor:help; ${extraStyle}">${typeMap[t]?.icon || '❓'}</span>`;
+      }).join('')}</span>`;
     }
   }
 
@@ -292,7 +303,7 @@ function showTaskDetails(task, activeTab = 'details') {
   const taskContent = isQuizTask ? task.question_text : task.description;
   if (taskContent) {
     descriptionHtml = `<div class="task-description-box">
-      <h4>Aufgabenstellung</h4>
+      <h4 style="display:inline-flex;align-items:center;font-weight:normal;">Aufgabenstellung${testTypeHtml}</h4>
       <p>${escapeHtml(taskContent)}</p>
     </div>`;
   }
@@ -390,8 +401,8 @@ function showTaskDetails(task, activeTab = 'details') {
   
   tabsHtml += `</div>`;
 
-  // Build final HTML: Test types, then description, then tabs
-  let html = testTypeHtml + descriptionHtml + tabsHtml;
+  // Build final HTML: description (with test types in h4), then tabs
+  let html = descriptionHtml + tabsHtml;
   html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
