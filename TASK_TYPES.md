@@ -186,18 +186,18 @@ VALUES (1, 'Schleife', 'code_reading',
 
 ## 6. Code Random Complex (Code mit dynamischen Zufallswerten)
 
-**Beschreibung:** Code mit **individueller Zufallsfunktion** (z.B. `random.randint()`) in `code_template`, die bei jedem Laden neue Werte generiert. Student muss das Ergebnis vorhersagen.
+**Beschreibung:** Code mit **individueller Zufallsfunktion** in `code_template`, die bei jedem Laden neue Werte generiert. Student muss das Ergebnis vorhersagen.
 
 ### Wichtige Felder in `tasks`
 
 ```sql
 task_type = 'code_random_complex'
 question_text = 'Aufgabenstellung...'
-code_template = 'Generator-Code, der values-Dict fuellt'   -- ✓ ZUFALLSFUNKTION (EMPFOHLEN)
+code_template = 'Generator-Code, der values-Dict fuellt'   -- ✓ ZUFALLSFUNKTION (PFLICHT)
 solution_code = 'Berechnung mit values[...]'               -- Ergebnis in result
 correct_answer = 'result'                                  -- Var-Name fuer Ergebnis
 description = 'Lernmaterial'
-variable_overrides = NULL                                  -- Optional (nur fuer feste Arrays)
+variable_overrides = NULL                                  -- Nicht erlaubt
 validation_mode = 'strict'
 max_attempts = 5
 ```
@@ -234,29 +234,9 @@ Alle **JSON-serialisierbaren** Typen sind erlaubt:
 
 Hinweis: `values` muss ein **dict** sein. Arrays oder Strings als Root sind nicht erlaubt.
 
-### Alternative: Feste Wertepaare (wie code_reading)
+### Feste Wertepaare (nur code_reading)
 
-Falls du **vordefinierte Werte** brauchst, verwende `variable_overrides` (funktioniert wie bei code_reading).
-
-**Wann verwenden:**
-- Wenn Werte vorhersehbar sein müssen
-- Wenn bestimmte Test-Cases abgedeckt werden sollen
-
-```sql
-variable_overrides = '{"binary":["1010","1101","10011"]}'
-code_template = NULL
-```
-
-**Fixe Kombinationen (Paare) pro Iteration:**
-
-```json
-[
-    {"A": true, "B": false, "C": true},
-    {"A": false, "B": true, "C": false}
-]
-```
-
-Das System nutzt die Werte nach Iteration (1, 2, 3, ...). Bei mehr Iterationen als Sets wird zyklisch wiederholt.
+`variable_overrides` ist **nur fuer code_reading** erlaubt. Fuer `code_random_complex` sind feste Wertepaare nicht zulaessig.
 
 ### SQL-Beispiel (mit Zufallsfunktion)
 
@@ -309,13 +289,13 @@ solution_code = 'binary = {binary}\nresult = int(binary, 2)'
 
 ## Variable Overrides Vergleich
 
-| Feature | variable_overrides | code_template (Zufallsfunktion) |
+| Feature | variable_overrides (code_reading) | code_template (code_random_complex) |
 |---------|-------------------|--------------------------------|
 | Kontrolle | Hoch (vordefiniert) | Niedrig (zufaellig) |
 | Performance | Schnell | Langsam |
 | Vorhersehbarkeit | Hoch | Niedrig |
 | Testbarkeit | Einfach | Schwierig |
-| **Einsatz** | **Wenn feste Werte gebraucht werden** | **Standard fuer code_random_complex** |
+| **Einsatz** | **Nur code_reading** | **Pflicht fuer code_random_complex** |
 
 ---
 

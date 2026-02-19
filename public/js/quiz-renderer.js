@@ -297,6 +297,10 @@ window.QuizRenderer = {
     
     // Generate random variable values if not already stored
     let varValues = {};
+    if (task.task_type === 'code_random_complex' && task.variable_overrides) {
+      throw new Error('code_random_complex erlaubt keine festen Wertepaare (variable_overrides)');
+    }
+
     if (task.variable_overrides) {
       try {
         const overrides = typeof task.variable_overrides === 'string'
@@ -338,6 +342,12 @@ window.QuizRenderer = {
       window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
     }
     
+    const showCode =
+      task.show_generator_code === 1 ||
+      task.show_generator_code === true ||
+      task.show_generator_code === '1' ||
+      task.show_generator_code === 'true';
+
     // Build code display with template string replacement AND variable highlighting
     let codeDisplay = task.code_template || '';
     
@@ -357,6 +367,14 @@ window.QuizRenderer = {
       );
     }
     
+    const codeBlock = showCode
+      ? `<div class="code-reading-code">
+          <pre><code>${codeDisplay}</code></pre>
+        </div>`
+      : `<div class="code-reading-code">
+          <em>Code ist ausgeblendet (Algorithmus ist bekannt).</em>
+        </div>`;
+
     container.innerHTML = `
       <div class="quiz-container">
         ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
@@ -368,10 +386,7 @@ window.QuizRenderer = {
             ).join('')}
           </ul>
         </div>
-        
-        <div class="code-reading-code">
-          <pre><code>${codeDisplay}</code></pre>
-        </div>
+        ${codeBlock}
         
         <div class="quiz-question">
           <label for="code-reading-answer-${task.id}">Was ist der Wert von <code>${this.escapeHtml(task.correct_answer || '?')}</code> am Ende?</label>

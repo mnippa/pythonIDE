@@ -23,11 +23,11 @@
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'validation_mode', 'hints', 'max_iterations']
+      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'validation_mode', 'hints', 'max_iterations', 'show-generator-code']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['question', 'code_template', 'variable_overrides', 'solution', 'correct_answer', 'hints']
+      fields: ['question', 'code_template', 'solution', 'correct_answer', 'hints', 'show-generator-code']
     }
   };
 
@@ -119,8 +119,8 @@
         }
       });
       
-      // Show generator code option only for code_random_complex
-      if (taskType === 'code_random_complex') {
+      // Show code toggle for code_random_complex and code_reading
+      if (taskType === 'code_random_complex' || taskType === 'code_reading') {
         this.showField(form, 'show-generator-code');
       }
     },

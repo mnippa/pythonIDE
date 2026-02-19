@@ -55,7 +55,7 @@ class TaskExporter {
       stoff: task.stoff || '',
       keywords: task.keywords || '',
       correct_answer: task.correct_answer || '',
-      variable_overrides: task.variable_overrides || '',
+      variable_overrides: taskType === 'code_random_complex' ? '' : (task.variable_overrides || ''),
       options
     };
   }

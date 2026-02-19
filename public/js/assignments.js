@@ -749,6 +749,10 @@ async function generateRandomComplexValues(task) {
   }
   
   // CASE 1: Use variable_overrides if available
+  if (task.task_type === 'code_random_complex' && task.variable_overrides) {
+    throw new Error('code_random_complex erlaubt keine festen Wertepaare (variable_overrides)');
+  }
+
   if (task.variable_overrides) {
     const overrides = typeof task.variable_overrides === 'string' 
       ? JSON.parse(task.variable_overrides) 

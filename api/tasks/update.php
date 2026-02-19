@@ -26,12 +26,17 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
-$stmt = $conn->prepare('SELECT id FROM tasks WHERE id = ?');
+$stmt = $conn->prepare('SELECT id, task_type, code_template, variable_overrides FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 $stmt->execute();
-if ($stmt->get_result()->num_rows === 0) {
+$result = $stmt->get_result();
+if ($result->num_rows === 0) {
     jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
 }
+$existingTask = $result->fetch_assoc();
+$existingTaskType = $existingTask['task_type'] ?? null;
+$existingCodeTemplate = $existingTask['code_template'] ?? '';
+$existingOverrides = $existingTask['variable_overrides'] ?? null;
 
 $allowedTypes = [
     'code_completion',
@@ -198,6 +203,32 @@ if (isset($input['task_type'])) {
     $updates[] = 'task_type = ?';
     $params[] = $taskType;
     $types .= 's';
+}
+
+$effectiveTaskType = $taskTypeInput ?? $existingTaskType;
+$templateValue = array_key_exists('code_template', $input) ? ($input['code_template'] ?? '') : ($existingCodeTemplate ?? '');
+$overridesValue = array_key_exists('variable_overrides', $input) ? ($input['variable_overrides'] ?? null) : $existingOverrides;
+$overridesTrimmed = is_string($overridesValue) ? trim($overridesValue) : $overridesValue;
+$hasOverrides = $overridesTrimmed !== null
+    && $overridesTrimmed !== ''
+    && $overridesTrimmed !== '[]'
+    && $overridesTrimmed !== '{}';
+
+if ($effectiveTaskType === 'code_random_complex') {
+    if ($hasOverrides) {
+        jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex'], 400);
+    }
+    $templateString = is_string($templateValue) ? $templateValue : '';
+    if (trim($templateString) === '') {
+        jsonResponse(['ok' => false, 'error' => 'code_template required for code_random_complex'], 400);
+    }
+    if (!preg_match('/\bvalues\b/', $templateString)) {
+        jsonResponse(['ok' => false, 'error' => 'code_template must set values dict for code_random_complex'], 400);
+    }
+}
+
+if ($effectiveTaskType === 'code_reading' && !$hasOverrides) {
+    jsonResponse(['ok' => false, 'error' => 'variable_overrides required for code_reading'], 400);
 }
 
 if (array_key_exists('question_text', $input)) {

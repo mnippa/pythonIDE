@@ -484,7 +484,7 @@ async function handleTaskSubmit(e) {
     payload.correct_answer = $('task-correct-answer').value.trim();
   }
 
-  if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+  if (taskType === 'code_reading') {
     const overridesPayload = getOverridesPayload('task');
     if (overridesPayload === null && $('task-var-overrides').value.trim() !== '') {
       return;
@@ -492,6 +492,19 @@ async function handleTaskSubmit(e) {
     if (overridesPayload) {
       payload.variable_overrides = overridesPayload;
     }
+  }
+
+  if (taskType === 'code_random_complex') {
+    if ($('task-var-overrides') && $('task-var-overrides').value.trim() !== '') {
+      alert('code_random_complex erlaubt keine festen Wertepaare. Bitte Generator-Code verwenden.');
+      return;
+    }
+    const templateValue = ($('task-template')?.value || '').trim();
+    if (!templateValue || !templateValue.includes('values')) {
+      alert('code_random_complex benoetigt Generator-Code, der ein values-Dict befuellt.');
+      return;
+    }
+    payload.variable_overrides = null;
   }
 
   if (taskType === 'code_reading') {
@@ -1091,12 +1104,25 @@ async function handleEditTaskSubmit(e) {
     payload.correct_answer = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
   }
 
-  if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+  if (taskType === 'code_reading') {
     const overridesPayload = getOverridesPayload('edit-task');
     if (overridesPayload === null && $('edit-task-var-overrides')?.value.trim() !== '') {
       return;
     }
     payload.variable_overrides = overridesPayload || null;
+  }
+
+  if (taskType === 'code_random_complex') {
+    if ($('edit-task-var-overrides') && $('edit-task-var-overrides').value.trim() !== '') {
+      alert('code_random_complex erlaubt keine festen Wertepaare. Bitte Generator-Code verwenden.');
+      return;
+    }
+    const templateValue = ($('edit-task-template')?.value || '').trim();
+    if (!templateValue || !templateValue.includes('values')) {
+      alert('code_random_complex benoetigt Generator-Code, der ein values-Dict befuellt.');
+      return;
+    }
+    payload.variable_overrides = null;
   }
 
   if (taskType === 'code_reading') {
@@ -2704,6 +2730,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Task Type Change Handler (EDIT task)
+    const randomSnippet = "import random\nmin_val = 1\nmax_val = 10\nvalues = {\"num\": random.randint(min_val, max_val)}";
+    const taskRandomSnippetBtn = $('task-random-snippet');
+    if (taskRandomSnippetBtn) {
+      taskRandomSnippetBtn.addEventListener('click', () => {
+        const textarea = $('task-template');
+        if (!textarea) return;
+        textarea.value = randomSnippet;
+        textarea.focus();
+      });
+    }
+    const editTaskRandomSnippetBtn = $('edit-task-random-snippet');
+    if (editTaskRandomSnippetBtn) {
+      editTaskRandomSnippetBtn.addEventListener('click', () => {
+        const textarea = $('edit-task-template');
+        if (!textarea) return;
+        textarea.value = randomSnippet;
+        textarea.focus();
+      });
+    }
+
   const editTaskType = $('edit-task-type');
   if (editTaskType) {
     editTaskType.addEventListener('change', () => {

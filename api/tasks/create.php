@@ -105,6 +105,28 @@ if ($taskType === 'code_random_complex' && empty($solutionCode)) {
     jsonResponse(['ok' => false, 'error' => 'solution_code required for ' . $taskType], 400);
 }
 
+$variableOverridesRaw = $variableOverrides;
+$variableOverridesTrimmed = is_string($variableOverridesRaw) ? trim($variableOverridesRaw) : $variableOverridesRaw;
+$hasVariableOverrides = $variableOverridesTrimmed !== null
+    && $variableOverridesTrimmed !== ''
+    && $variableOverridesTrimmed !== '[]'
+    && $variableOverridesTrimmed !== '{}';
+
+if ($taskType === 'code_random_complex' && $hasVariableOverrides) {
+    jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex'], 400);
+}
+
+if ($taskType === 'code_reading' && !$hasVariableOverrides) {
+    jsonResponse(['ok' => false, 'error' => 'variable_overrides required for code_reading'], 400);
+}
+
+if ($taskType === 'code_random_complex') {
+    $templateValue = is_string($codeTemplate) ? $codeTemplate : '';
+    if (!preg_match('/\bvalues\b/', $templateValue)) {
+        jsonResponse(['ok' => false, 'error' => 'code_template must set values dict for code_random_complex'], 400);
+    }
+}
+
 // Validate choice tasks have options
 if (in_array($taskType, ['single_choice', 'multiple_choice']) && empty($options)) {
     jsonResponse(['ok' => false, 'error' => 'options required for ' . $taskType], 400);

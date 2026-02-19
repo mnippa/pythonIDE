@@ -264,7 +264,9 @@ class TaskImporter {
           image_url: taskWithImages.image_url || '',
           keywords: taskWithImages.keywords || '',
           correct_answer: taskWithImages.correct_answer || '',
-          variable_overrides: taskWithImages.variable_overrides || null,
+          variable_overrides: (taskWithImages.task_type === 'code_random_complex' || taskWithImages.problem_type === 'code_random_complex')
+            ? null
+            : (taskWithImages.variable_overrides || null),
           options: taskWithImages.options || []
         };
 

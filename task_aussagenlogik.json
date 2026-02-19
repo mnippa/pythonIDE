@@ -8,9 +8,9 @@
   "max_iterations": 4,
   "show_solution": 1,
   "min_keywords_required": null,
-  "question_text": "Gegeben sind drei boolesche Variablen A, B und C mit festen Werten pro Iteration. Lese den logischen Ausdruck (A and B) or (not C) und bestimme, ob das Ergebnis True oder False ist.",
+  "question_text": "Gegeben sind drei boolesche Variablen A, B und C mit zufaelligen Werten (True oder False). Lese den logischen Ausdruck (A and B) or (not C) und bestimme, ob das Ergebnis True oder False ist.",
   "image_url": "",
-  "code_template": "values = {}",
+  "code_template": "import random\r\nvalues = {\"A\": random.choice([True, False]), \"B\": random.choice([True, False]), \"C\": random.choice([True, False])}",
   "solution_code": "result = (values[\"A\"] and values[\"B\"]) or (not values[\"C\"])",
   "validation_mode": "loose",
   "test_cases": null,
@@ -20,11 +20,6 @@
   "stoff": "",
   "keywords": "",
   "correct_answer": "result",
-  "variable_overrides": [
-    {"A": true, "B": false, "C": true},
-    {"A": true, "B": true, "C": false},
-    {"A": false, "B": true, "C": true},
-    {"A": false, "B": false, "C": false}
-  ],
+  "variable_overrides": "",
   "options": []
 }
