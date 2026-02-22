@@ -724,203 +724,228 @@ if ($displayName === '') {
         <button id="task-create-close-btn" class="modal-close">✕</button>
       </div>
       <form id="task-form">
-        <div class="field">
-          <label for="task-title">Title</label>
-          <input id="task-title" />
-        </div>
-        <div class="field" data-field="description">
-          <label for="task-description">Description (Kontext/Lernmaterial für Code-Tasks)</label>
-          <textarea id="task-description"></textarea>
-        </div>
-        <div class="field">
-          <label for="task-max-attempts">Max Versuche</label>
-          <input id="task-max-attempts" type="number" min="1" value="1" />
-        </div>
-        <div class="field" data-field="max-iterations">
-          <label for="task-max-iterations">Iterationen</label>
-          <input id="task-max-iterations" type="number" min="1" value="3" />
-          <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+        
+        <!-- Task Form Tabs -->
+        <div class="task-tabs" role="tablist">
+          <button class="task-tab active" type="button" data-task-tab="base">Basis</button>
+          <button class="task-tab" type="button" data-task-tab="optional">Zusatz</button>
+          <button class="task-tab" type="button" data-task-tab="validation">Prüfung</button>
         </div>
         
-        <div class="field checkbox-field">
-          <label>
-            <input id="task-show-solution" type="checkbox" checked />
-            <span>Lösung anzeigen bei max Versuchen</span>
-          </label>
-        </div>
-        
-        <div class="field checkbox-field" data-field="show-generator-code">
-          <label>
-            <input id="task-show-generator" type="checkbox" />
-            <span>Code anzeigen (Generator/Solution fuer code_random_complex und code_reading)</span>
-          </label>
-        </div>
-        
-        <!-- NEW: Task Type Selector -->
-        <div class="field">
-          <label for="new-task-type">Task Type</label>
-          <select id="new-task-type">
-            <option value="code">Code (Python)</option>
-            <option value="single_choice">Single-Choice</option>
-            <option value="multiple_choice">Multiple-Choice</option>
-            <option value="free_text">Freitext</option>
-            <option value="code_reading">Code-Lesequest</option>
-            <option value="code_random_complex">Code (versteckt)</option>
-          </select>
-        </div>
-        
-        <!-- Legacy problem_type (hidden, for compatibility) -->
-        <input type="hidden" id="task-type" value="code_completion" />
-        
-        <!-- Dynamic Fields -->
-        
-        <!-- Question Text (for quiz tasks) -->
-        <div class="field" data-field="question">
-          <label for="task-question">Fragestellung</label>
-          <textarea id="task-question" placeholder="Die Frage / Aufgabenstellung"></textarea>
-        </div>
-        
-        <!-- Image Upload (for quiz tasks) -->
-        <div class="field" data-field="image-upload">
-          <label for="task-image">Bild hochladen (optional)</label>
-          <input type="file" id="task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
-          <div id="task-image-preview"></div>
-          <input type="hidden" id="task-image-url" />
-        </div>
-        
-        <!-- Options Builder (for single/multiple choice) -->
-        <div class="field" data-field="options-builder">
-          <label>Antwortoptionen</label>
-          <div id="task-options-container"></div>
-          <div id="task-options-error" class="field-error" style="display:none;"></div>
-        </div>
-        
-        <!-- Keywords (for free text) -->
-        <div class="field" data-field="keywords">
-          <label for="task-keywords">Schlüsselwörter (kommagetrennt)</label>
-          <input id="task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
-          <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
-        </div>
-        
-        <!-- Correct Answer (for code reading & code_random_complex) -->
-        <div class="field" data-field="correct-answer">
-          <label for="task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
-          <input id="task-correct-answer" placeholder="z.B. 'result' oder '42'" />
-          <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
-        </div>
-        
-        <!-- Variable Overrides (for code reading & code_random_complex) -->
-        <div class="field" data-field="variable-overrides">
-          <label>Iterationen (Variablenwerte)</label>
-          <div id="task-var-overrides-builder" class="overrides-builder"></div>
-          <div class="overrides-actions">
-            <button type="button" class="hspf-btn" id="task-add-iteration">+ Iteration</button>
-            <button type="button" class="hspf-btn" id="task-apply-overrides-json">JSON → Builder</button>
-            <button type="button" class="hspf-btn" id="task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
-          </div>
-          <div id="task-var-overrides-json" class="overrides-json" style="display:none;">
-            <label for="task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
-            <textarea id="task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
-          </div>
-          <div class="hint" style="margin-top:8px;">
-            <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
-            <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
-            <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
-          </div>
-        </div>
-        
-        <!-- Code Template (for code and code_reading) -->
-        <div class="field" data-field="code-template">
-          <label for="task-template">Code Template</label>
-          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
-            <button type="button" class="hspf-btn hspf-btn-secondary" id="task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
-          </div>
-          <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: values = {\"num\": random.randint(0, 255) }"></textarea>
-          <div class="hint">
-            <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-            <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-            <strong>Für code_random_complex:</strong> MUSS <code>values</code> als dict befüllen (z.B. <code>values = {"num": random.randint(0, 255)}</code>)
-          </div>
-        </div>
-        
-        <!-- Hints -->
-        <div data-field="hints-section">
+        <!-- Tab 1: Base Fields -->
+        <div class="task-tab-panel active" data-task-tab-panel="base">
           <div class="field">
-            <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
-            <textarea id="task-hint1"></textarea>
+            <label for="task-title">Title</label>
+            <input id="task-title" required />
           </div>
-          <div class="field">
-            <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
-            <textarea id="task-hint2"></textarea>
-          </div>
-          <div class="field">
-            <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
-            <textarea id="task-hint3"></textarea>
-          </div>
-          <div class="field">
-            <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
-            <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-          </div>
-        </div>
-        
-        <!-- Validation Mode (for code tasks) -->
-        <div class="field" data-field="validation-mode">
-          <label for="task-validation-mode">Validation Mode</label>
-          <select id="task-validation-mode">
-            <option value="">-- none --</option>
-            <option value="strict">strict (exact match)</option>
-            <option value="loose">loose (whitespace tolerant)</option>
-          </select>
-        </div>
-        
-        <!-- Test Cases (for code tasks) -->
-        <div class="field" data-field="test-cases-section">
-          <label for="task-test-cases">Test Cases (JSON)</label>
           
-          <!-- Test Cases GUI Builder -->
-          <div class="test-cases-builder" id="test-cases-builder">
-            <div class="builder-header">
-              <label>Test Type:</label>
-              <select id="test-type-selector" style="margin-left:10px; padding:4px 8px;">
-                <option value="output">OUTPUT (Console Output)</option>
-                <option value="function">FUNCTION (Return Value)</option>
-                <option value="variable">VARIABLE (Check Variables)</option>
-                <option value="intelligent">INTELLIGENT (Musterloesung)</option>
-                <option value="code_check">CODE CHECK (Keywords) ✨</option>
-              </select>
-              <button type="button" class="hspf-btn" id="add-test-btn" style="margin-left:10px;">+ Add Test</button>
-              <button type="button" class="hspf-btn hspf-btn-primary" id="generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
+          <div class="field">
+            <label for="task-text">Aufgabe (Student-facing)</label>
+            <textarea id="task-text" placeholder="Die Aufgabenstellung / Frage für den Studierenden"></textarea>
+            <div class="hint">Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
+          </div>
+          
+          <!-- Task Type Selector -->
+          <div class="field">
+            <label for="new-task-type">Task Type</label>
+            <select id="new-task-type">
+              <option value="code">Code (Python)</option>
+              <option value="single_choice">Single-Choice</option>
+              <option value="multiple_choice">Multiple-Choice</option>
+              <option value="free_text">Freitext</option>
+              <option value="code_reading">Code-Lesequest</option>
+              <option value="code_random_complex">Code (versteckt)</option>
+            </select>
+          </div>
+          
+          <!-- Legacy problem_type (hidden, for compatibility) -->
+          <input type="hidden" id="task-type" value="code_completion" />
+          
+          <!-- Code Template (for code and code_reading) -->
+          <div class="field" data-field="code-template">
+            <label for="task-template">Code Template</label>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+              <button type="button" class="hspf-btn hspf-btn-secondary" id="task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
+            </div>
+            <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: Optional - wenn gesetzt, wird als Hilfe angezeigt"></textarea>
+            <div class="hint">
+              <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
+              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+              <strong>Für code_random_complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+            </div>
+          </div>
+          
+          <div class="field">
+            <label for="task-max-attempts">Max Versuche</label>
+            <input id="task-max-attempts" type="number" min="1" value="1" />
+          </div>
+          
+          <div class="field" data-field="max-iterations">
+            <label for="task-max-iterations">Iterationen</label>
+            <input id="task-max-iterations" type="number" min="1" value="3" />
+            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+          </div>
+        </div>
+        
+        <!-- Tab 2: Optional Fields -->
+        <div class="task-tab-panel" data-task-tab-panel="optional">
+          <div class="field">
+            <label for="task-description">Description (Kontext/Metadaten)</label>
+            <textarea id="task-description" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
+            <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
+          </div>
+          
+          <!-- Image Upload (for quiz tasks) -->
+          <div class="field" data-field="image-upload">
+            <label for="task-image">Bild hochladen (optional)</label>
+            <input type="file" id="task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
+            <div id="task-image-preview"></div>
+            <input type="hidden" id="task-image-url" />
+          </div>
+          
+          <!-- Hints -->
+          <div data-field="hints-section">
+            <div class="field">
+              <label for="task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+              <textarea id="task-hint1"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+              <textarea id="task-hint2"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+              <textarea id="task-hint3"></textarea>
+            </div>
+            <div class="field">
+              <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
+              <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Tab 3: Validation Fields -->
+        <div class="task-tab-panel" data-task-tab-panel="validation">
+          <div class="field checkbox-field">
+            <label>
+              <input id="task-show-solution" type="checkbox" checked />
+              <span>Lösung anzeigen bei max Versuchen</span>
+            </label>
+          </div>
+          
+          <div class="field checkbox-field" data-field="show-solution-code">
+            <label>
+              <input id="task-show-solution-code" type="checkbox" />
+              <span>Code anzeigen (für code_random_complex und code_reading)</span>
+            </label>
+          </div>
+          
+          <!-- Options Builder (for single/multiple choice) -->
+          <div class="field" data-field="options-builder">
+            <label>Antwortoptionen</label>
+            <div id="task-options-container"></div>
+            <div id="task-options-error" class="field-error" style="display:none;"></div>
+          </div>
+          
+          <!-- Keywords (for free text) -->
+          <div class="field" data-field="keywords">
+            <label for="task-keywords">Schlüsselwörter (kommagetrennt)</label>
+            <input id="task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
+            <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
+          </div>
+          
+          <!-- Correct Answer (for code reading & code_random_complex) -->
+          <div class="field" data-field="correct-answer">
+            <label for="task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
+            <input id="task-correct-answer" placeholder="z.B. 'result' oder '42'" />
+            <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
+          </div>
+          
+          <!-- Variable Overrides (for code reading & code_random_complex) -->
+          <div class="field" data-field="variable-overrides">
+            <label>Iterationen (Variablenwerte)</label>
+            <div id="task-var-overrides-builder" class="overrides-builder"></div>
+            <div class="overrides-actions">
+              <button type="button" class="hspf-btn" id="task-add-iteration">+ Iteration</button>
+              <button type="button" class="hspf-btn" id="task-apply-overrides-json">JSON → Builder</button>
+              <button type="button" class="hspf-btn" id="task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
+            </div>
+            <div id="task-var-overrides-json" class="overrides-json" style="display:none;">
+              <label for="task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+              <textarea id="task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+            </div>
+            <div class="hint" style="margin-top:8px;">
+              <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
+              <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
+              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
+            </div>
+          </div>
+          
+          <!-- Test Cases (for code tasks) -->
+          <div class="field" data-field="test-cases-section">
+            <label for="task-test-cases">Test Cases (JSON)</label>
+            
+            <!-- Test Cases GUI Builder -->
+            <div class="test-cases-builder" id="test-cases-builder">
+              <div id="tests-container" style="margin-bottom: 15px;"></div>
+              
+              <div class="builder-header">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                  Test Type:
+                  <select id="test-type-selector" style="padding: 4px 8px;">
+                    <option value="output">OUTPUT (Console Output)</option>
+                    <option value="function">FUNCTION (Return Value)</option>
+                    <option value="variable">VARIABLE (Check Variables)</option>
+                    <option value="intelligent">INTELLIGENT (Musterloesung)</option>
+                    <option value="code_check">CODE CHECK (Keywords) ✨</option>
+                  </select>
+                </label>
+                <button type="button" class="hspf-btn" id="add-test-btn">+ Add Test</button>
+                <button type="button" class="hspf-btn" id="auto-description-btn" title="Auto-generate description from tests">📝 Auto Desc</button>
+                <button type="button" class="hspf-btn hspf-btn-primary" id="generate-json-btn">↓ Generate JSON</button>
+              </div>
             </div>
             
-            <div id="tests-container" style="margin-top:15px;"></div>
+            <div style="margin-top:15px;">
+              <button type="button" class="hspf-btn" onclick="document.getElementById('task-json-manual').style.display = document.getElementById('task-json-manual').style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent.includes('▼') ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';" style="font-size: 12px;">
+                ▼ JSON manuell bearbeiten
+              </button>
+            </div>
+            
+            <div id="task-json-manual" style="display:none; margin-top:10px;">
+              <label for="task-test-cases" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+              <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
+              <div class="hint">Format: [{"input":"test input","expected":"output"}]</div>
+            </div>
           </div>
           
-          <div style="margin-top:15px;">
-            <button type="button" class="hspf-btn" onclick="document.getElementById('task-json-manual').style.display = document.getElementById('task-json-manual').style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent.includes('▼') ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';" style="font-size: 12px;">
-              ▼ JSON manuell bearbeiten
-            </button>
+          <!-- Solution Code (for code & code_random_complex tasks) -->
+          <div class="field" data-field="solution">
+            <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt values-Dict)</span></label>
+            <textarea id="task-solution" placeholder="Beispiel code_random_complex:\nresult = int(values[\"binary\"], 2)"></textarea>
+            <div class="hint">
+              <strong>Für code_random_complex:</strong> Verwende <code>values[\"varName\"]</code> für dynamische Werte<br>
+              Beispiel: <code>result = int(values[\"binary\"], 2)</code>
+            </div>
           </div>
           
-          <div id="task-json-manual" style="display:none; margin-top:10px;">
-            <label for="task-test-cases" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
-            <textarea id="task-test-cases" placeholder='[{"input":"","expected":"output"}]'></textarea>
-            <div class="hint">Format: [{"input":"test input","expected":"output"}]</div>
-          </div>
-        </div>
-        
-        <!-- Solution Code (for code & code_random_complex tasks) -->
-        <div class="field" data-field="solution">
-          <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt values-Dict)</span></label>
-          <textarea id="task-solution" placeholder="Beispiel code_random_complex:\nresult = int(values[\"binary\"], 2)"></textarea>
-          <div class="hint">
-            <strong>Für code_random_complex:</strong> Verwende <code>values[\"varName\"]</code> für dynamische Werte<br>
-            Beispiel: <code>result = int(values[\"binary\"], 2)</code>
+          <!-- Randomizer Code (for code_random_complex and intelligent tests) -->
+          <div class="field" data-field="randomizer-code">
+            <label for="task-randomizer-code">Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></label>
+            <textarea id="task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
+            <div class="hint">
+              <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>
+              <strong>Für code_random_complex:</strong> Generiert <code>values</code> dict mit Zufallswerten<br>
+              <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)<br>
+              <strong>Wichtig:</strong> Muss <code>values = {...}</code> setzen
+            </div>
           </div>
         </div>
         
         <div class="row-actions">
-          <button class="hspf-btn hspf-btn-primary" type="submit">Add Task</button>
-          <button class="hspf-btn" type="button" id="task-create-cancel-btn">Cancel</button>
+          <button class="hspf-btn hspf-btn-primary" type="submit" name="action" value="save">Speichern</button>
+          <button class="hspf-btn hspf-btn-primary" type="submit" name="action" value="save-close">Speichern + Schließen</button>
+          <button class="hspf-btn" type="button" id="task-create-cancel-btn">Abbrechen</button>
         </div>
       </form>
     </div>
@@ -934,173 +959,187 @@ if ($displayName === '') {
       </div>
       <form id="task-edit-form">
         <input type="hidden" id="edit-task-id" />
-        <div class="field">
-          <label for="edit-task-title">Title</label>
-          <input id="edit-task-title" required />
-        </div>
-        <div class="field" data-field="description">
-          <label for="edit-task-description">Description (Kontext/Lernmaterial für Code-Tasks)</label>
-          <textarea id="edit-task-description"></textarea>
-        </div>
-        <div class="field">
-          <label for="edit-task-max-attempts">Max Versuche</label>
-          <input id="edit-task-max-attempts" type="number" min="1" value="1" />
-        </div>
-        <div class="field" data-field="max-iterations">
-          <label for="edit-task-max-iterations">Iterationen</label>
-          <input id="edit-task-max-iterations" type="number" min="1" value="3" />
-          <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+        
+        <!-- Task Form Tabs -->
+        <div class="task-tabs" role="tablist">
+          <button class="task-tab active" type="button" data-task-tab="base">Basis</button>
+          <button class="task-tab" type="button" data-task-tab="optional">Zusatz</button>
+          <button class="task-tab" type="button" data-task-tab="validation">Prüfung</button>
         </div>
         
-        <div class="field checkbox-field">
-          <label>
-            <input id="edit-task-show-solution" type="checkbox" checked />
-            <span>Lösung anzeigen bei max Versuchen</span>
-          </label>
-        </div>
-        
-        <div class="field checkbox-field" data-field="show-generator-code">
-          <label>
-            <input id="edit-task-show-generator" type="checkbox" />
-            <span>Code anzeigen (Generator/Solution fuer code_random_complex und code_reading)</span>
-          </label>
-        </div>
-        
-        <!-- Task Type Selector -->
-        <div class="field">
-          <label for="edit-task-type">Task Type</label>
-          <select id="edit-task-type">
-            <option value="code">Code (Python)</option>
-            <option value="single_choice">Single-Choice</option>
-            <option value="multiple_choice">Multiple-Choice</option>
-            <option value="free_text">Freitext</option>
-            <option value="code_reading">Code-Lesequest</option>
-            <option value="code_random_complex">Code (versteckt)</option>
-          </select>
-        </div>
-        
-        <!-- Dynamic Fields -->
-        
-        <!-- Question Text (for quiz tasks) -->
-        <div class="field" data-field="question">
-          <label for="edit-task-question">Fragestellung</label>
-          <textarea id="edit-task-question" placeholder="Die Frage / Aufgabenstellung"></textarea>
-        </div>
-        
-        <!-- Image Upload (for quiz tasks) -->
-        <div class="field" data-field="image-upload">
-          <label for="edit-task-image">Bild hochladen (optional)</label>
-          <input type="file" id="edit-task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
-          <div id="edit-task-image-preview"></div>
-          <input type="hidden" id="edit-task-image-url" />
-        </div>
-        
-        <!-- Options Builder (for single/multiple choice) -->
-        <div class="field" data-field="options-builder">
-          <label>Antwortoptionen</label>
-          <div id="edit-task-options-container"></div>
-          <div id="edit-task-options-error" class="field-error" style="display:none;"></div>
-        </div>
-        
-        <!-- Keywords (for free text) -->
-        <div class="field" data-field="keywords">
-          <label for="edit-task-keywords">Schlüsselwörter (kommagetrennt)</label>
-          <input id="edit-task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
-          <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
-        </div>
-        
-        <!-- Correct Answer (for code reading & code_random_complex) -->
-        <div class="field" data-field="correct-answer">
-          <label for="edit-task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
-          <input id="edit-task-correct-answer" placeholder="z.B. 'result' oder '42'" />
-          <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
-        </div>
-        
-        <!-- Variable Overrides (for code reading & code_random_complex) -->
-        <div class="field" data-field="variable-overrides">
-          <label>Iterationen (Variablenwerte)</label>
-          <div id="edit-task-var-overrides-builder" class="overrides-builder"></div>
-          <div class="overrides-actions">
-            <button type="button" class="hspf-btn" id="edit-task-add-iteration">+ Iteration</button>
-            <button type="button" class="hspf-btn" id="edit-task-apply-overrides-json">JSON → Builder</button>
-            <button type="button" class="hspf-btn" id="edit-task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
-          </div>
-          <div id="edit-task-var-overrides-json" class="overrides-json" style="display:none;">
-            <label for="edit-task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
-            <textarea id="edit-task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
-          </div>
-          <div class="hint" style="margin-top:8px;">
-            <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
-            <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
-            <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
-          </div>
-        </div>
-        
-        <!-- Code Template (for code and code_reading) -->
-        <div class="field" data-field="code-template">
-          <label for="edit-task-template">Code Template</label>
-          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
-            <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
-          </div>
-          <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: values = {\"num\": random.randint(0, 255) }"></textarea>
-          <div class="hint">
-            <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-            <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-            <strong>Für code_random_complex:</strong> MUSS <code>values</code> als dict befüllen (z.B. <code>values = {"num": random.randint(0, 255)}</code>)
-          </div>
-        </div>
-        
-        <!-- Hints -->
-        <div data-field="hints-section">
+        <!-- Tab 1: Base Fields -->
+        <div class="task-tab-panel active" data-task-tab-panel="base">
           <div class="field">
-            <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
-            <textarea id="edit-task-hint1"></textarea>
+            <label for="edit-task-title">Title</label>
+            <input id="edit-task-title" required />
           </div>
-          <div class="field">
-            <label for="edit-task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
-            <textarea id="edit-task-hint2"></textarea>
-          </div>
-          <div class="field">
-            <label for="edit-task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
-            <textarea id="edit-task-hint3"></textarea>
-          </div>
-          <div class="field">
-            <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
-            <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
-          </div>
-        </div>
-        
-        <!-- Validation Mode (for code tasks) -->
-        <div class="field" data-field="validation-mode">
-          <label for="edit-task-validation-mode">Validation Mode</label>
-          <select id="edit-task-validation-mode">
-            <option value="">-- none --</option>
-            <option value="strict">strict (exact match)</option>
-            <option value="loose">loose (whitespace tolerant)</option>
-          </select>
-        </div>
-        
-        <!-- Test Cases (for code tasks) -->
-        <div class="field" data-field="test-cases-section">
-          <label for="edit-task-test-cases">Test Cases (JSON)</label>
           
-          <!-- Test Cases GUI Builder (Edit) -->
-          <div class="test-cases-builder" id="edit-test-cases-builder">
-            <div class="builder-header">
-              <label>Test Type:</label>
-              <select id="edit-test-type-selector" style="margin-left:10px; padding:4px 8px;">
-                <option value="output">OUTPUT (Console Output)</option>
-                <option value="function">FUNCTION (Return Value)</option>
-                <option value="variable">VARIABLE (Check Variables)</option>
-                <option value="intelligent">INTELLIGENT (Musterloesung)</option>
-                <option value="code_check">CODE CHECK (Keywords) ✨</option>
-              </select>
-              <button type="button" class="hspf-btn" id="edit-add-test-btn" style="margin-left:10px;">+ Add Test</button>
-              <button type="button" class="hspf-btn hspf-btn-primary" id="edit-generate-json-btn" style="margin-left:10px;">↓ Generate JSON</button>
-            </div>
-            
-            <div id="edit-tests-container" style="margin-top:15px;"></div>
+          <div class="field">
+            <label for="edit-task-text">Aufgabe (Student-facing)</label>
+            <textarea id="edit-task-text" placeholder="Die Aufgabenstellung / Frage für den Studierenden"></textarea>
+            <div class="hint">Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
           </div>
+          
+          <!-- Task Type Selector -->
+          <div class="field">
+            <label for="edit-task-type">Task Type</label>
+            <select id="edit-task-type">
+              <option value="code">Code (Python)</option>
+              <option value="single_choice">Single-Choice</option>
+              <option value="multiple_choice">Multiple-Choice</option>
+              <option value="free_text">Freitext</option>
+              <option value="code_reading">Code-Lesequest</option>
+              <option value="code_random_complex">Code (versteckt)</option>
+            </select>
+          </div>
+          
+          <!-- Code Template (for code and code_reading) -->
+          <div class="field" data-field="code-template">
+            <label for="edit-task-template">Code Template</label>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+              <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
+              <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
+            </div>
+            <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt"></textarea>
+            <div class="hint">
+              <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
+              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+              <strong>Für code_random_complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+            </div>
+          </div>
+          
+          <div class="field">
+            <label for="edit-task-max-attempts">Max Versuche</label>
+            <input id="edit-task-max-attempts" type="number" min="1" value="1" />
+          </div>
+          
+          <div class="field" data-field="max-iterations">
+            <label for="edit-task-max-iterations">Iterationen</label>
+            <input id="edit-task-max-iterations" type="number" min="1" value="3" />
+            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+          </div>
+        </div>
+        
+        <!-- Tab 2: Optional Fields -->
+        <div class="task-tab-panel" data-task-tab-panel="optional">
+          <div class="field">
+            <label for="edit-task-description">Description (Kontext/Metadaten)</label>
+            <textarea id="edit-task-description" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
+            <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
+          </div>
+          
+          <!-- Image Upload (for quiz tasks) -->
+          <div class="field" data-field="image-upload">
+            <label for="edit-task-image">Bild hochladen (optional)</label>
+            <input type="file" id="edit-task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
+            <div id="edit-task-image-preview"></div>
+            <input type="hidden" id="edit-task-image-url" />
+          </div>
+          
+          <!-- Hints -->
+          <div data-field="hints-section">
+            <div class="field">
+              <label for="edit-task-hint1">Zusätzlicher Hinweis 1 (optional)</label>
+              <textarea id="edit-task-hint1"></textarea>
+            </div>
+            <div class="field">
+              <label for="edit-task-hint2">Zusätzlicher Hinweis 2 (optional)</label>
+              <textarea id="edit-task-hint2"></textarea>
+            </div>
+            <div class="field">
+              <label for="edit-task-hint3">Zusätzlicher Hinweis 3 (optional)</label>
+              <textarea id="edit-task-hint3"></textarea>
+            </div>
+            <div class="field">
+              <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
+              <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Tab 3: Validation Fields -->
+        <div class="task-tab-panel" data-task-tab-panel="validation">
+          <div class="field checkbox-field">
+            <label>
+              <input id="edit-task-show-solution" type="checkbox" checked />
+              <span>Lösung anzeigen bei max Versuchen</span>
+            </label>
+          </div>
+          
+          <div class="field checkbox-field" data-field="show-solution-code">
+            <label>
+              <input id="edit-task-show-solution-code" type="checkbox" />
+              <span>Code anzeigen (für code_random_complex und code_reading)</span>
+            </label>
+          </div>
+          
+          <!-- Dynamic Fields -->
+        
+          <!-- Options Builder (for single/multiple choice) -->
+          <div class="field" data-field="options-builder">
+            <label>Antwortoptionen</label>
+            <div id="edit-task-options-container"></div>
+            <div id="edit-task-options-error" class="field-error" style="display:none;"></div>
+          </div>
+          
+          <!-- Keywords (for free text) -->
+          <div class="field" data-field="keywords">
+            <label for="edit-task-keywords">Schlüsselwörter (kommagetrennt)</label>
+            <input id="edit-task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
+            <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
+          </div>
+          
+          <!-- Correct Answer (for code reading & code_random_complex) -->
+          <div class="field" data-field="correct-answer">
+            <label for="edit-task-correct-answer">Erwartete Antwort (Variable oder Wert)</label>
+            <input id="edit-task-correct-answer" placeholder="z.B. 'result' oder '42'" />
+            <div class="hint">Name der Variable deren Wert geprüft wird, oder direkt erwarteter Wert</div>
+          </div>
+        
+          <!-- Variable Overrides (for code reading) -->
+          <div class="field" data-field="variable-overrides">
+            <label>Iterationen (Variablenwerte für code_reading)</label>
+            <div id="edit-task-var-overrides-builder" class="overrides-builder"></div>
+            <div class="overrides-actions">
+              <button type="button" class="hspf-btn" id="edit-task-add-iteration">+ Iteration</button>
+              <button type="button" class="hspf-btn" id="edit-task-apply-overrides-json">JSON → Builder</button>
+              <button type="button" class="hspf-btn" id="edit-task-toggle-overrides-json">▼ JSON manuell bearbeiten</button>
+            </div>
+            <div id="edit-task-var-overrides-json" class="overrides-json" style="display:none;">
+              <label for="edit-task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
+              <textarea id="edit-task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+            </div>
+            <div class="hint" style="margin-top:8px;">
+              <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
+              <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
+              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
+            </div>
+          </div>
+          
+          <!-- Test Cases (for code tasks) -->
+          <div class="field" data-field="test-cases-section">
+            <label for="edit-task-test-cases">Test Cases (JSON)</label>
+            
+            <!-- Test Cases GUI Builder (Edit) -->
+            <div class="test-cases-builder" id="edit-test-cases-builder">
+              <div id="edit-tests-container" style="margin-bottom: 15px;"></div>
+              
+              <div class="builder-header">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                  Test Type:
+                  <select id="edit-test-type-selector" style="padding: 4px 8px;">
+                    <option value="output">OUTPUT (Console Output)</option>
+                    <option value="function">FUNCTION (Return Value)</option>
+                    <option value="variable">VARIABLE (Check Variables)</option>
+                    <option value="intelligent">INTELLIGENT (Musterloesung)</option>
+                    <option value="code_check">CODE CHECK (Keywords) ✨</option>
+                  </select>
+                </label>
+                <button type="button" class="hspf-btn" id="edit-add-test-btn">+ Add Test</button>
+                <button type="button" class="hspf-btn" id="edit-auto-description-btn" title="Auto-generate description from tests">📝 Auto Desc</button>
+                <button type="button" class="hspf-btn hspf-btn-primary" id="edit-generate-json-btn">↓ Generate JSON</button>
+              </div>
+            </div>
           
           <div style="margin-top:15px;">
             <button type="button" class="hspf-btn" onclick="document.getElementById('edit-json-manual').style.display = document.getElementById('edit-json-manual').style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent.includes('▼') ? '▲ JSON ausblenden' : '▼ JSON manuell bearbeiten';" style="font-size: 12px;">
@@ -1120,13 +1159,29 @@ if ($displayName === '') {
           <label for="edit-task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt values-Dict)</span></label>
           <textarea id="edit-task-solution" placeholder="Beispiel code_random_complex:\nresult = int(values[\"binary\"], 2)"></textarea>
           <div class="hint">
+            <strong>Für code & intelligent:</strong> Vollständige Musterlösung<br>
             <strong>Für code_random_complex:</strong> Verwende <code>values[\"varName\"]</code> für dynamische Werte<br>
             Beispiel: <code>result = int(values[\"binary\"], 2)</code>
           </div>
         </div>
-        <div class="row-actions">
-          <button class="hspf-btn hspf-btn-primary" type="submit">Save Changes</button>
-          <button class="hspf-btn" type="button" id="cancel-modal-btn">Cancel</button>
+        
+        <!-- Randomizer Code (for code_random_complex and intelligent tests) -->
+        <div class="field" data-field="randomizer-code">
+          <label for="edit-task-randomizer-code">Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></label>
+          <textarea id="edit-task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
+          <div class="hint">
+            <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>
+            <strong>Für code_random_complex:</strong> Generiert <code>values</code> dict mit Zufallswerten<br>
+            <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)<br>
+            <strong>Wichtig:</strong> Muss <code>values = {...}</code> setzen
+          </div>
+        </div>
+        </div>
+        
+        <div class="row-actions" style="margin-top: 20px;">
+          <button class="hspf-btn hspf-btn-primary" type="submit" name="action" value="save">Speichern</button>
+          <button class="hspf-btn hspf-btn-primary" type="submit" name="action" value="save-close">Speichern + Schließen</button>
+          <button class="hspf-btn" type="button" id="cancel-modal-btn">Abbrechen</button>
         </div>
       </form>
     </div>
@@ -1223,6 +1278,47 @@ if ($displayName === '') {
       padding: var(--hspf-spacing-md);
       border-radius: var(--hspf-radius-sm);
       border: 2px solid var(--hspf-accent);
+    }
+    
+    /* Task Form Tabs */
+    .task-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--hspf-border);
+      padding-bottom: 0;
+    }
+    
+    .task-tab {
+      padding: 10px 18px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-weight: 400;
+      font-size: 14px;
+      color: var(--hspf-text-secondary);
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: var(--hspf-transition);
+    }
+    
+    .task-tab:hover {
+      color: var(--hspf-text-primary);
+      background-color: var(--hspf-bg-secondary);
+    }
+    
+    .task-tab.active {
+      color: var(--hspf-text-primary);
+      border-bottom-color: var(--hspf-accent);
+      font-weight: 600;
+    }
+    
+    .task-tab-panel {
+      display: none;
+    }
+    
+    .task-tab-panel.active {
+      display: block;
     }
     
   </style>

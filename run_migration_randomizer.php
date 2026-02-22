@@ -1,20 +1,16 @@
 <?php
-/**
- * Run migration: Add task_text column
- */
-
 require_once __DIR__ . '/config/database.php';
 
-echo "Starting migration: Add task_text column\n";
-echo "========================================\n\n";
+echo "Starting migration: Add randomizer_code column\n";
+echo "==========================================\n\n";
 
 $conn = getDbConnection();
 
 // Read migration file
-$migrationFile = __DIR__ . '/sql/migration_add_task_text.sql';
+$migrationFile = __DIR__ . '/sql/migration_add_randomizer_code.sql';
 $sql = file_get_contents($migrationFile);
 
-// Remove comment-only lines
+// Parse statements
 $lines = explode("\n", $sql);
 $cleanedLines = [];
 foreach ($lines as $line) {
@@ -38,7 +34,6 @@ $success = true;
 $executedCount = 0;
 
 foreach ($statements as $statement) {
-    // Remove comments for cleaner display
     $cleanStatement = preg_replace('/--.*$/m', '', $statement);
     $cleanStatement = trim($cleanStatement);
     
@@ -51,12 +46,6 @@ foreach ($statements as $statement) {
     if ($conn->query($statement)) {
         echo "✓ Success\n";
         $executedCount++;
-        
-        // Check if this was the UPDATE statement
-        if (stripos($statement, 'UPDATE tasks') !== false) {
-            $affectedRows = $conn->affected_rows;
-            echo "  → Updated $affectedRows rows\n";
-        }
     } else {
         echo "✗ Error: " . $conn->error . "\n";
         $success = false;
@@ -65,28 +54,15 @@ foreach ($statements as $statement) {
     echo "\n";
 }
 
-echo "========================================\n";
+echo "==========================================\n";
 if ($success) {
     echo "✓ Migration completed successfully!\n";
     echo "  Executed $executedCount statements\n\n";
     
     // Verify the column was added
-    $result = $conn->query("SHOW COLUMNS FROM tasks LIKE 'task_text'");
+    $result = $conn->query("SHOW COLUMNS FROM tasks LIKE 'randomizer_code'");
     if ($result && $result->num_rows > 0) {
-        echo "✓ Column 'task_text' verified in database\n";
-        
-        // Show sample data
-        $sample = $conn->query("SELECT id, title, 
-            SUBSTRING(task_text, 1, 50) as task_text_preview 
-            FROM tasks LIMIT 3");
-        
-        if ($sample && $sample->num_rows > 0) {
-            echo "\nSample data:\n";
-            while ($row = $sample->fetch_assoc()) {
-                echo "  ID {$row['id']}: {$row['title']}\n";
-                echo "    task_text: {$row['task_text_preview']}...\n";
-            }
-        }
+        echo "✓ Column 'randomizer_code' verified in database\n";
     }
 } else {
     echo "✗ Migration failed!\n";

@@ -39,6 +39,7 @@ class TaskExporter {
       task_type: taskType,
       problem_type: task.problem_type || taskType,
       title: task.title,
+      task_text: task.task_text || '',
       description: task.description || '',
       max_attempts: typeof task.max_attempts === 'number' ? task.max_attempts : 1,
       show_solution: typeof task.show_solution === 'number' ? task.show_solution : 1,

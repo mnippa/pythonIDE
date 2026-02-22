@@ -2,6 +2,34 @@
  * Admin Teams & Users Management
  */
 
+// Helper function to get element by ID
+function $(id) {
+  return document.getElementById(id);
+}
+
+// Helper function to escape HTML
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Helper function to make JSON requests
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...options
+  });
+
+  const data = await response.json();
+  if (!response.ok || (data && data.ok === false)) {
+    const msg = data && data.error ? data.error : response.statusText;
+    throw new Error(msg);
+  }
+  return data;
+}
+
 // ========== TEAMS ==========
 
 let teamsData = [];

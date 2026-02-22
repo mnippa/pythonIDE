@@ -1,0 +1,46 @@
+[
+  {
+    "title": "Intelligent Test - Function Mode Beispiel",
+    "description": "Implementiere die Funktion `verdoppeln(x)`, die eine Zahl verdoppelt.\n\n**Beispiel:**\n- verdoppeln(5) → 10\n- verdoppeln(42) → 84",
+    "task_type": "code",
+    "max_attempts": 3,
+    "code_template": "def verdoppeln(x):\n    # Dein Code hier\n    pass",
+    "solution_code": "def verdoppeln(x):\n    return x * 2",
+    "randomizer_code": "import random\n\nvalues = {\n    \"x\": random.randint(1, 100)\n}",
+    "test_cases": [
+      {
+        "type": "intelligent",
+        "mode": "function",
+        "tests": 4,
+        "function": {
+          "name": "verdoppeln",
+          "params": ["x"]
+        }
+      }
+    ],
+    "hint1": "Die Funktion soll einfach den Parameter mit 2 multiplizieren.",
+    "hint2": "Verwende den * Operator für Multiplikation.",
+    "hint3": "return x * 2"
+  },
+  {
+    "title": "Intelligent Test - Vars Mode Beispiel",
+    "description": "Berechne aus den gegebenen Zahlen `a` und `b`:\n- **summe**: Die Summe von a und b\n- **produkt**: Das Produkt von a und b\n- **durchschnitt**: Der Durchschnitt von a und b\n\n**Beispiel:**\n- Wenn a=10, b=20 → summe=30, produkt=200, durchschnitt=15.0",
+    "task_type": "code",
+    "max_attempts": 3,
+    "code_template": "#INIT START\na = 0\nb = 0\n#INIT END\n\n# Berechne die geforderten Werte\nsumme = 0\nprodukt = 0\ndurchschnitt = 0.0",
+    "solution_code": "#INIT START\na = 0\nb = 0\n#INIT END\n\nsumme = a + b\nprodukt = a * b\ndurchschnitt = (a + b) / 2",
+    "randomizer_code": "import random\n\nvalues = {\n    \"a\": random.randint(1, 50),\n    \"b\": random.randint(1, 50)\n}",
+    "test_cases": [
+      {
+        "type": "intelligent",
+        "mode": "vars",
+        "tests": 4,
+        "inputs": ["a", "b"],
+        "outputs": ["summe", "produkt", "durchschnitt"]
+      }
+    ],
+    "hint1": "Die Init-Block Variablen a und b werden automatisch mit Zufallswerten gefüllt.",
+    "hint2": "Summe: verwende +, Produkt: verwende *, Durchschnitt: verwende / und Klammern",
+    "hint3": "durchschnitt = (a + b) / 2"
+  }
+]

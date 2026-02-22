@@ -3,7 +3,8 @@
   "task_type": "code_random_complex",
   "problem_type": "code_completion",
   "title": "Aussagenlogik: Logische Ausdruecke auswerten",
-  "description": "Bestimme den Wahrheitswert des Ausdrucks (A and B) or (not C).",
+  "description": "=== MUSTERAUFGABE FÜR ADMINS (Assignment #20) ===\n\nType=Code:\n- Logik: test_cases definieren Input-Output Szenarien\n- Evaluation: code_template + student solution wird ausgeführt\n- test_cases Format: [{type: 'output'|'variable'|'function', input: {...}, expected: ...}, ...]\n- Rückgabe: Student muss definierte Funktionen implementieren ODER Variablen berechnen\n- Validierung: Output mit expected_output oder variable values vergleichen\n\nType=Code_Reading:\n- Anforderung: code_template muss komplette, ausführbare code_reading_code enthalten\n- Testwert-Übergabe: variable_overrides als JSON {varname: value, ...}\n- Beispiel: variable_overrides = {\"A\": true, \"B\": false, \"C\": true}\n- Student ergänzt fehlende Zeile(n), result wird mit expected_output verglichen\n- Wichtig: seed-based randomization NICHT verwenden, nur fixed values\n\nType=Code_Random_Complex:\n- Zufallsfunktion-Aufbau: import random am Anfang, random.choice() oder random.randint()\n- code_template generiert dictionary mit random values: values = {\"VAR\": random.choice([True, False]), ...}\n- Input-Format: values dict mit string keys: {\"A\": bool, \"B\": bool, \"C\": bool, ...}\n- Prüfvariablen: solution_code muss 'result' setzen mit Berechnung basierend auf values\n- Validierung: result value wird mit expected_output (Funktion basierend auf Eingaben) verglichen\n- Iteration: max_iterations bestimmt Anzahl Zufalls-Versuche bis korrekt",
+
   "max_attempts": 3,
   "max_iterations": 4,
   "show_solution": 1,

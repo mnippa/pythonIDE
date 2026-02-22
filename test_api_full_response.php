@@ -15,7 +15,7 @@ $test_mode = true;
 $selectColumns = 'id, assignment_id, title, description, position, task_type, question_text';
 
 if ($test_mode) {
-    $selectColumns .= ', solution_code, generator_code';
+    $selectColumns .= ', solution_code';
 }
 
 $sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";

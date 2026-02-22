@@ -5,6 +5,13 @@
     color: #fff !important;
 }
 
+/* Placeholder text styling */
+input::placeholder,
+textarea::placeholder {
+  color: #a3a3a3 !important;
+  opacity: 0.8;
+}
+
 /* Bounce-Animation für Unterwellen */
 @keyframes bounceEffect {
     0%   { transform: translateY(0); }

@@ -41,7 +41,7 @@ if (!$test_mode) {
     // Simulate API column selection
     $selectColumns = 'id, assignment_id, title, task_type, question_text';
     if ($test_mode) {
-        $selectColumns .= ', expected_output, solution_code, generator_code';
+        $selectColumns .= ', expected_output, solution_code';
     }
     
     $sql = "SELECT $selectColumns FROM tasks WHERE id = 79";
@@ -72,8 +72,7 @@ echo "Simulating frontend hasSolution check:\n";
 $task = [
     'id' => 79,
     'task_type' => 'code_random_complex',
-    'solution_code' => 'def binary_to_decimal(...)',
-    'generator_code' => '# placeholder'
+    'solution_code' => 'def binary_to_decimal(...)'
 ];
 
 // The hasSolution check from assignments.js

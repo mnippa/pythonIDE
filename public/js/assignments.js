@@ -209,6 +209,9 @@ function showTaskDetails(task, activeTab = 'details') {
   console.log('[TASK DETAILS] showTaskDetails called for task:', task.id, task.title, 'activeTab:', activeTab);
   console.log('[TASK DETAILS] window.testMode:', window.testMode, 'task_type:', task.task_type);
   
+  // Normalize task data (convert escaped newlines)
+  normalizeTaskData(task);
+  
   assignmentState.currentTask = task;
   
   const contentEl = $('task-details-content');
@@ -299,23 +302,24 @@ function showTaskDetails(task, activeTab = 'details') {
   }
 
   let descriptionHtml = '';
-  const isQuizTask = task.task_type && task.task_type !== 'code';
-  const taskContent = isQuizTask ? task.question_text : task.description;
-  if (taskContent) {
+  // Show only title in sidebar, description is shown centrally
+  if (task.title) {
     descriptionHtml = `<div class="task-description-box">
-      <h4 style="display:inline-flex;align-items:center;font-weight:normal;">Aufgabenstellung${testTypeHtml}</h4>
-      <p>${escapeHtml(taskContent)}</p>
+      <h4 style="display:inline-flex;align-items:center;font-weight:normal;">AUFGABE: ${escapeHtml(task.title)} ${getStatusEmoji(status)}${testTypeHtml}</h4>
     </div>`;
   }
 
-  // Details Tab Content (Status header + Stoff)
+  // Details Tab Content (Description + Stoff, Status moved to title area)
   let detailsHtml = '';
   const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
   const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
-  detailsHtml += `<div class="task-status-header">
-    <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
-    ${task.task_type !== 'code' ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
-  </div>`;
+  
+  // Show description for all task types (optional context/metadata)
+  if (task.description) {
+    detailsHtml += `<div class="description-section">
+      <p>${escapeHtml(task.description)}</p>
+    </div>`;
+  }
   
   if (task.stoff) {
     detailsHtml += `<div class="stoff-section">
@@ -484,8 +488,11 @@ async function loadSolutionIntoMainArea(task) {
     if (editor) {
       assignmentState.savedCodeBeforeSolution = editor.getValue();
       if (task.solution_code) {
-        editor.setValue(task.solution_code);
-        editor.updateOptions({ readOnly: true });
+        // Convert escaped newlines to actual newlines (safeguard for older data)
+        const displaySolution = task.solution_code.replace(/\\n/g, '\n');
+        editor.setValue(displaySolution);
+        // Make solution code editable in test mode (admin can edit and save)
+        editor.updateOptions({ readOnly: false });
       }
     }
   } else if (task.task_type === 'single_choice' || task.task_type === 'multiple_choice') {
@@ -502,7 +509,7 @@ async function loadSolutionIntoMainArea(task) {
       quizContainer.innerHTML = `
         <div class="quiz-container solution-mode">
           <div class="quiz-question">
-            ${task.question_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.question_text)}</div>` : ''}
+            ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
           </div>
           <div class="quiz-freetext">
             <textarea disabled rows="8" placeholder="(Bereich für Teilnehmerantwort)"></textarea>
@@ -526,6 +533,10 @@ async function loadSolutionIntoMainArea(task) {
       // Show loading state
       quizContainer.innerHTML = `
         <div class="quiz-container solution-mode">
+          <div class="quiz-question">
+            ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+            ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+          </div>
           <div class="code-reading-vars">
             <strong>Variablenwerte:</strong>
             <ul>
@@ -544,6 +555,10 @@ async function loadSolutionIntoMainArea(task) {
       computeCodeReadingSolution(task, varValues, variableName).then(result => {
         quizContainer.innerHTML = `
           <div class="quiz-container solution-mode">
+            <div class="quiz-question">
+              ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+              ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+            </div>
             <div class="code-reading-vars">
               <strong>Variablenwerte:</strong>
               <ul>
@@ -567,6 +582,10 @@ async function loadSolutionIntoMainArea(task) {
       }).catch(err => {
         quizContainer.innerHTML = `
           <div class="quiz-container solution-mode">
+            <div class="quiz-question">
+              ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+              ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+            </div>
             <div class="solution-info" style="padding:12px; background:#fee2e2; border-left:3px solid #ef4444; border-radius:4px;">
               <strong>❌ Fehler beim Berechnen der Lösung:</strong>
               <p style="margin:4px 0 0; color:#991b1b;">${escapeHtml(String(err))}</p>
@@ -612,6 +631,10 @@ async function loadSolutionIntoMainArea(task) {
       // Show loading state
       quizContainer.innerHTML = `
         <div class="quiz-container solution-mode">
+          <div class="quiz-question">
+            ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+            ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+          </div>
           <div class="code-reading-vars">
             <strong>Zufallswerte für diese Iteration:</strong>
             <ul>
@@ -631,6 +654,10 @@ async function loadSolutionIntoMainArea(task) {
       computeRandomComplexSolution(task, varValues).then(result => {
         quizContainer.innerHTML = `
           <div class="quiz-container solution-mode">
+            <div class="quiz-question">
+              ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+              ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+            </div>
             <div class="code-reading-vars">
               <strong>Zufallswerte für diese Iteration:</strong>
               <ul>
@@ -651,6 +678,10 @@ async function loadSolutionIntoMainArea(task) {
       }).catch(err => {
         quizContainer.innerHTML = `
           <div class="quiz-container solution-mode">
+            <div class="quiz-question">
+              ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+              ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+            </div>
             <div class="solution-info" style="padding:12px; background:#fee2e2; border-left:3px solid #ef4444; border-radius:4px;">
               <strong>❌ Fehler beim Berechnen der Lösung:</strong>
               <p style="margin:4px 0 0; color:#991b1b;">${escapeHtml(String(err))}</p>
@@ -680,6 +711,9 @@ async function computeRandomComplexSolution(task, varValues) {
   if (!solutionCode) {
     throw new Error('Keine Musterlösung vorhanden');
   }
+  
+  // Convert escaped newlines to actual newlines (safeguard for older data)
+  solutionCode = solutionCode.replace(/\\n/g, '\n');
   
   try {
     // Execute solution code and capture output
@@ -863,8 +897,46 @@ function getStatusLabel(status) {
   return labels[status] || status;
 }
 
+function getStatusEmoji(status) {
+  const emojis = {
+    'unbearbeitet': '🔴',
+    'in-progress': '🟡',
+    'passed': '🟢',
+    'failed': '🔴'
+  };
+  return emojis[status] || '⚪';
+}
+
 // Export showTaskDetails for access from quiz-renderer
 window.showTaskDetails = showTaskDetails;
+
+// Show task question/description above the editor
+function showTaskQuestionAboveEditor(task) {
+  const editorContainer = document.getElementById('editor-container');
+  if (!editorContainer) return;
+  
+  const taskContent = task.task_text;
+  
+  if (!taskContent) return; // No question to show
+  
+  // Remove existing question if it exists
+  const existingQuestion = editorContainer.querySelector('.quiz-question');
+  if (existingQuestion) {
+    existingQuestion.remove();
+  }
+  
+  // Create question element using same classes as quiz tasks
+  const questionEl = document.createElement('div');
+  questionEl.className = 'quiz-question';
+  questionEl.innerHTML = `
+    <div class="question-text">
+      ${escapeHtml(taskContent)}
+    </div>
+  `;
+  
+  // Insert at the beginning of editor container
+  editorContainer.insertBefore(questionEl, editorContainer.firstChild);
+}
 
 // Render task navigation in left panel (compact task list)
 function renderTaskNavigation() {
@@ -1253,10 +1325,44 @@ async function loadSavedCode(taskId) {
   }
 }
 
+function normalizeTaskData(task) {
+  /**
+   * Normalize task data by converting escaped newlines to actual newlines
+   * This handles data from database that was stored with \\n escape sequences
+   */
+  if (!task) return task;
+  
+  // Convert escaped newlines in code fields
+  if (task.code_template && typeof task.code_template === 'string') {
+    task.code_template = task.code_template.replace(/\\n/g, '\n');
+  }
+  
+  if (task.solution_code && typeof task.solution_code === 'string') {
+    task.solution_code = task.solution_code.replace(/\\n/g, '\n');
+  }
+  
+  if (task.hint1 && typeof task.hint1 === 'string') {
+    task.hint1 = task.hint1.replace(/\\n/g, '\n');
+  }
+  
+  if (task.hint2 && typeof task.hint2 === 'string') {
+    task.hint2 = task.hint2.replace(/\\n/g, '\n');
+  }
+  
+  if (task.hint3 && typeof task.hint3 === 'string') {
+    task.hint3 = task.hint3.replace(/\\n/g, '\n');
+  }
+  
+  return task;
+}
+
 function loadTaskIntoEditor(assignmentId, taskId) {
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
+
+  // Normalize task data (convert escaped newlines)
+  normalizeTaskData(task);
 
   // Clear solution mode when loading a task normally
   assignmentState.solutionMode = false;
@@ -1375,6 +1481,11 @@ function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Show task details
   showTaskDetails(task);
+  
+  // Show task question above editor for code tasks
+  if (!isQuizTask) {
+    showTaskQuestionAboveEditor(task);
+  }
 
   // Render task navigation
   renderTaskNavigation();
@@ -1400,16 +1511,13 @@ function loadTaskIntoEditor(assignmentId, taskId) {
     outputEl.textContent = `Task geladen: ${task.title}`;
   }
 
-  // Show check button if test cases OR validation mode exist (code tasks only)
+  // Show check button if test cases exist (code tasks only)
   if (!isQuizTask) {
     const checkBtn = document.getElementById('check-btn');
     const submitBtn = document.getElementById('submit-btn');
     if (checkBtn) {
-      // Debug: Log task data
-      console.log(`[RENDER] Task ${task.id} (${task.title}): test_cases=${!!task.test_cases} validation_mode='${task.validation_mode}'`);
-      
-      // Show button if either test cases exist OR validation mode is set
-      if (task.test_cases || task.validation_mode) {
+      // Show button if test cases exist
+      if (task.test_cases) {
         checkBtn.style.display = 'inline-block';
         if (submitBtn) submitBtn.style.display = 'inline-block';
         checkBtn.disabled = false;
@@ -1635,6 +1743,50 @@ async function saveCode(options = {}) {
       saveTaskBtn.disabled = true;
     }
 
+    // Check if we're in solution mode (admin editing solution code)
+    if (assignmentState.solutionMode === true) {
+      console.log('[SAVE SOLUTION] Saving solution code for task:', taskId, 'Code length:', code.length);
+      
+      // Save to tasks API (solution_code field)
+      const payload = {
+        id: taskId,
+        solution_code: code
+      };
+
+      console.log('[SAVE SOLUTION] Payload:', payload);
+
+      const response = await fetch('../api/tasks/update.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      console.log('[SAVE SOLUTION] API Response:', data);
+
+      if (!response.ok || (data && data.ok === false)) {
+        throw new Error(data?.error || 'Failed to save solution');
+      }
+
+      // Show success message
+      if (saveTaskBtn) {
+        saveTaskBtn.style.opacity = '1';
+        saveTaskBtn.disabled = false;
+        saveTaskBtn.title = 'Lösung erfolgreich gespeichert ✓';
+        saveTaskBtn.style.background = '#10b981';
+        saveTaskBtn.style.color = '#fff';
+        setTimeout(() => {
+          saveTaskBtn.title = 'Speichern';
+          saveTaskBtn.style.background = '';
+          saveTaskBtn.style.color = '';
+        }, 3000);
+      }
+
+      return true;
+    }
+
+    // Normal mode: Save to user_tasks API
     // Generate filename from task title
     const filename = generateFilename(task.title);
 
@@ -1671,7 +1823,14 @@ async function saveCode(options = {}) {
     if (saveTaskBtn) {
       saveTaskBtn.disabled = false;
       saveTaskBtn.style.opacity = '1';
-      saveTaskBtn.title = 'Speichern fehlgeschlagen';
+      saveTaskBtn.title = 'Speichern fehlgeschlagen: ' + err.message;
+      saveTaskBtn.style.background = '#ef4444';
+      saveTaskBtn.style.color = '#fff';
+      setTimeout(() => {
+        saveTaskBtn.title = 'Speichern';
+        saveTaskBtn.style.background = '';
+        saveTaskBtn.style.color = '';
+      }, 3000);
     }
     return false;
   }
@@ -1811,8 +1970,8 @@ async function checkTask() {
     return;
   }
 
-  // Only show error if BOTH test_cases AND validation_mode are missing
-  if (!task.test_cases && !task.validation_mode) {
+  // Only show error if test_cases is missing
+  if (!task.test_cases) {
     alert('No test cases available');
     return;
   }
@@ -1888,51 +2047,21 @@ async function checkTask() {
       
       if (type === 'output') {
         // OUTPUT TESTING: Run code, capture stdout
-        allResults.push(...await runOutputTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runOutputTests(pyodide, code, cases, task));
       } else if (type === 'function') {
         // FUNCTION TESTING: Call function with args
-        allResults.push(...await runFunctionTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runFunctionTests(pyodide, code, cases));
       } else if (type === 'variable') {
         // VARIABLE TESTING: Set init vars, check expected vars
-        allResults.push(...await runVariableTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runVariableTests(pyodide, code, cases));
       } else if (type === 'intelligent') {
         // INTELLIGENT TESTING: Compare against solution code
-        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.validation_mode, task.solution_code));
+        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.solution_code, task.randomizer_code));
       } else if (type === 'code_check') {
         // CODE CHECK: Check if code contains required keywords
         allResults.push(...runCodeCheck(code, cases));
       } else {
         console.warn(`[CHECK] Unknown test type: ${type}`);
-      }
-    }
-
-    // If no tests were run but validation_mode is set, run a basic syntax check
-    if (allResults.length === 0 && task.validation_mode) {
-      console.log(`[CHECK] No test cases, using validation_mode='${task.validation_mode}' basic check`);
-      
-      try {
-        // Execute code to check for syntax errors
-        await pyodide.runPythonAsync(code);
-        
-        // If it runs without error, that's a pass for loose validation
-        allResults.push({
-          passed: true,
-          test: 'Syntax Check',
-          expected: 'Code executes without errors',
-          actual: 'Code executed successfully',
-          error: null,
-          mode: task.validation_mode
-        });
-      } catch (err) {
-        // Code has an error
-        allResults.push({
-          passed: false,
-          test: 'Syntax Check',
-          expected: 'Code executes without errors',
-          actual: `Error: ${err.message}`,
-          error: err.message,
-          mode: task.validation_mode
-        });
       }
     }
 
@@ -1997,7 +2126,7 @@ async function submitTask() {
     return;
   }
 
-  if (!task.test_cases && !task.validation_mode) {
+  if (!task.test_cases) {
     alert('No test cases available');
     return;
   }
@@ -2050,13 +2179,13 @@ async function submitTask() {
     for (const [type, cases] of Object.entries(groupedByType)) {
       console.log(`[SUBMIT] Executing ${type} tests`);
       if (type === 'output') {
-        allResults.push(...await runOutputTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runOutputTests(pyodide, code, cases, task));
       } else if (type === 'function') {
-        allResults.push(...await runFunctionTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runFunctionTests(pyodide, code, cases));
       } else if (type === 'variable') {
-        allResults.push(...await runVariableTests(pyodide, code, cases, task.validation_mode));
+        allResults.push(...await runVariableTests(pyodide, code, cases));
       } else if (type === 'intelligent') {
-        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.validation_mode, task.solution_code));
+        allResults.push(...await runIntelligentTests(pyodide, code, cases, task.solution_code, task.randomizer_code));
       } else if (type === 'code_check') {
         allResults.push(...runCodeCheck(code, cases));
       }
@@ -2194,16 +2323,80 @@ function migrateLegacyTestCases(testCases) {
 
 /**
  * Run OUTPUT tests
- *
+ * New structure with expected_type:
+ * 
+ * expected_type options:
+ * - "text" (default): Compare against expected string pattern
+ * - "solution": Compare against solution_code output
+ * - "regex": Match against regex pattern
+ * 
+ * validation_mode is read from each testCase.validation_mode (default: 'loose')
+ * - "strict": exact match (after trim)
+ * - "loose": whitespace-normalized comparison
+ * - "contains": user output contains expected
  */
-async function runOutputTests(pyodide, code, testCases, validationMode) {
+async function runOutputTests(pyodide, code, testCases, task = null) {
   const results = [];
+  
+  // Check if any test case needs solution comparison
+  const needsSolution = testCases.some(tc => 
+    tc.expected_type === 'solution' || tc.solution_compare === true
+  );
+  
+  const solutionCode = task?.solution_code || '';
+  
+  // If solution comparison is needed but no solution_code provided, fail gracefully
+  if (needsSolution && !solutionCode) {
+    return [{
+      passed: false,
+      testNumber: 1,
+      type: 'output',
+      output: '',
+      expected: '',
+      error: 'expected_type="solution" aktiviert, aber keine solution_code vorhanden'
+    }];
+  }
+  
+  // Run solution code once if needed
+  let solutionOutput = null;
+  if (needsSolution && solutionCode) {
+    try {
+      solutionOutput = await pyodide.runPythonAsync(`
+import sys
+from io import StringIO
+
+solution_code = ${JSON.stringify(solutionCode)}
+
+output_buffer = StringIO()
+old_stdout = sys.stdout
+sys.stdout = output_buffer
+
+try:
+    exec(compile(solution_code, "<solution>", "exec"), {})
+except Exception as e:
+    output_buffer.write(f"Error: {e}")
+finally:
+    sys.stdout = old_stdout
+
+output_buffer.getvalue()
+`);
+    } catch (e) {
+      return [{
+        passed: false,
+        testNumber: 1,
+        type: 'output',
+        output: '',
+        expected: '',
+        error: `Fehler in Musterloesung: ${e.message}`
+      }];
+    }
+  }
   
   for (let idx = 0; idx < testCases.length; idx++) {
     const testCase = testCases[idx];
     
     try {
-      // Run code and capture output
+      // Run user code and capture output
       const output = await pyodide.runPythonAsync(`
 import sys
 from io import StringIO
@@ -2224,14 +2417,62 @@ finally:
 output_buffer.getvalue()
 `);
       
-      const passed = compareTestOutput(output, testCase.expected, validationMode);
+      let passed = false;
+      let expectedValue = testCase.expected || '';
+      
+      // Get validation_mode from testCase (default: 'loose')
+      const validationMode = testCase.validation_mode || 'loose';
+      
+      // Determine expected_type (with backward compatibility)
+      let expectedType = testCase.expected_type || 'text';
+      if (testCase.solution_compare === true) {
+        expectedType = 'solution'; // Backward compat
+      }
+      
+      // Compare based on expected_type
+      switch (expectedType) {
+        case 'solution':
+          // Compare against solution output
+          expectedValue = solutionOutput;
+          
+          if (validationMode === 'strict') {
+            passed = output.trim() === solutionOutput.trim();
+          } else if (validationMode === 'contains') {
+            passed = output.includes(solutionOutput);
+          } else {
+            // loose: normalize whitespace
+            const normalizeWs = (str) => str.replace(/\s+/g, ' ').trim();
+            passed = normalizeWs(output) === normalizeWs(solutionOutput);
+          }
+          break;
+          
+        case 'regex':
+          // Match against regex pattern
+          try {
+            const regex = new RegExp(testCase.expected, 'i'); // case-insensitive
+            passed = regex.test(output);
+          } catch (e) {
+            // Invalid regex, fail the test
+            passed = false;
+            expectedValue = `Invalid regex: ${testCase.expected}`;
+          }
+          break;
+          
+        case 'text':
+        default:
+          // Use pattern matching (default behavior)
+          passed = compareTestOutput(output, testCase.expected, validationMode);
+          break;
+      }
       
       results.push({
         passed,
         testNumber: idx + 1,
         type: 'output',
         output: output,
-        expected: testCase.expected,
+        expected: expectedValue,
+        expectedType: expectedType,
+        validationMode: validationMode,
         error: null
       });
       
@@ -2241,7 +2482,9 @@ output_buffer.getvalue()
         testNumber: idx + 1,
         type: 'output',
         output: '',
-        expected: testCase.expected,
+        expected: testCase.expected || '',
+        expectedType: testCase.expected_type || 'text',
+        validationMode: testCase.validation_mode || 'loose',
         error: e.message
       });
     }
@@ -2369,39 +2612,59 @@ function compareIntelligentValue(actual, expected, type, tolerance) {
   return compareValues(actual, expected);
 }
 
-async function runIntelligentTests(pyodide, code, testCases, validationMode, solutionCode) {
+async function runIntelligentTests(pyodide, code, testCases, solutionCode, randomizerCode) {
   const results = [];
   const testSpec = testCases[0];
   if (!testSpec) return results;
 
-  const mode = testSpec.mode || 'vars';
-  const testsCount = Number(testSpec.tests ?? 5);
-  // Generate new random seed for each check (combine base seed with timestamp)
-  const baseSeed = testSpec.seed || 12345;
-  const seed = baseSeed + Date.now();
-  const tolerance = Number(testSpec.tolerance ?? 0.000001);
+  const mode = testSpec.mode || 'function';
+  const testsCount = Number(testSpec.tests ?? 4);
   
-  // Extract inputs/outputs depending on mode
+  // Extract configuration based on mode
+  let functionName = '';
+  let params = [];
   let inputs = [];
   let outputs = [];
-  let functionName = '';
-  let functionOutput = null;
   
-  if (mode === 'function' && testSpec.function) {
-    // Function mode: inputs/output are inside testSpec.function
-    inputs = Array.isArray(testSpec.function.inputs) ? testSpec.function.inputs : [];
-    functionOutput = testSpec.function.output;
-    functionName = testSpec.function.name || '';
-  } else {
-    // Vars mode or legacy: inputs/outputs at top level
+  if (mode === 'function') {
+    if (!testSpec.function || !testSpec.function.name) {
+      return [{
+        passed: false,
+        testNumber: 1,
+        type: 'intelligent',
+        mode,
+        error: 'Function mode: function.name fehlt'
+      }];
+    }
+    functionName = testSpec.function.name;
+    params = Array.isArray(testSpec.function.params) ? testSpec.function.params : [];
+  } else if (mode === 'vars') {
     inputs = Array.isArray(testSpec.inputs) ? testSpec.inputs : [];
     outputs = Array.isArray(testSpec.outputs) ? testSpec.outputs : [];
-    functionName = testSpec.function_name || testSpec.function?.name || '';
+    
+    if (inputs.length === 0) {
+      return [{
+        passed: false,
+        testNumber: 1,
+        type: 'intelligent',
+        mode,
+        error: 'Vars mode: inputs Array fehlt'
+      }];
+    }
+    
+    if (outputs.length === 0) {
+      return [{
+        passed: false,
+        testNumber: 1,
+        type: 'intelligent',
+        mode,
+        error: 'Vars mode: outputs Array fehlt'
+      }];
+    }
   }
-  
-  const returnType = testSpec.return_type || functionOutput?.type || '';
-  const effectiveSolutionCode = testSpec.solution_code || solutionCode || '';
 
+  // Check for solution code
+  const effectiveSolutionCode = testSpec.solution_code || solutionCode || '';
   if (!effectiveSolutionCode) {
     return [{
       passed: false,
@@ -2412,54 +2675,34 @@ async function runIntelligentTests(pyodide, code, testCases, validationMode, sol
     }];
   }
 
-  if (mode === 'vars' && outputs.length === 0) {
+  // Check for randomizer code
+  const effectiveRandomizerCode = testSpec.randomizer_code || randomizerCode || '';
+  if (!effectiveRandomizerCode) {
     return [{
       passed: false,
       testNumber: 1,
       type: 'intelligent',
       mode,
-      error: 'Keine Outputs definiert'
+      error: 'Randomizer Code fehlt (erforderlich für Intelligent Tests)'
     }];
   }
 
-  if (mode === 'function' && !functionName) {
-    return [{
-      passed: false,
-      testNumber: 1,
-      type: 'intelligent',
-      mode,
-      error: 'Function Name fehlt'
-    }];
-  }
-
-  const rng = createSeededRng(seed);
-  const cases = [];
-  for (let i = 0; i < testsCount; i += 1) {
-    const inputsObj = {};
-    const args = [];
-    inputs.forEach((def) => {
-      const value = generateValue(def, rng);
-      if (def?.name) {
-        inputsObj[def.name] = value;
-      }
-      args.push(value);
-    });
-    cases.push({ inputs: inputsObj, args });
-  }
-
+  // Generate test cases by running randomizer code multiple times
   const testOutputs = await pyodide.runPythonAsync(`
 import json
 
 user_code = ${JSON.stringify(code)}
 solution_code = ${JSON.stringify(effectiveSolutionCode)}
-cases_json = ${JSON.stringify(JSON.stringify(cases))}
-cases = json.loads(cases_json)
+randomizer_code = ${JSON.stringify(effectiveRandomizerCode)}
 mode = ${JSON.stringify(mode)}
-outputs_json = ${JSON.stringify(JSON.stringify(outputs.map(o => o.name)))}
-outputs = json.loads(outputs_json)
+tests_count = ${testsCount}
 function_name = ${JSON.stringify(functionName)}
+params = ${JSON.stringify(params)}
+inputs = ${JSON.stringify(inputs)}
+outputs = ${JSON.stringify(outputs)}
 
 def safe_value(value):
+    """Convert Python values to JSON-safe format"""
     if value is None or isinstance(value, (int, float, bool, str)):
         return value
     if isinstance(value, (list, tuple)):
@@ -2468,13 +2711,28 @@ def safe_value(value):
         return {str(k): safe_value(v) for k, v in value.items()}
     return repr(value)
 
-def run_vars(code, inputs, output_names):
+def run_randomizer():
+    """Execute randomizer code and extract values dict"""
     namespace = {}
-    namespace.update(inputs)
+    try:
+        exec(compile(randomizer_code, "<randomizer>", "exec"), namespace)
+    except Exception as e:
+        return {"error": f"Randomizer execution error: {e}"}
+    
+    if 'values' not in namespace:
+        return {"error": "Randomizer must create 'values' dict"}
+    
+    return {"values": namespace['values']}
+
+def run_vars_mode(code, values_dict, output_names):
+    """Run code with values injected, extract outputs"""
+    namespace = {}
+    namespace.update(values_dict)
     try:
         exec(compile(code, "<code>", "exec"), namespace)
     except Exception as e:
         return {"error": str(e)}
+    
     out = {}
     for name in output_names:
         if name in namespace:
@@ -2483,15 +2741,25 @@ def run_vars(code, inputs, output_names):
             return {"error": f"Variable '{name}' not found"}
     return {"output": out}
 
-def run_func(code, args, fn_name):
+def run_function_mode(code, values_dict, fn_name, param_names):
+    """Run code and call function with values as arguments"""
     namespace = {}
     try:
         exec(compile(code, "<code>", "exec"), namespace)
     except Exception as e:
         return {"error": f"Code execution error: {e}"}
+    
     fn = namespace.get(fn_name)
     if not callable(fn):
         return {"error": f"Function '{fn_name}' not found"}
+    
+    # Build args from values_dict using param_names order
+    args = []
+    for param_name in param_names:
+        if param_name not in values_dict:
+            return {"error": f"Parameter '{param_name}' not in values dict"}
+        args.append(values_dict[param_name])
+    
     try:
         res = fn(*args)
         return {"output": safe_value(res)}
@@ -2499,20 +2767,39 @@ def run_func(code, args, fn_name):
         return {"error": str(e)}
 
 results = []
-for idx, case in enumerate(cases):
+for test_num in range(tests_count):
+    # Generate new random values for this test
+    rand_result = run_randomizer()
+    if 'error' in rand_result:
+        results.append({
+            "test": test_num + 1,
+            "error": rand_result['error'],
+            "values": {}
+        })
+        continue
+    
+    values = rand_result['values']
+    
     if mode == 'vars':
-        sol = run_vars(solution_code, case.get('inputs', {}), outputs)
-        usr = run_vars(user_code, case.get('inputs', {}), outputs)
+        # Vars mode: inject values, compare outputs
+        sol = run_vars_mode(solution_code, values, outputs)
+        usr = run_vars_mode(user_code, values, outputs)
+        results.append({
+            "test": test_num + 1,
+            "values": safe_value(values),
+            "solution": sol,
+            "user": usr
+        })
     else:
-        sol = run_func(solution_code, case.get('args', []), function_name)
-        usr = run_func(user_code, case.get('args', []), function_name)
-    results.append({
-        "test": idx + 1,
-        "inputs": case.get('inputs', {}),
-        "args": case.get('args', []),
-        "solution": sol,
-        "user": usr
-    })
+        # Function mode: call functions with values as args
+        sol = run_function_mode(solution_code, values, function_name, params)
+        usr = run_function_mode(user_code, values, function_name, params)
+        results.append({
+            "test": test_num + 1,
+            "values": safe_value(values),
+            "solution": sol,
+            "user": usr
+        })
 
 json.dumps(results)
 `);
@@ -2530,21 +2817,36 @@ json.dumps(results)
     }];
   }
 
+  // Process results
   parsed.forEach((testResult, idx) => {
     const solution = testResult.solution || {};
     const user = testResult.user || {};
+    const values = testResult.values || {};
+    
     const base = {
       testNumber: idx + 1,
       type: 'intelligent',
       mode,
-      inputs: testResult.inputs || {},
-      args: testResult.args || [],
+      values,
       functionName,
-      outputs: mode === 'vars' ? outputs.map(o => o.name) : [],
+      params,
+      inputs,
+      outputs,
       expected: solution.output,
       actual: user.output
     };
 
+    // Check for randomizer error
+    if (testResult.error) {
+      results.push({
+        ...base,
+        passed: false,
+        error: testResult.error
+      });
+      return;
+    }
+
+    // Check for solution error
     if (solution.error) {
       results.push({
         ...base,
@@ -2554,6 +2856,7 @@ json.dumps(results)
       return;
     }
 
+    // Check for user error
     if (user.error) {
       results.push({
         ...base,
@@ -2563,34 +2866,34 @@ json.dumps(results)
       return;
     }
 
+    // Compare outputs
     let passed = true;
     const matchDetails = [];
 
     if (mode === 'vars') {
-      outputs.forEach((outDef) => {
-        const name = outDef.name;
-        const expectedValue = solution.output ? solution.output[name] : undefined;
-        const actualValue = user.output ? user.output[name] : undefined;
-        const matches = compareIntelligentValue(actualValue, expectedValue, outDef, tolerance);
+      // Compare each output variable
+      outputs.forEach((outputName) => {
+        const expectedValue = solution.output ? solution.output[outputName] : undefined;
+        const actualValue = user.output ? user.output[outputName] : undefined;
+        const matches = JSON.stringify(actualValue) === JSON.stringify(expectedValue);
         if (!matches) {
           passed = false;
         }
         matchDetails.push({
-          name,
+          name: outputName,
           expected: expectedValue,
           actual: actualValue,
-          type: outDef.type,
           matches
         });
       });
     } else {
-      const matches = compareIntelligentValue(user.output, solution.output, { type: returnType }, tolerance);
+      // Compare function return value
+      const matches = JSON.stringify(user.output) === JSON.stringify(solution.output);
       passed = matches;
       matchDetails.push({
         name: functionName,
         expected: solution.output,
         actual: user.output,
-        type: returnType,
         matches
       });
     }
@@ -2607,8 +2910,9 @@ json.dumps(results)
 
 /**
  * Run FUNCTION tests
+ * validation_mode is read from each testCase.validation_mode (default: 'loose')
  */
-async function runFunctionTests(pyodide, code, testCases, validationMode) {
+async function runFunctionTests(pyodide, code, testCases) {
   const results = [];
   
   // Handle NEW structure: testCases = [{type: 'function', function_name: '...', test_cases: [{args, expected}, ...]}]
@@ -2724,6 +3028,8 @@ json.dumps(results)
     
     testResults.forEach((testResult, idx) => {
       const testCase = casesToRun[idx];
+      // Get validation_mode from testCase (default: 'loose')
+      const validationMode = testCase.validation_mode || testSpec.validation_mode || 'loose';
       const passed = testResult.error ? false : compareTestOutput(testResult.output, testCase.expected, validationMode);
       
       results.push({
@@ -2752,8 +3058,9 @@ json.dumps(results)
 
 /**
  * Run VARIABLE tests
+ * validation_mode is read from testSpec.validation_mode (default: 'loose')
  */
-async function runVariableTests(pyodide, code, testCases, validationMode) {
+async function runVariableTests(pyodide, code, testCases) {
   const results = [];
   
   // Handle NEW structure: testCases = [{type: 'variable', init_var_names: [...], expected_var_names: [...], test_cases: [{init_values, expected_values}, ...]}]
@@ -3211,12 +3518,68 @@ function matchesPattern(actual, pattern) {
 }
 
 /**
+ * Remove Python comments from code
+ * Preserves string literals that might contain # or quotes
+ */
+function removePythonComments(code) {
+  const lines = code.split('\n');
+  return lines.map(line => {
+    // Find the first # that's not inside a string
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTripleQuote = false;
+    let tripleQuoteChar = null;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const prev = i > 0 ? line[i - 1] : '';
+      const next = i < line.length - 1 ? line[i + 1] : '';
+      const nextNext = i < line.length - 2 ? line[i + 2] : '';
+      
+      // Check for triple quotes
+      if ((char === '"' || char === "'") && next === char && nextNext === char) {
+        if (inTripleQuote && tripleQuoteChar === char) {
+          inTripleQuote = false;
+          tripleQuoteChar = null;
+          i += 2; // Skip the next two quotes
+          continue;
+        } else if (!inSingleQuote && !inDoubleQuote && !inTripleQuote) {
+          inTripleQuote = true;
+          tripleQuoteChar = char;
+          i += 2; // Skip the next two quotes
+          continue;
+        }
+      }
+      
+      // Check for regular quotes
+      if (!inTripleQuote) {
+        if (char === '"' && prev !== '\\') {
+          inDoubleQuote = !inDoubleQuote;
+        } else if (char === "'" && prev !== '\\') {
+          inSingleQuote = !inSingleQuote;
+        }
+      }
+      
+      // Found a comment marker outside of strings
+      if (char === '#' && !inSingleQuote && !inDoubleQuote && !inTripleQuote) {
+        return line.substring(0, i);
+      }
+    }
+    
+    return line;
+  }).join('\n');
+}
+
+/**
  * Run Code Check tests
  * Checks if code contains required keywords
  * Supports multiple code_check test cases
  */
 function runCodeCheck(code, testCases) {
   const results = [];
+  
+  // Remove comments from code before checking
+  const codeWithoutComments = removePythonComments(code);
   
   // Process each code_check test case
   testCases.forEach((testSpec, idx) => {
@@ -3237,14 +3600,14 @@ function runCodeCheck(code, testCases) {
         // Treat as regex pattern (case-insensitive)
         try {
           const regex = new RegExp(keyword, 'i');
-          found = regex.test(code);
+          found = regex.test(codeWithoutComments);
         } catch (e) {
           // If regex is invalid, fall back to literal string search
-          found = code.toUpperCase().includes(keyword.toUpperCase());
+          found = codeWithoutComments.toUpperCase().includes(keyword.toUpperCase());
         }
       } else {
         // Literal string search (case-insensitive)
-        found = code.toUpperCase().includes(keyword.toUpperCase());
+        found = codeWithoutComments.toUpperCase().includes(keyword.toUpperCase());
       }
       
       return { keyword, found };
@@ -3288,10 +3651,41 @@ function compareTestOutput(actual, expected, mode = 'loose') {
   let actualCleaned = String(actual !== null && actual !== undefined ? actual : '').trim();
   let expectedCleaned;
   
+  // Helper function to check if string represents a number
+  const isNumericString = (str) => {
+    if (str === '' || str === 'NaN' || str === 'Infinity' || str === '-Infinity') return false;
+    const num = Number(str);
+    return !isNaN(num) && isFinite(num);
+  };
+  
+  // Helper function for numeric comparison with tolerance
+  const numericEqual = (actualNum, expectedNum) => {
+    // Exact match for integers
+    if (Number.isInteger(actualNum) && Number.isInteger(expectedNum)) {
+      return actualNum === expectedNum;
+    }
+    
+    // For floats: use relative tolerance + absolute tolerance
+    // Relative tolerance: 1e-9 of the expected value
+    // Absolute tolerance: 1e-9 (handles very small numbers)
+    const relTolerance = Math.abs(expectedNum) * 1e-9;
+    const absTolerance = 1e-9;
+    const tolerance = Math.max(relTolerance, absTolerance);
+    
+    return Math.abs(actualNum - expectedNum) <= tolerance;
+  };
+  
   // Handle array of expected values (OR logic - any match passes)
   if (Array.isArray(expected)) {
     return expected.some(exp => {
       expectedCleaned = String(exp !== null && exp !== undefined ? exp : '').trim();
+      
+      // Check if both values are numeric (handles 19.0 vs 19 case)
+      if (isNumericString(actualCleaned) && isNumericString(expectedCleaned)) {
+        const actualNum = Number(actualCleaned);
+        const expectedNum = Number(expectedCleaned);
+        return numericEqual(actualNum, expectedNum);
+      }
       
       // Case-insensitive comparison for booleans (True/true, False/false)
       if ((actualCleaned.toLowerCase() === 'true' || actualCleaned.toLowerCase() === 'false') &&
@@ -3316,6 +3710,13 @@ function compareTestOutput(actual, expected, mode = 'loose') {
   
   // Single expected value
   expectedCleaned = String(expected !== null && expected !== undefined ? expected : '').trim();
+  
+  // Check if both values are numeric (handles 19.0 vs 19 case)
+  if (isNumericString(actualCleaned) && isNumericString(expectedCleaned)) {
+    const actualNum = Number(actualCleaned);
+    const expectedNum = Number(expectedCleaned);
+    return numericEqual(actualNum, expectedNum);
+  }
   
   // Case-insensitive comparison for booleans (True/true, False/false)
   if ((actualCleaned.toLowerCase() === 'true' || actualCleaned.toLowerCase() === 'false') &&

@@ -7,7 +7,7 @@ $test_mode = 1;
 $admin = true;
 
 // Get base task info
-$sql = "SELECT id, title, task_type, question_text, solution_code, generator_code FROM tasks WHERE id = 79";
+$sql = "SELECT id, title, task_type, question_text, solution_code FROM tasks WHERE id = 79";
 $result = $conn->query($sql);
 
 if (!$result) {
@@ -28,7 +28,7 @@ echo "- ID: " . $task['id'] . "\n";
 echo "- Title: " . $task['title'] . "\n";
 echo "- Type: " . $task['task_type'] . "\n";
 echo "- solution_code exists: " . (!!$task['solution_code'] ? 'YES' : 'NO') . "\n";
-echo "- generator_code exists: " . (!!$task['generator_code'] ? 'YES' : 'NO') . "\n\n";
+echo "\n";
 
 if ($task['solution_code']) {
     echo "solution_code content (first 200 chars):\n";

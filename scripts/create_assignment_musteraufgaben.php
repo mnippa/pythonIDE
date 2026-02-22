@@ -249,7 +249,7 @@ $tasks[] = [
     'validation_mode' => 'loose',
     'max_attempts' => 3,
     'max_iterations' => 3,
-    'show_generator_code' => 1
+    'show_solution_code' => 1
 ];
 
 $tasks[] = [
@@ -267,7 +267,7 @@ $tasks[] = [
     'validation_mode' => 'loose',
     'max_attempts' => 3,
     'max_iterations' => 1,
-    'show_generator_code' => 0
+    'show_solution_code' => 0
 ];
 
 // -------------------- CODE RANDOM COMPLEX --------------------
@@ -284,7 +284,7 @@ $tasks[] = [
     'validation_mode' => 'loose',
     'max_attempts' => 3,
     'max_iterations' => 1,
-    'show_generator_code' => 0
+    'show_solution_code' => 0
 ];
 
 $tasks[] = [
@@ -300,7 +300,7 @@ $tasks[] = [
     'validation_mode' => 'loose',
     'max_attempts' => 3,
     'max_iterations' => 3,
-    'show_generator_code' => 1
+    'show_solution_code' => 1
 ];
 
 $tasks[] = [
@@ -316,14 +316,14 @@ $tasks[] = [
     'validation_mode' => 'loose',
     'max_attempts' => 3,
     'max_iterations' => 3,
-    'show_generator_code' => 0
+    'show_solution_code' => 0
 ];
 
 // -------------------- INSERT TASKS --------------------
 $taskStmt = $conn->prepare(
     'INSERT INTO tasks (
         assignment_id, title, description, position, max_attempts, iterations_count,
-        show_solution, show_generator_code, min_keywords_required, problem_type,
+        show_solution, show_solution_code, min_keywords_required, problem_type,
         code_template, hint1, hint2, hint3, stoff, expected_output, validation_mode,
         test_cases, solution_code, task_type, question_text, image_url, correct_answer,
         variable_overrides
@@ -342,7 +342,7 @@ foreach ($tasks as $task) {
     $maxAttempts = $task['max_attempts'] ?? 3;
     $iterations = $task['max_iterations'] ?? 1;
     $showSolution = $task['show_solution'] ?? 1;
-    $showGenerator = $task['show_generator_code'] ?? 0;
+    $showSolutionCode = $task['show_solution_code'] ?? 0;
     $minKeywords = array_key_exists('min_keywords_required', $task) ? $task['min_keywords_required'] : null;
     $problemType = $task['problem_type'] ?? 'code_completion';
     $codeTemplate = $task['code_template'] ?? '';
@@ -369,7 +369,7 @@ foreach ($tasks as $task) {
         $maxAttempts,
         $iterations,
         $showSolution,
-        $showGenerator,
+        $showSolutionCode,
         $minKeywords,
         $problemType,
         $codeTemplate,

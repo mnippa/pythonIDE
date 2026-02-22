@@ -13,7 +13,7 @@ echo "Test Mode: " . ($test_mode ? 'ON' : 'OFF') . "\n\n";
 $columns = "id, title, task_type, question_text, difficulty, max_attempts, user_id";
 
 if ($test_mode) {
-    $columns .= ", solution_code, generator_code";
+    $columns .= ", solution_code";
 }
 
 $sql = "SELECT $columns FROM tasks WHERE id = 79";
@@ -30,7 +30,7 @@ $task = $result->fetch_assoc();
 if ($task) {
     echo "✓ Task 79 fetched successfully\n";
     echo "solution_code included: " . (isset($task['solution_code']) ? 'YES' : 'NO') . "\n";
-    echo "generator_code included: " . (isset($task['generator_code']) ? 'YES' : 'NO') . "\n\n";
+    echo "\n";
     
     if (isset($task['solution_code'])) {
         echo "solution_code content (first 150 chars):\n";

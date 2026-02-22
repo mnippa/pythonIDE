@@ -88,12 +88,12 @@ try {
         $stmt = $conn->prepare('INSERT INTO tasks (
             assignment_id, title, description, problem_type, code_template, 
             hint1, hint2, hint3, stoff, 
-            expected_output, solution_code, max_attempts, validation_mode, 
+            expected_output, solution_code, max_attempts, 
             test_cases, position, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
         
         $stmt->bind_param(
-            'issssssssssissi',
+            'isssssssssisi',
             $newAssignmentId,
             $task['title'],
             $task['description'],
@@ -106,7 +106,6 @@ try {
             $task['expected_output'],
             $task['solution_code'],
             $task['max_attempts'],
-            $task['validation_mode'],
             $task['test_cases'],
             $position
         );

@@ -14,13 +14,8 @@ window.QuizRenderer = {
       </div>`;
     }
     
-    // Description
-    if (task.description) {
-      html += `<div class="task-description-section">
-        <h4>Aufgabenstellung</h4>
-        <p>${this.escapeHtml(task.description)}</p>
-      </div>`;
-    }
+    // NOTE: task_text is shown centrally in renderChoice/renderFreeText/etc,
+    // not in this details panel. Description field is only for Code-task metadata.
     
     // Hints
     const availableHints = [];
@@ -83,7 +78,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container solution-mode">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
@@ -145,7 +140,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
@@ -255,7 +250,7 @@ window.QuizRenderer = {
     container.innerHTML = `
       <div class="quiz-container">
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
           ${keywordsHint}
         </div>
@@ -343,10 +338,10 @@ window.QuizRenderer = {
     }
     
     const showCode =
-      task.show_generator_code === 1 ||
-      task.show_generator_code === true ||
-      task.show_generator_code === '1' ||
-      task.show_generator_code === 'true';
+      task.show_solution_code === 1 ||
+      task.show_solution_code === true ||
+      task.show_solution_code === '1' ||
+      task.show_solution_code === 'true';
 
     // Build code display with template string replacement AND variable highlighting
     let codeDisplay = task.code_template || '';
@@ -377,6 +372,11 @@ window.QuizRenderer = {
 
     container.innerHTML = `
       <div class="quiz-container">
+        <div class="quiz-question">
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
+          ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+        </div>
+        
         ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
         <div class="code-reading-vars">
           <strong>Variablenwerte:</strong>
@@ -428,7 +428,7 @@ window.QuizRenderer = {
         <div class="quiz-container">
           ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
           <div class="quiz-question">
-            ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+            ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
             ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
           </div>
           <div class="quiz-values loading">Werte werden geladen...</div>
@@ -455,18 +455,19 @@ window.QuizRenderer = {
       return `<li><code>${this.escapeHtml(key)} = ${this.escapeHtml(formatted)}</code></li>`;
     }).join('');
     
-    // Show solution code only if show_generator_code is enabled
+    // Show solution code only if show_solution_code is enabled
     const showGenerator =
-      task.show_generator_code === 1 ||
-      task.show_generator_code === true ||
-      task.show_generator_code === '1' ||
-      task.show_generator_code === 'true';
+      task.show_solution_code === 1 ||
+      task.show_solution_code === true ||
+      task.show_solution_code === '1' ||
+      task.show_solution_code === 'true';
     
     // Build code display with solution or template code (formatted like code_reading)
     let codeDisplay = '';
     const rawCode = task.solution_code || task.code_template || '';
     if (showGenerator && rawCode) {
-      codeDisplay = rawCode;
+      // Convert escaped newlines to actual newlines (safeguard for older data)
+      codeDisplay = rawCode.replace(/\\n/g, '\n');
       
       // Replace placeholders with actual values
       for (const [varName, value] of Object.entries(values)) {
@@ -492,12 +493,12 @@ window.QuizRenderer = {
 
     container.innerHTML = `
       <div class="quiz-container">
-        ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
         <div class="quiz-question">
-          ${task.question_text ? `<div class="question-text">${this.formatText(task.question_text)}</div>` : ''}
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
         </div>
         
+        ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
         <div class="quiz-values">
           <strong>Gegebene Werte:</strong>
           <ul>

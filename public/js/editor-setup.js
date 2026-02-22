@@ -283,22 +283,29 @@ async function initPyodideAndEditor() {
       contextmenu: false, // Disable right-click context menu to prevent paste
     });
     
-    // Disable paste in editor to prevent copying solutions
-    const editorDomNode = editor.getDomNode();
-    if (editorDomNode) {
-      editorDomNode.addEventListener('paste', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }, true);
-    }
-    
-    // Also prevent paste via Monaco API
-    editor.onDidPaste(() => {
-      const model = editor.getModel();
-      if (model) {
-        editor.trigger('keyboard', 'undo', null);
+    // Allow copy/paste in test mode (for admin testing)
+    // Block paste in normal mode (to prevent copying solutions during student submission)
+    // Copy is always allowed
+    const isTestMode = window.testMode === true;
+    if (!isTestMode) {
+      const editorDomNode = editor.getDomNode();
+      if (editorDomNode) {
+        // Block paste only - copy/cut still work
+        editorDomNode.addEventListener('paste', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }, true);
       }
-    });
+      
+      // Also prevent paste via Monaco API
+      editor.onDidPaste(() => {
+        const model = editor.getModel();
+        if (model) {
+          editor.trigger('keyboard', 'undo', null);
+        }
+      });
+    }
+    // In test mode: all clipboard operations (copy, cut, paste) are allowed
     
     // Store reference globally for theme changes AND external modules
     editorInstance = editor;

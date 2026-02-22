@@ -60,6 +60,32 @@ function setActiveTab(tab) {
   }
 }
 
+function setActiveTaskTab(form, tabName) {
+  if (!form) return;
+  const buttons = form.querySelectorAll('.task-tab');
+  const panels = form.querySelectorAll('.task-tab-panel');
+  if (!buttons.length || !panels.length) return;
+  const target = tabName || buttons[0].dataset.taskTab;
+  buttons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.taskTab === target);
+  });
+  panels.forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.taskTabPanel === target);
+  });
+  form.dataset.activeTaskTab = target;
+}
+
+function initTaskFormTabs(formId) {
+  const form = document.getElementById(formId);
+  if (!form) return;
+  const buttons = form.querySelectorAll('.task-tab');
+  if (!buttons.length) return;
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => setActiveTaskTab(form, btn.dataset.taskTab));
+  });
+  setActiveTaskTab(form, form.dataset.activeTaskTab || buttons[0].dataset.taskTab);
+}
+
 async function loadProjects() {
   const data = await requestJson('../api/admin/projects/list.php');
   state.projects = data.projects || [];
@@ -197,7 +223,6 @@ async function loadTasks(assignmentId, assignmentTitle) {
   filteredTasks.forEach((t) => {
     const hasTests = t.test_cases ? '✓' : '✗';
     const hasSolution = t.solution_code ? '✓' : '✗';
-    const modeLabel = t.validation_mode || '-';
     const fullIndex = state.tasks.findIndex((task) => task.id === t.id);
     const isFirst = fullIndex === 0;
     const isLast = fullIndex === state.tasks.length - 1;
@@ -236,7 +261,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
       <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
-      <td><span class="tag">${escapeHtml(modeLabel)} ${testTypeIconHtml}</span></td>
+      <td><span class="tag">${testTypeIconHtml}</span></td>
       <td>
         <div class="row-actions">
           <button class="btn" data-action="edit-task" data-id="${t.id}">Edit</button>
@@ -314,21 +339,22 @@ function resetAssignmentForm() {
 
 function resetTaskForm() {
   $('task-title').value = '';
-  $('task-description').value = '';
-  $('task-template').value = '';
-  $('task-hint1').value = '';
-  $('task-hint2').value = '';
-  $('task-hint3').value = '';
-  $('task-stoff').value = '';
-  $('task-validation-mode').value = '';
-  $('task-test-cases').value = '';
-  $('task-solution').value = '';
+  if ($('task-text')) $('task-text').value = '';
+  if ($('task-description')) $('task-description').value = '';
+  if ($('task-template')) $('task-template').value = '';
+  if ($('task-randomizer-code')) $('task-randomizer-code').value = '';
+  if ($('task-hint1')) $('task-hint1').value = '';
+  if ($('task-hint2')) $('task-hint2').value = '';
+  if ($('task-hint3')) $('task-hint3').value = '';
+  if ($('task-stoff')) $('task-stoff').value = '';
+  if ($('task-validation-mode')) $('task-validation-mode').value = '';
+  if ($('task-test-cases')) $('task-test-cases').value = '';
+  if ($('task-solution')) $('task-solution').value = '';
   if ($('task-max-attempts')) $('task-max-attempts').value = '1';
   if ($('task-max-iterations')) $('task-max-iterations').value = '3';
   
   // NEW: Reset quiz fields
   if ($('new-task-type')) $('new-task-type').value = 'code';
-  if ($('task-question')) $('task-question').value = '';
   if ($('task-image-url')) $('task-image-url').value = '';
   if ($('task-image-preview')) $('task-image-preview').innerHTML = '';
   if ($('task-image-upload')) $('task-image-upload').value = '';
@@ -350,10 +376,17 @@ function resetTaskForm() {
   // Reset test cases
   testCasesData = [];
   renderTestCases(testCasesData, 'tests-container');
+  updateSolutionCodeVisibility(); // Update solution code visibility
   
   // Reset field visibility
-  if (window.TaskTypeManager) {
-    TaskTypeManager.updateFieldVisibility(document.getElementById('task-form'), 'code');
+  const taskForm = document.getElementById('task-form');
+  if (window.TaskTypeManager && taskForm) {
+    TaskTypeManager.updateFieldVisibility(taskForm, 'code');
+  }
+
+  // Only set active tab if tabs exist in the form
+  if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
+    setActiveTaskTab(taskForm, 'base');
   }
 }
 
@@ -373,19 +406,32 @@ function openNewTaskModal() {
     return;
   }
   resetTaskForm();
+  
+  // Only set active tab if tabs exist in the form
+  const taskForm = $('task-form');
+  if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
+    setActiveTaskTab(taskForm, 'base');
+  }
+  
   $('task-create-modal').classList.add('active');
   
   // Update field visibility based on current task type
-  const taskForm = $('task-form');
   const taskType = $('new-task-type').value;
   if (window.TaskTypeManager && taskForm) {
     window.TaskTypeManager.updateFieldVisibility(taskForm, taskType);
   }
   updateMaxIterationsFromBuilder('task');
+  updateRandomButtonVisibility(); // Update randomizer field visibility
 }
 
 function closeNewTaskModal() {
   $('task-create-modal').classList.remove('active');
+}
+
+function confirmCloseNewTaskModal() {
+  if (confirm('Sind Sie sicher, dass Sie das Modal schließen möchten? Nicht gespeicherte Änderungen werden verworfen.')) {
+    closeNewTaskModal();
+  }
 }
 
 async function handleAssignmentSubmit(e) {
@@ -424,6 +470,12 @@ async function handleAssignmentSubmit(e) {
 
 async function handleTaskSubmit(e) {
   e.preventDefault();
+  
+  // Get which button was clicked
+  const submitter = e.submitter;
+  const actionValue = submitter?.getAttribute('value') || 'save';
+  const shouldClose = actionValue === 'save-close';
+  
   if (!state.currentAssignmentId) {
     alert('Select an assignment first');
     return;
@@ -436,29 +488,22 @@ async function handleTaskSubmit(e) {
     title: $('task-title').value.trim(),
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
-    show_generator_code: $('task-show-generator').checked ? 1 : 0,
+    show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     code_template: $('task-template').value,
+    randomizer_code: $('task-randomizer-code').value.trim() || null,
     hint1: $('task-hint1').value,
     hint2: $('task-hint2').value,
     hint3: $('task-hint3').value,
     stoff: $('task-stoff').value,
-    validation_mode: $('task-validation-mode').value || null,
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
   };
   
-  // For code tasks: use description, not question_text
-  if (taskType === 'code') {
-    payload.description = $('task-description').value.trim();
-    payload.question_text = null;
-  } else {
-    // For quiz tasks: use question_text, clear description
-    payload.description = '';  // Clear description for quiz tasks
-    payload.question_text = $('task-question').value.trim();
-    payload.image_url = $('task-image-url').value.trim() || null;
-  }
+  // For all task types: use task-text (unified field)
+  payload.task_text = $('task-text').value.trim();
+  payload.description = $('task-description').value.trim();
   
   // NEW: Add options for single/multiple choice
   if (taskType === 'single_choice' || taskType === 'multiple_choice') {
@@ -499,9 +544,9 @@ async function handleTaskSubmit(e) {
       alert('code_random_complex erlaubt keine festen Wertepaare. Bitte Generator-Code verwenden.');
       return;
     }
-    const templateValue = ($('task-template')?.value || '').trim();
-    if (!templateValue || !templateValue.includes('values')) {
-      alert('code_random_complex benoetigt Generator-Code, der ein values-Dict befuellt.');
+    const randomizerValue = ($('task-randomizer-code')?.value || '').trim();
+    if (!randomizerValue || !randomizerValue.includes('values')) {
+      alert('code_random_complex benoetigt Randomizer-Code, der ein values-Dict befuellt.');
       return;
     }
     payload.variable_overrides = null;
@@ -526,7 +571,6 @@ async function handleTaskSubmit(e) {
       const intelligentConfig = {...testCasesData[0]};
       delete intelligentConfig.type; // Remove 'type' key when serializing as object
       payload.test_cases = JSON.stringify(intelligentConfig);
-      payload.validation_mode = 'intelligent'; // Auto-set validation mode
     } else {
       payload.test_cases = JSON.stringify(testCasesData);
     }
@@ -563,7 +607,11 @@ async function handleTaskSubmit(e) {
 
   await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
   await loadAssignments();
-  closeNewTaskModal();
+  
+  // Only close if user chose "save-close"
+  if (shouldClose) {
+    closeNewTaskModal();
+  }
 }
 
 function validateChoiceOptions(taskType, options) {
@@ -847,80 +895,78 @@ function escapeHtml(input) {
 function validateIntelligentTests(testCases, solutionCode) {
   if (!Array.isArray(testCases)) return null;
 
-  const allowedTypes = ['int', 'integer', 'float', 'number', 'double', 'bool', 'boolean', 'string', 'str', 'list', 'array', 'choice', 'enum', 'object', 'dict', 'map'];
-
   for (const test of testCases) {
     if (!test || test.type !== 'intelligent') continue;
 
-    const mode = test.mode || 'vars';
-    const testsCount = Number(test.tests ?? 5);
+    // Mode validation
+    const mode = test.mode || 'function';
+    if (mode !== 'function' && mode !== 'vars') {
+      return 'Intelligent: mode muss "function" oder "vars" sein';
+    }
+
+    // Tests count validation
+    const testsCount = Number(test.tests ?? 4);
     if (!Number.isFinite(testsCount) || testsCount < 1) {
       return 'Intelligent: tests muss >= 1 sein';
     }
 
+    // Solution code validation
     const effectiveSolution = test.solution_code || solutionCode || '';
     if (!effectiveSolution) {
       return 'Intelligent: Musterloesung fehlt (Solution Code)';
     }
 
-    const inputs = Array.isArray(test.inputs) ? test.inputs : [];
-    for (const input of inputs) {
-      if (!input || !input.name) {
-        return 'Intelligent: Inputs brauchen name';
+    if (mode === 'function') {
+      // Function Mode: validate function.name and function.params
+      if (!test.function || typeof test.function !== 'object') {
+        return 'Intelligent (function): function-Objekt fehlt';
       }
-      const type = String(input.type || 'int').toLowerCase();
-      if (!allowedTypes.includes(type)) {
-        return `Intelligent: Unbekannter Input-Typ '${type}'`;
+      
+      if (!test.function.name || test.function.name.trim() === '') {
+        return 'Intelligent (function): Funktionsname fehlt';
       }
-      if ((type === 'choice' || type === 'enum') && (!Array.isArray(input.values) || input.values.length === 0)) {
-        return 'Intelligent: choice/enum braucht values';
-      }
-      if ((type === 'list' || type === 'array') && !input.element && !input.of) {
-        return 'Intelligent: list/array braucht element/of Definition';
-      }
-      if ((type === 'object' || type === 'dict' || type === 'map') && !Array.isArray(input.fields)) {
-        return 'Intelligent: object braucht fields Array';
-      }
-    }
 
-    if (mode === 'vars') {
-      const outputs = Array.isArray(test.outputs) ? test.outputs : [];
-      if (outputs.length === 0) {
-        return 'Intelligent (vars): Outputs fehlen';
+      if (!Array.isArray(test.function.params)) {
+        return 'Intelligent (function): params muss ein Array sein';
       }
-      for (const output of outputs) {
-        if (!output || !output.name) {
-          return 'Intelligent (vars): Output braucht name';
-        }
-        const type = String(output.type || 'int').toLowerCase();
-        if (!allowedTypes.includes(type)) {
-          return `Intelligent: Unbekannter Output-Typ '${type}'`;
-        }
-        if ((type === 'list' || type === 'array') && !output.element && !output.of) {
-          return 'Intelligent: list/array Output braucht element/of';
+
+      // Validate that params is an array of strings
+      for (let i = 0; i < test.function.params.length; i++) {
+        if (typeof test.function.params[i] !== 'string' || test.function.params[i].trim() === '') {
+          return `Intelligent (function): Parameter ${i+1} muss ein nicht-leerer String sein`;
         }
       }
-    } else if (mode === 'function') {
-      // Check new structure: test.function.name
-      if (!test.function || !test.function.name || test.function.name.trim() === '') {
-        return 'Intelligent (function): function_name fehlt';
+
+    } else if (mode === 'vars') {
+      // Vars Mode: validate inputs and outputs arrays
+      if (!Array.isArray(test.inputs)) {
+        return 'Intelligent (vars): inputs muss ein Array sein';
       }
-      // Validate inputs array
-      if (!test.function.inputs || !Array.isArray(test.function.inputs)) {
-        return 'Intelligent (function): function.inputs Array fehlt';
+
+      if (test.inputs.length === 0) {
+        return 'Intelligent (vars): mindestens 1 Input erforderlich';
       }
-      for (const input of test.function.inputs) {
-        if (!input || !input.name) {
-          return 'Intelligent (function): Input braucht name';
+
+      // Validate that inputs is an array of strings
+      for (let i = 0; i < test.inputs.length; i++) {
+        if (typeof test.inputs[i] !== 'string' || test.inputs[i].trim() === '') {
+          return `Intelligent (vars): Input ${i+1} muss ein nicht-leerer String sein`;
         }
-        const type = String(input.type || 'int').toLowerCase();
-        if (!allowedTypes.includes(type)) {
-          return `Intelligent (function): Unbekannter Input-Typ '${type}'`;
-        }
       }
-      // Validate output
-      if (!test.function.output || !test.function.output.type) {
-        return 'Intelligent (function): function.output.type fehlt';
+
+      if (!Array.isArray(test.outputs)) {
+        return 'Intelligent (vars): outputs muss ein Array sein';
+      }
+
+      if (test.outputs.length === 0) {
+        return 'Intelligent (vars): mindestens 1 Output erforderlich';
+      }
+
+      // Validate that outputs is an array of strings
+      for (let i = 0; i < test.outputs.length; i++) {
+        if (typeof test.outputs[i] !== 'string' || test.outputs[i].trim() === '') {
+          return `Intelligent (vars): Output ${i+1} muss ein nicht-leerer String sein`;
+        }
       }
     }
   }
@@ -947,36 +993,29 @@ function openEditTaskModal(taskId) {
       task.show_solution === '1' ||
       task.show_solution === 'true';
   }
-  if ($('edit-task-show-generator')) {
-    $('edit-task-show-generator').checked =
-      task.show_generator_code === 1 ||
-      task.show_generator_code === true ||
-      task.show_generator_code === '1' ||
-      task.show_generator_code === 'true';
+  if ($('edit-task-show-solution-code')) {
+    $('edit-task-show-solution-code').checked =
+      task.show_solution_code === 1 ||
+      task.show_solution_code === true ||
+      task.show_solution_code === '1' ||
+      task.show_solution_code === 'true';
   }
   
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
   
-  // Description vs Question Text: depends on task type
-  if (taskType === 'code') {
-    // Code task: use description
-    $('edit-task-description').value = task.description || '';
-    if ($('edit-task-question')) $('edit-task-question').value = '';
-  } else {
-    // Quiz task: use question_text
-    $('edit-task-description').value = '';
-    if ($('edit-task-question')) $('edit-task-question').value = task.question_text || '';
-  }
+  // Unified task_text and description fields (same for all task types)
+  $('edit-task-text').value = task.task_text || '';
+  $('edit-task-description').value = task.description || '';
   
   // Code fields
   $('edit-task-template').value = task.code_template || '';
+  $('edit-task-randomizer-code').value = task.randomizer_code || '';
   $('edit-task-hint1').value = task.hint1 || '';
   $('edit-task-hint2').value = task.hint2 || '';
   $('edit-task-hint3').value = task.hint3 || '';
   $('edit-task-stoff').value = task.stoff || '';
-  $('edit-task-validation-mode').value = task.validation_mode || '';
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
   
@@ -1048,7 +1087,14 @@ function openEditTaskModal(taskId) {
   if (window.TaskTypeManager && editForm) {
     window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
   }
+  
+  // Only set active tab if tabs exist in the form
+  if (editForm && editForm.querySelectorAll('.task-tab').length > 0) {
+    setActiveTaskTab(editForm, 'base');
+  }
+  
   updateMaxIterationsFromBuilder('edit-task');
+  updateRandomButtonVisibility(); // Update randomizer field visibility
 }
 
 function closeEditTaskModal() {
@@ -1057,8 +1103,19 @@ function closeEditTaskModal() {
   editTestCasesData = [];
 }
 
+function confirmCloseEditTaskModal() {
+  if (confirm('Sind Sie sicher, dass Sie das Modal schließen möchten? Nicht gespeicherte Änderungen werden verworfen.')) {
+    closeEditTaskModal();
+  }
+}
+
 async function handleEditTaskSubmit(e) {
   e.preventDefault();
+  
+  // Get which button was clicked
+  const submitter = e.submitter;
+  const actionValue = submitter?.getAttribute('value') || 'save';
+  const shouldClose = actionValue === 'save-close';
 
   const taskId = parseInt($('edit-task-id').value, 10);
   if (!taskId) return;
@@ -1070,29 +1127,22 @@ async function handleEditTaskSubmit(e) {
     title: $('edit-task-title').value.trim(),
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
-    show_generator_code: $('edit-task-show-generator').checked ? 1 : 0,
+    show_solution_code: $('edit-task-show-solution-code').checked ? 1 : 0,
     task_type: taskType,
     problem_type: taskType,  // Keep for backwards compatibility
     code_template: $('edit-task-template').value,
+    randomizer_code: $('edit-task-randomizer-code').value.trim() || null,
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
     stoff: $('edit-task-stoff').value,
-    validation_mode: $('edit-task-validation-mode').value || null,
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
   
-  // For code tasks: use description, not question_text
-  if (taskType === 'code') {
-    payload.description = $('edit-task-description').value.trim();
-    payload.question_text = null;
-  } else {
-    // For quiz tasks: use question_text, clear description
-    payload.description = '';  // Clear description for quiz tasks
-    payload.question_text = $('edit-task-question') ? $('edit-task-question').value.trim() : null;
-    payload.image_url = $('edit-task-image-url') ? $('edit-task-image-url').value.trim() : null;
-  }
+  // For all task types: use unified task_text field
+  payload.task_text = $('edit-task-text').value.trim();
+  payload.description = $('edit-task-description').value.trim();
   
   // Add quiz-specific fields
   payload.keywords = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
@@ -1153,7 +1203,6 @@ async function handleEditTaskSubmit(e) {
     // Special case: if single intelligent test, save as object (not array)
     if (editTestCasesData.length === 1 && editTestCasesData[0].type === 'intelligent') {
       const intelligentConfig = {...editTestCasesData[0]};
-        payload.validation_mode = 'intelligent'; // Auto-set validation mode
       delete intelligentConfig.type; // Remove 'type' key when serializing as object
       payload.test_cases = JSON.stringify(intelligentConfig);
     } else {
@@ -1187,7 +1236,11 @@ async function handleEditTaskSubmit(e) {
     body: JSON.stringify(payload)
   });
 
-  closeEditTaskModal();
+  // Only close if user chose "save-close"
+  if (shouldClose) {
+    closeEditTaskModal();
+  }
+  
   await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
   await loadAssignments();
 }
@@ -1196,6 +1249,9 @@ function bindEvents() {
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
   });
+
+  initTaskFormTabs('task-form');
+  initTaskFormTabs('task-edit-form');
 
   $('assignment-form').addEventListener('submit', handleAssignmentSubmit);
   $('task-form').addEventListener('submit', handleTaskSubmit);
@@ -1396,10 +1452,10 @@ function bindEvents() {
   $('close-modal-btn').addEventListener('click', closeEditTaskModal);
   $('cancel-modal-btn').addEventListener('click', closeEditTaskModal);
   
-  // Close modal on background click
+  // Close modal on background click with confirmation
   $('task-modal').addEventListener('click', (e) => {
     if (e.target === $('task-modal')) {
-      closeEditTaskModal();
+      confirmCloseEditTaskModal();
     }
   });
 
@@ -1416,7 +1472,7 @@ function bindEvents() {
   if (taskCreateModal) {
     taskCreateModal.addEventListener('click', (e) => {
       if (e.target === taskCreateModal) {
-        closeNewTaskModal();
+        confirmCloseNewTaskModal();
       }
     });
   }
@@ -1563,6 +1619,116 @@ init().catch((err) => {
 });
 
 // ===================================================================
+// SOLUTION CODE VISIBILITY HELPER
+// ===================================================================
+
+// Helper function to check if Solution Code is needed based on task type
+function updateSolutionCodeVisibility() {
+  // Create form
+  const newTaskType = $('new-task-type')?.value;
+  const newTaskForm = $('task-form');
+  if (newTaskForm) {
+    let needsSolution = false;
+    
+    // Solution Code is always shown for:
+    // 1. code tasks (any type of tests)
+    // 2. code_random_complex tasks
+    // 3. code_reading tasks
+    if (newTaskType === 'code' || newTaskType === 'code_random_complex' || newTaskType === 'code_reading') {
+      needsSolution = true;
+    }
+    
+    const newSolutionField = newTaskForm.querySelector('[data-field="solution"]');
+    if (newSolutionField) {
+      newSolutionField.style.display = needsSolution ? 'block' : 'none';
+    }
+  }
+  
+  // Edit form
+  const editTaskType = $('edit-task-type')?.value;
+  const editTaskForm = $('task-edit-form');
+  if (editTaskForm) {
+    let needsSolution = false;
+    
+    // Solution Code is always shown for:
+    // 1. code tasks (any type of tests)
+    // 2. code_random_complex tasks
+    // 3. code_reading tasks
+    if (editTaskType === 'code' || editTaskType === 'code_random_complex' || editTaskType === 'code_reading') {
+      needsSolution = true;
+    }
+    
+    const editSolutionField = editTaskForm.querySelector('[data-field="solution"]');
+    if (editSolutionField) {
+      editSolutionField.style.display = needsSolution ? 'block' : 'none';
+    }
+  }
+}
+
+// ===================================================================
+// RANDOMIZER & FIELD VISIBILITY HELPERS
+// ===================================================================
+
+// Helper function to update Random Numbers button and field visibility
+function updateRandomButtonVisibility() {
+  const newTaskType = $('new-task-type')?.value;
+  const editTaskType = $('edit-task-type')?.value;
+  
+  const taskRandomSnippetBtn = $('task-random-snippet');
+  if (taskRandomSnippetBtn) {
+    taskRandomSnippetBtn.style.display = newTaskType === 'code_random_complex' ? 'block' : 'none';
+  }
+  
+  const editTaskRandomSnippetBtn = $('edit-task-random-snippet');
+  if (editTaskRandomSnippetBtn) {
+    editTaskRandomSnippetBtn.style.display = editTaskType === 'code_random_complex' ? 'block' : 'none';
+  }
+  
+  // Update Randomizer Code field visibility
+  // Only show when it's actually needed:
+  // 1. For code_random_complex tasks (always)
+  // 2. For code tasks with intelligent tests
+  
+  const newTaskForm = $('task-form');
+  if (newTaskForm) {
+    let showRandomizer = false;
+    if (newTaskType === 'code_random_complex') {
+      showRandomizer = true;
+    } else if (newTaskType === 'code') {
+      // Check if there are any intelligent tests defined
+      if (Array.isArray(testCasesData) && testCasesData.length > 0) {
+        showRandomizer = testCasesData.some(tc => tc.type === 'intelligent');
+      }
+    }
+    const newTaskRandomizerField = newTaskForm.querySelector('[data-field="randomizer-code"]');
+    if (newTaskRandomizerField) {
+      newTaskRandomizerField.style.display = showRandomizer ? 'block' : 'none';
+    }
+  }
+  
+  const editTaskForm = $('task-edit-form');
+  if (editTaskForm) {
+    let showRandomizer = false;
+    if (editTaskType === 'code_random_complex') {
+      showRandomizer = true;
+    } else if (editTaskType === 'code') {
+      // Check if there are any intelligent tests defined
+      if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
+        showRandomizer = editTestCasesData.some(tc => tc.type === 'intelligent');
+      }
+    }
+    const editTaskRandomizerField = editTaskForm.querySelector('[data-field="randomizer-code"]');
+    if (editTaskRandomizerField) {
+      editTaskRandomizerField.style.display = showRandomizer ? 'block' : 'none';
+    }
+  }
+  
+  // Update Solution Code field visibility
+  // Show only for code_random_complex OR for code tasks with intelligent tests
+  updateSolutionCodeVisibility();
+}
+
+// ===================================================================
 // TEST CASES BUILDER GUI
 // ===================================================================
 
@@ -1573,6 +1739,7 @@ let editTestCasesData = []; // EDIT form
 function initTestCasesBuilder() {
   const addBtn = document.getElementById('add-test-btn');
   const generateBtn = document.getElementById('generate-json-btn');
+  const autoDescBtn = document.getElementById('auto-description-btn');
   const typeSelector = document.getElementById('test-type-selector');
   
   if (addBtn) {
@@ -1587,12 +1754,19 @@ function initTestCasesBuilder() {
       generateJSON(testCasesData, 'task-test-cases');
     });
   }
+  
+  if (autoDescBtn) {
+    autoDescBtn.addEventListener('click', () => {
+      generateAutoDescription(testCasesData, 'task-description');
+    });
+  }
 }
 
 // Initialize Test Cases Builder for EDIT form
 function initEditTestCasesBuilder() {
   const addBtn = document.getElementById('edit-add-test-btn');
   const generateBtn = document.getElementById('edit-generate-json-btn');
+  const autoDescBtn = document.getElementById('edit-auto-description-btn');
   const typeSelector = document.getElementById('edit-test-type-selector');
   
   if (addBtn) {
@@ -1607,6 +1781,12 @@ function initEditTestCasesBuilder() {
       generateJSON(editTestCasesData, 'edit-task-test-cases');
     });
   }
+  
+  if (autoDescBtn) {
+    autoDescBtn.addEventListener('click', () => {
+      generateAutoDescription(editTestCasesData, 'edit-task-description');
+    });
+  }
 }
 
 // Add a test case to the GUI
@@ -1616,9 +1796,12 @@ function addTestCase(type, dataArray, containerId) {
   // Initialize type-specific default structures
   if (type === 'output') {
     testCase.expected = [];
+    testCase.expected_type = 'text'; // Default: compare against text patterns
+    testCase.validation_mode = 'strict'; // Default: exact match
   } else if (type === 'function') {
     testCase.function_name = '';
     testCase.test_cases = [{ args: [], expected: '' }]; // Start with one empty test case
+    testCase.validation_mode = 'loose'; // Default: loose whitespace matching
   } else if (type === 'variable') {
     testCase.init_var_names = [];
     testCase.expected_var_names = [];
@@ -1626,13 +1809,12 @@ function addTestCase(type, dataArray, containerId) {
   } else if (type === 'intelligent') {
     testCase.mode = 'function';
     testCase.tests = 5;
-    testCase.seed = '';
-    testCase.tolerance = 0.000001;
     testCase.function = {
       name: '',
-      inputs: [],
-      output: { type: 'int' }
+      params: []
     };
+    testCase.inputs = [];  // For vars mode
+    testCase.outputs = [];  // For vars mode
   } else if (type === 'code_check') {
     testCase.keywords = [];
     testCase.operator = 'AND';
@@ -1662,6 +1844,9 @@ function renderTestCases(dataArray, containerId) {
   
   // Bind event handlers
   bindTestCaseEvents(dataArray, containerId);
+  
+  // Update solution code visibility based on test types
+  updateSolutionCodeVisibility();
 }
 
 // Render single test case HTML
@@ -1678,8 +1863,36 @@ function renderTestCaseHTML(test, idx, containerId) {
   
   if (type === 'output') {
     const patterns = test.expected && Array.isArray(test.expected) ? test.expected : (test.expected ? [test.expected] : []);
+    const expectedType = test.expected_type || 'text';
+    const validationMode = test.validation_mode || 'strict';
     
     html += `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Expected Type:</label>
+          <select class="expected-type-select" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+            <option value="text" ${expectedType === 'text' ? 'selected' : ''}>Text Pattern</option>
+            <option value="solution" ${expectedType === 'solution' ? 'selected' : ''}>Solution Code Output</option>
+            <option value="regex" ${expectedType === 'regex' ? 'selected' : ''}>Regex Pattern</option>
+          </select>
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Text: Use patterns below | Solution: Compare to solution_code | Regex: Use regex patterns
+          </div>
+        </div>
+        
+        <div>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Validation Mode:</label>
+          <select class="validation-mode-select" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+            <option value="strict" ${validationMode === 'strict' ? 'selected' : ''}>Strict (exact match)</option>
+            <option value="loose" ${validationMode === 'loose' ? 'selected' : ''}>Loose (ignore whitespace)</option>
+            <option value="contains" ${validationMode === 'contains' ? 'selected' : ''}>Contains (substring)</option>
+          </select>
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Strict: Exact | Loose: Normalize whitespace | Contains: Substring match
+          </div>
+        </div>
+      </div>
+      
       <div style="margin-bottom:8px;">
         <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
           Expected Output Patterns (Wildcards: * = any chars, ? = one char):
@@ -1711,13 +1924,13 @@ function renderTestCaseHTML(test, idx, containerId) {
     `;
   } else if (type === 'function') {
     html += `
-      <div style="margin-bottom:8px;">
-        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">
           Function Name:
         </label>
         <input type="text" class="function-name-input" data-idx="${idx}" value="${test.function_name || ''}" 
                placeholder="e.g. quadrat" 
-               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
       </div>
       
       <div style="margin-bottom:8px;">
@@ -1878,140 +2091,101 @@ function renderTestCaseHTML(test, idx, containerId) {
     `;
   } else if (type === 'intelligent') {
     const mode = test.mode || 'function';
-    const tests = test.tests || 5;
-    const seed = test.seed !== undefined ? test.seed : '';
-    const tolerance = test.tolerance !== undefined ? test.tolerance : 0.000001;
-    const inputs = test.inputs || [];
-    const outputs = test.outputs || [];
-    const functionDef = test.function || {};
-    const solutionCode = test.solution_code || '';
+    const tests = test.tests || 4;
+    
+    // Extract params/inputs/outputs as comma-separated strings
+    let paramsStr = '';
+    let inputsStr = '';
+    let outputsStr = '';
+    let functionName = '';
+    
+    if (mode === 'function' && test.function) {
+      functionName = test.function.name || '';
+      paramsStr = (test.function.params || []).join(', ');
+    } else if (mode === 'vars') {
+      inputsStr = (test.inputs || []).join(', ');
+      outputsStr = (test.outputs || []).join(', ');
+    }
     
     html += `
-      <div style="margin-bottom:8px;">
-        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
-          Mode:
-        </label>
-        <select class="intelligent-mode-input" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
-          <option value="vars" ${mode === 'vars' ? 'selected' : ''}>Variables (Vars Mode)</option>
-          <option value="function" ${mode === 'function' ? 'selected' : ''}>Function (Function Mode)</option>
-        </select>
-      </div>
-      
-      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div>
+      <div style="margin-bottom:12px; padding:12px; background:#eff6ff; border:1px solid #3b82f6; border-radius:6px;">
+        <div style="font-weight:bold; font-size:13px; margin-bottom:10px; color:#1e40af;">
+          ✨ Intelligent Test (vereinfacht mit Randomizer)
+        </div>
+        
+        <div style="margin-bottom:8px;">
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Mode:</label>
+          <select class="intelligent-mode-input" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+            <option value="function" ${mode === 'function' ? 'selected' : ''}>Function (Funktions-Test)</option>
+            <option value="vars" ${mode === 'vars' ? 'selected' : ''}>Vars (Variablen-Test)</option>
+          </select>
+        </div>
+        
+        <div style="margin-bottom:12px;">
           <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Tests Count:</label>
           <input type="number" class="intelligent-tests-input" data-idx="${idx}" value="${tests}" min="1" max="20"
                  style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          <div style="font-size:10px; color:#666; margin-top:2px;">Anzahl der Testdurchläufe mit verschiedenen Zufallswerten</div>
         </div>
-        <div>
-          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Tolerance (Float):</label>
-          <input type="number" class="intelligent-tolerance-input" data-idx="${idx}" value="${tolerance}" step="0.000001"
+    `;
+    
+    // Function Mode UI
+    html += `
+      <div class="intelligent-function-mode" data-idx="${idx}" style="display:${mode === 'function' ? 'block' : 'none'};">
+        <div style="margin-bottom:8px;">
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Function Name:</label>
+          <input type="text" class="intelligent-fn-name-input" data-idx="${idx}" value="${escapeHtml(functionName)}" 
+                 placeholder="z.B.: addiere, quadrat, verdoppeln"
                  style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+        </div>
+        
+        <div style="margin-bottom:8px;">
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Parameter (comma-separated):</label>
+          <input type="text" class="intelligent-fn-params-input" data-idx="${idx}" value="${escapeHtml(paramsStr)}" 
+                 placeholder="z.B.: a, b, c"
+                 style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Namen der Parameter durch Komma getrennt. Reihenfolge wichtig!<br>
+            <strong>Hinweis:</strong> Randomizer Code muss diese Namen als keys im values-Dict verwenden.
+          </div>
         </div>
       </div>
     `;
     
-    // Build Function Mode UI or Vars Mode UI
-    if (mode === 'function') {
-      html += `
-        <div style="margin-bottom:12px; padding:12px; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
-          <div style="font-weight:bold; font-size:13px; margin-bottom:10px;">Function Definition</div>
-          
-          <div style="margin-bottom:8px;">
-            <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Function Name:</label>
-            <input type="text" class="intelligent-fn-name-input" data-idx="${idx}" value="${escapeHtml(functionDef.name || '')}" 
-                   placeholder="addiere"
-                   style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
-          </div>
-          
-          <div style="margin-bottom:8px;">
-            <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">Input Parameters:</label>
-            <div class="intelligent-fn-inputs-container" data-idx="${idx}">
-      `;
-      
-      const fnInputs = functionDef.inputs || [];
-      fnInputs.forEach((inp, inpIdx) => {
-        html += `
-              <div class="intelligent-fn-input-item" data-inpidx="${inpIdx}" style="padding:10px; margin-bottom:8px; border:1px solid #d1d5db; border-radius:4px; background:white;">
-                <div style="display:grid; grid-template-columns: 2fr 2fr 1fr 1fr auto; gap:8px; align-items:end;">
-                  <div>
-                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Name:</label>
-                    <input type="text" class="intelligent-fn-input-name" data-inpidx="${inpIdx}" value="${escapeHtml(inp.name || '')}" placeholder="a"
-                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-                  </div>
-                  <div>
-                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Type:</label>
-                    <select class="intelligent-fn-input-type" data-inpidx="${inpIdx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-                      <option value="int" ${inp.type === 'int' ? 'selected' : ''}>int</option>
-                      <option value="float" ${inp.type === 'float' ? 'selected' : ''}>float</option>
-                      <option value="bool" ${inp.type === 'bool' ? 'selected' : ''}>bool</option>
-                      <option value="string" ${inp.type === 'string' ? 'selected' : ''}>string</option>
-                      <option value="list" ${inp.type === 'list' ? 'selected' : ''}>list</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Min:</label>
-                    <input type="text" class="intelligent-fn-input-min" data-inpidx="${inpIdx}" value="${inp.min !== undefined ? inp.min : ''}" placeholder="0"
-                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-                  </div>
-                  <div>
-                    <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">Max:</label>
-                    <input type="text" class="intelligent-fn-input-max" data-inpidx="${inpIdx}" value="${inp.max !== undefined ? inp.max : ''}" placeholder="100"
-                           style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-                  </div>
-                  <button type="button" class="btn-remove-fn-input" data-inpidx="${inpIdx}" 
-                          style="background:#ef4444; color:white; padding:6px 8px; border:none; border-radius:4px; cursor:pointer;">✕</button>
-                </div>
-              </div>
-        `;
-      });
-      
-      html += `
-            </div>
-            <button type="button" class="btn-add-fn-input" data-idx="${idx}" 
-                    style="background:#3b82f6; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;">
-              + Parameter hinzufügen
-            </button>
-          </div>
-          
-          <div style="margin-bottom:8px;">
-            <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Output Type:</label>
-            <select class="intelligent-fn-output-type" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
-              <option value="int" ${functionDef.output?.type === 'int' ? 'selected' : ''}>int</option>
-              <option value="float" ${functionDef.output?.type === 'float' ? 'selected' : ''}>float</option>
-              <option value="bool" ${functionDef.output?.type === 'bool' ? 'selected' : ''}>bool</option>
-              <option value="string" ${functionDef.output?.type === 'string' ? 'selected' : ''}>string</option>
-              <option value="list" ${functionDef.output?.type === 'list' ? 'selected' : ''}>list</option>
-            </select>
-          </div>
-        </div>
-      `;
-    } else {
-      // Vars mode
-      html += `
+    // Vars Mode UI
+    html += `
+      <div class="intelligent-vars-mode" data-idx="${idx}" style="display:${mode === 'vars' ? 'block' : 'none'};">
         <div style="margin-bottom:8px;">
-          <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
-            Inputs (JSON für Vars Mode):
-          </label>
-          <textarea class="intelligent-inputs-input" data-idx="${idx}" 
-                    placeholder='[{"name": "x", "type": "int", "min": 1, "max": 10}]'
-                    style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; min-height:80px; font-size:11px;">${escapeHtml(JSON.stringify(inputs, null, 2))}</textarea>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Input-Variablen (comma-separated):</label>
+          <input type="text" class="intelligent-vars-inputs-input" data-idx="${idx}" value="${escapeHtml(inputsStr)}" 
+                 placeholder="z.B.: a, b, c"
+                 style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Variablen die im Code-Template initialisiert werden (#INIT START/END)<br>
+            <strong>Hinweis:</strong> Randomizer Code setzt diese Variablennamen neu.
+          </div>
         </div>
         
         <div style="margin-bottom:8px;">
-          <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
-            Outputs (JSON):
-          </label>
-          <textarea class="intelligent-outputs-input" data-idx="${idx}" 
-                    placeholder='[{"name": "result", "type": "int"}]'
-                    style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-family:monospace; min-height:80px; font-size:11px;">${escapeHtml(JSON.stringify(outputs, null, 2))}</textarea>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Output-Variablen (comma-separated):</label>
+          <input type="text" class="intelligent-vars-outputs-input" data-idx="${idx}" value="${escapeHtml(outputsStr)}" 
+                 placeholder="z.B.: result, summe, produkt"
+                 style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Variablen die am Ende des Codes geprüft werden
+          </div>
         </div>
-      `;
-    }
+      </div>
+    `;
     
     html += `
-      <div style="font-size:11px; color:#666; margin-top:6px; padding:10px; background:#fef3c7; border-radius:4px; border-left:3px solid #f59e0b;">
-        <strong>💡 Musterlösung:</strong> Im Feld "Solution Code" (weiter unten im Formular) eingeben.
+      </div>
+      
+      <div style="font-size:11px; color:#666; margin-top:12px; padding:10px; background:#fef3c7; border-radius:4px; border-left:3px solid #f59e0b;">
+        <strong>📝 Wichtig:</strong><br>
+        • <strong>Randomizer Code:</strong> Separates Feld unten (generiert "values" dict)<br>
+        • <strong>Solution Code:</strong> Musterlösung (Function oder Code mit Result-Variablen)<br>
+        • <strong>Code Template:</strong> Nur bei Vars Mode (mit #INIT START/END Block)
       </div>
     `;
   }
@@ -2024,6 +2198,22 @@ function renderTestCaseHTML(test, idx, containerId) {
 function bindTestCaseEvents(dataArray, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
+  
+  // Handle Expected Type dropdown for OUTPUT tests
+  container.querySelectorAll('.expected-type-select').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      dataArray[testIdx]['expected_type'] = e.target.value;
+    });
+  });
+  
+  // Handle Validation Mode dropdown for OUTPUT tests
+  container.querySelectorAll('.validation-mode-select').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      dataArray[testIdx]['validation_mode'] = e.target.value;
+    });
+  });
   
   // Handle OUTPUT pattern inputs
   container.querySelectorAll('.pattern-input').forEach(textarea => {
@@ -2074,7 +2264,7 @@ function bindTestCaseEvents(dataArray, containerId) {
       dataArray[testIdx]['function_name'] = e.target.value;
     });
   });
-
+  
   container.querySelectorAll('.function-args-input').forEach(input => {
     input.addEventListener('input', (e) => {
       const testContainer = e.target.closest('.function-test-cases-container');
@@ -2273,6 +2463,18 @@ function bindTestCaseEvents(dataArray, containerId) {
     select.addEventListener('change', (e) => {
       const idx = parseInt(e.target.dataset.idx);
       dataArray[idx]['mode'] = e.target.value;
+      
+      // Clean up data based on mode
+      if (e.target.value === 'function') {
+        delete dataArray[idx]['inputs'];
+        delete dataArray[idx]['outputs'];
+        if (!dataArray[idx]['function']) dataArray[idx]['function'] = { name: '', params: [] };
+      } else {
+        delete dataArray[idx]['function'];
+        if (!dataArray[idx]['inputs']) dataArray[idx]['inputs'] = [];
+        if (!dataArray[idx]['outputs']) dataArray[idx]['outputs'] = [];
+      }
+      
       // Re-render to show/hide appropriate fields
       renderTestCases(dataArray, containerId);
     });
@@ -2282,136 +2484,51 @@ function bindTestCaseEvents(dataArray, containerId) {
     input.addEventListener('input', (e) => {
       const idx = parseInt(e.target.dataset.idx);
       const value = parseInt(e.target.value, 10);
-      dataArray[idx]['tests'] = Number.isFinite(value) ? value : 5;
+      dataArray[idx]['tests'] = Number.isFinite(value) && value > 0 ? value : 4;
     });
   });
 
-  container.querySelectorAll('.intelligent-tolerance-input').forEach(input => {
-    input.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.dataset.idx);
-      const value = parseFloat(e.target.value);
-      dataArray[idx]['tolerance'] = Number.isFinite(value) ? value : 0.000001;
-    });
-  });
-
-  container.querySelectorAll('.intelligent-inputs-input').forEach(textarea => {
-    textarea.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.dataset.idx);
-      const mode = dataArray[idx]['mode'] || 'function';
-      try {
-        const parsed = JSON.parse(e.target.value);
-        if (mode === 'function') {
-          dataArray[idx]['function'] = parsed;
-          delete dataArray[idx]['inputs']; // Remove old inputs field
-        } else {
-          dataArray[idx]['inputs'] = parsed;
-          delete dataArray[idx]['function']; // Remove old function field
-        }
-      } catch {
-        if (mode === 'function') {
-          dataArray[idx]['function'] = {};
-        } else {
-          dataArray[idx]['inputs'] = [];
-        }
-      }
-    });
-  });
-
-  container.querySelectorAll('.intelligent-outputs-input').forEach(textarea => {
-    textarea.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.dataset.idx);
-      try {
-        dataArray[idx]['outputs'] = JSON.parse(e.target.value);
-      } catch {
-        dataArray[idx]['outputs'] = [];
-      }
-    });
-  });
-
-  // Handle INTELLIGENT FUNCTION UI fields
+  // Handle INTELLIGENT FUNCTION MODE fields
   container.querySelectorAll('.intelligent-fn-name-input').forEach(input => {
     input.addEventListener('input', (e) => {
       const idx = parseInt(e.target.dataset.idx);
       if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      dataArray[idx]['function']['name'] = e.target.value;
+      dataArray[idx]['function']['name'] = e.target.value.trim();
     });
   });
 
-  container.querySelectorAll('.intelligent-fn-input-name').forEach(input => {
+  container.querySelectorAll('.intelligent-fn-params-input').forEach(input => {
     input.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
-      const inpIdx = parseInt(e.target.dataset.inpidx);
-      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
-      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
-      dataArray[idx]['function']['inputs'][inpIdx]['name'] = e.target.value;
-    });
-  });
-
-  container.querySelectorAll('.intelligent-fn-input-type').forEach(select => {
-    select.addEventListener('change', (e) => {
-      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
-      const inpIdx = parseInt(e.target.dataset.inpidx);
-      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
-      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
-      dataArray[idx]['function']['inputs'][inpIdx]['type'] = e.target.value;
-    });
-  });
-
-  container.querySelectorAll('.intelligent-fn-input-min').forEach(input => {
-    input.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
-      const inpIdx = parseInt(e.target.dataset.inpidx);
-      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
-      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
-      const val = e.target.value;
-      dataArray[idx]['function']['inputs'][inpIdx]['min'] = val === '' ? undefined : (isNaN(val) ? val : Number(val));
-    });
-  });
-
-  container.querySelectorAll('.intelligent-fn-input-max').forEach(input => {
-    input.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.closest('.test-case-item').dataset.idx);
-      const inpIdx = parseInt(e.target.dataset.inpidx);
-      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
-      if (!dataArray[idx]['function']['inputs'][inpIdx]) dataArray[idx]['function']['inputs'][inpIdx] = {};
-      const val = e.target.value;
-      dataArray[idx]['function']['inputs'][inpIdx]['max'] = val === '' ? undefined : (isNaN(val) ? val : Number(val));
-    });
-  });
-
-  container.querySelectorAll('.btn-add-fn-input').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const idx = parseInt(btn.dataset.idx);
-      if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['inputs']) dataArray[idx]['function']['inputs'] = [];
-      dataArray[idx]['function']['inputs'].push({ name: '', type: 'int', min: 0, max: 100 });
-      renderTestCases(dataArray, containerId);
-    });
-  });
-
-  container.querySelectorAll('.btn-remove-fn-input').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const tcBtn = e.target.closest('.btn-remove-fn-input');
-      const idx = parseInt(tcBtn.closest('.test-case-item').dataset.idx);
-      const inpIdx = parseInt(tcBtn.dataset.inpidx);
-      
-      if (dataArray[idx]['function'] && Array.isArray(dataArray[idx]['function']['inputs'])) {
-        dataArray[idx]['function']['inputs'].splice(inpIdx, 1);
-        renderTestCases(dataArray, containerId);
-      }
-    });
-  });
-
-  container.querySelectorAll('.intelligent-fn-output-type').forEach(select => {
-    select.addEventListener('change', (e) => {
       const idx = parseInt(e.target.dataset.idx);
       if (!dataArray[idx]['function']) dataArray[idx]['function'] = {};
-      if (!dataArray[idx]['function']['output']) dataArray[idx]['function']['output'] = {};
-      dataArray[idx]['function']['output']['type'] = e.target.value;
+      
+      // Parse comma-separated params into array
+      const paramsStr = e.target.value.trim();
+      const params = paramsStr ? paramsStr.split(',').map(p => p.trim()).filter(p => p) : [];
+      dataArray[idx]['function']['params'] = params;
+    });
+  });
+
+  // Handle INTELLIGENT VARS MODE fields
+  container.querySelectorAll('.intelligent-vars-inputs-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      
+      // Parse comma-separated inputs into array
+      const inputsStr = e.target.value.trim();
+      const inputs = inputsStr ? inputsStr.split(',').map(v => v.trim()).filter(v => v) : [];
+      dataArray[idx]['inputs'] = inputs;
+    });
+  });
+
+  container.querySelectorAll('.intelligent-vars-outputs-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      
+      // Parse comma-separated outputs into array
+      const outputsStr = e.target.value.trim();
+      const outputs = outputsStr ? outputsStr.split(',').map(v => v.trim()).filter(v => v) : [];
+      dataArray[idx]['outputs'] = outputs;
     });
   });
 
@@ -2610,6 +2727,25 @@ document.addEventListener('DOMContentLoaded', () => {
   initTestCasesBuilder();
   initEditTestCasesBuilder();
   
+  // Initialize Task Form Tabs
+  initTaskFormTabs('task-form');
+  initTaskFormTabs('task-edit-form');
+  
+  // Set proper placeholders with line breaks
+  const placeholders = {
+    'task-template': 'Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt',
+    'task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
+    'task-solution': 'Beispiel code_random_complex:\nresult = int(values["binary"], 2)',
+    'edit-task-template': 'Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt',
+    'edit-task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
+    'edit-task-solution': 'Beispiel code_random_complex:\nresult = int(values["binary"], 2)'
+  };
+  
+  Object.entries(placeholders).forEach(([id, text]) => {
+    const el = $(id);
+    if (el) el.placeholder = text;
+  });
+  
   // Initialize Task Type Manager for new task modal
   if (window.TaskTypeManager) {
     TaskTypeManager.init('task-form');
@@ -2731,6 +2867,19 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Task Type Change Handler (EDIT task)
     const randomSnippet = "import random\nmin_val = 1\nmax_val = 10\nvalues = {\"num\": random.randint(min_val, max_val)}";
+    
+    // Listen for task type changes
+    const newTaskTypeSelect = $('new-task-type');
+    if (newTaskTypeSelect) {
+      newTaskTypeSelect.addEventListener('change', updateRandomButtonVisibility);
+    }
+    
+    const editTaskTypeSelect = $('edit-task-type');
+    if (editTaskTypeSelect) {
+      editTaskTypeSelect.addEventListener('change', updateRandomButtonVisibility);
+    }
+    
+    // Handle CREATE form Random Numbers button
     const taskRandomSnippetBtn = $('task-random-snippet');
     if (taskRandomSnippetBtn) {
       taskRandomSnippetBtn.addEventListener('click', () => {
@@ -2740,6 +2889,8 @@ document.addEventListener('DOMContentLoaded', () => {
         textarea.focus();
       });
     }
+    
+    // Handle EDIT form Random Numbers button
     const editTaskRandomSnippetBtn = $('edit-task-random-snippet');
     if (editTaskRandomSnippetBtn) {
       editTaskRandomSnippetBtn.addEventListener('click', () => {
@@ -2749,6 +2900,179 @@ document.addEventListener('DOMContentLoaded', () => {
         textarea.focus();
       });
     }
+    
+    // Initial visibility update
+    updateRandomButtonVisibility();
+
+  // ==================== RANDOMIZER CODE GENERATOR BUTTONS ====================
+  
+  // Helper function to generate randomizer code from test cases
+  function generateRandomizerCode(testCasesArray) {
+    if (!Array.isArray(testCasesArray) || testCasesArray.length === 0) {
+      showMessage('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).', 'error');
+      return null;
+    }
+
+    const intelligentTest = testCasesArray.find(tc => tc.type === 'intelligent');
+    if (!intelligentTest) {
+      showMessage('Kein Intelligent Test gefunden. Randomizer nur für Intelligent Tests.', 'error');
+      return null;
+    }
+
+    const mode = intelligentTest.mode || 'function';
+    let variables = [];
+
+    if (mode === 'function') {
+      // Function Mode: extract params from function.params array
+      if (intelligentTest.function && Array.isArray(intelligentTest.function.params)) {
+        variables = intelligentTest.function.params;
+      }
+    } else if (mode === 'vars') {
+      // Vars Mode: extract inputs from inputs array
+      if (Array.isArray(intelligentTest.inputs)) {
+        variables = intelligentTest.inputs;
+      }
+    }
+
+    if (variables.length === 0) {
+      showMessage('Keine Variablen/Parameter definiert im Intelligent Test.', 'error');
+      return null;
+    }
+
+    // Generate Python code
+    let code = 'import random\n\nvalues = {\n';
+    variables.forEach(varName => {
+      code += `    "${varName}": random.randint(1, 100),\n`;
+    });
+    code += '}';
+
+    return code;
+  }
+
+  // Handle CREATE form Randomizer Generator button
+  const taskRandomizerGenBtn = $('task-randomizer-generator');
+  if (taskRandomizerGenBtn) {
+    taskRandomizerGenBtn.addEventListener('click', () => {
+      const textarea = $('task-randomizer-code');
+      if (!textarea) return;
+
+      const testCasesData = state.newTaskData?.testCases || [];
+      const generatedCode = generateRandomizerCode(testCasesData);
+      
+      if (generatedCode) {
+        textarea.value = generatedCode;
+        textarea.focus();
+        showMessage('Randomizer Code generiert! 🎲', 'success');
+      }
+    });
+  }
+
+  // Handle EDIT form Randomizer Generator button
+  const editTaskRandomizerGenBtn = $('edit-task-randomizer-generator');
+  if (editTaskRandomizerGenBtn) {
+    editTaskRandomizerGenBtn.addEventListener('click', () => {
+      const textarea = $('edit-task-randomizer-code');
+      if (!textarea) return;
+
+      const testCasesData = state.editTaskData?.testCases || [];
+      const generatedCode = generateRandomizerCode(testCasesData);
+      
+      if (generatedCode) {
+        textarea.value = generatedCode;
+        textarea.focus();
+        showMessage('Randomizer Code generiert! 🎲', 'success');
+      }
+    });
+  }
+
+  // ==================== INIT-BLOCK GENERATOR BUTTONS ====================
+  
+  // Helper function to generate init-block from test cases
+  function generateInitBlock(testCasesArray) {
+    if (!Array.isArray(testCasesArray) || testCasesArray.length === 0) {
+      showMessage('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).', 'error');
+      return null;
+    }
+
+    const intelligentTest = testCasesArray.find(tc => tc.type === 'intelligent');
+    if (!intelligentTest) {
+      showMessage('Kein Intelligent Test gefunden. Init-Block nur für Intelligent Tests (Vars Mode).', 'error');
+      return null;
+    }
+
+    const mode = intelligentTest.mode || 'function';
+    if (mode !== 'vars') {
+      showMessage('Init-Block nur für Intelligent Vars Mode. Aktuell: ' + mode, 'error');
+      return null;
+    }
+
+    const inputs = intelligentTest.inputs || [];
+    const outputs = intelligentTest.outputs || [];
+    
+    if (inputs.length === 0 && outputs.length === 0) {
+      showMessage('Keine Inputs/Outputs definiert im Intelligent Vars Test.', 'error');
+      return null;
+    }
+
+    // Generate Init-Block
+    let code = '#INIT START\n';
+    
+    // Initialize inputs
+    inputs.forEach(varName => {
+      code += `${varName} = 0\n`;
+    });
+    
+    // Initialize outputs
+    outputs.forEach(varName => {
+      code += `${varName} = 0\n`;
+    });
+    
+    code += '#INIT END\n';
+
+    return code;
+  }
+
+  // Handle CREATE form Init-Block Generator button
+  const taskInitBlockGenBtn = $('task-init-block-generator');
+  if (taskInitBlockGenBtn) {
+    taskInitBlockGenBtn.addEventListener('click', () => {
+      const textarea = $('task-template');
+      if (!textarea) return;
+
+      const testCasesData = state.newTaskData?.testCases || [];
+      const generatedBlock = generateInitBlock(testCasesData);
+      
+      if (generatedBlock) {
+        // Insert at beginning of existing code
+        const currentCode = textarea.value.trim();
+        textarea.value = generatedBlock + (currentCode ? '\n\n' + currentCode : '');
+        textarea.focus();
+        showMessage('Init-Block eingefügt! 📝', 'success');
+      }
+    });
+  }
+
+  // Handle EDIT form Init-Block Generator button
+  const editTaskInitBlockGenBtn = $('edit-task-init-block-generator');
+  if (editTaskInitBlockGenBtn) {
+    editTaskInitBlockGenBtn.addEventListener('click', () => {
+      const textarea = $('edit-task-template');
+      if (!textarea) return;
+
+      const testCasesData = state.editTaskData?.testCases || [];
+      const generatedBlock = generateInitBlock(testCasesData);
+      
+      if (generatedBlock) {
+        // Insert at beginning of existing code
+        const currentCode = textarea.value.trim();
+        textarea.value = generatedBlock + (currentCode ? '\n\n' + currentCode : '');
+        textarea.focus();
+        showMessage('Init-Block eingefügt! 📝', 'success');
+      }
+    });
+  }
+
+  // ===========================================================================
 
   const editTaskType = $('edit-task-type');
   if (editTaskType) {
@@ -2857,4 +3181,249 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ============================================================================
+  // APPEND TEST INFO BUTTON: Extract function names, parameters, and variables
+  // ============================================================================
+  const appendTestInfoBtn = $('append-test-info-btn');
+  if (appendTestInfoBtn) {
+    appendTestInfoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      
+      const testCasesField = $('edit-task-test-cases');
+      const descriptionField = $('edit-task-description');
+      
+      if (!testCasesField || !descriptionField) {
+        alert('beschreibungsfeld oder test_cases Feld nicht gefunden');
+        return;
+      }
+      
+      const testCasesStr = testCasesField.value.trim();
+      if (!testCasesStr) {
+        alert('Keine test_cases vorhanden. Bitte erst test_cases definieren.');
+        return;
+      }
+      
+      try {
+        const testCases = JSON.parse(testCasesStr);
+        const info = extractTestInfo(testCases);
+        
+        if (!info.functions.length && !info.variables.length && !info.resultVars.length) {
+          alert('Keine Funktionen, Variablen oder Rückgabewerte in test_cases gefunden.');
+          return;
+        }
+        
+        let appendText = '\n\n--- Test Info (automatisch generiert) ---\n';
+        
+        if (info.functions.length > 0) {
+          appendText += '\nFunktionen:\n';
+          info.functions.forEach(func => {
+            appendText += `  • ${func}\n`;
+          });
+        }
+        
+        if (info.variables.length > 0) {
+          appendText += '\nVariablen Init:\n';
+          appendText += `  ${info.variables.join(', ')}\n`;
+        }
+        
+        if (info.resultVars.length > 0) {
+          appendText += '\nErgebnisvariablen:\n';
+          appendText += `  ${info.resultVars.join(', ')}\n`;
+        }
+        
+        descriptionField.value += appendText;
+        alert('Test-Info erfolgreich angehängt!');
+        
+      } catch (err) {
+        alert('Fehler beim Parsen von test_cases:\n' + err.message);
+      }
+    });
+  }
+
+  /**
+   * Extract function names, parameters, and variables from test_cases
+   */
+  function extractTestInfo(testCases) {
+    const info = {
+      functions: [],
+      variables: [],
+      resultVars: new Set()
+    };
+    
+    if (!Array.isArray(testCases)) {
+      // Single test case object
+      testCases = [testCases];
+    }
+    
+    testCases.forEach(tc => {
+      // Extract function info
+      if (tc.type === 'function' && tc.func_name) {
+        let funcSignature = tc.func_name;
+        if (tc.args && Array.isArray(tc.args) && tc.args.length > 0) {
+          const paramNames = tc.args.map(arg => {
+            if (typeof arg === 'object' && arg.name) return arg.name;
+            return String(arg);
+          });
+          funcSignature += `(${paramNames.join(', ')})`;
+          
+          // Track variable names from args
+          paramNames.forEach(name => {
+            if (name && !info.variables.includes(name)) {
+              info.variables.push(name);
+            }
+          });
+        } else {
+          funcSignature += '(...)';
+        }
+        
+        if (!info.functions.includes(funcSignature)) {
+          info.functions.push(funcSignature);
+        }
+      }
+      
+      // Extract input variables from input object
+      if (tc.input && typeof tc.input === 'object') {
+        Object.keys(tc.input).forEach(key => {
+          if (!info.variables.includes(key)) {
+            info.variables.push(key);
+          }
+        });
+      }
+    });
+    
+    // Extract result variables from description if present
+    // Common patterns: result, result1, result2, output, etc.
+    const descField = $('edit-task-description');
+    if (descField) {
+      const descText = descField.value;
+      const patterns = ['result', 'output', 'value', 'answer'];
+      patterns.forEach(pattern => {
+        const regex = new RegExp('\\b' + pattern + '\\d*\\b', 'gi');
+        let match;
+        while ((match = regex.exec(descText)) !== null) {
+          info.resultVars.add(match[0].toLowerCase());
+        }
+      });
+    }
+    
+    return {
+      functions: info.functions,
+      variables: info.variables,
+      resultVars: Array.from(info.resultVars)
+    };
+}
+
+// Auto-generate description from test cases
+function generateAutoDescription(testCasesData, descFieldId) {
+  if (!Array.isArray(testCasesData) || testCasesData.length === 0) {
+    alert('Keine Test Cases vorhanden um Beschreibung zu generieren');
+    return;
+  }
+  
+  const descField = $(descFieldId);
+  if (!descField) return;
+  
+  let description = '';
+  const seenTypes = new Set();
+  
+  // Process each test case
+  testCasesData.forEach(testCase => {
+    if (testCase.type === 'function' && !seenTypes.has('function')) {
+      seenTypes.add('function');
+      
+      // Extract function info
+      const funcName = testCase.function_name || 'Funktion';
+      let paramCount = 0;
+      
+      // Count parameters from test cases
+      if (testCase.test_cases && testCase.test_cases.length > 0) {
+        const firstCase = testCase.test_cases[0];
+        if (firstCase.args && Array.isArray(firstCase.args)) {
+          paramCount = firstCase.args.length;
+        }
+      }
+      
+      // Generate function description table
+      description += `\n## Test-Anforderungen\n\n`;
+      description += `| Aspekt | Details |\n`;
+      description += `|--------|----------|\n`;
+      description += `| Funktionsname | ${funcName} |\n`;
+      description += `| Parameter | ${paramCount} |\n`;
+      description += `\n`;
+    }
+    
+    if (testCase.type === 'variable' && !seenTypes.has('variable')) {
+      seenTypes.add('variable');
+      
+      // Extract variable info
+      const initVars = testCase.init_var_names || [];
+      const outputVars = testCase.expected_var_names || [];
+      
+      description += `\n## Test-Anforderungen\n\n`;
+      description += `| Aspekt | Details |\n`;
+      description += `|--------|----------|\n`;
+      description += `| Input-Variablen | ${initVars.join(', ') || 'keine'} |\n`;
+      description += `| Output-Variablen | ${outputVars.join(', ') || 'keine'} |\n`;
+      description += `\n`;
+    }
+    
+    if (testCase.type === 'intelligent' && !seenTypes.has('intelligent')) {
+      seenTypes.add('intelligent');
+      
+      const mode = testCase.mode || 'unknown';
+      const testCount = testCase.tests || 0;
+      
+      description += `\n## Test-Anforderungen\n\n`;
+      description += `| Aspekt | Details |\n`;
+      description += `|--------|----------|\n`;
+      description += `| Test-Modus | ${mode.toUpperCase()} |\n`;
+      description += `| Anzahl Tests | ${testCount} |\n`;
+      
+      if (mode === 'function' && testCase.function) {
+        const funcName = testCase.function.name || 'Funktion';
+        const paramCount = (testCase.function.params || []).length;
+        description += `| Funktionsname | ${funcName} |\n`;
+        description += `| Parameter | ${paramCount} |\n`;
+      }
+      
+      description += `\n`;
+    }
+    
+    if (testCase.type === 'output' && !seenTypes.has('output')) {
+      seenTypes.add('output');
+      
+      description += `\n## Test-Anforderungen\n\n`;
+      description += `| Aspekt | Details |\n`;
+      description += `|--------|----------|\n`;
+      description += `| Test-Typ | Output-Vergleich |\n`;
+      description += `| Validierungsmodus | ${testCase.validation_mode || 'default'} |\n`;
+      description += `\n`;
+    }
+    
+    if (testCase.type === 'code_check' && !seenTypes.has('code_check')) {
+      seenTypes.add('code_check');
+      
+      const keywords = testCase.keywords || [];
+      const forbidden = testCase.forbidden || [];
+      
+      description += `\n## Test-Anforderungen\n\n`;
+      description += `| Aspekt | Details |\n`;
+      description += `|--------|----------|\n`;
+      description += `| Erforderliche Keywords | ${keywords.join(', ') || 'keine'} |\n`;
+      description += `| Verbotene Keywords | ${forbidden.join(', ') || 'keine'} |\n`;
+      description += `\n`;
+    }
+  });
+  
+  // Append to existing description
+  if (descField.value.trim()) {
+    descField.value += description;
+  } else {
+    descField.value = description.trim();
+  }
+  
+  alert('✓ Beschreibung automatisch generiert!');
+}
+
+// Close DOMContentLoaded event listener
 });

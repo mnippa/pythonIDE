@@ -112,10 +112,10 @@ if (isset($input['show_solution'])) {
     $types .= 'i';
 }
 
-if (isset($input['show_generator_code'])) {
-    $showGeneratorCode = (int)$input['show_generator_code'];
-    $updates[] = 'show_generator_code = ?';
-    $params[] = $showGeneratorCode;
+if (isset($input['show_solution_code'])) {
+    $showSolutionCode = (int)$input['show_solution_code'];
+    $updates[] = 'show_solution_code = ?';
+    $params[] = $showSolutionCode;
     $types .= 'i';
 }
 
@@ -175,12 +175,6 @@ if (array_key_exists('expected_output', $input)) {
     $types .= 's';
 }
 
-if (array_key_exists('validation_mode', $input)) {
-    $updates[] = 'validation_mode = ?';
-    $params[] = $input['validation_mode'];
-    $types .= 's';
-}
-
 if (array_key_exists('test_cases', $input)) {
     $updates[] = 'test_cases = ?';
     $params[] = $input['test_cases'];
@@ -231,6 +225,12 @@ if ($effectiveTaskType === 'code_reading' && !$hasOverrides) {
     jsonResponse(['ok' => false, 'error' => 'variable_overrides required for code_reading'], 400);
 }
 
+if (array_key_exists('task_text', $input)) {
+    $updates[] = 'task_text = ?';
+    $params[] = trim($input['task_text']);
+    $types .= 's';
+}
+
 if (array_key_exists('question_text', $input)) {
     $updates[] = 'question_text = ?';
     $params[] = trim($input['question_text']);
@@ -278,6 +278,12 @@ if (array_key_exists('variable_overrides', $input)) {
                 $types .= 'i';
             }
         }
+}
+
+if (array_key_exists('randomizer_code', $input)) {
+    $updates[] = 'randomizer_code = ?';
+    $params[] = $input['randomizer_code'] ?? null;
+    $types .= 's';
 }
 
 if (empty($updates)) {

@@ -11,8 +11,8 @@ while($row = $result->fetch_assoc()) {
     }
 }
 
-// Check if generator_code exists
-$result2 = $conn->query("SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tasks' AND COLUMN_NAME = 'generator_code'");
+// Check if randomizer_code exists
+$result2 = $conn->query("SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tasks' AND COLUMN_NAME = 'randomizer_code'");
 $exists = $result2->fetch_assoc()['cnt'];
-echo "\ngenerator_code column exists: " . ($exists ? "YES" : "NO") . "\n";
+echo "\nrandomizer_code column exists: " . ($exists ? "YES" : "NO") . "\n";
 ?>

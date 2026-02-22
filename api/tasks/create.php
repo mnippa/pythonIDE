@@ -28,7 +28,7 @@ $position = isset($input['position']) ? (int)$input['position'] : null;
 $maxAttempts = isset($input['max_attempts']) ? (int)$input['max_attempts'] : 1;
 $maxIterationsInput = isset($input['max_iterations']) ? (int)$input['max_iterations'] : null;  // API param is max_iterations, but DB column is iterations_count
 $showSolution = isset($input['show_solution']) ? (int)$input['show_solution'] : 1;
-$showGeneratorCode = isset($input['show_generator_code']) ? (int)$input['show_generator_code'] : 0;
+$showSolutionCode = isset($input['show_solution_code']) ? (int)$input['show_solution_code'] : 0;
 $minKeywordsRequired = isset($input['min_keywords_required']) ? (int)$input['min_keywords_required'] : null;
 $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
@@ -37,9 +37,9 @@ $hint2 = $input['hint2'] ?? null;
 $hint3 = $input['hint3'] ?? null;
 $stoff = $input['stoff'] ?? null;
 $expectedOutput = $input['expected_output'] ?? null;
-$validationMode = $input['validation_mode'] ?? null;
 $testCases = $input['test_cases'] ?? null;
 $solutionCode = $input['solution_code'] ?? null;
+$randomizerCode = $input['randomizer_code'] ?? null;
 
 // Debug logging for test_cases
 error_log('=== TEST CASES DEBUG ===');
@@ -49,7 +49,12 @@ error_log('=======================');
 
 // New fields for quiz-style tasks
 $taskType = $input['task_type'] ?? 'code';
+$taskText = trim($input['task_text'] ?? '');
 $questionText = trim($input['question_text'] ?? '');
+// If task_text not provided, fallback to question_text for backward compatibility
+if (empty($taskText)) {
+    $taskText = $questionText;
+}
 $imageUrl = trim($input['image_url'] ?? '') ?: null;
 $correctAnswer = trim($input['correct_answer'] ?? '') ?: null;
 $variableOverrides = $input['variable_overrides'] ?? null;
@@ -92,9 +97,9 @@ if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
 }
 
-// Validate quiz tasks have question_text
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_random_complex']) && empty($questionText)) {
-    jsonResponse(['ok' => false, 'error' => 'question_text required for ' . $taskType], 400);
+// Validate quiz tasks have task_text
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_random_complex']) && empty($taskText)) {
+    jsonResponse(['ok' => false, 'error' => 'task_text required for ' . $taskType], 400);
 }
 
 if ($taskType === 'code_random_complex' && empty($codeTemplate)) {
@@ -184,13 +189,13 @@ if ($taskType === 'code_random_complex' && !$maxIterationsInput) {
 // Ensure all string values are strings (not null or array)
 $codeTemplate = is_string($codeTemplate) ? $codeTemplate : '';
 $expectedOutput = is_string($expectedOutput) ? $expectedOutput : '';
-$validationMode = is_string($validationMode) ? $validationMode : '';
 $testCases = is_string($testCases) ? $testCases : '';
 $solutionCode = is_string($solutionCode) ? $solutionCode : '';
+$randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_generator_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, validation_mode, test_cases, solution_code, task_type, question_text, image_url, correct_answer, variable_overrides)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -205,21 +210,22 @@ $types .= 'i';     // position
 $types .= 'i';     // max_attempts
 $types .= 'i';     // iterations_count
 $types .= 'i';     // show_solution
-$types .= 'i';     // show_generator_code
+$types .= 'i';     // show_solution_code
 $types .= 'i';     // min_keywords_required
 $types .= 's';     // problem_type
 $types .= 's';     // code_template
 $types .= 'sss';   // hint1, hint2, hint3
 $types .= 's';     // stoff
 $types .= 's';     // expected_output
-$types .= 's';     // validation_mode
 $types .= 's';     // test_cases
 $types .= 's';     // solution_code
 $types .= 's';     // task_type
+$types .= 's';     // task_text
 $types .= 's';     // question_text
 $types .= 's';     // image_url
 $types .= 's';     // correct_answer
 $types .= 's';     // variable_overrides
+$types .= 's';     // randomizer_code
 
 error_log('Type string: ' . $types . ' (length: ' . strlen($types) . ')');
 
@@ -232,7 +238,7 @@ $bindResult = @$stmt->bind_param(
     $maxAttempts,
     $maxIterations,
     $showSolution,
-    $showGeneratorCode,
+    $showSolutionCode,
     $minKeywordsRequired,
     $problemType,
     $codeTemplate,
@@ -241,14 +247,15 @@ $bindResult = @$stmt->bind_param(
     $hint3,
     $stoff,
     $expectedOutput,
-    $validationMode,
     $testCases,
     $solutionCode,
     $taskType,
+    $taskText,
     $questionText,
     $imageUrl,
     $correctAnswer,
-    $variableOverridesJson
+    $variableOverridesJson,
+    $randomizerCode
 );
 
 if (!$bindResult) {
@@ -294,7 +301,6 @@ if ($stmt->execute()) {
             'problem_type' => $problemType,
             'code_template' => $codeTemplate,
             'expected_output' => $expectedOutput,
-            'validation_mode' => $validationMode,
             'test_cases' => $testCases,
             'solution_code' => $solutionCode,
             'created_at' => date('Y-m-d H:i:s')

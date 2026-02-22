@@ -85,7 +85,6 @@ $stoff = $data['stoff'] ?? null;
 $expectedOutput = $data['expected_output'] ?? null;
 $solutionCode = $data['solution_code'] ?? null;
 $maxAttempts = $data['max_attempts'] ?? null;
-$validationMode = $data['validation_mode'] ?? 'test-mode';
 $testCasesJson = isset($data['test_cases']) ? json_encode($data['test_cases']) : null;
 
 // Validate task fields
@@ -134,8 +133,8 @@ try {
     // Insert task
     $stmt = $conn->prepare('
         INSERT INTO tasks 
-        (assignment_id, position, title, description, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, max_attempts, validation_mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        (assignment_id, position, title, description, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, max_attempts, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     ');
     
     if (!$stmt) {
@@ -146,7 +145,7 @@ try {
         exit;
     }
     
-    $stmt->bind_param('iisssssssssssis',
+    $stmt->bind_param('iissssssssssi',
         $assignmentId,
         $position,
         $title,
@@ -160,8 +159,7 @@ try {
         $expectedOutput,
         $testCasesJson,
         $solutionCode,
-        $maxAttempts,
-        $validationMode
+        $maxAttempts
     );
     
     if (!$stmt->execute()) {

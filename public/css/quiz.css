@@ -2,9 +2,19 @@
 .quiz-container {
   max-width: 800px;
   margin: 0 auto;
-  padding: 12px;
   background: var(--hspf-surface, #fff);
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.quiz-question {
+  padding: 12px;
+  border-bottom: 1px solid var(--hspf-border, #e5e5e5);
+}
+
+.quiz-container > *:not(.quiz-question) {
+  padding: 12px;
 }
 
 .task-status-header {
@@ -66,31 +76,32 @@
 }
 
 .quiz-question {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .quiz-question h3 {
   font-size: 24px;
   font-weight: 600;
   color: var(--hspf-text-primary, #1a1a1a);
-  margin-bottom: 12px;
+  margin: 0;
 }
 
 .quiz-question p {
   font-size: 15px;
   color: var(--hspf-text-secondary, #666);
-  margin-bottom: 16px;
+  margin: 0;
   line-height: 1.6;
 }
 
 .question-text {
   font-size: 16px;
   color: var(--hspf-text-primary, #1a1a1a);
-  margin: 8px 0;
+  margin: 0;
   padding: 10px 12px;
   background: var(--hspf-bg-secondary, #f5f5f5);
   border-left: 4px solid var(--hspf-accent, #FFBE31);
   border-radius: 4px;
+  font-weight: 500;
 }
 
 .question-image {
@@ -337,6 +348,7 @@
   border-radius: 8px;
   margin-bottom: 20px;
   overflow-x: auto;
+  border-left: 4px solid var(--hspf-accent, #FFBE31);
 }
 
 .code-reading-code pre {

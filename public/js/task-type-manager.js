@@ -7,27 +7,27 @@
   const TASK_TYPES = {
     code: {
       label: 'Code (Python)',
-      fields: ['code_template', 'test_cases', 'solution', 'hints']
+      fields: ['code_template', 'randomizer_code', 'test_cases', 'solution', 'hints']
     },
     single_choice: {
       label: 'Single-Choice',
-      fields: ['question', 'image', 'options', 'hints']
+      fields: ['image', 'options', 'hints']
     },
     multiple_choice: {
       label: 'Multiple-Choice',
-      fields: ['question', 'image', 'options', 'hints']
+      fields: ['image', 'options', 'hints']
     },
     free_text: {
       label: 'Freitext',
-      fields: ['question', 'image', 'keywords', 'validation_mode', 'hints']
+      fields: ['image', 'keywords', 'hints']
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['question', 'code_template', 'variable_overrides', 'correct_answer', 'validation_mode', 'hints', 'max_iterations', 'show-generator-code']
+      fields: ['code_template', 'variable_overrides', 'correct_answer', 'hints', 'max_iterations', 'show-solution-code']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['question', 'code_template', 'solution', 'correct_answer', 'hints', 'show-generator-code']
+      fields: ['code_template', 'randomizer_code', 'solution', 'correct_answer', 'hints', 'show-solution-code']
     }
   };
 
@@ -51,38 +51,23 @@
       const config = TASK_TYPES[taskType] || TASK_TYPES.code;
       
       // Hide all dynamic fields first
-      this.hideField(form, 'description');  // Show only for code tasks
-      this.hideField(form, 'question');     // Show only for quiz tasks
       this.hideField(form, 'image-upload');
       this.hideField(form, 'options-builder');
       this.hideField(form, 'keywords');
       this.hideField(form, 'variable-overrides');
       this.hideField(form, 'code-template');
+      this.hideField(form, 'randomizer-code');
       this.hideField(form, 'hints-section');
       this.hideField(form, 'test-cases-section');
       this.hideField(form, 'validation-mode');
       this.hideField(form, 'solution');
       this.hideField(form, 'correct-answer');
       this.hideField(form, 'max-iterations');
-      this.hideField(form, 'show-generator-code');
+      this.hideField(form, 'show-solution-code');
       
-      // Handle description vs question based on task type
-      if (taskType === 'code') {
-        // Code task: show description, hide question
-        this.showField(form, 'description');
-        this.hideField(form, 'question');
-      } else {
-        // Quiz tasks: show question, hide description
-        this.hideField(form, 'description');
-        this.showField(form, 'question');
-      }
-
       // Show required fields
       config.fields.forEach(field => {
         switch (field) {
-          case 'question':
-            this.showField(form, 'question');
-            break;
           case 'image':
             this.showField(form, 'image-upload');
             break;
@@ -95,14 +80,14 @@
           case 'code_template':
             this.showField(form, 'code-template');
             break;
+          case 'randomizer_code':
+            this.showField(form, 'randomizer-code');
+            break;
           case 'hints':
             this.showField(form, 'hints-section');
             break;
           case 'test_cases':
             this.showField(form, 'test-cases-section');
-            break;
-          case 'validation_mode':
-            this.showField(form, 'validation-mode');
             break;
           case 'solution':
             this.showField(form, 'solution');
@@ -121,7 +106,7 @@
       
       // Show code toggle for code_random_complex and code_reading
       if (taskType === 'code_random_complex' || taskType === 'code_reading') {
-        this.showField(form, 'show-generator-code');
+        this.showField(form, 'show-solution-code');
       }
     },
 

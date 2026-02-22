@@ -40,13 +40,13 @@ $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected'])
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
 
 // Determine which columns to fetch based on context
-$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_generator_code, test_cases, validation_mode, task_type, question_text, image_url, correct_answer, variable_overrides';
+$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides';
 
 // Add solution/expected only if needed
 // Include in test mode, when include_expected is set, or for admins viewing solutions
 $needsSolution = $includeExpected || $isTestMode || ($user['role'] === 'admin');
 if ($needsSolution) {
-    $selectColumns .= ', expected_output, solution_code, generator_code';
+    $selectColumns .= ', expected_output, solution_code, randomizer_code';
 }
 
 // Always fetch solution_code and expected_output (needed for intelligent tests)
@@ -134,18 +134,22 @@ foreach ($rawTasks as $taskId => $row) {
         'max_attempts' => (int)$row['max_attempts'],
         'max_iterations' => isset($row['iterations_count']) ? (int)$row['iterations_count'] : null,
         'show_solution' => (int)$row['show_solution'],
-        'show_generator_code' => (int)$row['show_generator_code'],
+        'show_solution_code' => (int)$row['show_solution_code'],
         'test_cases' => $row['test_cases'],
-        'validation_mode' => $row['validation_mode'],
         'task_type' => $row['task_type'],
+        'task_text' => $row['task_text'],
         'question_text' => $row['question_text'],
         'image_url' => $row['image_url'],
         'correct_answer' => $row['correct_answer'],
         'variable_overrides' => $row['variable_overrides']
     ];
+
+    if (isset($row['randomizer_code'])) {
+        $task['randomizer_code'] = $row['randomizer_code'];
+    }
     
     // Include solution_code for testing, admin/expected views, and specific task types
-    if ($includeExpected || $isTestMode || $row['validation_mode'] === 'intelligent' || 
+    if ($includeExpected || $isTestMode || 
         $row['task_type'] === 'code' || $row['task_type'] === 'code_random_complex') {
         if (isset($row['expected_output'])) {
             $task['expected_output'] = $row['expected_output'];
@@ -153,11 +157,6 @@ foreach ($rawTasks as $taskId => $row) {
         if (isset($row['solution_code'])) {
             $task['solution_code'] = $row['solution_code'];
         }
-    }
-    
-    // Include generator_code for code_random_complex tasks
-    if ($isTestMode && isset($row['generator_code'])) {
-        $task['generator_code'] = $row['generator_code'];
     }
     
     // Load options for single/multiple choice tasks (from batch-loaded data)
