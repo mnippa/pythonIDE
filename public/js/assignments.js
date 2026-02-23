@@ -317,14 +317,14 @@ function showTaskDetails(task, activeTab = 'details') {
   // Show description for all task types (optional context/metadata)
   if (task.description) {
     detailsHtml += `<div class="description-section">
-      <p>${escapeHtml(task.description)}</p>
+      <div>${task.description}</div>
     </div>`;
   }
   
   if (task.stoff) {
     detailsHtml += `<div class="stoff-section">
       <h4>📚 Lerninhalt (Stoff)</h4>
-      <p>${escapeHtml(task.stoff)}</p>
+      <div>${task.stoff}</div>
     </div>`;
   }
 
@@ -480,6 +480,10 @@ function showTaskDetails(task, activeTab = 'details') {
 
 // Load solution into main editor/quiz area (not sidebar)
 async function loadSolutionIntoMainArea(task) {
+  // Refresh task data from API to ensure latest solution_code
+  await refreshCurrentTaskFromAPI();
+  task = assignmentState.currentTask || task;
+  
   assignmentState.solutionMode = true;
   
   if (task.task_type === 'code') {
@@ -1356,6 +1360,51 @@ function normalizeTaskData(task) {
   return task;
 }
 
+/**
+ * Refresh current task data from API (ensures admin edits are reflected immediately)
+ * Called before running tests to get latest solution_code, test_cases, etc.
+ */
+async function refreshCurrentTaskFromAPI() {
+  if (!assignmentState.currentTaskId) {
+    console.log('[Task Refresh] No current task ID');
+    return false;
+  }
+
+  try {
+    console.log('[Task Refresh] Fetching latest task data for task', assignmentState.currentTaskId);
+    const response = await requestJson('/api/tasks/list.php?task_id=' + assignmentState.currentTaskId);
+    
+    if (response && response.tasks && response.tasks.length > 0) {
+      const updatedTask = response.tasks[0];
+      normalizeTaskData(updatedTask);
+      
+      // Update current task in memory
+      assignmentState.currentTask = updatedTask;
+      
+      // Also update in tasksByAssignment if available
+      if (assignmentState.currentAssignmentId) {
+        const tasksInAssignment = assignmentState.tasksByAssignment[assignmentState.currentAssignmentId] || [];
+        const taskIndex = tasksInAssignment.findIndex(t => t.id === assignmentState.currentTaskId);
+        if (taskIndex >= 0) {
+          tasksInAssignment[taskIndex] = updatedTask;
+        }
+      }
+      
+      console.log('[Task Refresh] Task refreshed successfully:', {
+        taskId: updatedTask.id,
+        hasSolution: !!updatedTask.solution_code,
+        hasTestCases: !!updatedTask.test_cases
+      });
+      return true;
+    }
+  } catch (err) {
+    console.warn('[Task Refresh] Failed to refresh task from API:', err.message);
+    return false;
+  }
+  
+  return false;
+}
+
 function loadTaskIntoEditor(assignmentId, taskId) {
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
   const task = tasks.find((t) => t.id === taskId);
@@ -2120,6 +2169,11 @@ async function checkTask() {
  * Submit task for grading - runs validation and commits final status
  */
 async function submitTask() {
+  // Refresh task data from API before running tests (ensures admin edits are reflected)
+  const taskRefreshed = await refreshCurrentTaskFromAPI();
+  if (taskRefreshed) {
+    console.log('[Submit] Task data refreshed from API');
+  }
   const task = assignmentState.currentTask;
   if (!task) {
     alert('No task loaded');
@@ -2450,7 +2504,18 @@ output_buffer.getvalue()
           // Match against regex pattern
           try {
             const regex = new RegExp(testCase.expected, 'i'); // case-insensitive
-            passed = regex.test(output);
+            // Trim output to remove trailing newlines/whitespace
+            const trimmedOutput = output.trim();
+            passed = regex.test(trimmedOutput);
+            
+            // Debug logging
+            console.log('[OUTPUT REGEX TEST]');
+            console.log('  Pattern:', testCase.expected);
+            console.log('  Output:', JSON.stringify(output));
+            console.log('  Trimmed Output:', JSON.stringify(trimmedOutput));
+            console.log('  Output length:', output.length);
+            console.log('  Passed:', passed);
+            
           } catch (e) {
             // Invalid regex, fail the test
             passed = false;
@@ -2687,6 +2752,10 @@ async function runIntelligentTests(pyodide, code, testCases, solutionCode, rando
     }];
   }
 
+  console.log('[Intelligent Test] Mode:', mode);
+  console.log('[Intelligent Test] Tests Count:', testsCount);
+  console.log('[Intelligent Test] Randomizer Code:', effectiveRandomizerCode.substring(0, 100) + '...');
+
   // Generate test cases by running randomizer code multiple times
   const testOutputs = await pyodide.runPythonAsync(`
 import json
@@ -2727,11 +2796,28 @@ def run_randomizer():
 def run_vars_mode(code, values_dict, output_names):
     """Run code with values injected, extract outputs"""
     namespace = {}
-    namespace.update(values_dict)
+    
+    # For solution code: extract and run INIT block first, then override with randomizer values
+    # This allows the INIT block to demonstrate the structure, but randomizer overrides for actual test
     try:
         exec(compile(code, "<code>", "exec"), namespace)
     except Exception as e:
         return {"error": str(e)}
+    
+    # Override the initialized variables with randomized values
+    namespace.update(values_dict)
+    
+    # Now we need to re-run the solution code to recalculate outputs based on new values
+    # Extract code after INIT block for recalculation
+    init_block_end = code.find("#INIT END")
+    if init_block_end != -1:
+        # Code after INIT block
+        calculation_code = code[init_block_end + len("#INIT END"):].strip()
+        if calculation_code.strip():
+            try:
+                exec(compile(calculation_code, "<calculation>", "exec"), namespace)
+            except Exception as e:
+                return {"error": str(e)}
     
     out = {}
     for name in output_names:
@@ -2779,6 +2865,9 @@ for test_num in range(tests_count):
         continue
     
     values = rand_result['values']
+    # DEBUG: Log generated values
+    import sys
+    print(f"[DEBUG Test #{test_num + 1}] Generated values: {values}", file=sys.stderr)
     
     if mode == 'vars':
         # Vars mode: inject values, compare outputs
@@ -2807,6 +2896,7 @@ json.dumps(results)
   let parsed;
   try {
     parsed = JSON.parse(testOutputs);
+    console.log('[Intelligent Test Results] Parsed:', parsed.map(p => ({ test: p.test, values: p.values, error: p.error })));
   } catch (e) {
     return [{
       passed: false,

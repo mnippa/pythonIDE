@@ -8,6 +8,18 @@
  * But returns feedback WITHOUT writing to database
  */
 
+// Error handling - convert PHP errors to JSON
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    http_response_code(500);
+    echo json_encode([
+        'ok' => false,
+        'error' => $errstr,
+        'file' => $errfile,
+        'line' => $errline
+    ]);
+    exit;
+}, E_ALL);
+
 require_once __DIR__ . '/../../config/database.php';
 
 header('Content-Type: application/json');
@@ -51,7 +63,7 @@ if (!$taskId) {
 $conn = getDbConnection();
 
 // Get task details
-$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, iterations_count, min_keywords_required, variable_overrides FROM tasks WHERE id = ?');
+$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, iterations_count, min_keywords_required, variable_overrides, test_cases FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 $stmt->execute();
 $task = $stmt->get_result()->fetch_assoc();
@@ -149,33 +161,113 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         exit;
     }
     
-    // Keyword matching
-    $keywords = $task['correct_answer'] ? explode(',', $task['correct_answer']) : [];
-    $keywords = array_map('trim', $keywords);
-    $keywords = array_map('strtolower', $keywords);
-    $keywords = array_filter($keywords);
-    
-    $textLower = strtolower($textAnswer);
-    $foundKeywords = 0;
-    foreach ($keywords as $keyword) {
-        if ($keyword !== '' && strpos($textLower, $keyword) !== false) {
-            $foundKeywords++;
+    // Free-text uses test_cases array (same structure as OUTPUT tests)
+    $testCases = [];
+    if ($task['test_cases']) {
+        $testCases = json_decode($task['test_cases'], true);
+        if (!is_array($testCases)) {
+            $testCases = [];
         }
     }
     
-    $totalKeywords = count($keywords);
-    $minRequired = isset($task['min_keywords_required']) && $task['min_keywords_required'] !== null 
-        ? (int)$task['min_keywords_required'] 
-        : $totalKeywords;
-    
-    if ($minRequired > $totalKeywords) {
-        $minRequired = $totalKeywords;
+    // If no test_cases, check for legacy correct_answer field for backward compatibility
+    if (empty($testCases) && $task['correct_answer']) {
+        // Legacy keyword matching
+        $keywords = explode(',', $task['correct_answer']);
+        $keywords = array_map('trim', $keywords);
+        $keywords = array_map('strtolower', $keywords);
+        $keywords = array_filter($keywords);
+        
+        $textLower = strtolower($textAnswer);
+        $foundKeywords = 0;
+        foreach ($keywords as $keyword) {
+            if ($keyword !== '' && strpos($textLower, $keyword) !== false) {
+                $foundKeywords++;
+            }
+        }
+        
+        $totalKeywords = count($keywords);
+        $minRequired = $task['min_keywords_required'] ?? $totalKeywords;
+        $isCorrect = ($foundKeywords >= $minRequired && $totalKeywords > 0);
+        $message = "$foundKeywords / $totalKeywords Schlüsselwörter gefunden";
+    } else {
+        // New test_cases based validation (like OUTPUT tests)
+        $isCorrect = false;
+        $matchedPatterns = [];
+        
+        foreach ($testCases as $idx => $testCase) {
+            $expectedType = $testCase['expected_type'] ?? 'text';
+            $validationMode = $testCase['validation_mode'] ?? 'loose';
+            $caseSensitive = $testCase['case_sensitive'] ?? false;
+            
+            // Get patterns array - expected is always an array of patterns
+            $patterns = $testCase['expected'] ?? [];
+            if (!is_array($patterns)) {
+                $patterns = [$patterns]; // Convert single value to array if needed
+            }
+            
+            // Check if ANY pattern in this test case matches
+            $testCasePassed = false;
+            foreach ($patterns as $pattern) {
+                if (empty($pattern)) continue; // Skip empty patterns
+                
+                if ($expectedType === 'regex') {
+                    // Regex pattern matching - case_sensitive is checked
+                    try {
+                        $flags = $caseSensitive ? '' : 'i'; // 'i' flag for case-insensitive
+                        $regex = '/' . addcslashes($pattern, '/') . '/' . $flags;
+                        if (preg_match($regex, $textAnswer)) {
+                            $matchedPatterns[] = "Regex: {$pattern}";
+                            $testCasePassed = true;
+                            break; // Found a match in this test case, move to next
+                        }
+                    } catch (Exception $e) {
+                        // Invalid regex, skip this pattern
+                    }
+                } else {
+                    // Text pattern matching with validation_mode and case_sensitive
+                    $matched = false;
+                    $answer = $textAnswer;
+                    $patternToMatch = $pattern;
+                    
+                    // Apply case sensitivity
+                    if (!$caseSensitive) {
+                        $answer = strtolower($answer);
+                        $patternToMatch = strtolower($patternToMatch);
+                    }
+                    
+                    switch ($validationMode) {
+                        case 'strict':
+                            // Exact match (but whitespace inside can differ based on loose concept)
+                            $matched = (trim($answer) === trim($patternToMatch));
+                            break;
+                        case 'contains':
+                            // Substring match
+                            $matched = (strpos($answer, $patternToMatch) !== false);
+                            break;
+                        case 'loose':
+                        default:
+                            // Normalize whitespace and then compare
+                            $normalizeWs = function($str) {
+                                return trim(preg_replace('/\s+/', ' ', (string)$str));
+                            };
+                            $matched = ($normalizeWs($answer) === $normalizeWs($patternToMatch));
+                            break;
+                    }
+                    
+                    if ($matched) {
+                        $matchedPatterns[] = "[{$validationMode}" . ($caseSensitive ? ":case-sensitive" : "") . "] Match";
+                        $testCasePassed = true;
+                        break; // Found a match in this test case, move to next
+                    }
+                }
+            }
+        }
+        
+        // ODER-Logik: Wenn mindestens einem Pattern matched, ist bestanden
+        $isCorrect = count($matchedPatterns) > 0;
+        $message = $isCorrect ? "Antwort stimmt überein" : "Antwort stimmt nicht überein";
     }
-    
-    $isCorrect = ($foundKeywords >= $minRequired && $totalKeywords > 0);
-    $message = $isCorrect 
-        ? "Genügend Schlüsselwörter gefunden! ($foundKeywords / $totalKeywords, min. $minRequired erforderlich)" 
-        : "Nicht genügend Schlüsselwörter gefunden ($foundKeywords / $totalKeywords, min. $minRequired erforderlich)";
     
 } elseif ($taskType === 'code_reading') {
     $textAnswer = trim($input['text_answer'] ?? '');

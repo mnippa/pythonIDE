@@ -428,6 +428,8 @@ if ($displayName === '') {
       }
     }
   </style>
+  <!-- TinyMCE WYSIWYG Editor -->
+  <script src="https://cdn.tiny.cloud/1/92ilkg0odvjjgllurbkfzkvhcgpl3iv3052x9jiytymys5q9/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
 </head>
 <body>
   <?php
@@ -766,6 +768,7 @@ if ($displayName === '') {
             <label for="task-template">Code Template</label>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
+              <button type="button" class="hspf-btn hspf-btn-secondary" id="task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
             </div>
             <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: Optional - wenn gesetzt, wird als Hilfe angezeigt"></textarea>
             <div class="hint">
@@ -790,8 +793,11 @@ if ($displayName === '') {
         <!-- Tab 2: Optional Fields -->
         <div class="task-tab-panel" data-task-tab-panel="optional">
           <div class="field">
-            <label for="task-description">Description (Kontext/Metadaten)</label>
-            <textarea id="task-description" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
+            <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+              <label for="task-description">Description (Kontext/Metadaten)</label>
+              <button type="button" id="auto-description-btn" class="hspf-btn" style="padding: 4px 12px; font-size: 12px;">📝 Auto Desc</button>
+            </div>
+            <textarea id="task-description" class="tinymce-editor" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
             <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
           </div>
           
@@ -819,7 +825,7 @@ if ($displayName === '') {
             </div>
             <div class="field">
               <label for="task-stoff">Lerninhalt/Stoff (optional)</label>
-              <textarea id="task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+              <textarea id="task-stoff" class="tinymce-editor" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
             </div>
           </div>
         </div>
@@ -847,12 +853,6 @@ if ($displayName === '') {
             <div id="task-options-error" class="field-error" style="display:none;"></div>
           </div>
           
-          <!-- Keywords (for free text) -->
-          <div class="field" data-field="keywords">
-            <label for="task-keywords">Schlüsselwörter (kommagetrennt)</label>
-            <input id="task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
-            <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
-          </div>
           
           <!-- Correct Answer (for code reading & code_random_complex) -->
           <div class="field" data-field="correct-answer">
@@ -931,7 +931,10 @@ if ($displayName === '') {
           
           <!-- Randomizer Code (for code_random_complex and intelligent tests) -->
           <div class="field" data-field="randomizer-code">
-            <label for="task-randomizer-code">Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></label>
+            <label for="task-randomizer-code" style="display:flex; align-items:center; gap:8px;">
+              <span>Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></span>
+              <button type="button" class="hspf-btn hspf-btn-secondary" id="task-randomizer-generator" style="font-size:12px;">🎲 Randomizer</button>
+            </label>
             <textarea id="task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
             <div class="hint">
               <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>
@@ -1023,8 +1026,11 @@ if ($displayName === '') {
         <!-- Tab 2: Optional Fields -->
         <div class="task-tab-panel" data-task-tab-panel="optional">
           <div class="field">
-            <label for="edit-task-description">Description (Kontext/Metadaten)</label>
-            <textarea id="edit-task-description" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
+            <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+              <label for="edit-task-description">Description (Kontext/Metadaten)</label>
+              <button type="button" id="edit-auto-description-btn" class="hspf-btn" style="padding: 4px 12px; font-size: 12px;">📝 Auto Desc</button>
+            </div>
+            <textarea id="edit-task-description" class="tinymce-editor" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
             <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
           </div>
           
@@ -1052,7 +1058,7 @@ if ($displayName === '') {
             </div>
             <div class="field">
               <label for="edit-task-stoff">Lerninhalt/Stoff (optional)</label>
-              <textarea id="edit-task-stoff" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
+              <textarea id="edit-task-stoff" class="tinymce-editor" placeholder="Verwandte Lerninhalte, Ressourcen, etc."></textarea>
             </div>
           </div>
         </div>
@@ -1080,13 +1086,6 @@ if ($displayName === '') {
             <label>Antwortoptionen</label>
             <div id="edit-task-options-container"></div>
             <div id="edit-task-options-error" class="field-error" style="display:none;"></div>
-          </div>
-          
-          <!-- Keywords (for free text) -->
-          <div class="field" data-field="keywords">
-            <label for="edit-task-keywords">Schlüsselwörter (kommagetrennt)</label>
-            <input id="edit-task-keywords" placeholder="Keyword1, Keyword2, Keyword3" />
-            <div class="hint">Diese Begriffe müssen in der Antwort vorkommen</div>
           </div>
           
           <!-- Correct Answer (for code reading & code_random_complex) -->
@@ -1167,7 +1166,10 @@ if ($displayName === '') {
         
         <!-- Randomizer Code (for code_random_complex and intelligent tests) -->
         <div class="field" data-field="randomizer-code">
-          <label for="edit-task-randomizer-code">Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></label>
+          <label for="edit-task-randomizer-code" style="display:flex; align-items:center; gap:8px;">
+            <span>Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></span>
+            <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-randomizer-generator" style="font-size:12px;">🎲 Randomizer</button>
+          </label>
           <textarea id="edit-task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
           <div class="hint">
             <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>

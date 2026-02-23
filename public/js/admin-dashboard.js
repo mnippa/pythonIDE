@@ -241,8 +241,17 @@ async function loadTasks(assignmentId, assignmentTitle) {
     try {
       if (t.test_cases) {
         let parsed = JSON.parse(t.test_cases);
-        if (!Array.isArray(parsed)) parsed = [parsed];
-        testTypes = parsed.map(tc => tc.type).filter(Boolean);
+        if (!Array.isArray(parsed)) {
+          // Single intelligent test as object (has mode field instead of type)
+          if (parsed.mode) {
+            testTypes = ['intelligent'];
+          } else {
+            parsed = [parsed];
+          }
+        }
+        if (Array.isArray(parsed)) {
+          testTypes = parsed.map(tc => tc.type).filter(Boolean);
+        }
       }
     } catch {}
     const testTypeIconHtml = testTypes.map(type => testTypeIcons[type] || '').join(' ');
@@ -264,9 +273,10 @@ async function loadTasks(assignmentId, assignmentTitle) {
       <td><span class="tag">${testTypeIconHtml}</span></td>
       <td>
         <div class="row-actions">
-          <button class="btn" data-action="edit-task" data-id="${t.id}">Edit</button>
-          <button class="btn" data-action="view-task" data-id="${t.id}">View</button>
-          <button class="btn warn" data-action="delete-task" data-id="${t.id}">Delete</button>
+          <button class="icon-btn" data-action="view-task" data-id="${t.id}" title="View Task">👁️</button>
+          <button class="icon-btn" data-action="edit-task" data-id="${t.id}" title="Edit">✏️</button>
+          <button class="icon-btn" data-action="clone-task" data-id="${t.id}" title="Clone">🗐</button>
+          <button class="icon-btn danger" data-action="delete-task" data-id="${t.id}" title="Delete">🗑️</button>
         </div>
       </td>
     `;
@@ -340,13 +350,27 @@ function resetAssignmentForm() {
 function resetTaskForm() {
   $('task-title').value = '';
   if ($('task-text')) $('task-text').value = '';
-  if ($('task-description')) $('task-description').value = '';
+  if ($('task-description')) {
+    const descEditor = tinymce.get('task-description');
+    if (descEditor) {
+      descEditor.setContent('');
+    } else {
+      $('task-description').value = '';
+    }
+  }
   if ($('task-template')) $('task-template').value = '';
   if ($('task-randomizer-code')) $('task-randomizer-code').value = '';
   if ($('task-hint1')) $('task-hint1').value = '';
   if ($('task-hint2')) $('task-hint2').value = '';
   if ($('task-hint3')) $('task-hint3').value = '';
-  if ($('task-stoff')) $('task-stoff').value = '';
+  if ($('task-stoff')) {
+    const stoffEditor = tinymce.get('task-stoff');
+    if (stoffEditor) {
+      stoffEditor.setContent('');
+    } else {
+      $('task-stoff').value = '';
+    }
+  }
   if ($('task-validation-mode')) $('task-validation-mode').value = '';
   if ($('task-test-cases')) $('task-test-cases').value = '';
   if ($('task-solution')) $('task-solution').value = '';
@@ -420,8 +444,10 @@ function openNewTaskModal() {
   if (window.TaskTypeManager && taskForm) {
     window.TaskTypeManager.updateFieldVisibility(taskForm, taskType);
   }
+  updateTestTypeVisibility(); // Update test type selector visibility for free_text
   updateMaxIterationsFromBuilder('task');
   updateRandomButtonVisibility(); // Update randomizer field visibility
+  updateTestTypeVisibility(); // Update test type selector visibility for free_text
 }
 
 function closeNewTaskModal() {
@@ -496,14 +522,28 @@ async function handleTaskSubmit(e) {
     hint1: $('task-hint1').value,
     hint2: $('task-hint2').value,
     hint3: $('task-hint3').value,
-    stoff: $('task-stoff').value,
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
   };
   
+  // Get stoff from TinyMCE if available, else from textarea
+  const stoffEditor = tinymce.get('task-stoff');
+  if (stoffEditor) {
+    payload.stoff = stoffEditor.getContent().trim();
+  } else {
+    payload.stoff = $('task-stoff').value;
+  }
+  
   // For all task types: use task-text (unified field)
   payload.task_text = $('task-text').value.trim();
-  payload.description = $('task-description').value.trim();
+  
+  // Get description from TinyMCE if available, else from textarea
+  const descriptionEditor = tinymce.get('task-description');
+  if (descriptionEditor) {
+    payload.description = descriptionEditor.getContent().trim();
+  } else {
+    payload.description = $('task-description').value.trim();
+  }
   
   // NEW: Add options for single/multiple choice
   if (taskType === 'single_choice' || taskType === 'multiple_choice') {
@@ -518,10 +558,10 @@ async function handleTaskSubmit(e) {
     }
   }
   
-  // NEW: Add keywords for free text
-  if (taskType === 'free_text') {
-    const keywords = $('task-keywords').value.trim();
-    payload.correct_answer = keywords; // Store as correct_answer
+  // NEW: Handle free text validation options
+  // Handle test_cases for code and free_text tasks
+  if (taskType === 'code' || taskType === 'free_text') {
+    payload.test_cases = $('task-test-cases').value.trim() || null;
   }
   
   // NEW: Add fields for code reading
@@ -1007,7 +1047,15 @@ function openEditTaskModal(taskId) {
   
   // Unified task_text and description fields (same for all task types)
   $('edit-task-text').value = task.task_text || '';
-  $('edit-task-description').value = task.description || '';
+  
+  // Load description into TinyMCE editor if available, else into textarea
+  const descriptionContent = task.description || '';
+  const editDescEditor = tinymce.get('edit-task-description');
+  if (editDescEditor) {
+    editDescEditor.setContent(descriptionContent);
+  } else {
+    $('edit-task-description').value = descriptionContent;
+  }
   
   // Code fields
   $('edit-task-template').value = task.code_template || '';
@@ -1015,19 +1063,19 @@ function openEditTaskModal(taskId) {
   $('edit-task-hint1').value = task.hint1 || '';
   $('edit-task-hint2').value = task.hint2 || '';
   $('edit-task-hint3').value = task.hint3 || '';
-  $('edit-task-stoff').value = task.stoff || '';
+  
+  // Load stoff into TinyMCE editor if available, else into textarea
+  const stoffContent = task.stoff || '';
+  const editStoffEd = tinymce.get('edit-task-stoff');
+  if (editStoffEd) {
+    editStoffEd.setContent(stoffContent);
+  } else {
+    $('edit-task-stoff').value = stoffContent;
+  }
+  
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
   
-  // Quiz fields
-  if ($('edit-task-keywords')) {
-    // For free_text, load correct_answer into keywords field
-    if (taskType === 'free_text') {
-      $('edit-task-keywords').value = task.correct_answer || '';
-    } else {
-      $('edit-task-keywords').value = task.keywords || '';
-    }
-  }
   if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
   if ($('edit-task-var-overrides')) {
     const overridesValue = task.variable_overrides
@@ -1087,6 +1135,7 @@ function openEditTaskModal(taskId) {
   if (window.TaskTypeManager && editForm) {
     window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
   }
+  updateTestTypeVisibility(); // Update test type selector visibility for free_text
   
   // Only set active tab if tabs exist in the form
   if (editForm && editForm.querySelectorAll('.task-tab').length > 0) {
@@ -1135,23 +1184,37 @@ async function handleEditTaskSubmit(e) {
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
-    stoff: $('edit-task-stoff').value,
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
   
+  // Get stoff from TinyMCE if available, else from textarea
+  const editStoffEditor = tinymce.get('edit-task-stoff');
+  if (editStoffEditor) {
+    payload.stoff = editStoffEditor.getContent().trim();
+  } else {
+    payload.stoff = $('edit-task-stoff').value;
+  }
+  
   // For all task types: use unified task_text field
   payload.task_text = $('edit-task-text').value.trim();
-  payload.description = $('edit-task-description').value.trim();
+  
+  // Get description from TinyMCE if available, else from textarea
+  const editDescriptionEditor = tinymce.get('edit-task-description');
+  if (editDescriptionEditor) {
+    payload.description = editDescriptionEditor.getContent().trim();
+  } else {
+    payload.description = $('edit-task-description').value.trim();
+  }
   
   // Add quiz-specific fields
   payload.keywords = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
   payload.correct_answer = $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null;
   payload.variable_overrides = $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null;
   
-  // For free_text, use keywords field as correct_answer
-  if (taskType === 'free_text') {
-    payload.correct_answer = $('edit-task-keywords') ? $('edit-task-keywords').value.trim() : null;
+  // Handle test_cases for code and free_text tasks
+  if (taskType === 'code' || taskType === 'free_text') {
+    payload.test_cases = $('edit-task-test-cases').value.trim() || null;
   }
 
   if (taskType === 'code_reading') {
@@ -1586,6 +1649,29 @@ function bindEvents() {
       await loadAssignments();
     }
 
+    if (action === 'clone-task') {
+      if (!state.currentAssignmentId) {
+        alert('No assignment selected');
+        return;
+      }
+      if (!confirm('Clone this task?')) return;
+      try {
+        const response = await requestJson('../api/admin/tasks/clone.php', {
+          method: 'POST',
+          body: JSON.stringify({ task_id: id, assignment_id: state.currentAssignmentId })
+        });
+        if (response.ok) {
+          alert(`Task cloned successfully!`);
+          await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
+          await loadAssignments();
+        } else {
+          throw new Error(response.error);
+        }
+      } catch (err) {
+        alert('Clone failed: ' + err.message);
+      }
+    }
+
     if (action === 'edit-task') {
       openEditTaskModal(id);
     }
@@ -1735,6 +1821,27 @@ function updateRandomButtonVisibility() {
 let testCasesData = []; // CREATE form
 let editTestCasesData = []; // EDIT form
 
+// Initialize TinyMCE WYSIWYG Editors
+function initTinyMCEEditors() {
+  if (typeof tinymce !== 'undefined') {
+    tinymce.init({
+      selector: '.tinymce-editor',
+      height: 250,
+      plugins: 'table lists link image code',
+      toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | table | link image | code',
+      menubar: 'edit insert view table format tools',
+      content_css: false,
+      skin: 'oxide',
+      body_class: 'tinymce-body',
+      statusbar: true,
+      branding: false,
+      mobile: {
+        toolbar: 'undo redo | formatselect | bold italic | bullist numlist | table'
+      }
+    });
+  }
+}
+
 // Initialize Test Cases Builder for CREATE form
 function initTestCasesBuilder() {
   const addBtn = document.getElementById('add-test-btn');
@@ -1744,7 +1851,9 @@ function initTestCasesBuilder() {
   
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      const type = typeSelector.value;
+      // For free_text tasks, always use 'output' type
+      const taskType = $('new-task-type')?.value || 'code';
+      const type = (taskType === 'free_text') ? 'output' : typeSelector.value;
       addTestCase(type, testCasesData, 'tests-container');
     });
   }
@@ -1771,7 +1880,9 @@ function initEditTestCasesBuilder() {
   
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      const type = typeSelector.value;
+      // For free_text tasks, always use 'output' type
+      const taskType = $('edit-task-type')?.value || 'code';
+      const type = (taskType === 'free_text') ? 'output' : typeSelector.value;
       addTestCase(type, editTestCasesData, 'edit-tests-container');
     });
   }
@@ -1797,7 +1908,8 @@ function addTestCase(type, dataArray, containerId) {
   if (type === 'output') {
     testCase.expected = [];
     testCase.expected_type = 'text'; // Default: compare against text patterns
-    testCase.validation_mode = 'strict'; // Default: exact match
+    testCase.validation_mode = 'loose'; // Default: loose whitespace matching
+    testCase.case_sensitive = false; // Default: case-insensitive
   } else if (type === 'function') {
     testCase.function_name = '';
     testCase.test_cases = [{ args: [], expected: '' }]; // Start with one empty test case
@@ -1827,6 +1939,37 @@ function addTestCase(type, dataArray, containerId) {
   renderTestCases(dataArray, containerId);
 }
 
+// ===================================================================
+// HELPER: Update test type selector visibility based on task type
+// ===================================================================
+function updateTestTypeVisibility() {
+  // For CREATE form
+  const newTaskFormElement = $('task-form');
+  if (newTaskFormElement) {
+    const newTaskType = $('new-task-type')?.value || 'code';
+    const newBuilder = newTaskFormElement.querySelector('.test-cases-builder');
+    if (newBuilder) {
+      const newTypeLabel = newBuilder.querySelector('.builder-header label');
+      if (newTypeLabel) {
+        newTypeLabel.style.display = (newTaskType === 'free_text') ? 'none' : '';
+      }
+    }
+  }
+  
+  // For EDIT form
+  const editTaskFormElement = $('task-edit-form');
+  if (editTaskFormElement) {
+    const editTaskType = $('edit-task-type')?.value || 'code';
+    const editBuilder = editTaskFormElement.querySelector('.test-cases-builder');
+    if (editBuilder) {
+      const editTypeLabel = editBuilder.querySelector('.builder-header label');
+      if (editTypeLabel) {
+        editTypeLabel.style.display = (editTaskType === 'free_text') ? 'none' : '';
+      }
+    }
+  }
+}
+
 // Render all test cases
 function renderTestCases(dataArray, containerId) {
   const container = document.getElementById(containerId);
@@ -1838,6 +1981,14 @@ function renderTestCases(dataArray, containerId) {
     dataArray = [];
   }
   
+  // Determine task type
+  let taskType = 'code'; // Default
+  if (containerId === 'tests-container') {
+    taskType = $('new-task-type')?.value || 'code';
+  } else if (containerId === 'edit-tests-container') {
+    taskType = $('edit-task-type')?.value || 'code';
+  }
+  
   container.innerHTML = dataArray.map((test, idx) => {
     return renderTestCaseHTML(test, idx, containerId);
   }).join('');
@@ -1845,13 +1996,39 @@ function renderTestCases(dataArray, containerId) {
   // Bind event handlers
   bindTestCaseEvents(dataArray, containerId);
   
+  // Update test type selector visibility for free_text tasks
+  updateTestTypeVisibility();
+  
+  // For free_text tasks, find and hide the test-type-selector label
+  const builderSection = container.closest('.test-cases-builder');
+  if (builderSection) {
+    const builderHeader = builderSection.querySelector('.builder-header');
+    if (builderHeader) {
+      const typeLabel = builderHeader.querySelector('label');
+      if (typeLabel) {
+        typeLabel.style.display = (taskType === 'free_text') ? 'none' : '';
+      }
+    }
+  }
+  
   // Update solution code visibility based on test types
   updateSolutionCodeVisibility();
+
+  // Update randomizer visibility when intelligent tests are added/removed
+  updateRandomButtonVisibility();
 }
 
 // Render single test case HTML
 function renderTestCaseHTML(test, idx, containerId) {
   const type = test.type || 'output';
+  
+  // Determine which form this is and get the task type
+  let taskType = 'code'; // Default
+  if (containerId === 'tests-container') {
+    taskType = $('new-task-type')?.value || 'code';
+  } else if (containerId === 'edit-tests-container') {
+    taskType = $('edit-task-type')?.value || 'code';
+  }
   
   let html = `
     <div class="test-case-item" data-idx="${idx}" style="border:1px solid #e5e7eb; padding:12px; margin-bottom:10px; border-radius:6px; background:#f9fafb;">
@@ -1864,31 +2041,46 @@ function renderTestCaseHTML(test, idx, containerId) {
   if (type === 'output') {
     const patterns = test.expected && Array.isArray(test.expected) ? test.expected : (test.expected ? [test.expected] : []);
     const expectedType = test.expected_type || 'text';
-    const validationMode = test.validation_mode || 'strict';
+    const validationMode = test.validation_mode || 'loose';
+    const caseSensitive = test.case_sensitive !== undefined ? test.case_sensitive : false; // Default: false (case-insensitive)
+    
+    // For free_text tasks, don't show the "solution" option
+    const showSolutionOption = (taskType !== 'free_text');
     
     html += `
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
         <div>
           <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Expected Type:</label>
           <select class="expected-type-select" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
             <option value="text" ${expectedType === 'text' ? 'selected' : ''}>Text Pattern</option>
-            <option value="solution" ${expectedType === 'solution' ? 'selected' : ''}>Solution Code Output</option>
+            ${showSolutionOption ? `<option value="solution" ${expectedType === 'solution' ? 'selected' : ''}>Solution Code Output</option>` : ''}
             <option value="regex" ${expectedType === 'regex' ? 'selected' : ''}>Regex Pattern</option>
           </select>
           <div style="font-size:10px; color:#666; margin-top:2px;">
-            Text: Use patterns below | Solution: Compare to solution_code | Regex: Use regex patterns
+            Text | Solution | Regex
           </div>
         </div>
         
         <div>
           <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Validation Mode:</label>
           <select class="validation-mode-select" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-            <option value="strict" ${validationMode === 'strict' ? 'selected' : ''}>Strict (exact match)</option>
-            <option value="loose" ${validationMode === 'loose' ? 'selected' : ''}>Loose (ignore whitespace)</option>
-            <option value="contains" ${validationMode === 'contains' ? 'selected' : ''}>Contains (substring)</option>
+            <option value="strict" ${validationMode === 'strict' ? 'selected' : ''}>Strict (exakt)</option>
+            <option value="loose" ${validationMode === 'loose' ? 'selected' : ''}>Loose (Leerzeichen)</option>
+            <option value="contains" ${validationMode === 'contains' ? 'selected' : ''}>Contains (Substring)</option>
           </select>
           <div style="font-size:10px; color:#666; margin-top:2px;">
-            Strict: Exact | Loose: Normalize whitespace | Contains: Substring match
+            Exakt | Normalisiert | Enthalten
+          </div>
+        </div>
+
+        <div>
+          <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Case Sensitive:</label>
+          <select class="case-sensitive-select" data-idx="${idx}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+            <option value="false" ${!caseSensitive ? 'selected' : ''}>Nein (Standard)</option>
+            <option value="true" ${caseSensitive ? 'selected' : ''}>Ja</option>
+          </select>
+          <div style="font-size:10px; color:#666; margin-top:2px;">
+            Groß/Klein egal | Beachten
           </div>
         </div>
       </div>
@@ -2212,6 +2404,14 @@ function bindTestCaseEvents(dataArray, containerId) {
     select.addEventListener('change', (e) => {
       const testIdx = parseInt(e.target.dataset.idx);
       dataArray[testIdx]['validation_mode'] = e.target.value;
+    });
+  });
+  
+  // Handle Case Sensitive dropdown for OUTPUT tests
+  container.querySelectorAll('.case-sensitive-select').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx);
+      dataArray[testIdx]['case_sensitive'] = e.target.value === 'true';
     });
   });
   
@@ -2722,10 +2922,152 @@ function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
 }
 
+// Auto-generate description from test cases
+function generateAutoDescription(testCasesData, descFieldId) {
+  if (!Array.isArray(testCasesData) || testCasesData.length === 0) {
+    alert('Keine Test Cases vorhanden um Beschreibung zu generieren');
+    return;
+  }
+  
+  const descField = document.getElementById(descFieldId);
+  if (!descField) return;
+  
+  let tableRows = '';
+  const seenTypes = new Set();
+  
+  // Process each test case and collect table rows
+  testCasesData.forEach(testCase => {
+    if (testCase.type === 'function' && !seenTypes.has('function')) {
+      seenTypes.add('function');
+      
+      // Extract function info
+      const funcName = testCase.function_name || 'Funktion';
+      let paramCount = 0;
+      
+      // Count parameters from test cases
+      if (testCase.test_cases && testCase.test_cases.length > 0) {
+        const firstCase = testCase.test_cases[0];
+        if (firstCase.args && Array.isArray(firstCase.args)) {
+          paramCount = firstCase.args.length;
+        }
+      }
+      
+      tableRows += `<tr><td>Funktionsname</td><td>${funcName}</td></tr>`;
+      tableRows += `<tr><td>Parameter</td><td>${paramCount}</td></tr>`;
+    }
+    
+    if (testCase.type === 'variable' && !seenTypes.has('variable')) {
+      seenTypes.add('variable');
+      
+      // Extract variable info
+      const initVars = testCase.init_var_names || [];
+      const checkingVars = testCase.expected_var_names || [];
+      
+      tableRows += `<tr><td>Input-Variablen</td><td>${initVars.join(', ') || 'keine'}</td></tr>`;
+      tableRows += `<tr><td>Checking</td><td>${checkingVars.join(', ') || 'keine'}</td></tr>`;
+    }
+    
+    if (testCase.type === 'intelligent' && !seenTypes.has('intelligent')) {
+      seenTypes.add('intelligent');
+      
+      const mode = testCase.mode || 'unknown';
+      const testCount = testCase.tests || 0;
+      
+      if (mode === 'function' && testCase.function) {
+        const funcName = testCase.function.name || 'Funktion';
+        const paramCount = (testCase.function.params || []).length;
+        tableRows += `<tr><td>Funktionsname</td><td>${funcName}</td></tr>`;
+        tableRows += `<tr><td>Parameter</td><td>${paramCount}</td></tr>`;
+      } else if (mode === 'vars') {
+        // For vars mode, show inputs and checking like static variable tests
+        const inputs = testCase.inputs || [];
+        const checking = testCase.outputs || [];
+        tableRows += `<tr><td>Input-Variablen</td><td>${inputs.join(', ') || 'keine'}</td></tr>`;
+        tableRows += `<tr><td>Checking</td><td>${checking.join(', ') || 'keine'}</td></tr>`;
+      }
+    }
+    
+    if (testCase.type === 'output' && !seenTypes.has('output')) {
+      seenTypes.add('output');
+      
+      // Determine output test type
+      const expectedType = testCase.expected_type || 'text';
+      const validationMode = testCase.validation_mode || 'default';
+      
+      // Map expected_type to description
+      const typeDescs = {
+        'regex': 'Regex Pattern',
+        'solution': 'Solution Code Output',
+        'text': 'Text Pattern'
+      };
+      const typeDescription = typeDescs[expectedType] || expectedType;
+      
+      // Map validation mode to user-friendly description
+      const validationModes = {
+        'strict': 'Exact Match',
+        'loose': 'Flexible Match',
+        'contains': 'Contains Check',
+        'forbidden': 'Pattern Forbidden'
+      };
+      const modeDescription = validationModes[validationMode] || validationMode;
+      
+      // Show TYPE if it's not default 'text', otherwise show validation mode
+      let outputDescription = typeDescription;
+      if (expectedType === 'text' && validationMode !== 'default') {
+        outputDescription = modeDescription;
+      }
+      
+      tableRows += `<tr><td>OUTPUT</td><td>${outputDescription}</td></tr>`;
+    }
+    
+    if (testCase.type === 'code_check' && !seenTypes.has('code_check')) {
+      seenTypes.add('code_check');
+      
+      const keywords = testCase.keywords || [];
+      const forbidden = testCase.forbidden || [];
+      
+      tableRows += `<tr><td>Erforderliche Keywords</td><td>${keywords.join(', ') || 'keine'}</td></tr>`;
+      tableRows += `<tr><td>Verbotene Keywords</td><td>${forbidden.join(', ') || 'keine'}</td></tr>`;
+    }
+  });
+  
+  // Build single table with all rows
+  let description = '';
+  if (tableRows) {
+    description += `<div class="test-requirements-section"><h3>Test-Anforderungen</h3>`;
+    description += `<table class="test-requirements-table"><thead><tr><th>Aspekt</th><th>Details</th></tr></thead><tbody>`;
+    description += tableRows;
+    description += `</tbody></table></div>`;
+  }
+  
+  // Insert into TinyMCE editor or textarea
+  const editorId = descFieldId.replace('task-', '').replace('edit-', '');
+  const tinymceEditor = tinymce.get(descFieldId);
+  
+  if (tinymceEditor) {
+    // If TinyMCE is active, insert into editor
+    const currentContent = tinymceEditor.getContent();
+    const newContent = currentContent ? currentContent + description : description;
+    tinymceEditor.setContent(newContent);
+  } else {
+    // Fallback to textarea
+    if (descField.value.trim()) {
+      descField.value += description;
+    } else {
+      descField.value = description;
+    }
+  }
+  
+  alert('✓ Beschreibung automatisch generiert!');
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
   initTestCasesBuilder();
   initEditTestCasesBuilder();
+  
+  // Initialize TinyMCE WYSIWYG Editors for description fields
+  initTinyMCEEditors();
   
   // Initialize Task Form Tabs
   initTaskFormTabs('task-form');
@@ -2909,13 +3251,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Helper function to generate randomizer code from test cases
   function generateRandomizerCode(testCasesArray) {
     if (!Array.isArray(testCasesArray) || testCasesArray.length === 0) {
-      showMessage('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).', 'error');
+      alert('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).');
       return null;
     }
 
     const intelligentTest = testCasesArray.find(tc => tc.type === 'intelligent');
     if (!intelligentTest) {
-      showMessage('Kein Intelligent Test gefunden. Randomizer nur für Intelligent Tests.', 'error');
+      alert('Kein Intelligent Test gefunden. Randomizer nur für Intelligent Tests.');
       return null;
     }
 
@@ -2934,15 +3276,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    variables = variables
+      .map((name) => String(name || '').trim())
+      .filter((name) => name !== '');
+
     if (variables.length === 0) {
-      showMessage('Keine Variablen/Parameter definiert im Intelligent Test.', 'error');
+      alert('Keine Variablen/Parameter definiert im Intelligent Test.');
       return null;
     }
 
     // Generate Python code
     let code = 'import random\n\nvalues = {\n';
-    variables.forEach(varName => {
-      code += `    "${varName}": random.randint(1, 100),\n`;
+    variables.forEach((varName) => {
+      code += `    "${varName}": random.randint(1, 50),\n`;
     });
     code += '}';
 
@@ -2956,13 +3302,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const textarea = $('task-randomizer-code');
       if (!textarea) return;
 
-      const testCasesData = state.newTaskData?.testCases || [];
       const generatedCode = generateRandomizerCode(testCasesData);
       
       if (generatedCode) {
         textarea.value = generatedCode;
         textarea.focus();
-        showMessage('Randomizer Code generiert! 🎲', 'success');
       }
     });
   }
@@ -2974,13 +3318,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const textarea = $('edit-task-randomizer-code');
       if (!textarea) return;
 
-      const testCasesData = state.editTaskData?.testCases || [];
-      const generatedCode = generateRandomizerCode(testCasesData);
+      const generatedCode = generateRandomizerCode(editTestCasesData);
       
       if (generatedCode) {
         textarea.value = generatedCode;
         textarea.focus();
-        showMessage('Randomizer Code generiert! 🎲', 'success');
       }
     });
   }
@@ -2989,28 +3331,40 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Helper function to generate init-block from test cases
   function generateInitBlock(testCasesArray) {
+    console.log('[Init-Block] generateInitBlock called with:', testCasesArray);
+    
     if (!Array.isArray(testCasesArray) || testCasesArray.length === 0) {
-      showMessage('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).', 'error');
+      alert('Keine Test Cases definiert. Bitte Test Cases erstellen (Typ: Intelligent).');
       return null;
     }
 
     const intelligentTest = testCasesArray.find(tc => tc.type === 'intelligent');
+    console.log('[Init-Block] Found intelligent test:', intelligentTest);
+    
     if (!intelligentTest) {
-      showMessage('Kein Intelligent Test gefunden. Init-Block nur für Intelligent Tests (Vars Mode).', 'error');
+      alert('Kein Intelligent Test gefunden. Init-Block nur für Intelligent Tests (Vars Mode).');
       return null;
     }
 
     const mode = intelligentTest.mode || 'function';
+    console.log('[Init-Block] Mode:', mode);
+    
     if (mode !== 'vars') {
-      showMessage('Init-Block nur für Intelligent Vars Mode. Aktuell: ' + mode, 'error');
+      alert('Init-Block nur für Intelligent Vars Mode. Aktuell: ' + mode);
       return null;
     }
 
-    const inputs = intelligentTest.inputs || [];
-    const outputs = intelligentTest.outputs || [];
+    const inputs = (intelligentTest.inputs || [])
+      .map(v => String(v || '').trim())
+      .filter(v => v !== '');
+    const outputs = (intelligentTest.outputs || [])
+      .map(v => String(v || '').trim())
+      .filter(v => v !== '');
+    
+    console.log('[Init-Block] Inputs:', inputs, 'Outputs:', outputs);
     
     if (inputs.length === 0 && outputs.length === 0) {
-      showMessage('Keine Inputs/Outputs definiert im Intelligent Vars Test.', 'error');
+      alert('Keine Inputs/Outputs definiert im Intelligent Vars Test.');
       return null;
     }
 
@@ -3036,10 +3390,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const taskInitBlockGenBtn = $('task-init-block-generator');
   if (taskInitBlockGenBtn) {
     taskInitBlockGenBtn.addEventListener('click', () => {
+      console.log('[Init-Block] CREATE button clicked, testCasesData:', testCasesData);
       const textarea = $('task-template');
-      if (!textarea) return;
+      if (!textarea) {
+        console.error('[Init-Block] textarea not found!');
+        return;
+      }
 
-      const testCasesData = state.newTaskData?.testCases || [];
       const generatedBlock = generateInitBlock(testCasesData);
       
       if (generatedBlock) {
@@ -3047,29 +3404,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentCode = textarea.value.trim();
         textarea.value = generatedBlock + (currentCode ? '\n\n' + currentCode : '');
         textarea.focus();
-        showMessage('Init-Block eingefügt! 📝', 'success');
+        console.log('[Init-Block] Code inserted successfully');
       }
     });
+  } else {
+    console.warn('[Init-Block] CREATE button not found in DOM');
   }
 
   // Handle EDIT form Init-Block Generator button
   const editTaskInitBlockGenBtn = $('edit-task-init-block-generator');
   if (editTaskInitBlockGenBtn) {
     editTaskInitBlockGenBtn.addEventListener('click', () => {
+      console.log('[Init-Block] EDIT button clicked, editTestCasesData:', editTestCasesData);
       const textarea = $('edit-task-template');
-      if (!textarea) return;
+      if (!textarea) {
+        console.error('[Init-Block] EDIT textarea not found!');
+        return;
+      }
 
-      const testCasesData = state.editTaskData?.testCases || [];
-      const generatedBlock = generateInitBlock(testCasesData);
+      const generatedBlock = generateInitBlock(editTestCasesData);
       
       if (generatedBlock) {
         // Insert at beginning of existing code
         const currentCode = textarea.value.trim();
         textarea.value = generatedBlock + (currentCode ? '\n\n' + currentCode : '');
         textarea.focus();
-        showMessage('Init-Block eingefügt! 📝', 'success');
+        console.log('[Init-Block] Code inserted successfully in EDIT form');
       }
     });
+  } else {
+    console.warn('[Init-Block] EDIT button not found in DOM');
   }
 
   // ===========================================================================
@@ -3084,6 +3448,16 @@ document.addEventListener('DOMContentLoaded', () => {
         window.editOptionsBuilder.setTaskType(taskType);
       }
       updateMaxIterationsFromBuilder('edit-task');
+    });
+  }
+
+  // Sync solution code changes to DOM immediately (for test window)
+  const editTaskSolutionField = $('edit-task-solution');
+  if (editTaskSolutionField) {
+    editTaskSolutionField.addEventListener('input', (e) => {
+      // Solution code input field is synced - changes will be picked up on form submit
+      // This ensures the field is marked as "dirty" so changes aren't lost
+      console.log('[Solution Code] Updated:', e.target.value.substring(0, 50) + '...');
     });
   }
 
@@ -3311,118 +3685,6 @@ document.addEventListener('DOMContentLoaded', () => {
       variables: info.variables,
       resultVars: Array.from(info.resultVars)
     };
-}
-
-// Auto-generate description from test cases
-function generateAutoDescription(testCasesData, descFieldId) {
-  if (!Array.isArray(testCasesData) || testCasesData.length === 0) {
-    alert('Keine Test Cases vorhanden um Beschreibung zu generieren');
-    return;
-  }
-  
-  const descField = $(descFieldId);
-  if (!descField) return;
-  
-  let description = '';
-  const seenTypes = new Set();
-  
-  // Process each test case
-  testCasesData.forEach(testCase => {
-    if (testCase.type === 'function' && !seenTypes.has('function')) {
-      seenTypes.add('function');
-      
-      // Extract function info
-      const funcName = testCase.function_name || 'Funktion';
-      let paramCount = 0;
-      
-      // Count parameters from test cases
-      if (testCase.test_cases && testCase.test_cases.length > 0) {
-        const firstCase = testCase.test_cases[0];
-        if (firstCase.args && Array.isArray(firstCase.args)) {
-          paramCount = firstCase.args.length;
-        }
-      }
-      
-      // Generate function description table
-      description += `\n## Test-Anforderungen\n\n`;
-      description += `| Aspekt | Details |\n`;
-      description += `|--------|----------|\n`;
-      description += `| Funktionsname | ${funcName} |\n`;
-      description += `| Parameter | ${paramCount} |\n`;
-      description += `\n`;
-    }
-    
-    if (testCase.type === 'variable' && !seenTypes.has('variable')) {
-      seenTypes.add('variable');
-      
-      // Extract variable info
-      const initVars = testCase.init_var_names || [];
-      const outputVars = testCase.expected_var_names || [];
-      
-      description += `\n## Test-Anforderungen\n\n`;
-      description += `| Aspekt | Details |\n`;
-      description += `|--------|----------|\n`;
-      description += `| Input-Variablen | ${initVars.join(', ') || 'keine'} |\n`;
-      description += `| Output-Variablen | ${outputVars.join(', ') || 'keine'} |\n`;
-      description += `\n`;
-    }
-    
-    if (testCase.type === 'intelligent' && !seenTypes.has('intelligent')) {
-      seenTypes.add('intelligent');
-      
-      const mode = testCase.mode || 'unknown';
-      const testCount = testCase.tests || 0;
-      
-      description += `\n## Test-Anforderungen\n\n`;
-      description += `| Aspekt | Details |\n`;
-      description += `|--------|----------|\n`;
-      description += `| Test-Modus | ${mode.toUpperCase()} |\n`;
-      description += `| Anzahl Tests | ${testCount} |\n`;
-      
-      if (mode === 'function' && testCase.function) {
-        const funcName = testCase.function.name || 'Funktion';
-        const paramCount = (testCase.function.params || []).length;
-        description += `| Funktionsname | ${funcName} |\n`;
-        description += `| Parameter | ${paramCount} |\n`;
-      }
-      
-      description += `\n`;
-    }
-    
-    if (testCase.type === 'output' && !seenTypes.has('output')) {
-      seenTypes.add('output');
-      
-      description += `\n## Test-Anforderungen\n\n`;
-      description += `| Aspekt | Details |\n`;
-      description += `|--------|----------|\n`;
-      description += `| Test-Typ | Output-Vergleich |\n`;
-      description += `| Validierungsmodus | ${testCase.validation_mode || 'default'} |\n`;
-      description += `\n`;
-    }
-    
-    if (testCase.type === 'code_check' && !seenTypes.has('code_check')) {
-      seenTypes.add('code_check');
-      
-      const keywords = testCase.keywords || [];
-      const forbidden = testCase.forbidden || [];
-      
-      description += `\n## Test-Anforderungen\n\n`;
-      description += `| Aspekt | Details |\n`;
-      description += `|--------|----------|\n`;
-      description += `| Erforderliche Keywords | ${keywords.join(', ') || 'keine'} |\n`;
-      description += `| Verbotene Keywords | ${forbidden.join(', ') || 'keine'} |\n`;
-      description += `\n`;
-    }
-  });
-  
-  // Append to existing description
-  if (descField.value.trim()) {
-    descField.value += description;
-  } else {
-    descField.value = description.trim();
-  }
-  
-  alert('✓ Beschreibung automatisch generiert!');
 }
 
 // Close DOMContentLoaded event listener

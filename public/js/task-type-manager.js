@@ -19,7 +19,7 @@
     },
     free_text: {
       label: 'Freitext',
-      fields: ['image', 'keywords', 'hints']
+      fields: ['image', 'test_cases', 'hints']
     },
     code_reading: {
       label: 'Code-Lesequest',

@@ -10,7 +10,7 @@ window.QuizRenderer = {
     if (task.stoff) {
       html += `<div class="stoff-section">
         <h4>📚 Lerninhalt (Stoff)</h4>
-        <p>${this.escapeHtml(task.stoff)}</p>
+        <div>${task.stoff}</div>
       </div>`;
     }
     
@@ -208,31 +208,91 @@ window.QuizRenderer = {
     const isPassed = attemptsInfo.isPassed;
     const isFailed = attemptsInfo.isFailed;
     
-    // Calculate keywords info
-    const keywords = task.correct_answer ? task.correct_answer.split(',').map(k => k.trim()).filter(k => k !== '') : [];
-    const totalKeywords = keywords.length;
-    const minRequired = (task.min_keywords_required !== null && task.min_keywords_required !== undefined) 
-      ? task.min_keywords_required 
-      : totalKeywords;
-    
-    let keywordsHint = '';
-    if (totalKeywords > 0) {
-      if (minRequired === totalKeywords) {
-        keywordsHint = `<div class="quiz-hint">Alle ${totalKeywords} Schlüsselwörter müssen in der Antwort vorkommen.</div>`;
-      } else {
-        keywordsHint = `<div class="quiz-hint">Mindestens ${minRequired} von ${totalKeywords} Schlüsselwörtern müssen in der Antwort vorkommen.</div>`;
+    // Parse test_cases array (unified structure like OUTPUT tests)
+    let testCases = [];
+    if (task.test_cases) {
+      try {
+        testCases = JSON.parse(task.test_cases);
+        if (!Array.isArray(testCases)) {
+          testCases = [];
+        }
+      } catch (e) {
+        testCases = [];
       }
     }
     
-    // Show solution if max attempts reached AND show_solution is enabled
+    // Build validation hint based on test_cases or legacy fields
+    let validationHint = '';
     let solutionHtml = '';
-    if (attemptsInfo.blocked && attemptsInfo.isFailed && task.show_solution !== 0 && task.correct_answer) {
-      solutionHtml = `
-        <div class="quiz-solution">
-          <h4>Erwartete Schlüsselwörter:</h4>
-          <p>${this.escapeHtml(task.correct_answer)}</p>
-        </div>
-      `;
+    
+    if (Array.isArray(testCases) && testCases.length > 0) {
+      // New test_cases based hints (unified with OUTPUT tests)
+      const hintParts = [];
+      testCases.forEach((testCase, idx) => {
+        const expectedType = testCase.expected_type || 'text';
+        const expected = testCase.expected || '';
+        const validationMode = testCase.validation_mode || 'loose';
+        const caseSensitive = testCase.case_sensitive || false;
+        
+        if (expectedType === 'regex') {
+          const sensitivity = caseSensitive ? ' (case-sensitive)' : '';
+          hintParts.push(`<div class="quiz-hint">Test #${idx + 1} - Regex Pattern${sensitivity}</div>`);
+        } else {
+          const modeLabels = {
+            'strict': 'Exakte Übereinstimmung',
+            'loose': 'Leerzeichen normalisiert',
+            'contains': 'Text enthalten'
+          };
+          const sensitivity = caseSensitive ? ', case-sensitive' : '';
+          hintParts.push(`<div class="quiz-hint">Test #${idx + 1} - Text (${modeLabels[validationMode] || validationMode}${sensitivity})</div>`);
+        }
+      });
+      validationHint = hintParts.join('');
+      
+      // Solution display for test_cases
+      if (attemptsInfo.blocked && attemptsInfo.isFailed && task.show_solution !== 0) {
+        const solutionParts = ['<div class="quiz-solution"><h4>Erwartete Muster:</h4>'];
+        testCases.forEach((testCase, idx) => {
+          const expectedType = testCase.expected_type || 'text';
+          const expected = testCase.expected || '';
+          const validationMode = testCase.validation_mode || 'loose';
+          const caseSensitive = testCase.case_sensitive || false;
+          const sensitivity = caseSensitive ? ' (case-sensitive)' : '';
+          
+          if (expectedType === 'regex') {
+            solutionParts.push(`<p><strong>Test #${idx + 1} (Regex${sensitivity}):</strong> <code>${this.escapeHtml(expected)}</code></p>`);
+          } else {
+            solutionParts.push(`<p><strong>Test #${idx + 1} (Text - ${validationMode}${sensitivity}):</strong> ${this.escapeHtml(expected)}</p>`);
+          }
+        });
+        solutionParts.push('</div>');
+        solutionHtml = solutionParts.join('');
+      }
+    } else if (task.correct_answer) {
+      // Legacy keyword matching (backward compatibility)
+      const keywords = task.correct_answer.split(',').map(k => k.trim()).filter(k => k !== '');
+      const totalKeywords = keywords.length;
+      const minRequired = (task.min_keywords_required !== null && task.min_keywords_required !== undefined) 
+        ? task.min_keywords_required 
+        : totalKeywords;
+      
+      if (totalKeywords > 0) {
+        if (minRequired === totalKeywords) {
+          validationHint = `<div class="quiz-hint">Alle ${totalKeywords} Schlüsselwörter müssen in der Antwort vorkommen.</div>`;
+        } else {
+          validationHint = `<div class="quiz-hint">Mindestens ${minRequired} von ${totalKeywords} Schlüsselwörtern müssen in der Antwort vorkommen.</div>`;
+        }
+      }
+      
+      // Solution for legacy keywords
+      if (attemptsInfo.blocked && attemptsInfo.isFailed && task.show_solution !== 0) {
+        solutionHtml = `
+          <div class="quiz-solution">
+            <h4>Erwartete Schlüsselwörter:</h4>
+            <p>${this.escapeHtml(task.correct_answer)}</p>
+          </div>
+        `;
+      }
     }
     
     // Show user's answer if completed
@@ -252,7 +312,7 @@ window.QuizRenderer = {
         <div class="quiz-question">
           ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
           ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
-          ${keywordsHint}
+          ${validationHint}
         </div>
         
         ${userAnswerDisplay}

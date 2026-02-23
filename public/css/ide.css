@@ -174,3 +174,135 @@
   margin: 0;
   color: var(--text-secondary);
 }
+/* Test Requirements Table (Auto-generated descriptions) */
+.test-requirements-section {
+  margin: 12px 0;
+}
+
+.test-requirements-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.test-requirements-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #d1d5db;
+  font-size: 12px;
+  background: #f9fafb;
+}
+
+.test-requirements-table thead {
+  background: #eff6ff;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.test-requirements-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #1e40af;
+  border-right: 1px solid #d1d5db;
+}
+
+.test-requirements-table th:last-child {
+  border-right: none;
+}
+
+.test-requirements-table tbody tr {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.test-requirements-table tbody tr:hover {
+  background: #f3f4f6;
+}
+
+.test-requirements-table td {
+  padding: 8px 10px;
+  border-right: 1px solid #d1d5db;
+  color: var(--text-main);
+}
+
+.test-requirements-table td:last-child {
+  border-right: none;
+}
+
+.test-requirements-table td:first-child {
+  font-weight: 500;
+  color: #374151;
+  background: #f3f4f6;
+  width: 35%;
+}
+
+/* TinyMCE WYSIWYG Editor Styling */
+.tinymce-editor {
+  display: block;
+  width: 100%;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* TinyMCE Toolbar Styling */
+.tox-tinymce {
+  border: 1px solid #d1d5db !important;
+  border-radius: 4px !important;
+  background: white !important;
+}
+
+.tox-toolbar {
+  background: #f9fafb !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.tox-edit-area {
+  background: white !important;
+}
+
+.tox-statusbar {
+  background: #f9fafb !important;
+  border-top: 1px solid #e5e7eb !important;
+}
+
+/* TinyMCE content styling */
+.tox .tox-toolbar__primary {
+  background: #f9fafb !important;
+}
+
+.tox .tox-toolbar-label {
+  color: #6b7280 !important;
+  font-weight: 500;
+}
+
+/* Body styles for TinyMCE content */
+.tinymce-body {
+  font-family: inherit;
+  line-height: 1.5;
+  color: var(--text-main);
+}
+
+.tinymce-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.tinymce-body table tr {
+  border: 1px solid #d1d5db;
+}
+
+.tinymce-body table td,
+.tinymce-body table th {
+  padding: 8px;
+  border: 1px solid #d1d5db;
+}
+
+.tinymce-body table th {
+  background: #eff6ff;
+  font-weight: 600;
+  color: #1e40af;
+}

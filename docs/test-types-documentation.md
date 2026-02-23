@@ -1,4 +1,38 @@
-# Test-Typen und Validierungs-Flow (Komplette Dokumentation)
+# ⚠️ DEPRECATED - Bitte verwende test-types-documentation-v2.md
+
+Diese Dokumentation ist **VERALTET** und wird nicht mehr gepflegt.
+
+## 🔄 Migration zur neuen Dokumentation
+
+**Neue offizielle Dokumentation:** [test-types-documentation-v2.md](test-types-documentation-v2.md)
+
+Die v2-Dokumentation enthält:
+- ✅ Vereinheitlichte Struktur für alle Test-Typen
+- ✅ Korrekte OUTPUT-Test Dokumentation mit `expected_type` und `validation_mode`
+- ✅ Vollständige Intelligent-Test Dokumentation (FUNCTION + VARS Modes)
+- ✅ Regex-Pattern Support mit Examples
+- ✅ Best Practices und häufige Fehler
+- ✅ Legacy-Element Audit mit Entfernungs-Strategie
+
+## Was hat sich geändert?
+
+### Hauptänderungen:
+1. **OUTPUT Tests:** Neue `expected_type` Optionen (text, regex, solution)
+2. **Validation:** Unified `validation_mode` Konzept (strict, loose, contains)
+3. **Intelligent Tests:** Klare MODE-Unterscheidung (function vs vars)
+4. **Init-Block:** Mechanismus für VARS-Mode detailliert dokumentiert
+5. **Auto-Description:** Einheitliche Tabellen-Generierung
+
+## Alte Konzepte (DEPRECATED):
+- ❌ `solution_compare: true` → Verwende `expected_type: "solution"`
+- ❌ `validation_mode: 'pattern'` → Verwende `expected_type: "regex"`
+- ❌ Uneinheitliche `input` Felder → Unified zu `inputs`/`outputs`
+
+---
+
+**→ [ZUR NEUEN DOKUMENTATION (test-types-documentation-v2.md)](test-types-documentation-v2.md)**
+
+
 
 ## ⚠️ WICHTIG: task_text Feld
 
