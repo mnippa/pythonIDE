@@ -2477,6 +2477,9 @@ output_buffer.getvalue()
       // Get validation_mode from testCase (default: 'loose')
       const validationMode = testCase.validation_mode || 'loose';
       
+      // Get case_sensitive from testCase (default: false = case-insensitive)
+      const caseSensitive = testCase.case_sensitive !== undefined ? testCase.case_sensitive : false;
+      
       // Determine expected_type (with backward compatibility)
       let expectedType = testCase.expected_type || 'text';
       if (testCase.solution_compare === true) {
@@ -2503,7 +2506,9 @@ output_buffer.getvalue()
         case 'regex':
           // Match against regex pattern
           try {
-            const regex = new RegExp(testCase.expected, 'i'); // case-insensitive
+            // Apply case_sensitive setting to regex flags
+            const regexFlags = caseSensitive ? '' : 'i';
+            const regex = new RegExp(testCase.expected, regexFlags);
             // Trim output to remove trailing newlines/whitespace
             const trimmedOutput = output.trim();
             passed = regex.test(trimmedOutput);

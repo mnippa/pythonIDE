@@ -352,6 +352,9 @@ window.QuizRenderer = {
     
     // Generate random variable values if not already stored
     let varValues = {};
+    let expectedVariableName = task.correct_answer; // Default fallback
+    let shouldSendComputedValue = true; // Whether to send computed_value to backend
+    
     if (task.task_type === 'code_random_complex' && task.variable_overrides) {
       throw new Error('code_random_complex erlaubt keine festen Wertepaare (variable_overrides)');
     }
@@ -367,7 +370,23 @@ window.QuizRenderer = {
           const idx = Math.max(0, currentIteration - 1) % overrides.length;
           const selectedSet = overrides[idx];
           if (selectedSet && typeof selectedSet === 'object') {
-            varValues = selectedSet;
+            // NEW SCHEMA: {inputs: {...}, expected: {...}}
+            if (selectedSet.inputs && typeof selectedSet.inputs === 'object') {
+              varValues = selectedSet.inputs;
+              // Extract expected configuration
+              if (selectedSet.expected && typeof selectedSet.expected === 'object') {
+                if (selectedSet.expected.variable) {
+                  expectedVariableName = selectedSet.expected.variable;
+                  shouldSendComputedValue = true; // Variable mode: send computed value
+                } else if (selectedSet.expected.hasOwnProperty('value')) {
+                  // If value is set directly, no need to compute
+                  shouldSendComputedValue = false;
+                }
+              }
+            } else {
+              // LEGACY SCHEMA: inputs directly in object
+              varValues = selectedSet;
+            }
           }
         }
         // Legacy object with arrays: pick deterministic value per iteration
@@ -395,6 +414,8 @@ window.QuizRenderer = {
       }
       window.assignmentState.taskUserAnswers[task.id].variable_values = varValues;
       window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+      window.assignmentState.taskUserAnswers[task.id].expectedVariableName = expectedVariableName;
+      window.assignmentState.taskUserAnswers[task.id].shouldSendComputedValue = shouldSendComputedValue;
     }
     
     const showCode =
@@ -648,16 +669,22 @@ window.QuizRenderer = {
       }
 
       let computedValue = null;
-      try {
-        computedValue = await this.evaluateCodeReading(
-          pyodide,
-          codeToEvaluate,
-          task.correct_answer,
-          varValues
-        );
-      } catch (err) {
-        feedbackEl.innerHTML = `<div class="error">Code-Auswertung fehlgeschlagen: ${this.escapeHtml(String(err))}</div>`;
-        return;
+      
+      // Only compute value if this iteration expects a variable-based expected value
+      const shouldSendComputedValue = window.assignmentState?.taskUserAnswers?.[taskId]?.shouldSendComputedValue !== false;
+      if (shouldSendComputedValue) {
+        try {
+          const expectedVarName = window.assignmentState?.taskUserAnswers?.[taskId]?.expectedVariableName || task.correct_answer;
+          computedValue = await this.evaluateCodeReading(
+            pyodide,
+            codeToEvaluate,
+            expectedVarName,
+            varValues
+          );
+        } catch (err) {
+          feedbackEl.innerHTML = `<div class="error">Code-Auswertung fehlgeschlagen: ${this.escapeHtml(String(err))}</div>`;
+          return;
+        }
       }
 
       answer = {

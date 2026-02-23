@@ -755,8 +755,8 @@ if ($displayName === '') {
               <option value="single_choice">Single-Choice</option>
               <option value="multiple_choice">Multiple-Choice</option>
               <option value="free_text">Freitext</option>
-              <option value="code_reading">Code-Lesequest</option>
-              <option value="code_random_complex">Code (versteckt)</option>
+              <option value="code_reading">Code Reading</option>
+              <option value="code_random_complex">Random Complex</option>
             </select>
           </div>
           
@@ -770,11 +770,11 @@ if ($displayName === '') {
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
             </div>
-            <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_random_complex: Optional - wenn gesetzt, wird als Hilfe angezeigt"></textarea>
+            <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür Random Complex: Optional - wenn gesetzt, wird als Hilfe angezeigt"></textarea>
             <div class="hint">
               <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-              <strong>Für code_random_complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+              <strong>Für Code Reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+              <strong>Für Random Complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
             </div>
           </div>
           
@@ -991,8 +991,8 @@ if ($displayName === '') {
               <option value="single_choice">Single-Choice</option>
               <option value="multiple_choice">Multiple-Choice</option>
               <option value="free_text">Freitext</option>
-              <option value="code_reading">Code-Lesequest</option>
-              <option value="code_random_complex">Code (versteckt)</option>
+              <option value="code_reading">Code Reading</option>
+              <option value="code_random_complex">Random Complex</option>
             </select>
           </div>
           
@@ -1003,11 +1003,11 @@ if ($displayName === '') {
               <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
               <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
             </div>
-            <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt"></textarea>
+            <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt"></textarea>
             <div class="hint">
               <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-              <strong>Für code_random_complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+              <strong>Für Code Reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
+              <strong>Für Random Complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
             </div>
           </div>
           

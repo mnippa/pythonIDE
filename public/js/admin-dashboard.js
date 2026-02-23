@@ -714,13 +714,33 @@ function buildOverridesArray(prefix) {
   const builderState = overridesBuilders[prefix];
   if (!builderState) return [];
   return builderState.iterations.map(iter => {
-    const obj = {};
+    // New schema: each iteration has inputs (dict) + expected (variable or value)
+    const inputs = {};
     iter.vars.forEach(v => {
       const key = String(v.key ?? '').trim();
       if (!key) return;
-      obj[key] = parseOverrideValue(v.value);
+      inputs[key] = parseOverrideValue(v.value);
     });
-    return obj;
+
+    // Build expected object based on expectedType
+    const expected = {};
+    const expectedType = iter.expectedType ?? 'variable'; // default to variable mode
+    if (expectedType === 'variable') {
+      const varName = (iter.expectedVariableName ?? '').trim();
+      if (varName) {
+        expected.variable = varName;
+      }
+    } else if (expectedType === 'value') {
+      const rawValue = (iter.expectedValue ?? '').trim();
+      if (rawValue) {
+        expected.value = parseOverrideValue(rawValue);
+      }
+    }
+
+    return {
+      inputs: inputs,
+      expected: Object.keys(expected).length > 0 ? expected : {}
+    };
   });
 }
 
@@ -763,14 +783,47 @@ function setOverridesFromJson(prefix, rawJson) {
   const normalized = Array.isArray(parsed) ? parsed : [parsed];
   overridesBuilders[prefix].iterations = normalized.map(item => {
     const vars = [];
+    let expectedType = 'variable';
+    let expectedVariableName = '';
+    let expectedValue = '';
+
     if (item && typeof item === 'object') {
-      Object.keys(item).forEach(key => {
-        const rawValue = item[key];
-        const displayValue = (rawValue && typeof rawValue === 'object') ? JSON.stringify(rawValue) : rawValue;
-        vars.push({ key, value: displayValue });
-      });
+      // NEW SCHEMA: {inputs: {...}, expected: {variable: "x"} OR {value: 42}}
+      if (item.inputs && typeof item.inputs === 'object') {
+        Object.keys(item.inputs).forEach(key => {
+          const rawValue = item.inputs[key];
+          const displayValue = (rawValue && typeof rawValue === 'object') ? JSON.stringify(rawValue) : rawValue;
+          vars.push({ key, value: displayValue });
+        });
+
+        // Parse expected field
+        if (item.expected && typeof item.expected === 'object') {
+          if (item.expected.variable) {
+            expectedType = 'variable';
+            expectedVariableName = item.expected.variable;
+          } else if (item.expected.hasOwnProperty('value')) {
+            expectedType = 'value';
+            const rawValue = item.expected.value;
+            expectedValue = (rawValue && typeof rawValue === 'object') ? JSON.stringify(rawValue) : String(rawValue);
+          }
+        }
+      } else {
+        // LEGACY SCHEMA: {A: true, B: false, ...} - convert to new schema
+        Object.keys(item).forEach(key => {
+          const rawValue = item[key];
+          const displayValue = (rawValue && typeof rawValue === 'object') ? JSON.stringify(rawValue) : rawValue;
+          vars.push({ key, value: displayValue });
+        });
+        expectedType = 'variable'; // Default to auto-variable mode
+      }
     }
-    return { vars: vars.length ? vars : [{ key: '', value: '' }] };
+
+    return {
+      vars: vars.length ? vars : [{ key: '', value: '' }],
+      expectedType: expectedType,
+      expectedVariableName: expectedVariableName,
+      expectedValue: expectedValue
+    };
   });
 
   renderOverridesBuilder(prefix);
@@ -784,6 +837,7 @@ function renderOverridesBuilder(prefix) {
   if (!builder || !builderState) return;
 
   builder.innerHTML = builderState.iterations.map((iter, iterIdx) => {
+    // Input variables section
     const rows = iter.vars.map((v, varIdx) => `
       <div class="override-row">
         <input type="text" placeholder="Variable" data-iter-idx="${iterIdx}" data-var-idx="${varIdx}" data-override-field="key" value="${escapeHtml(v.key)}" />
@@ -792,17 +846,53 @@ function renderOverridesBuilder(prefix) {
       </div>
     `).join('');
 
+    // Expected field - can be variable name OR literal value
+    const expectedType = iter.expectedType ?? 'variable';
+    const expectedVariableName = iter.expectedVariableName ?? '';
+    const expectedValue = iter.expectedValue ?? '';
+
     return `
       <div class="override-iteration" data-iter="${iterIdx}">
         <div class="override-iteration-header">
           <span>Iteration ${iterIdx + 1}</span>
           <button type="button" class="hspf-btn" data-action="remove-iteration" data-iter-idx="${iterIdx}">Entfernen</button>
         </div>
+        
+        <div style="margin-bottom: 10px;">
+          <strong>Input-Variablen:</strong>
+        </div>
         <div class="override-variables">
           ${rows}
         </div>
-        <div style="margin-top:6px;">
+        <div style="margin-top:6px; margin-bottom: 12px;">
           <button type="button" class="hspf-btn" data-action="add-var" data-iter-idx="${iterIdx}">+ Variable</button>
+        </div>
+        
+        <div style="border-top: 1px solid #ccc; padding-top: 10px;">
+          <div style="margin-bottom: 8px;">
+            <strong>Erwartetes Ergebnis:</strong>
+          </div>
+          
+          <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: stretch;">
+            <select data-iter-idx="${iterIdx}" data-override-field="expectedType" style="padding: 6px; border: 1px solid #ccc; border-radius: 3px; width: 160px; flex-shrink: 0;">
+              <option value="variable" ${expectedType === 'variable' ? 'selected' : ''}>Variablenwert</option>
+              <option value="value" ${expectedType === 'value' ? 'selected' : ''}>Direkter Wert</option>
+            </select>
+            
+            <input type="text" 
+                   placeholder="${expectedType === 'variable' ? 'z.B. summe, result, x' : 'z.B. 42, false, &quot;text&quot;'}" 
+                   data-iter-idx="${iterIdx}" 
+                   data-override-field="expectedInput"
+                   data-expected-type="${expectedType}"
+                   value="${escapeHtml(expectedType === 'variable' ? expectedVariableName : expectedValue)}" 
+                   style="flex: 1; min-width: 0; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;" />
+          </div>
+          
+          <div style="font-size: 0.9em; color: #666; margin-top: 6px;">
+            ${expectedType === 'variable' 
+              ? '<em>💡 Script wird ausgeführt, Wert dieser Variable am Ende wird als Ergebnis verwendet</em>'
+              : '<em>💡 Dieser Wert wird direkt als Ergebnis verwendet (kein Script-Aufruf nötig)</em>'}
+          </div>
         </div>
       </div>
     `;
@@ -825,12 +915,9 @@ function updateMaxIterationsFromBuilder(prefix) {
   if (!maxIterInput) return;
 
   const iterationsCount = overridesBuilders[prefix]?.iterations?.length || 0;
-  if (taskType === 'code_reading') {
-    maxIterInput.value = Math.max(1, iterationsCount || 1);
-    maxIterInput.readOnly = true;
-  } else {
-    maxIterInput.readOnly = false;
-  }
+  // Always allow manual editing - don't set readOnly
+  // Users can manually enter iterations count even for CODE_READING
+  maxIterInput.value = Math.max(1, iterationsCount || 1);
 }
 
 function initOverridesBuilder(prefix) {
@@ -846,7 +933,12 @@ function initOverridesBuilder(prefix) {
   overridesBuilders[prefix] = { iterations: [] };
 
   addIterationBtn.addEventListener('click', () => {
-    overridesBuilders[prefix].iterations.push({ vars: [{ key: '', value: '' }] });
+    overridesBuilders[prefix].iterations.push({ 
+      vars: [{ key: '', value: '' }], 
+      expectedType: 'variable',
+      expectedVariableName: '',
+      expectedValue: ''
+    });
     renderOverridesBuilder(prefix);
     syncOverridesJson(prefix);
     updateMaxIterationsFromBuilder(prefix);
@@ -873,6 +965,9 @@ function initOverridesBuilder(prefix) {
     const iterIdx = parseInt(target.dataset.iterIdx || '-1', 10);
     const varIdx = parseInt(target.dataset.varIdx || '-1', 10);
 
+    // Only handle button clicks with action attribute
+    if (!action) return;
+
     if (action === 'add-var' && iterIdx >= 0) {
       overridesBuilders[prefix].iterations[iterIdx].vars.push({ key: '', value: '' });
     }
@@ -896,14 +991,56 @@ function initOverridesBuilder(prefix) {
     if (!(target instanceof HTMLElement)) return;
     const field = target.dataset.overrideField;
     const iterIdx = parseInt(target.dataset.iterIdx || '-1', 10);
-    const varIdx = parseInt(target.dataset.varIdx || '-1', 10);
-    if (!field || iterIdx < 0 || varIdx < 0) return;
+    
+    if (!field || iterIdx < 0) return;
 
-    overridesBuilders[prefix].iterations[iterIdx].vars[varIdx][field] = target.value;
+    // Handle expected field with unified "expectedInput" field name
+    if (field === 'expectedInput') {
+      const expectedType = target.dataset.expectedType;
+      if (expectedType === 'variable') {
+        overridesBuilders[prefix].iterations[iterIdx].expectedVariableName = target.value;
+      } else if (expectedType === 'value') {
+        overridesBuilders[prefix].iterations[iterIdx].expectedValue = target.value;
+      }
+    } else if (field === 'key' || field === 'value') {
+      // Handle key/value fields for input variables
+      const varIdx = parseInt(target.dataset.varIdx || '-1', 10);
+      if (varIdx < 0) return;
+      overridesBuilders[prefix].iterations[iterIdx].vars[varIdx][field] = target.value;
+    }
+    
+    // Only sync JSON, don't re-render the builder inputs
     syncOverridesJson(prefix);
   });
 
-  overridesBuilders[prefix].iterations.push({ vars: [{ key: '', value: '' }] });
+  // Handle expectedType dropdown change
+  builder.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const field = target.dataset.overrideField;
+    const iterIdx = parseInt(target.dataset.iterIdx || '-1', 10);
+    
+    // Only handle dropdown changes, not input changes
+    if (field === 'expectedType' && iterIdx >= 0 && target.tagName === 'SELECT') {
+      const newType = target.value;
+      overridesBuilders[prefix].iterations[iterIdx].expectedType = newType;
+      // Clear the other field when switching mode
+      if (newType === 'variable') {
+        overridesBuilders[prefix].iterations[iterIdx].expectedValue = '';
+      } else {
+        overridesBuilders[prefix].iterations[iterIdx].expectedVariableName = '';
+      }
+      renderOverridesBuilder(prefix);
+      syncOverridesJson(prefix);
+    }
+  });
+
+  overridesBuilders[prefix].iterations.push({ 
+    vars: [{ key: '', value: '' }], 
+    expectedType: 'variable',
+    expectedVariableName: '',
+    expectedValue: ''
+  });
   renderOverridesBuilder(prefix);
   syncOverridesJson(prefix);
   updateMaxIterationsFromBuilder(prefix);
@@ -3075,12 +3212,12 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Set proper placeholders with line breaks
   const placeholders = {
-    'task-template': 'Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt',
+    'task-template': 'Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt',
     'task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
-    'task-solution': 'Beispiel code_random_complex:\nresult = int(values["binary"], 2)',
-    'edit-task-template': 'Für code: def hello():\n    pass\n\nFür code_reading: {binary} wird mit Wert aus variable_overrides ersetzt',
+    'task-solution': 'Beispiel Random Complex:\nresult = int(values["binary"], 2)',
+    'edit-task-template': 'Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt',
     'edit-task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
-    'edit-task-solution': 'Beispiel code_random_complex:\nresult = int(values["binary"], 2)'
+    'edit-task-solution': 'Beispiel Random Complex:\nresult = int(values["binary"], 2)'
   };
   
   Object.entries(placeholders).forEach(([id, text]) => {

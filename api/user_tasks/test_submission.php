@@ -45,6 +45,13 @@ function compareAnswers($userAnswer, $expected) {
     return strtolower($userAnswer) === strtolower($expected);
 }
 
+// Check if array is associative (has string keys) vs indexed
+function is_assoc_array($arr) {
+    if (!is_array($arr) || empty($arr)) return false;
+    $firstKey = array_key_first($arr);
+    return is_string($firstKey);
+}
+
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input) {
@@ -280,12 +287,54 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         exit;
     }
     
-    if ($computedValue === null) {
-        $isCorrect = false;
-        $message = 'Keine Auswertung verfuegbar';
+    $isCorrect = false;
+    $message = 'Keine Auswertung verfuegbar';
+    
+    // Get current iteration's override set - NEW SCHEMA: {inputs: {...}, expected: {variable: "x"} OR {value: 42}}
+    $overridesArray = [];
+    if (!empty($task['variable_overrides'])) {
+        $overridesArray = json_decode($task['variable_overrides'], true) ?? [];
+    }
+    
+    $currentOverrideIndex = $currentIteration - 1;
+    $currentOverride = isset($overridesArray[$currentOverrideIndex]) ? $overridesArray[$currentOverrideIndex] : null;
+    
+    if ($currentOverride && is_array($currentOverride)) {
+        // NEW SCHEMA: {inputs: {...}, expected: {...}}
+        if (isset($currentOverride['inputs']) && isset($currentOverride['expected'])) {
+            $expected = $currentOverride['expected'];
+            $expectedValue = null;
+            
+            // Determine expected value based on expected field
+            if (is_array($expected)) {
+                if (isset($expected['variable']) && !empty($expected['variable'])) {
+                    // MODE 1: Variable mode - Client executed solution_code and extracted variable value
+                    // Backend receives computed_value from client
+                    $expectedValue = $computedValue;
+                } elseif (isset($expected['value'])) {
+                    // MODE 2: Direct value mode - Use hardcoded value
+                    $expectedValue = $expected['value'];
+                }
+            }
+            
+            // Compare student answer with expected value
+            if ($expectedValue !== null) {
+                $isCorrect = compareAnswers($textAnswer, $expectedValue);
+                $message = $isCorrect ? 'Richtig' : 'Falsch';
+            } else {
+                $message = 'Ergebnis konnte nicht berechnet werden';
+            }
+        } else {
+            // LEGACY SCHEMA: just {inputs: {...}} without expected field
+            // In legacy, always use AUTO mode - client sends computed_value
+            if ($computedValue !== null) {
+                $isCorrect = compareAnswers($textAnswer, $computedValue);
+                $message = $isCorrect ? 'Richtig' : 'Falsch';
+            }
+        }
     } else {
-        $isCorrect = compareAnswers($textAnswer, $computedValue);
-        $message = $isCorrect ? 'Richtig' : 'Falsch';
+        // No matching override found
+        $message = 'Überrides nicht gefunden';
     }
 } elseif ($taskType === 'code_random_complex') {
     $textAnswer = trim($input['text_answer'] ?? '');

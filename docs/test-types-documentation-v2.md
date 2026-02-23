@@ -396,45 +396,112 @@ result = int(values["binary"], 2)
 ## 7. CODE_READING Task Type
 
 ### Zweck
-Student analysiert vorgegebenen Code mit Platzhaltern und berechnet/errät Ausgabe oder Werte.
+Student analysiert vorgegebenen Code mit Platzhaltern und berechnet/errät Ausgabe oder Variable-Werte.
 
-### Struktur
-```json
-// NO test_cases field!
-```
-
-**Code-Template (mit Platzhaltern):**
-```python
-A = {A}
-B = {B}
-result = A and B or not {C}
-```
-
-**Variable-Overrides (Feste Testfälle):**
+### Struktur: variable_overrides
 ```json
 [
-  {"A": true, "B": false, "C": true},
-  {"A": true, "B": true, "C": false},
-  {"A": false, "B": true, "C": true}
+  {
+    "inputs": {"a": 1, "b": 5},
+    "expected": {"variable": "summe"}
+  },
+  {
+    "inputs": {"a": 2, "b": 6},
+    "expected": {"value": 360}
+  }
 ]
 ```
 
+**Code-Template (mit Platzhaltern für inputs):**
+```python
+a = {a}
+b = {b}
+summe = 1
+for n in range(a, b):
+    summe = summe + n * summe
+```
+
+**⚠️ WICHTIG - solution_code Hinweis:**
+- Nutzt die **gleichen Platzhalter** `{a}`, `{b}` wie code_template
+- Diese werden mit den Werten aus `inputs` ersetzt
+- Wird ausgeführt um das erwartete Ergebnis zu berechnen (bei variable mode)
+- **Die Ergebnisvariable ist NICHT ein Platzhalter**, sondern der **Wert der Variablen am ENDE des Scripts**
+  - z.B. wenn CODE endet mit `summe = 120`, wird dieser Wert `120` ausgelesen (NICHT der Platzhalter)
+  - Das ist NICHT `{summe}` sondern die echte Variable namens `summe`
+
+**solution_code Beispiel:**
+```python
+a = {a}
+b = {b}
+summe = 1
+for n in range(a, b):
+    summe = summe + n * summe
+# => variable "summe" hat am Ende diesen Wert
+```
+
+#### expected Feld: Zwei Modi
+
+**Modus 1: `{"variable": "summe"}`**
+- Liest Variablenwert am ende des Scripts aus
+- Zu vergleichender Wert = Was "summe" am Ende ist
+- Admin definiert: Welche Variable sollte der Student ablesen?
+
+**Modus 2: `{"value": 360}`**
+- Direkter erwarteter Wert (hardcoded)
+- Zu vergleichender Wert = Dieser Literal-Wert
+- Admin definiert: Das Ergebnis muss genau diesen Wert sein
+
 #### Execution Flow (pro Iteration)
-1. Wähle einen Testwert-Set aus `variable_overrides`
-2. Ersetze Platzhalter: `{A}` → `True`, `{B}` → `False`, etc.
-3. Code anzeigen: `A = True; B = False; result = ...`
-4. Student gibt Ergebnis ein: z.B. "False"
-5. `solution_code` mit gleichen Werten ausführen
-6. Vergleich: `student_answer` == `computed_value`?
-7. Nächster Testwert-Set (Iterationen basierend auf Anzahl Testwerte)
+1. Wähle einen Testwert-Set aus `variable_overrides[i]`
+2. Extrahiere `inputs` dict: `{a: 1, b: 5}`
+3. Extrahiere `expected` dict: `{"variable": "summe"}`
+4. Code-Template Platzhalter ersetzen: `{a}` → 1, `{b}` → 5
+5. Code anzeigen (mit ersetzten Werten): Student sieht fertigen Code
+6. Student gibt Ergebnis ein
+7. **Expected-Wert bestimmen:**
+   - Wenn `expected.variable` gesetzt: solution_code ausführen, Variable auslesen
+   - Wenn `expected.value` gesetzt: Diesen Wert direkt nutzen
+8. **Vergleich:** `student_answer` == expected_value?
+9. Nächster Testwert-Set aus `variable_overrides`
 
 #### Required Felder
-- `variable_overrides` - Array von Testwert-Dicts
+- `variable_overrides` - Array mit `{inputs: {...}, expected: {...}}`
 - `code_template` - Template mit `{varname}` Platzhaltern
 - `max_iterations` - Auto-calculated: `len(variable_overrides)`
+- `solution_code` - Berechnet erwartetes Ergebnis (für variable mode)
 
 #### Optional
-- `solution_code` - Berechnet erwartetes Ergebnis aus Variablen
+- Keine
+
+#### 💡 Admin-Hinweis: Auto-Modus nutzen
+
+**Für bessere UX - verwende AUTO-Modus:**
+```json
+{
+  "inputs": {"a": 1, "b": 5},
+  "expected": {"variable": "summe"}  // ← AUTO: Berechnet aus solution_code
+}
+```
+
+**Statt MANUAL-Modus:**
+```json
+{
+  "inputs": {"a": 1, "b": 5},
+  "expected": {"value": 120}  // ← MANUAL: Hardcodierter Wert
+}
+```
+
+**Warum AUTO besser ist:**
+- ✅ Automatisch aus `solution_code` berechnet = keine manuellen Fehler
+- ✅ Wenn Code später geändert wird, stimmt Lösung automatisch
+- ✅ Einfacher zu administrieren
+
+**Code_Reading Anforderungen:**
+- 💡 **NUR feste Wert-Sets** (keine Zufallswerte!)
+- 💡 **Iteration = Set-Reihenfolge** (1. Set → Iteration 1, 2. Set → Iteration 2)
+- 💡 **Format:** `[{"var1": 1, "var2": "A"}, {...}]`
+- 💡 **Im Code Template:** `{varName}` verwenden. Beispiel: `binary = "{binary}"` oder `x = {x}`
+- 💡 `max_iterations` wird automatisch berechnet: Anzahl Sets in `variable_overrides`
 
 ---
 
