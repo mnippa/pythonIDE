@@ -301,18 +301,21 @@ function showTaskDetails(task, activeTab = 'details') {
     }
   }
 
+  // Determine attempts label before using it
+  const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
+  const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
+
   let descriptionHtml = '';
   // Show only title in sidebar, description is shown centrally
   if (task.title) {
+    const attemptsInfo = task.task_type !== 'code' ? ` <span class="task-attempts-info" style="margin-left:8px;font-size:0.9em;color:var(--text-secondary);">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : '';
     descriptionHtml = `<div class="task-description-box">
-      <h4 style="display:inline-flex;align-items:center;font-weight:normal;">AUFGABE: ${escapeHtml(task.title)} ${getStatusEmoji(status)}${testTypeHtml}</h4>
+      <h4 style="display:inline-flex;align-items:center;font-weight:normal;">AUFGABE: ${escapeHtml(task.title)} ${getStatusEmoji(status)}${testTypeHtml}${attemptsInfo}</h4>
     </div>`;
   }
 
   // Details Tab Content (Description + Stoff, Status moved to title area)
   let detailsHtml = '';
-  const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
-  const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
   
   // Show description for all task types (optional context/metadata)
   if (task.description) {
@@ -343,9 +346,10 @@ function showTaskDetails(task, activeTab = 'details') {
       hasSolution = !!task.correct_answer;
       console.log('[SOLUTION] Free text task - hasSolution:', hasSolution);
     } else if (task.task_type === 'code_reading') {
-      // Code reading has solution if code_template exists (will be computed)
-      hasSolution = !!(task.code_template && task.correct_answer);
-      console.log('[SOLUTION] Code reading task - hasSolution:', hasSolution);
+      // Code reading has solution if code_template and variable_overrides exist (will be computed from iterations)
+      // correct_answer may be NULL (using per-iteration expected values)
+      hasSolution = !!(task.code_template && task.variable_overrides);
+      console.log('[SOLUTION] Code reading task - hasSolution:', hasSolution, 'has code_template:', !!task.code_template, 'has variable_overrides:', !!task.variable_overrides);
     } else if (task.task_type === 'code_random_complex') {
       // Code random complex has solution if solution_code exists
       hasSolution = !!task.solution_code;
@@ -531,8 +535,11 @@ async function loadSolutionIntoMainArea(task) {
     // Compute solution by running code with current variables
     const quizContainer = document.getElementById('quiz-container');
     if (quizContainer) {
-      const varValues = window.assignmentState?.taskUserAnswers?.[task.id]?.variable_values || {};
-      const variableName = task.correct_answer || '?';
+      const taskState = window.assignmentState?.taskUserAnswers?.[task.id] || {};
+      const varValues = taskState.variable_values || {};
+      const variableName = taskState.expectedVariableName || task.correct_answer || '?';
+      const expectedType = taskState.expectedType || 'variable';
+      const expectedValue = taskState.expectedValue;
       
       // Show loading state
       quizContainer.innerHTML = `
@@ -555,7 +562,39 @@ async function loadSolutionIntoMainArea(task) {
         </div>
       `;
       
+      if (expectedType === 'value') {
+        const displayValue = expectedValue !== undefined ? expectedValue : '';
+        const hasCodeTemplate = task.code_template && task.code_template.trim() !== '';
+        quizContainer.innerHTML = `
+          <div class="quiz-container solution-mode">
+            <div class="quiz-question">
+              ${task.task_text ? `<div class="question-text">${window.QuizRenderer.formatText(task.task_text)}</div>` : ''}
+              ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+            </div>
+            <div class="code-reading-vars">
+              <strong>Variablenwerte:</strong>
+              <ul>
+                ${Object.entries(varValues).map(([name, value]) => 
+                  `<li><code>${escapeHtml(name)} = ${value}</code></li>`
+                ).join('')}
+              </ul>
+            </div>
+            ${hasCodeTemplate ? `<div class="code-reading-code">
+              <pre><code>${escapeHtml(task.code_template)}</code></pre>
+            </div>` : ''}
+            <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #10b981; border-radius:4px;">
+              <strong>✓ Erwartete Ausgabe:</strong>
+            </div>
+            <div class="quiz-question">
+              <input type="text" value="${escapeHtml(String(displayValue))}" disabled style="width:100%; padding:8px; font-family:monospace; background:var(--code-bg);" />
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       // Execute code to compute solution
+      const hasCodeTemplate = task.code_template && task.code_template.trim() !== '';
       computeCodeReadingSolution(task, varValues, variableName).then(result => {
         quizContainer.innerHTML = `
           <div class="quiz-container solution-mode">
@@ -571,9 +610,9 @@ async function loadSolutionIntoMainArea(task) {
                 ).join('')}
               </ul>
             </div>
-            <div class="code-reading-code">
-              <pre><code>${escapeHtml(task.code_template || '')}</code></pre>
-            </div>
+            ${hasCodeTemplate ? `<div class="code-reading-code">
+              <pre><code>${escapeHtml(task.code_template)}</code></pre>
+            </div>` : ''}
             <div class="solution-info" style="padding:12px; margin:12px 0; background:var(--bg-secondary, var(--panel)); border-left:3px solid #10b981; border-radius:4px;">
               <strong>✓ Erwartete Ausgabe:</strong>
             </div>
@@ -723,24 +762,25 @@ async function computeRandomComplexSolution(task, varValues) {
     // Execute solution code and capture output
     const namespace = window.pyodide.globals.get('dict')();
     
-    // CASE 1: If variable_overrides exist, we need to replace placeholders {varName} with actual values
-    // This is for tasks like #77 that use placeholder-based generation
-    if (task.variable_overrides) {
-      console.log('[SOLUTION] Task uses variable_overrides - replacing placeholders');
-      for (const [key, value] of Object.entries(varValues)) {
-        const placeholder = `{${key}}`;
-        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        solutionCode = solutionCode.replace(regex, String(value));
+    const toPythonLiteral = (value) => {
+      if (value === null || value === undefined) return 'None';
+      if (typeof value === 'string') return JSON.stringify(value);
+      if (typeof value === 'number') return String(value);
+      if (typeof value === 'boolean') return value ? 'True' : 'False';
+      try {
+        return JSON.stringify(value);
+      } catch (err) {
+        return JSON.stringify(String(value));
       }
-    } else {
-      // CASE 2: If NO variable_overrides, code_template creates a 'values' dict
-      // This is for tasks like #74 that use generator code
-      console.log('[SOLUTION] Task uses generator code - setting values dict');
-      const pyValues = window.pyodide.globals.get('dict')();
-      for (const [key, value] of Object.entries(varValues)) {
-        pyValues.set(key, value);
-      }
-      namespace.set('values', pyValues);
+    };
+
+    // NEW SCHEMA: code_random_complex und code_reading verwenden beide Placeholder
+    // Replace placeholders {varName} in solution_code with actual values
+    console.log('[SOLUTION] Replacing placeholders in solution_code');
+    for (const [key, value] of Object.entries(varValues)) {
+      const placeholder = `{${key}}`;
+      const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      solutionCode = solutionCode.replace(regex, toPythonLiteral(value));
     }
     
     // Redirect print output
@@ -756,15 +796,16 @@ async function computeRandomComplexSolution(task, varValues) {
     // Restore original print
     window.pyodide.globals.set('print', originalPrint);
     
-    // Try to get result variable first
+    // Try to get result variable first (using task's correct_answer field)
     let result;
-    if (namespace.has('result')) {
-      result = namespace.get('result');
+    const resultVarName = task.correct_answer || 'result';
+    if (namespace.has(resultVarName)) {
+      result = namespace.get(resultVarName);
     } else if (capturedOutput) {
       // Otherwise, use captured output from print statements
       result = capturedOutput.trim();
     } else {
-      throw new Error('Keine "result"-Variable oder print()-Ausgabe gefunden');
+      throw new Error(`Keine "${resultVarName}"-Variable oder print()-Ausgabe gefunden`);
     }
     
     return result;
@@ -824,26 +865,31 @@ async function generateRandomComplexValues(task) {
     }
   }
   
-  // CASE 2: Execute code_template to generate values
-  const code = (task.code_template || '').trim();
+  // CASE 2: Execute randomizer_code to generate values (NEW SCHEMA)
+  const code = (task.randomizer_code || '').trim();
   if (!code) {
-    throw new Error('Kein Generator-Code oder variable_overrides hinterlegt');
+    throw new Error('Kein randomizer_code hinterlegt');
   }
   
+  // NEW SCHEMA: randomizer_code creates variables directly (no 'values' dict)
+  // Example: binary = format(random.randint(0, 255), '08b')
   const python = `
-import json
-values = {}
-${code}
-json.dumps(values)
+__randomizer_namespace = {}
+exec("""${code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
+__randomizer_namespace
 `;
-  
-  const resultJson = await window.pyodide.runPythonAsync(python);
-  let values = {};
-  try {
-    values = JSON.parse(resultJson);
-  } catch (err) {
-    throw new Error('Generator muss ein JSON-dict liefern');
-  }
+  const resultObj = await window.pyodide.runPythonAsync(python);
+  const allVariables = resultObj.toJs();
+
+  // Extract all variables from namespace (except builtins)
+  const values = {};
+  Object.entries(allVariables).forEach(([rawKey, val]) => {
+    const key = String(rawKey ?? '');
+    if (!key || key.startsWith('__') || key === 'random') {
+      return;
+    }
+    values[key] = val;
+  });
   
   if (!values || typeof values !== 'object' || Array.isArray(values)) {
     throw new Error('Generator muss ein dict liefern');
@@ -903,7 +949,7 @@ function getStatusLabel(status) {
 
 function getStatusEmoji(status) {
   const emojis = {
-    'unbearbeitet': '🔴',
+    'unbearbeitet': '⚪',
     'in-progress': '🟡',
     'passed': '🟢',
     'failed': '🔴'
@@ -1025,36 +1071,38 @@ async function loadSingleAssignment(assignmentId) {
       });
     }
     
-    // Load user_tasks progress for this assignment
-    try {
-      const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}`);
-      const userTasks = userTasksRes.tasks || [];
-      
-      // Populate status and attempts from user_tasks
-      userTasks.forEach(ut => {
-        assignmentState.taskStatuses[ut.task_id] = ut.status;
-        assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-        if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-          assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-        }
-        // Store user answers
-        assignmentState.taskUserAnswers[ut.task_id] = {
-          selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-          text_answer: ut.text_answer || '',
-          variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-        };
-        if (ut.run_count !== undefined && ut.run_count !== null) {
-          assignmentState.taskRuns[ut.task_id] = ut.run_count;
-        }
-        if (ut.completed_at) {
-          assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-        }
-        if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-          assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-        }
-      });
-    } catch (err) {
-      console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
+    // Load user_tasks progress for this assignment (skip in test mode)
+    if (!window.testMode) {
+      try {
+        const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}`);
+        const userTasks = userTasksRes.tasks || [];
+        
+        // Populate status and attempts from user_tasks
+        userTasks.forEach(ut => {
+          assignmentState.taskStatuses[ut.task_id] = ut.status;
+          assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+          if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+            assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+          }
+          // Store user answers
+          assignmentState.taskUserAnswers[ut.task_id] = {
+            selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+            text_answer: ut.text_answer || '',
+            variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+          };
+          if (ut.run_count !== undefined && ut.run_count !== null) {
+            assignmentState.taskRuns[ut.task_id] = ut.run_count;
+          }
+          if (ut.completed_at) {
+            assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+          }
+          if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+            assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+          }
+        });
+      } catch (err) {
+        console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
+      }
     }
     
     return true;
@@ -1085,36 +1133,38 @@ async function loadAssignments() {
         assignmentState.assignmentDetails[item.assignment_id] = assignmentRes.assignment;
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
-        // Load user_tasks progress for this assignment
-        try {
-          const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}`);
-          const userTasks = userTasksRes.tasks || [];
-          
-          // Populate status and attempts from user_tasks
-          userTasks.forEach(ut => {
-            assignmentState.taskStatuses[ut.task_id] = ut.status;
-            assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-            if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-              assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-            }
-            // Store user answers
-            assignmentState.taskUserAnswers[ut.task_id] = {
-              selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-              text_answer: ut.text_answer || '',
-              variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-            };
-            if (ut.run_count !== undefined && ut.run_count !== null) {
-              assignmentState.taskRuns[ut.task_id] = ut.run_count;
-            }
-            if (ut.completed_at) {
-              assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-            }
-            if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-              assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-            }
-          });
-        } catch (err) {
-          console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
+        // Load user_tasks progress for this assignment (skip in test mode)
+        if (!window.testMode) {
+          try {
+            const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}`);
+            const userTasks = userTasksRes.tasks || [];
+            
+            // Populate status and attempts from user_tasks
+            userTasks.forEach(ut => {
+              assignmentState.taskStatuses[ut.task_id] = ut.status;
+              assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+              if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+                assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+              }
+              // Store user answers
+              assignmentState.taskUserAnswers[ut.task_id] = {
+                selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+                text_answer: ut.text_answer || '',
+                variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+              };
+              if (ut.run_count !== undefined && ut.run_count !== null) {
+                assignmentState.taskRuns[ut.task_id] = ut.run_count;
+              }
+              if (ut.completed_at) {
+                assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+              }
+              if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+                assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+              }
+            });
+          } catch (err) {
+            console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
+          }
         }
       } catch (err) {
         console.error(`Failed to load tasks for assignment ${item.assignment_id}:`, err);
@@ -1405,7 +1455,31 @@ async function refreshCurrentTaskFromAPI() {
   return false;
 }
 
-function loadTaskIntoEditor(assignmentId, taskId) {
+// Helper function to wait for editor initialization
+function waitForEditor(maxAttempts = 20, interval = 100) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    
+    const checkEditor = () => {
+      if (window.editorInstance) {
+        resolve(window.editorInstance);
+        return;
+      }
+      
+      attempts++;
+      if (attempts >= maxAttempts) {
+        reject(new Error('Editor initialization timeout'));
+        return;
+      }
+      
+      setTimeout(checkEditor, interval);
+    };
+    
+    checkEditor();
+  });
+}
+
+async function loadTaskIntoEditor(assignmentId, taskId) {
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
@@ -1419,11 +1493,18 @@ function loadTaskIntoEditor(assignmentId, taskId) {
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && task.task_type !== 'code';
   
-  const editor = window.editorInstance;
-  if (!isQuizTask && !editor) {
-    alert('Editor not ready yet');
-    return;
+  // For code tasks, wait for editor to be ready
+  if (!isQuizTask) {
+    try {
+      await waitForEditor();
+    } catch (err) {
+      alert('Editor konnte nicht initialisiert werden. Bitte Seite neu laden.');
+      console.error('Editor initialization failed:', err);
+      return;
+    }
   }
+  
+  const editor = window.editorInstance;
 
   // Stop activity tracking for previous task
   if (assignmentState.currentTaskId) {
@@ -2531,7 +2612,12 @@ output_buffer.getvalue()
         case 'text':
         default:
           // Use pattern matching (default behavior)
-          passed = compareTestOutput(output, testCase.expected, validationMode);
+          passed = compareTestOutput(
+            output,
+            testCase.expected,
+            validationMode,
+            testCase.case_sensitive !== undefined ? testCase.case_sensitive : false
+          );
           break;
       }
       
@@ -3125,7 +3211,12 @@ json.dumps(results)
       const testCase = casesToRun[idx];
       // Get validation_mode from testCase (default: 'loose')
       const validationMode = testCase.validation_mode || testSpec.validation_mode || 'loose';
-      const passed = testResult.error ? false : compareTestOutput(testResult.output, testCase.expected, validationMode);
+      const passed = testResult.error ? false : compareTestOutput(
+        testResult.output,
+        testCase.expected,
+        validationMode,
+        testCase.case_sensitive !== undefined ? testCase.case_sensitive : false
+      );
       
       results.push({
         passed,
@@ -3741,7 +3832,7 @@ function runCodeCheck(code, testCases) {
  * Supports both single expected values and arrays (OR logic)
  * Supports wildcard patterns: * (any chars) and ? (single char)
  */
-function compareTestOutput(actual, expected, mode = 'loose') {
+function compareTestOutput(actual, expected, mode = 'loose', caseSensitive = false) {
   // Convert to string, handling 0 and false properly (not like || which treats 0 as falsy)
   let actualCleaned = String(actual !== null && actual !== undefined ? actual : '').trim();
   let expectedCleaned;
@@ -3775,6 +3866,12 @@ function compareTestOutput(actual, expected, mode = 'loose') {
     return expected.some(exp => {
       expectedCleaned = String(exp !== null && exp !== undefined ? exp : '').trim();
       
+      if (mode === 'contains') {
+        const actualCmp = caseSensitive ? actualCleaned : actualCleaned.toLowerCase();
+        const expectedCmp = caseSensitive ? expectedCleaned : expectedCleaned.toLowerCase();
+        return actualCmp.includes(expectedCmp);
+      }
+      
       // Check if both values are numeric (handles 19.0 vs 19 case)
       if (isNumericString(actualCleaned) && isNumericString(expectedCleaned)) {
         const actualNum = Number(actualCleaned);
@@ -3805,6 +3902,12 @@ function compareTestOutput(actual, expected, mode = 'loose') {
   
   // Single expected value
   expectedCleaned = String(expected !== null && expected !== undefined ? expected : '').trim();
+  
+  if (mode === 'contains') {
+    const actualCmp = caseSensitive ? actualCleaned : actualCleaned.toLowerCase();
+    const expectedCmp = caseSensitive ? expectedCleaned : expectedCleaned.toLowerCase();
+    return actualCmp.includes(expectedCmp);
+  }
   
   // Check if both values are numeric (handles 19.0 vs 19 case)
   if (isNumericString(actualCleaned) && isNumericString(expectedCleaned)) {

@@ -117,18 +117,30 @@ $hasVariableOverrides = $variableOverridesTrimmed !== null
     && $variableOverridesTrimmed !== '[]'
     && $variableOverridesTrimmed !== '{}';
 
-if ($taskType === 'code_random_complex' && $hasVariableOverrides) {
-    jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex'], 400);
-}
-
 if ($taskType === 'code_reading' && !$hasVariableOverrides) {
     jsonResponse(['ok' => false, 'error' => 'variable_overrides required for code_reading'], 400);
 }
 
+// For code_random_complex: variable_overrides is allowed IF it contains <random> markers (iteration handling)
+// Otherwise it should be null
+if ($taskType === 'code_random_complex' && $hasVariableOverrides) {
+    // Check if it contains <random> marker - if yes, it's for iterations and is allowed
+    $overridesStr = is_string($variableOverridesTrimmed) ? $variableOverridesTrimmed : json_encode($variableOverridesTrimmed);
+    if (strpos($overridesStr, '<random>') === false) {
+        // No <random> marker - this is legacy or incorrect usage
+        jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex (use randomizer_code instead)'], 400);
+    }
+}
+
 if ($taskType === 'code_random_complex') {
     $templateValue = is_string($codeTemplate) ? $codeTemplate : '';
-    if (!preg_match('/\bvalues\b/', $templateValue)) {
-        jsonResponse(['ok' => false, 'error' => 'code_template must set values dict for code_random_complex'], 400);
+    // code_template can either use old "values" dict or new Placeholder {varname} syntax
+    // At least one must be present
+    $hasValuesDict = preg_match('/\bvalues\b/', $templateValue);
+    $hasPlaceholders = preg_match('/\{[a-zA-Z_][a-zA-Z0-9_]*\}/', $templateValue);
+    
+    if (!$hasValuesDict && !$hasPlaceholders) {
+        jsonResponse(['ok' => false, 'error' => 'code_template must use either values dict or {placeholder} syntax for code_random_complex'], 400);
     }
 }
 

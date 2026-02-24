@@ -719,7 +719,13 @@ function buildOverridesArray(prefix) {
     iter.vars.forEach(v => {
       const key = String(v.key ?? '').trim();
       if (!key) return;
-      inputs[key] = parseOverrideValue(v.value);
+      const rawValue = String(v.value ?? '').trim();
+      // Keep <random> markers as literal strings for CODE_RANDOM_COMPLEX
+      if (rawValue === '<random>') {
+        inputs[key] = '<random>';
+      } else {
+        inputs[key] = parseOverrideValue(rawValue);
+      }
     });
 
     // Build expected object based on expectedType
@@ -3213,11 +3219,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set proper placeholders with line breaks
   const placeholders = {
     'task-template': 'Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt',
-    'task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
-    'task-solution': 'Beispiel Random Complex:\nresult = int(values["binary"], 2)',
+    'task-randomizer-code': 'import random\nbinary = format(random.randint(0, 255), \'08b\')\ncelsius = random.randint(-50, 50)',
+    'task-solution': 'Beispiel Random Complex:\nresult = int({binary}, 2)',
     'edit-task-template': 'Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt',
-    'edit-task-randomizer-code': 'import random\n\nvalues = {\n    "num": random.randint(0, 255),\n    "binary": format(random.randint(0, 255), \'08b\')\n}',
-    'edit-task-solution': 'Beispiel Random Complex:\nresult = int(values["binary"], 2)'
+    'edit-task-randomizer-code': 'import random\nbinary = format(random.randint(0, 255), \'08b\')\ncelsius = random.randint(-50, 50)',
+    'edit-task-solution': 'Beispiel Random Complex:\nresult = int({binary}, 2)'
   };
   
   Object.entries(placeholders).forEach(([id, text]) => {
@@ -3422,12 +3428,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return null;
     }
 
-    // Generate Python code
-    let code = 'import random\n\nvalues = {\n';
+    // Generate Python code (NEW SCHEMA: Direct variables, no 'values' dict)
+    let code = 'import random\n';
     variables.forEach((varName) => {
-      code += `    "${varName}": random.randint(1, 50),\n`;
+      code += `${varName} = random.randint(1, 50)\n`;
     });
-    code += '}';
 
     return code;
   }

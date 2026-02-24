@@ -8,8 +8,8 @@
 /* Placeholder text styling */
 input::placeholder,
 textarea::placeholder {
-  color: #a3a3a3 !important;
-  opacity: 0.8;
+    color: #a3a3a3 !important;
+    opacity: 0.8;
 }
 
 /* Bounce-Animation für Unterwellen */

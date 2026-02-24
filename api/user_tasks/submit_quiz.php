@@ -355,10 +355,65 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         exit;
     }
 
-    if ($computedValue === null) {
-        $isCorrect = false;
-        $message = 'Keine Auswertung verfuegbar';
-    } else {
+    // CODE_RANDOM_COMPLEX uses unified variable_overrides structure (same as CODE_READING)
+    // with <random> markers in inputs dict
+    // Get task randomizer code and variable_overrides
+    $stmt = $conn->prepare('SELECT variable_overrides, randomizer_code FROM tasks WHERE id = ?');
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $taskData = $stmt->get_result()->fetch_assoc();
+
+    $isCorrect = false;
+    $message = 'Keine Auswertung verfügbar';
+
+    $overridesArray = [];
+    if (!empty($taskData['variable_overrides'])) {
+        $overridesArray = json_decode($taskData['variable_overrides'], true) ?? [];
+    }
+
+    // For CODE_RANDOM_COMPLEX, there should be exactly 1 entry with <random> markers
+    if (count($overridesArray) > 0) {
+        $override = $overridesArray[0]; // First (and usually only) entry
+        
+        if (isset($override['inputs']) && isset($override['expected'])) {
+            $expectedField = $override['expected'];
+            $expectedValue = null;
+
+            // Check if inputs have <random> markers
+            $hasRandomInputs = false;
+            if (is_array($override['inputs'])) {
+                foreach ($override['inputs'] as $val) {
+                    if ($val === '<random>' || $val === '<random>') {
+                        $hasRandomInputs = true;
+                        break;
+                    }
+                }
+            }
+
+            // If random markers detected, randomizer_code must be executed
+            if ($hasRandomInputs && !empty($taskData['randomizer_code'])) {
+                // Execute randomizer_code in Python to generate actual input values
+                // Client sends computed_value from running solution_code with these generated values
+                $expectedValue = $computedValue;
+            } else {
+                // Fallback: no random markers or no randomizer code
+                // Use computed_value if variable mode, or hardcoded value if manual mode
+                if (isset($expectedField['variable']) && !empty($expectedField['variable'])) {
+                    $expectedValue = $computedValue;
+                } elseif (isset($expectedField['value'])) {
+                    $expectedValue = $expectedField['value'];
+                }
+            }
+
+            if ($expectedValue !== null) {
+                $isCorrect = compareAnswers($textAnswer, $expectedValue);
+                $message = $isCorrect ? 'Richtig' : 'Falsch';
+            }
+        }
+    }
+
+    // Fallback if not structured properly
+    if ($computedValue !== null && !$isCorrect && !$message) {
         $isCorrect = compareAnswers($textAnswer, $computedValue);
         $message = $isCorrect ? 'Richtig' : 'Falsch';
     }

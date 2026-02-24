@@ -1008,7 +1008,7 @@ HTML;
   <script src="js/code-validator.js"></script>
   
   <!-- Quiz Renderer -->
-  <script src="js/quiz-renderer.js"></script>
+  <script src="js/quiz-renderer.js?v=20250224"></script>
 
   <script type="module" src="js/editor-setup.js"></script>
 
@@ -1053,7 +1053,7 @@ HTML;
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/assignments.js"></script>
+  <script type="module" src="js/assignments.js?v=20250224"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

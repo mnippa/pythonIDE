@@ -869,6 +869,6 @@ if ($displayName === '') {
     });
   </script>
   <script type="module" src="js/projects.js"></script>
-  <script type="module" src="js/assignments.js"></script>
+  <script type="module" src="js/assignments.js?v=20250224"></script>
 </body>
 </html>

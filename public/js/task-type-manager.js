@@ -23,11 +23,11 @@
     },
     code_reading: {
       label: 'Code-Lesequest',
-      fields: ['code_template', 'variable_overrides', 'correct_answer', 'hints', 'max_iterations', 'show-solution-code']
+      fields: ['code_template', 'variable_overrides', 'hints', 'max_iterations', 'show-solution-code']
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['code_template', 'randomizer_code', 'solution', 'correct_answer', 'hints', 'show-solution-code']
+      fields: ['code_template', 'randomizer_code', 'variable_overrides', 'solution', 'hints', 'show-solution-code']
     }
   };
 
@@ -107,6 +107,11 @@
       // Show code toggle for code_random_complex and code_reading
       if (taskType === 'code_random_complex' || taskType === 'code_reading') {
         this.showField(form, 'show-solution-code');
+      }
+
+      // Code Reading and Random Complex use per-iteration expected values; hide the global correct-answer field
+      if (taskType === 'code_reading' || taskType === 'code_random_complex') {
+        this.hideField(form, 'correct-answer');
       }
     },
 

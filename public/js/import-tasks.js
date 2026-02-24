@@ -8,6 +8,78 @@ class TaskImporter {
     this.zipReady = typeof JSZip !== 'undefined';
   }
 
+  getProblemType(taskType) {
+    const map = {
+      code: 'code_completion',
+      code_reading: 'code_completion',
+      code_random_complex: 'code_completion',
+      single_choice: 'multiple_choice',
+      multiple_choice: 'multiple_choice',
+      free_text: 'essay'
+    };
+    return map[taskType] || 'code_completion';
+  }
+
+  validateTaskSchema(task) {
+    if (!task || typeof task !== 'object') {
+      throw new Error('Invalid task format');
+    }
+
+    if (!task.version) {
+      throw new Error('Missing version field (requires v3.0 export)');
+    }
+
+    const version = String(task.version).trim();
+    if (!version.startsWith('3.')) {
+      throw new Error(`Unsupported export version: ${version}`);
+    }
+
+    const allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+    if (!allowedTaskTypes.includes(task.task_type)) {
+      throw new Error(`Invalid task_type: ${task.task_type}`);
+    }
+
+    if (!task.title || String(task.title).trim() === '') {
+      throw new Error('Missing title');
+    }
+
+    if (['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'code_reading'].includes(task.task_type)) {
+      if (!task.task_text || String(task.task_text).trim() === '') {
+        throw new Error(`Missing task_text for ${task.task_type}`);
+      }
+    }
+
+    if (task.task_type === 'code_random_complex') {
+      if (!task.code_template || String(task.code_template).trim() === '') {
+        throw new Error('Missing code_template for code_random_complex');
+      }
+      if (!task.solution_code || String(task.solution_code).trim() === '') {
+        throw new Error('Missing solution_code for code_random_complex');
+      }
+      if (!task.randomizer_code || String(task.randomizer_code).trim() === '') {
+        throw new Error('Missing randomizer_code for code_random_complex');
+      }
+    }
+
+    if (task.task_type === 'code_reading') {
+      const overrides = task.variable_overrides;
+      const hasOverrides = overrides !== null && overrides !== '' && overrides !== '[]' && overrides !== '{}';
+      if (!hasOverrides) {
+        throw new Error('Missing variable_overrides for code_reading');
+      }
+    }
+
+    if (['single_choice', 'multiple_choice'].includes(task.task_type)) {
+      if (!Array.isArray(task.options) || task.options.length === 0) {
+        throw new Error(`Missing options for ${task.task_type}`);
+      }
+    }
+
+    if (task.test_cases && typeof task.test_cases !== 'string' && !Array.isArray(task.test_cases)) {
+      throw new Error('Invalid test_cases format');
+    }
+  }
+
   /**
    * Process imported tasks
    */
@@ -207,6 +279,7 @@ class TaskImporter {
       const task = tasks[i];
 
       try {
+        this.validateTaskSchema(task);
         // Process and upload images
         const taskWithImages = { ...task };
 
@@ -239,22 +312,47 @@ class TaskImporter {
         }
 
         // Create/update task via API
-        const normalizedTestCases = taskWithImages.test_cases && typeof taskWithImages.test_cases !== 'string'
+        // Handle legacy format: if test_cases is empty but variable_overrides exists,
+        // it might be old intelligent test format that needs to stay as variable_overrides
+        let normalizedTestCases = taskWithImages.test_cases && typeof taskWithImages.test_cases !== 'string'
           ? JSON.stringify(taskWithImages.test_cases)
           : taskWithImages.test_cases;
+
+        const variableOverridesValue = taskWithImages.variable_overrides;
+        const variableOverridesNormalized = (variableOverridesValue === null || variableOverridesValue === '' || variableOverridesValue === undefined)
+          ? null
+          : (typeof variableOverridesValue === 'string' ? variableOverridesValue : JSON.stringify(variableOverridesValue));
+
+        const taskType = taskWithImages.task_type;
+
+        // Ensure max_iterations is a proper number for code_random_complex and code_reading
+        // to prevent losing iteration counts during import and ensure consistency with originals
+        let maxIterationsForPayload = null;
+        if (typeof taskWithImages.max_iterations === 'number' && taskWithImages.max_iterations > 0) {
+          maxIterationsForPayload = taskWithImages.max_iterations;
+        } else if (taskType === 'code_random_complex') {
+          // Default to 3 for code_random_complex if not provided
+          maxIterationsForPayload = 3;
+        } else if (taskType === 'code_reading') {
+          // Default to 1 for code_reading if not provided
+          maxIterationsForPayload = 1;
+        }
 
         const taskPayload = {
           assignment_id: taskWithImages.assignment_id ? parseInt(taskWithImages.assignment_id, 10) : null,
           title: taskWithImages.title,
           description: taskWithImages.description || '',
           max_attempts: taskWithImages.max_attempts ? parseInt(taskWithImages.max_attempts, 10) : 1,
-          show_solution: taskWithImages.show_solution ? parseInt(taskWithImages.show_solution, 10) : 1,
+          max_iterations: maxIterationsForPayload,
+          show_solution: taskWithImages.show_solution !== undefined ? parseInt(taskWithImages.show_solution, 10) : 1,
+          show_solution_code: taskWithImages.show_solution_code !== undefined ? parseInt(taskWithImages.show_solution_code, 10) : 0,
           min_keywords_required: taskWithImages.min_keywords_required ? parseInt(taskWithImages.min_keywords_required, 10) : null,
-          task_type: taskWithImages.task_type || taskWithImages.problem_type || 'code',
-          problem_type: taskWithImages.problem_type || taskWithImages.task_type || 'code',
+          task_type: taskType,
+          problem_type: this.getProblemType(taskType),
+          task_text: taskWithImages.task_text || '',
           code_template: taskWithImages.code_template || '',
           solution_code: taskWithImages.solution_code || '',
-          validation_mode: taskWithImages.validation_mode || '',
+          randomizer_code: taskWithImages.randomizer_code || '',
           test_cases: normalizedTestCases || null,
           hint1: taskWithImages.hint1 || '',
           hint2: taskWithImages.hint2 || '',
@@ -262,11 +360,12 @@ class TaskImporter {
           stoff: taskWithImages.stoff || '',
           question_text: taskWithImages.question_text || '',
           image_url: taskWithImages.image_url || '',
-          keywords: taskWithImages.keywords || '',
           correct_answer: taskWithImages.correct_answer || '',
-          variable_overrides: (taskWithImages.task_type === 'code_random_complex' || taskWithImages.problem_type === 'code_random_complex')
+          // For code_random_complex: preserve variable_overrides if it contains <random> markers
+          // Only set to null if it's code_random_complex AND variable_overrides is actually empty
+          variable_overrides: (taskType === 'code_random_complex' && !variableOverridesNormalized)
             ? null
-            : (taskWithImages.variable_overrides || null),
+            : variableOverridesNormalized,
           options: taskWithImages.options || []
         };
 

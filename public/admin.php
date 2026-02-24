@@ -657,7 +657,7 @@ if ($displayName === '') {
   </div>
 
   <div id="assignment-modal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 900px;">
       <div class="modal-header">
         <h3 id="assignment-modal-title">New Assignment</h3>
         <button id="assignment-close-btn" class="modal-close">✕</button>
@@ -770,11 +770,11 @@ if ($displayName === '') {
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
             </div>
-            <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür Random Complex: Optional - wenn gesetzt, wird als Hilfe angezeigt"></textarea>
+            <textarea id="task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_reading: {var} Platzhalter\nFür code_random_complex: result = int({binary}, 2)"></textarea>
             <div class="hint">
               <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-              <strong>Für Code Reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-              <strong>Für Random Complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (Werte via variable_overrides)<br>
+              <strong>Für code_random_complex:</strong> Optional - Vorlage mit Platzhaltern wie <code>{binary}</code> (Werte via randomizer_code)
             </div>
           </div>
           
@@ -872,12 +872,12 @@ if ($displayName === '') {
             </div>
             <div id="task-var-overrides-json" class="overrides-json" style="display:none;">
               <label for="task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
-              <textarea id="task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+              <textarea id="task-var-overrides" placeholder='[{"inputs":{"a":1,"b":5},"expected":{"variable":"summe"}}]'></textarea>
             </div>
             <div class="hint" style="margin-top:8px;">
               <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
-              <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
-              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
+              <strong>Format:</strong> <code>[{"inputs":{"a":1},"expected":{"variable":"result"}}]</code><br>
+              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>x = {x}</code>
             </div>
           </div>
           
@@ -921,11 +921,12 @@ if ($displayName === '') {
           
           <!-- Solution Code (for code & code_random_complex tasks) -->
           <div class="field" data-field="solution">
-            <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt values-Dict)</span></label>
-            <textarea id="task-solution" placeholder="Beispiel code_random_complex:\nresult = int(values[\"binary\"], 2)"></textarea>
+            <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt Placeholder)</span></label>
+            <textarea id="task-solution" placeholder="Für code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
             <div class="hint">
-              <strong>Für code_random_complex:</strong> Verwende <code>values[\"varName\"]</code> für dynamische Werte<br>
-              Beispiel: <code>result = int(values[\"binary\"], 2)</code>
+              <strong>Für code_random_complex:</strong> Verwende Placeholder <code>{varName}</code> für dynamische Werte<br>
+              Beispiel: <code>result = int({binary}, 2)</code><br>
+              <strong>Für code_reading:</strong> Solution Code bleibt leer
             </div>
           </div>
           
@@ -935,12 +936,12 @@ if ($displayName === '') {
               <span>Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></span>
               <button type="button" class="hspf-btn hspf-btn-secondary" id="task-randomizer-generator" style="font-size:12px;">🎲 Randomizer</button>
             </label>
-            <textarea id="task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
+            <textarea id="task-randomizer-code" placeholder="import random\nbinary = format(random.randint(0, 255), '08b')\ncelsius = random.randint(-50, 50)"></textarea>
             <div class="hint">
               <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>
-              <strong>Für code_random_complex:</strong> Generiert <code>values</code> dict mit Zufallswerten<br>
-              <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)<br>
-              <strong>Wichtig:</strong> Muss <code>values = {...}</code> setzen
+              <strong>Für code_random_complex:</strong> Erzeugt Variablen direkt (KEIN values dict!)<br>
+              Beispiel: <code>binary = format(random.randint(0, 255), '08b')</code><br>
+              <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)
             </div>
           </div>
         </div>
@@ -1003,11 +1004,11 @@ if ($displayName === '') {
               <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-random-snippet" style="font-size:12px;">🎲 randomNumbers</button>
               <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-init-block-generator" style="font-size:12px;">📝 Init-Block einfügen</button>
             </div>
-            <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür Code Reading: {var} wird mit Wert aus variable_overrides ersetzt"></textarea>
+            <textarea id="edit-task-template" placeholder="Für code: def hello():\n    pass\n\nFür code_reading: {var} Platzhalter\nFür code_random_complex: result = int(values[\"binary\"], 2)"></textarea>
             <div class="hint">
               <strong>Für code:</strong> Starter-Code im Editor für Schüler<br>
-              <strong>Für Code Reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (FESTE Werte via variable_overrides)<br>
-              <strong>Für Random Complex:</strong> Optional - wenn gesetzt, wird als Hilfe angezeigt
+              <strong>Für code_reading:</strong> Vorlage mit Platzhaltern <code>{varName}</code> (Werte via variable_overrides)<br>
+              <strong>Für code_random_complex:</strong> Muss <code>values</code> verwenden (z.B. <code>values["binary"]</code>)
             </div>
           </div>
           
@@ -1106,12 +1107,12 @@ if ($displayName === '') {
             </div>
             <div id="edit-task-var-overrides-json" class="overrides-json" style="display:none;">
               <label for="edit-task-var-overrides" style="display:block; font-weight:bold;">JSON (Manual Edit):</label>
-              <textarea id="edit-task-var-overrides" placeholder='[{"start":1,"end":5},{"start":1,"end":10}]'></textarea>
+              <textarea id="edit-task-var-overrides" placeholder='[{"inputs":{"a":1,"b":5},"expected":{"variable":"summe"}}]'></textarea>
             </div>
             <div class="hint" style="margin-top:8px;">
               <strong>💡 Für code_reading:</strong> NUR feste Wert-Sets (Iteration = Set-Reihenfolge)<br>
-              <strong>Format:</strong> <code>[{"var1": 1, "var2": "A"}, {...}]</code><br>
-              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>binary = "{binary}"</code>
+              <strong>Format:</strong> <code>[{"inputs":{"a":1},"expected":{"variable":"result"}}]</code><br>
+              <strong>Im Code Template:</strong> <code>{varName}</code> verwenden. Beispiel: <code>x = {x}</code>
             </div>
           </div>
           
@@ -1155,12 +1156,13 @@ if ($displayName === '') {
         
         <!-- Solution Code (for code & code_random_complex tasks) -->
         <div class="field" data-field="solution">
-          <label for="edit-task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt values-Dict)</span></label>
-          <textarea id="edit-task-solution" placeholder="Beispiel code_random_complex:\nresult = int(values[\"binary\"], 2)"></textarea>
+          <label for="edit-task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt Placeholder)</span></label>
+          <textarea id="edit-task-solution" placeholder="Für code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
           <div class="hint">
             <strong>Für code & intelligent:</strong> Vollständige Musterlösung<br>
-            <strong>Für code_random_complex:</strong> Verwende <code>values[\"varName\"]</code> für dynamische Werte<br>
-            Beispiel: <code>result = int(values[\"binary\"], 2)</code>
+            <strong>Für code_random_complex:</strong> Verwende Placeholder <code>{varName}</code> für dynamische Werte<br>
+            Beispiel: <code>result = int({binary}, 2)</code><br>
+            <strong>Für code_reading:</strong> Solution Code bleibt leer
           </div>
         </div>
         
@@ -1170,12 +1172,13 @@ if ($displayName === '') {
             <span>Randomizer Code <span style="color:#999; font-size:12px;">(versteckt für Studenten)</span></span>
             <button type="button" class="hspf-btn hspf-btn-secondary" id="edit-task-randomizer-generator" style="font-size:12px;">🎲 Randomizer</button>
           </label>
-          <textarea id="edit-task-randomizer-code" placeholder="import random\n\nvalues = {\n    \"num\": random.randint(0, 255),\n    \"binary\": format(random.randint(0, 255), '08b')\n}"></textarea>
+          <textarea id="edit-task-randomizer-code" placeholder="import random\nbinary = format(random.randint(0, 255), '08b')\ncelsius = random.randint(-50, 50)"></textarea>
           <div class="hint">
             <strong>Nur bei:</strong> code_random_complex oder intelligent (mit Test Type)<br>
-            <strong>Für code_random_complex:</strong> Generiert <code>values</code> dict mit Zufallswerten<br>
-            <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)<br>
-            <strong>Wichtig:</strong> Muss <code>values = {...}</code> setzen
+            <strong>Für code_random_complex:</strong> Erzeugt Variablen direkt (KEIN values dict!)<br>
+            Beispiel: <code>binary = format(random.randint(0, 255), '08b')</code><br>
+            <strong>Für intelligent tests:</strong> Generiert Testwerte (wird jedes Mal neu ausgeführt)
+          </div>
           </div>
         </div>
         </div>
@@ -1196,6 +1199,12 @@ if ($displayName === '') {
     #task-modal,
     #task-create-modal,
     #assignment-modal { animation: fadeIn 0.2s ease-in; }
+    #task-create-modal .modal-content,
+    #task-modal .modal-content {
+      width: min(1200px, calc(100% - 32px));
+      max-width: 1200px;
+      margin: 16px auto;
+    }
     .overrides-builder {
       display: flex;
       flex-direction: column;

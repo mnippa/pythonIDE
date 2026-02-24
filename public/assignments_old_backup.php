@@ -1034,6 +1034,6 @@ HTML;
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/assignments.js"></script>
+  <script type="module" src="js/assignments.js?v=20250224"></script>
 </body>
 </html>

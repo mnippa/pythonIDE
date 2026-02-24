@@ -12,20 +12,10 @@ class TaskExporter {
   }
 
   /**
-   * Normalize task type for export /import compatibility
-   */
-  normalizeTaskType(task) {
-    const rawType = task.task_type || task.problem_type || 'code';
-    if (rawType === 'code_completion' || rawType === 'code_fix') return 'code';
-    if (rawType === 'essay') return 'free_text';
-    return rawType;
-  }
-
-  /**
    * Build task export object
    */
   buildTaskExport(task) {
-    const taskType = this.normalizeTaskType(task);
+    const taskType = task.task_type;
     const options = Array.isArray(task.options)
       ? task.options.map((opt) => ({
           text: opt.text || '',
@@ -34,29 +24,39 @@ class TaskExporter {
         }))
       : [];
 
+    // For code_random_complex and code_reading, ensure max_iterations is a number (not null)
+    // to prevent losing iteration counts during export/import
+    let maxIterationsValue = null;
+    if (typeof task.max_iterations === 'number' && task.max_iterations > 0) {
+      maxIterationsValue = task.max_iterations;
+    } else if (taskType === 'code_random_complex' || taskType === 'code_reading') {
+      // Default to 3 for code_random_complex, 1 for code_reading
+      maxIterationsValue = taskType === 'code_random_complex' ? 3 : 1;
+    }
+
     return {
-      version: '2.0',
+      version: '3.0',
       task_type: taskType,
-      problem_type: task.problem_type || taskType,
       title: task.title,
       task_text: task.task_text || '',
       description: task.description || '',
       max_attempts: typeof task.max_attempts === 'number' ? task.max_attempts : 1,
-      show_solution: typeof task.show_solution === 'number' ? task.show_solution : 1,
+      max_iterations: maxIterationsValue,
+      show_solution: typeof task.show_solution === 'number' ? task.show_solution : (task.show_solution ? 1 : 0),
+      show_solution_code: typeof task.show_solution_code === 'number' ? task.show_solution_code : (task.show_solution_code ? 1 : 0),
       min_keywords_required: typeof task.min_keywords_required === 'number' ? task.min_keywords_required : null,
       question_text: task.question_text || '',
       image_url: task.image_url || '',
-      code_template: task.code_template || task.starter_code || '',
+      code_template: task.code_template || '',
       solution_code: task.solution_code || '',
-      validation_mode: task.validation_mode || '',
+      randomizer_code: task.randomizer_code || '',
       test_cases: task.test_cases || null,
       hint1: task.hint1 || '',
       hint2: task.hint2 || '',
       hint3: task.hint3 || '',
       stoff: task.stoff || '',
-      keywords: task.keywords || '',
       correct_answer: task.correct_answer || '',
-      variable_overrides: taskType === 'code_random_complex' ? '' : (task.variable_overrides || ''),
+      variable_overrides: task.variable_overrides || null,
       options
     };
   }
@@ -239,13 +239,13 @@ class TaskExporter {
 
       // Add index/manifest
       zip.file('manifest.json', JSON.stringify({
-        version: '2.0',
+        version: '3.0',
         task_count: tasks.length,
         tasks: tasks.map((t, i) => ({
           index: i + 1,
           id: t.id,
           title: t.title,
-          type: this.normalizeTaskType(t)
+          type: t.task_type
         })),
         exported_at: new Date().toISOString()
       }, null, 2));

@@ -353,6 +353,8 @@ window.QuizRenderer = {
     // Generate random variable values if not already stored
     let varValues = {};
     let expectedVariableName = task.correct_answer; // Default fallback
+    let expectedType = 'variable';
+    let expectedValue = '';
     let shouldSendComputedValue = true; // Whether to send computed_value to backend
     
     if (task.task_type === 'code_random_complex' && task.variable_overrides) {
@@ -377,9 +379,12 @@ window.QuizRenderer = {
               if (selectedSet.expected && typeof selectedSet.expected === 'object') {
                 if (selectedSet.expected.variable) {
                   expectedVariableName = selectedSet.expected.variable;
+                  expectedType = 'variable';
                   shouldSendComputedValue = true; // Variable mode: send computed value
                 } else if (selectedSet.expected.hasOwnProperty('value')) {
                   // If value is set directly, no need to compute
+                  expectedType = 'value';
+                  expectedValue = selectedSet.expected.value;
                   shouldSendComputedValue = false;
                 }
               }
@@ -415,6 +420,8 @@ window.QuizRenderer = {
       window.assignmentState.taskUserAnswers[task.id].variable_values = varValues;
       window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
       window.assignmentState.taskUserAnswers[task.id].expectedVariableName = expectedVariableName;
+      window.assignmentState.taskUserAnswers[task.id].expectedType = expectedType;
+      window.assignmentState.taskUserAnswers[task.id].expectedValue = expectedValue;
       window.assignmentState.taskUserAnswers[task.id].shouldSendComputedValue = shouldSendComputedValue;
     }
     
@@ -424,32 +431,33 @@ window.QuizRenderer = {
       task.show_solution_code === '1' ||
       task.show_solution_code === 'true';
 
-    // Build code display with template string replacement AND variable highlighting
-    let codeDisplay = task.code_template || '';
+    // Only show code block if code_template is set
+    const hasCodeTemplate = task.code_template && task.code_template.trim() !== '';
     
-    // FIRST: Replace template strings {varName} with actual values
-    for (const varName in varValues) {
-      const placeholder = `{${varName}}`;
-      const value = varValues[varName];
-      const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-      codeDisplay = codeDisplay.replace(regex, String(value));
+    let codeBlock = '';
+    if (hasCodeTemplate) {
+      // Build code display without replacing placeholders; only highlight variables
+      let codeDisplay = task.code_template;
+      
+      // Remove curly braces from placeholders
+      codeDisplay = codeDisplay.replace(/\{(\w+)\}/g, '$1');
+
+      // Highlight variables in the code
+      for (const varName in varValues) {
+        codeDisplay = codeDisplay.replace(
+          new RegExp(`\\b${varName}\\b`, 'g'),
+          `<span class="var-highlight" title="${varName} = ${varValues[varName]}">${varName}</span>`
+        );
+      }
+      
+      codeBlock = showCode
+        ? `<div class="code-reading-code">
+            <pre><code>${codeDisplay}</code></pre>
+          </div>`
+        : `<div class="code-reading-code">
+            <em>Code ist ausgeblendet (Algorithmus ist bekannt).</em>
+          </div>`;
     }
-    
-    // SECOND: Highlight variables in the code
-    for (const varName in varValues) {
-      codeDisplay = codeDisplay.replace(
-        new RegExp(`\\b${varName}\\b`, 'g'),
-        `<span class="var-highlight" title="${varName} = ${varValues[varName]}">${varName}</span>`
-      );
-    }
-    
-    const codeBlock = showCode
-      ? `<div class="code-reading-code">
-          <pre><code>${codeDisplay}</code></pre>
-        </div>`
-      : `<div class="code-reading-code">
-          <em>Code ist ausgeblendet (Algorithmus ist bekannt).</em>
-        </div>`;
 
     container.innerHTML = `
       <div class="quiz-container">
@@ -470,7 +478,9 @@ window.QuizRenderer = {
         ${codeBlock}
         
         <div class="quiz-question">
-          <label for="code-reading-answer-${task.id}">Was ist der Wert von <code>${this.escapeHtml(task.correct_answer || '?')}</code> am Ende?</label>
+          <label for="code-reading-answer-${task.id}">${expectedType === 'value'
+            ? 'Was ist das Ergebnis?'
+            : `Was ist der Wert von <code>${this.escapeHtml(expectedVariableName || '?')}</code> am Ende?`}</label>
           <input 
             type="text" 
             id="code-reading-answer-${task.id}" 
@@ -543,20 +553,16 @@ window.QuizRenderer = {
       task.show_solution_code === '1' ||
       task.show_solution_code === 'true';
     
-    // Build code display with solution or template code (formatted like code_reading)
+    // Build code display without replacing placeholders (formatted like code_reading)
     let codeDisplay = '';
     const rawCode = task.solution_code || task.code_template || '';
     if (showGenerator && rawCode) {
       // Convert escaped newlines to actual newlines (safeguard for older data)
       codeDisplay = rawCode.replace(/\\n/g, '\n');
       
-      // Replace placeholders with actual values
-      for (const [varName, value] of Object.entries(values)) {
-        const placeholder = `{${varName}}`;
-        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        codeDisplay = codeDisplay.replace(regex, String(value));
-      }
-      
+      // Remove curly braces from placeholders
+      codeDisplay = codeDisplay.replace(/\{(\w+)\}/g, '$1');
+
       // Highlight variables in the code
       for (const varName in values) {
         codeDisplay = codeDisplay.replace(
@@ -646,7 +652,7 @@ window.QuizRenderer = {
         return;
       }
       const task = window.assignmentState?.currentTask;
-      if (!task || !task.code_template || !task.correct_answer) {
+      if (!task || !task.code_template) {
         feedbackEl.innerHTML = '<div class="error">Code-Reading Aufgabe ist unvollstaendig</div>';
         return;
       }
@@ -1021,7 +1027,7 @@ window.QuizRenderer = {
       return existing;
     }
 
-    // Check if variable_overrides exist (alternative to generator code)
+    // Check if variable_overrides exist (can be either CODE_READING feste Werte OR CODE_RANDOM_COMPLEX with <random> markers)
     if (task.variable_overrides) {
       const overrides = typeof task.variable_overrides === 'string'
         ? JSON.parse(task.variable_overrides)
@@ -1029,13 +1035,71 @@ window.QuizRenderer = {
 
       let values = {};
 
+      // NEW SCHEMA: Array of {inputs: {...}, expected: {...}} 
       if (Array.isArray(overrides) && overrides.length > 0) {
-        const idx = Math.max(0, currentIteration - 1) % overrides.length;
-        const selectedSet = overrides[idx];
-        if (selectedSet && typeof selectedSet === 'object' && !Array.isArray(selectedSet)) {
-          values = selectedSet;
+        const firstEntry = overrides[0];
+        
+        // Check if inputs have <random> markers (CODE_RANDOM_COMPLEX)
+        const hasRandomMarkers = firstEntry && firstEntry.inputs && 
+          Object.values(firstEntry.inputs).some(v => v === '<random>');
+        
+        if (hasRandomMarkers && task.randomizer_code) {
+          // CODE_RANDOM_COMPLEX: Execute randomizer_code to generate values DIRECTLY (no values dict)
+          const pyodide = window.pyodide;
+          if (!pyodide) {
+            throw new Error('Pyodide ist noch nicht bereit');
+          }
+
+          // Create an isolated namespace for the randomizer
+          const python = `
+import sys
+__randomizer_namespace = {}
+exec("""${task.randomizer_code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
+__randomizer_namespace
+`;
+          const resultObj = await pyodide.runPythonAsync(python);
+          const allVariables = resultObj.toJs();
+          
+          // Extract only user-created variables (filter out builtins and special Python vars)
+          const builtinKeys = new Set(['__builtins__', '__name__', '__doc__', '__package__', '__loader__', '__spec__', '__annotations__', '__cached__', '__file__', 'sys', 'random']);
+          Object.entries(allVariables).forEach(([rawKey, val]) => {
+            const key = String(rawKey ?? '');
+            if (!key || builtinKeys.has(key) || key.startsWith('_')) {
+              return;
+            }
+            // Only add serializable types (strings, numbers, booleans, lists, dicts)
+            try {
+              JSON.stringify(val);  // Test if serializable
+              values[key] = val;
+            } catch (e) {
+              // Skip non-serializable types
+            }
+          });
+
+          if (Object.keys(values).length === 0) {
+            throw new Error('Randomizer muss mindestens eine Variable erstellen');
+          }
+        } else {
+          // CODE_READING or fixed CODE_RANDOM_COMPLEX: Use feste values from variable_overrides
+          const idx = Math.max(0, currentIteration - 1) % overrides.length;
+          const selectedSet = overrides[idx];
+          if (selectedSet && typeof selectedSet === 'object') {
+            // NEW SCHEMA: extract inputs from {inputs: {...}, expected: {...}}
+            if (selectedSet.inputs && typeof selectedSet.inputs === 'object') {
+              // Filter out <random> markers (shouldn't happen for CODE_READING)
+              Object.entries(selectedSet.inputs).forEach(([key, val]) => {
+                if (val !== '<random>') {
+                  values[key] = val;
+                }
+              });
+            } else {
+              // LEGACY: direct dict
+              values = selectedSet;
+            }
+          }
         }
-      } else if (overrides && typeof overrides === 'object') {
+      } else if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
+        // LEGACY SCHEMA: Direct object with value arrays
         for (const varName in overrides) {
           const possibleValues = overrides[varName];
           if (Array.isArray(possibleValues) && possibleValues.length > 0) {
@@ -1059,7 +1123,7 @@ window.QuizRenderer = {
           current_iteration: currentIteration,
           started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
         };
-        console.log('[CODE_RANDOM] Saving generated values (from overrides) - Payload:', payload);
+        console.log('[CODE_RANDOM] Saving generated values - Payload:', payload);
         const response = await fetch('../api/user_tasks/update.php', {
           method: 'POST',
           credentials: 'include',
@@ -1073,36 +1137,41 @@ window.QuizRenderer = {
       }
     }
 
+    // Fallback: Use randomizer_code (NEW SCHEMA for code_random_complex)
     const pyodide = window.pyodide;
     if (!pyodide) {
       throw new Error('Pyodide ist noch nicht bereit');
     }
 
-    const code = (task.code_template || '').trim();
+    const code = (task.randomizer_code || '').trim();
     if (!code) {
-      throw new Error('Kein Generator-Code oder variable_overrides hinterlegt');
+      throw new Error('Kein randomizer_code hinterlegt');
     }
 
+    // NEW SCHEMA: randomizer_code creates variables directly (no 'values' dict)
     const python = `
-import json
-values = {}
-${code}
-json.dumps(values)
+__randomizer_namespace = {}
+exec("""${code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
+__randomizer_namespace
 `;
+    const resultObj = await pyodide.runPythonAsync(python);
+    const allVariables = resultObj.toJs();
 
-    const resultJson = await pyodide.runPythonAsync(python);
+    // Extract all variables from namespace (except builtins)
     let values = {};
-    try {
-      values = JSON.parse(resultJson);
-    } catch (err) {
-      throw new Error('Generator muss ein JSON-dict liefern');
-    }
+    Object.entries(allVariables).forEach(([rawKey, val]) => {
+      const key = String(rawKey ?? '');
+      if (!key || key.startsWith('__') || key === 'random') {
+        return;
+      }
+      values[key] = val;
+    });
 
     if (!values || typeof values !== 'object' || Array.isArray(values)) {
       throw new Error('Generator muss ein dict liefern');
     }
     if (Object.keys(values).length === 0) {
-      throw new Error('Generator liefert leeres values-Dict');
+      throw new Error('Generator liefert keine Variablen');
     }
 
     if (!window.assignmentState.taskUserAnswers[task.id]) {
@@ -1117,7 +1186,7 @@ json.dumps(values)
       current_iteration: currentIteration,
       started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
-    console.log('[CODE_RANDOM] Saving generated values - Payload:', payload);
+    console.log('[CODE_RANDOM] Saving generated values (legacy fallback) - Payload:', payload);
     const response = await fetch('../api/user_tasks/update.php', {
       method: 'POST',
       credentials: 'include',
@@ -1135,13 +1204,23 @@ json.dumps(values)
     const varsB64 = btoa(unescape(encodeURIComponent(varsJson)));
     const safeVarName = String(varName || 'result').trim() || 'result';
 
+    const toPythonLiteral = (value) => {
+      if (value === null || value === undefined) return 'None';
+      if (typeof value === 'string') return JSON.stringify(value);
+      if (typeof value === 'number') return String(value);
+      if (typeof value === 'boolean') return value ? 'True' : 'False';
+      try {
+        return JSON.stringify(value);
+      } catch (err) {
+        return JSON.stringify(String(value));
+      }
+    };
+
     // Replace template strings {variable} with actual values
     let processedCode = code;
     for (const [key, value] of Object.entries(varValues || {})) {
       const placeholder = `{${key}}`;
-      // For strings from variable_overrides, use the value directly (template already has quotes)
-      // Escape any quotes within the value itself
-      const escapedValue = typeof value === 'string' ? value.replace(/"/g, '\\"') : String(value);
+      const escapedValue = toPythonLiteral(value);
       const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
       processedCode = processedCode.replace(regex, escapedValue);
     }

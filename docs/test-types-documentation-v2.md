@@ -27,6 +27,79 @@
 
 ---
 
+## Export/Import Format (v3)
+
+**Nur neues Schema (kein Legacy-Support).**
+
+Pflichtfelder pro Task:
+- `version`: muss `3.x` sein
+- `task_type`, `title`, `task_text`
+- `code`-Tasks: `test_cases`
+- `code_reading`: `code_template`, `variable_overrides`
+- `code_random_complex`: `code_template`, `solution_code`, `randomizer_code`
+- Choice-Tasks: `options`
+
+**Hinweis:** `problem_type` wird intern abgeleitet und muss nicht exportiert/importiert werden.
+
+### Beispiele (v3)
+
+**Code Task (test_cases):**
+```json
+{
+  "version": "3.0",
+  "task_type": "code",
+  "title": "Quadrat",
+  "task_text": "Schreibe eine Funktion quadrat(x).",
+  "code_template": "def quadrat(x):\n    pass",
+  "test_cases": [
+    {"type": "function", "function_name": "quadrat", "args": [5], "expected": 25}
+  ]
+}
+```
+
+**Code Reading:**
+```json
+{
+  "version": "3.0",
+  "task_type": "code_reading",
+  "title": "Summe",
+  "task_text": "Berechne den Endwert von summe.",
+  "code_template": "summe = 1\nfor n in range({a}, {b}):\n    summe += n",
+  "variable_overrides": [
+    {"inputs": {"a": 1, "b": 5}, "expected": {"variable": "summe"}}
+  ]
+}
+```
+
+**Code Random Complex:**
+```json
+{
+  "version": "3.0",
+  "task_type": "code_random_complex",
+  "title": "Binary zu Dezimal",
+  "task_text": "Wandle binary in Dezimal um.",
+  "code_template": "result = int(values[\"binary\"], 2)",
+  "solution_code": "result = int(values[\"binary\"], 2)",
+  "randomizer_code": "import random\nvalues = {\"binary\": format(random.randint(0, 255), '08b')}"
+}
+```
+
+**Single Choice:**
+```json
+{
+  "version": "3.0",
+  "task_type": "single_choice",
+  "title": "Zahl",
+  "task_text": "Welche Zahl ist gerade?",
+  "options": [
+    {"text": "3", "is_correct": false},
+    {"text": "4", "is_correct": true}
+  ]
+}
+```
+
+---
+
 ## 1. OUTPUT Test (Text/Regex/Solution Comparison)
 
 ### Zweck
@@ -351,10 +424,10 @@ Student gibt EINE Antwort ein. Test generiert zufällige Eingabewerte und berech
 
 ### Struktur
 ```json
-// NO test_cases field!
+// Kein test_cases Feld
 ```
 
-**Separates Feld:**
+**Randomizer Code:**
 ```
 randomizer_code:
 import random
@@ -362,33 +435,33 @@ binary = format(random.randint(0, 255), '08b')
 values = {"binary": binary}
 ```
 
-**Code-Template (optional):**
+**Code-Template (wird angezeigt):**
 ```python
 # Konvertiere Binärzahl zu Dezimal
-result = ...
+result = int(values["binary"], 2)
 ```
 
-**Solution-Code:**
+**Solution-Code (berechnet Ergebnis):**
 ```python
 result = int(values["binary"], 2)
 ```
 
 #### Execution Flow
-1. **Backend**: `randomizer_code` ausführen → `values` dict
-2. **Frontend**: Anzeige: "Binary: 10101010" (aus `values`)
-3. **Code-Template** anzeigen (falls gesetzt)
-4. **Student antwortet:** Text-Eingabe: "170"
-5. **Backend**: `solution_code` ausführen mit `values` → `computed_value`
+1. **Randomizer**: `randomizer_code` erzeugt `values`
+2. **Frontend**: Variablenwerte anzeigen
+3. **Code-Template** anzeigen
+4. **Student**: Ergebnis eingeben
+5. **Frontend**: `solution_code` ausführen → `computed_value`
 6. **Vergleich**: `student_answer` == `computed_value`?
-7. Pro Iteration neue Zufallswerte (per `max_iterations`)
+7. Nächste Iteration (neue Zufallswerte)
 
 #### Required Felder
 - `randomizer_code` - Generiert `values` dict
 - `solution_code` - Berechnet `result` aus `values`
-- `max_iterations` (optional, default: 3) - Anzahl Versuche
+- `code_template` - Anzeige/Struktur (required)
+- `max_iterations` (optional, default: 3)
 
 #### Optional
-- `code_template` - Hilfe/Struktur für Student
 - `task_text` - Aufgabenbeschreibung
 
 ---
@@ -421,23 +494,10 @@ for n in range(a, b):
     summe = summe + n * summe
 ```
 
-**⚠️ WICHTIG - solution_code Hinweis:**
-- Nutzt die **gleichen Platzhalter** `{a}`, `{b}` wie code_template
-- Diese werden mit den Werten aus `inputs` ersetzt
-- Wird ausgeführt um das erwartete Ergebnis zu berechnen (bei variable mode)
-- **Die Ergebnisvariable ist NICHT ein Platzhalter**, sondern der **Wert der Variablen am ENDE des Scripts**
-  - z.B. wenn CODE endet mit `summe = 120`, wird dieser Wert `120` ausgelesen (NICHT der Platzhalter)
-  - Das ist NICHT `{summe}` sondern die echte Variable namens `summe`
-
-**solution_code Beispiel:**
-```python
-a = {a}
-b = {b}
-summe = 1
-for n in range(a, b):
-    summe = summe + n * summe
-# => variable "summe" hat am Ende diesen Wert
-```
+**Anzeige im UI:**
+- Variablenwerte werden separat angezeigt
+- Im Code werden Platzhalter **ohne Klammern** angezeigt (`{a}` → `a`)
+- Der Code wird **nicht** mit Werten ersetzt
 
 #### expected Feld: Zwei Modi
 
@@ -455,20 +515,18 @@ for n in range(a, b):
 1. Wähle einen Testwert-Set aus `variable_overrides[i]`
 2. Extrahiere `inputs` dict: `{a: 1, b: 5}`
 3. Extrahiere `expected` dict: `{"variable": "summe"}`
-4. Code-Template Platzhalter ersetzen: `{a}` → 1, `{b}` → 5
-5. Code anzeigen (mit ersetzten Werten): Student sieht fertigen Code
-6. Student gibt Ergebnis ein
-7. **Expected-Wert bestimmen:**
-   - Wenn `expected.variable` gesetzt: solution_code ausführen, Variable auslesen
-   - Wenn `expected.value` gesetzt: Diesen Wert direkt nutzen
-8. **Vergleich:** `student_answer` == expected_value?
-9. Nächster Testwert-Set aus `variable_overrides`
+4. Code-Template anzeigen (Platzhalter ohne Klammern)
+5. Student gibt Ergebnis ein
+6. **Expected-Wert bestimmen:**
+  - Wenn `expected.variable` gesetzt: Code-Template ausführen, Variable auslesen
+  - Wenn `expected.value` gesetzt: Diesen Wert direkt nutzen
+7. **Vergleich:** `student_answer` == expected_value?
+8. Nächster Testwert-Set aus `variable_overrides`
 
 #### Required Felder
 - `variable_overrides` - Array mit `{inputs: {...}, expected: {...}}`
 - `code_template` - Template mit `{varname}` Platzhaltern
 - `max_iterations` - Auto-calculated: `len(variable_overrides)`
-- `solution_code` - Berechnet erwartetes Ergebnis (für variable mode)
 
 #### Optional
 - Keine
@@ -479,7 +537,7 @@ for n in range(a, b):
 ```json
 {
   "inputs": {"a": 1, "b": 5},
-  "expected": {"variable": "summe"}  // ← AUTO: Berechnet aus solution_code
+  "expected": {"variable": "summe"}  // ← AUTO: Berechnet aus code_template
 }
 ```
 
@@ -492,14 +550,13 @@ for n in range(a, b):
 ```
 
 **Warum AUTO besser ist:**
-- ✅ Automatisch aus `solution_code` berechnet = keine manuellen Fehler
+- ✅ Automatisch aus dem Code berechnet = keine manuellen Fehler
 - ✅ Wenn Code später geändert wird, stimmt Lösung automatisch
 - ✅ Einfacher zu administrieren
 
 **Code_Reading Anforderungen:**
 - 💡 **NUR feste Wert-Sets** (keine Zufallswerte!)
 - 💡 **Iteration = Set-Reihenfolge** (1. Set → Iteration 1, 2. Set → Iteration 2)
-- 💡 **Format:** `[{"var1": 1, "var2": "A"}, {...}]`
 - 💡 **Im Code Template:** `{varName}` verwenden. Beispiel: `binary = "{binary}"` oder `x = {x}`
 - 💡 `max_iterations` wird automatisch berechnet: Anzahl Sets in `variable_overrides`
 
@@ -511,9 +568,9 @@ for n in range(a, b):
 |------|------|--------------|-------------------|---------------|
 | **task_text** | ✅ PFLICHT | ✅ PFLICHT | ✅ PFLICHT | ✅ PFLICHT |
 | **description** | ℹ️ Optional | ℹ️ Optional | ℹ️ Optional | ℹ️ Optional |
-| **code_template** | ✅ Optional | ✅ Required | ✅ Optional | ❌ N/A |
+| **code_template** | ✅ Optional | ✅ Required | ✅ Required | ❌ N/A |
 | **test_cases** | ✅ Required | ❌ NULL | ❌ NULL | ❌ N/A |
-| **solution_code** | ✅ Optional | ✅ Optional | ✅ Required | ❌ N/A |
+| **solution_code** | ✅ Optional | ❌ N/A | ✅ Required | ❌ N/A |
 | **randomizer_code** | ❌ N/A | ❌ N/A | ✅ Required | ❌ N/A |
 | **variable_overrides** | ❌ N/A | ✅ Required | ❌ N/A | ❌ N/A |
 | **options** | ❌ N/A | ❌ N/A | ❌ N/A | ✅ Required |
@@ -540,16 +597,9 @@ Verbotene Keywords | while
 
 ---
 
-## Legacy-Elemente (REMOVED/Deprecated)
+## Legacy
 
-### ❌ Entfernt:
-- `solution_compare: true` → Verwende `expected_type: "solution"`
-- `input` Feld in OUTPUT/FUNCTION Tests → nicht standardisiert
-- `test_cases` für Intelligent VARS Mode → direkt in JSON mit `inputs/outputs`
-
-### ⚠️ Deprecated aber noch unterstützt (Backward Compat):
-- `test_cases.solution_compare` → Verwende `expected_type`
-- `validation_mode: 'pattern'` → Verwende `expected_type: 'regex'`
+Legacy-Importe werden nicht mehr unterstützt. Nutze ausschließlich Export/Import v3.
 
 ---
 

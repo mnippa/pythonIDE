@@ -1,0 +1,40 @@
+<!-- Debug: Überprüfe, wo variable_overrides/test_cases von Task #148 und #158 gespeichert sind -->
+<h1>Task #148 vs #158 Vergleich</h1>
+
+<script>
+async function compare() {
+  const response = await fetch('../api/tasks/list.php?assignment_id=22&test_mode=1');
+  const data = await response.json();
+  
+  if (!data.ok) {
+    console.error('Error:', data.error);
+    return;
+  }
+  
+  const task148 = data.tasks.find(t => t.id === 148);
+  const task158 = data.tasks.find(t => t.id === 158);
+  
+  console.clear();
+  console.log('=== TASK #148 ===');
+  console.log('Type:', task148?.task_type);
+  console.log('test_cases:', task148?.test_cases);
+  console.log('variable_overrides:', task148?.variable_overrides);
+  console.log('randomizer_code:', task148?.randomizer_code?.substring(0, 100));
+  
+  console.log('\n=== TASK #158 ===');
+  console.log('Type:', task158?.task_type);
+  console.log('test_cases:', task158?.test_cases);
+  console.log('variable_overrides:', task158?.variable_overrides);
+  console.log('randomizer_code:', task158?.randomizer_code?.substring(0, 100));
+  
+  document.body.innerHTML = `
+    <h2>Task #148</h2>
+    <pre>${JSON.stringify(task148, null, 2)}</pre>
+    
+    <h2>Task #158</h2>
+    <pre>${JSON.stringify(task158, null, 2)}</pre>
+  `;
+}
+
+compare();
+</script>
