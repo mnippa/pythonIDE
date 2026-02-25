@@ -274,20 +274,23 @@ async function initPyodideAndEditor() {
     const isDarkMode = () => document.documentElement.classList.contains('dark-mode');
     const getEditorTheme = () => isDarkMode() ? 'ide-dark' : 'ide-light';
     
+    // Allow context menu (copy/paste) only in projects.php
+    const isProjectsPage = window.location.pathname.includes('projects.php');
+    
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
       value: `# Hier Python Code`,
       language: "python",
       theme: getEditorTheme(),
       automaticLayout: true,
       lightbulb: { enabled: false }, // kein "No quick fixes available"
-      contextmenu: false, // Disable right-click context menu to prevent paste
+      contextmenu: isProjectsPage, // Allow context menu in projects.php only
     });
     
-    // Allow copy/paste in test mode (for admin testing)
-    // Block paste in normal mode (to prevent copying solutions during student submission)
-    // Copy is always allowed
+    // Block copy/paste only in assignment_editor (student checking)
+    // Allow copy/paste in projects.php (personal projects)
     const isTestMode = window.testMode === true;
-    if (!isTestMode) {
+    
+    if (!isProjectsPage && !isTestMode) {
       const editorDomNode = editor.getDomNode();
       if (editorDomNode) {
         // Block paste only - copy/cut still work
@@ -305,7 +308,7 @@ async function initPyodideAndEditor() {
         }
       });
     }
-    // In test mode: all clipboard operations (copy, cut, paste) are allowed
+    // Copy/paste fully allowed in projects.php and test mode
     
     // Store reference globally for theme changes AND external modules
     editorInstance = editor;

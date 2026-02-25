@@ -481,8 +481,13 @@ if ($displayName === '') {
     .monaco-editor .suggest-widget .monaco-list-row:hover{
       background:rgba(230, 235, 245, 0.95) !important;
     }
-    .monaco-editor .suggest-widget .monaco-list-row.selected{
-      background:rgba(220, 230, 245, 0.95) !important;
+    .monaco-editor .suggest-widget .monaco-list-row.selected,
+    .monaco-editor .suggest-widget .monaco-list-row.focused{
+      background:rgba(30, 100, 200, 0.95) !important;
+      color:#fff !important;
+      font-weight: bold !important;
+      border-left:4px solid #0044aa !important;
+      padding-left:calc(8px - 4px) !important;
     }
     .monaco-editor .suggest-widget-details{
       background:rgba(245, 245, 250, 0.95) !important;

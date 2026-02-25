@@ -507,17 +507,26 @@ export async function registerPythonCompletions(monaco, editor) {
   const changeDisposable = editor.onDidChangeModelContent(() => updateHelp());
 
   // Suggest-widget navigation: also update help for current selection
-  function getFocusedSuggestLabel() {
+  function getFocusedSuggestText() {
     const widget = document.querySelector(".suggest-widget");
-    if (!widget) return null;
+    if (!widget) {
+      console.log("[help] No suggest-widget found");
+      return null;
+    }
     const style = getComputedStyle(widget);
-    if (style.display === "none" || style.visibility === "hidden") return null;
+    if (style.display === "none" || style.visibility === "hidden") {
+      console.log("[help] suggest-widget is hidden");
+      return null;
+    }
 
     const focusedRow =
       widget.querySelector(".monaco-list-row.focused") ||
       widget.querySelector(".monaco-list-row.selected") ||
       widget.querySelector(".monaco-list-row[aria-selected='true']");
-    if (!focusedRow) return null;
+    if (!focusedRow) {
+      console.log("[help] No focused row found");
+      return null;
+    }
 
     const nameEl =
       focusedRow.querySelector(".label-name") ||
@@ -525,6 +534,13 @@ export async function registerPythonCompletions(monaco, editor) {
       focusedRow;
 
     const txt = (nameEl.textContent || "").trim();
+    console.log("[help] getFocusedSuggestText:", txt);
+    return txt;
+  }
+
+  function getFocusedSuggestLabel() {
+    const txt = getFocusedSuggestText();
+    if (!txt) return null;
     // Extract the part after the last dot, or the whole identifier if no dot
     const m = txt.match(/(?:\.)?([A-Za-z_]\w*)(?:\(|$)/);
     return m ? m[1] : null;
@@ -541,17 +557,41 @@ export async function registerPythonCompletions(monaco, editor) {
   async function updateHelpFromSuggestSelection() {
     const model = editor?.getModel?.();
     const pos = editor?.getPosition?.();
-    if (!model || !pos) return;
+    if (!model || !pos) {
+      console.log("[help] No model or pos");
+      return;
+    }
 
     const name = getFocusedSuggestLabel();
-    if (!name) return;
+    console.log("[help] updateHelpFromSuggestSelection called, name:", name);
+    if (!name) {
+      console.log("[help] No name from getFocusedSuggestLabel");
+      return;
+    }
 
     const left = getLeftBeforeDot(model, pos);
-    if (!left) return;
+    if (!left) {
+      const fullLabel = getFocusedSuggestText();
+      console.log("[help] fullLabel from suggest text:", fullLabel);
+      if (!fullLabel) return;
+      const direct = fullLabel.match(/^(math|np|plt|str|list|dict)\.([A-Za-z_]\w*)/);
+      console.log("[help] direct match:", direct);
+      if (direct) {
+        const key = `${direct[1]}.${direct[2]}`;
+        console.log("[help] Setting help for key:", key);
+        if (key === lastKey) return;
+        const remote = await fetchHelp(key);
+        lastKey = key;
+        if (remote?.ok && remote.md) setHelpPanel(remote.md, { isMd:true });
+        else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+      }
+      return;
+    }
 
     const fullText = model.getValue();
     const aliases = parseModuleAliases(fullText);
     const canon = aliases.get(left) || left;
+    console.log("[help] left:", left, "canon:", canon);
 
     // Handle math module
     if (canon === "math" || left === "math") {
@@ -566,7 +606,7 @@ export async function registerPythonCompletions(monaco, editor) {
     }
 
     // Handle numpy as np
-    if (canon === "numpy") {
+    if (canon === "numpy" || left === "np") {
       const key = `np.${name}`;
       if (key === lastKey) return;
 
@@ -578,7 +618,7 @@ export async function registerPythonCompletions(monaco, editor) {
     }
 
     // Handle matplotlib.pyplot as plt
-    if (canon === "matplotlib.pyplot") {
+    if (canon === "matplotlib.pyplot" || left === "plt") {
       const key = `plt.${name}`;
       if (key === lastKey) return;
 
@@ -608,6 +648,12 @@ export async function registerPythonCompletions(monaco, editor) {
     if (!["ArrowUp","ArrowDown","PageUp","PageDown"].includes(k)) return;
     setTimeout(() => { updateHelpFromSuggestSelection(); }, 0);
   });
+
+  // Default help hint
+  setHelpPanel(
+    "<div class=\"help-muted\">Tipp: Tippe <code>np.</code>, <code>plt.</code> oder <code>math.</code> und nutze die Autocomplete-Liste, um Hilfe zu sehen.</div>",
+    { isMd: false }
+  );
 
   // Minimal tooltip: show title only (avoid overload) BUT now exists for math too
   const hoverDisposable = monaco.languages.registerHoverProvider("python", {
