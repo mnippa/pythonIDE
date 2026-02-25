@@ -316,13 +316,13 @@ async function initPyodideAndEditor() {
     const urlParams = new URLSearchParams(window.location.search);
     const projectId = urlParams.get('project_id');
     
-    // Initialize file tree for project mode
-    if (projectId && window.FileTreeManager) {
-      const treeWrapper = document.getElementById('file-tree-wrapper');
-      if (treeWrapper) {
-        const treeManager = new window.FileTreeManager('file-tree-wrapper');
-        window.fileTreeManager = treeManager;
-      }
+    // Initialize file tree for project mode or in projects.php
+    const treeWrapper = document.getElementById('file-tree-wrapper');
+    if (treeWrapper && window.FileTreeManager) {
+      // In projects.php: start expanded, in assignment_editor: start collapsed
+      const isProjectsPage = window.location.pathname.includes('projects.php');
+      const treeManager = new window.FileTreeManager('file-tree-wrapper', isProjectsPage);
+      window.fileTreeManager = treeManager;
     }
 
     // Initialize validator

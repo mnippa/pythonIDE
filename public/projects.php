@@ -24,8 +24,11 @@ if ($displayName === '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Python IDE - Meine Projekte</title>
+  <link rel="stylesheet" href="css/hspf-theme.css">
   <link rel="stylesheet" href="css/ide.css">
   <link rel="stylesheet" href="css/file-tree.css">
+  <link rel="stylesheet" href="css/quiz.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     :root {
       --border:#e5e7eb; --muted:#6b7280; --bg:#fff; --panel:#f9fafb;
@@ -50,12 +53,23 @@ if ($displayName === '') {
     }
     
     *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text-primary); transition:background 0.2s, color 0.2s; }
+    html { height: 100vh; overflow: hidden; }
+    body{ 
+      margin:0; 
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; 
+      background:var(--bg); 
+      color:var(--text-primary); 
+      transition:background 0.2s, color 0.2s; 
+      height: 100vh; 
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
 
     .toolbar{
       display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:10px; border-bottom:1px solid var(--border);
-      background:var(--bg);
+      padding:3px 10px;
+      background:transparent;
     }
     .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
@@ -91,21 +105,102 @@ if ($displayName === '') {
       color:var(--text-secondary);
     }
 
-    /* MASTER GRID: left sidebar | editor | right output */
+    /* MASTER GRID: left editor | right output */
     .app{
-      height: calc(100vh - 52px);
+      height: 100%;
       display:grid;
-      grid-template-columns: 1fr 25%;
+      grid-template-columns: 1fr 240px;
       min-height:0;
-      min-width:0;
+      overflow: hidden;
+    }
+
+    /* MASTER GRID: 3 columns (file-tree | editor | output) */
+    /* Base: file-tree 264px, editor flex, output 240px */
+    .app {
+      grid-template-columns: 264px 1fr 240px !important;
+    }
+
+    /* Desktop: file-tree 264px, editor flex, output 320px */
+    @media (min-width: 1201px) {
+      .app {
+        grid-template-columns: 264px 1fr 320px !important;
+      }
+    }
+
+    /* Tablet: file-tree 220px, editor flex, output 240px */
+    @media (max-width: 1200px) and (min-width: 769px) {
+      .app {
+        grid-template-columns: 220px 1fr 240px !important;
+      }
+    }
+
+    /* Mobile: Hide file-tree, editor flex, output 30% */
+    @media (max-width: 768px) {
+      .app {
+        grid-template-columns: 1fr 30% !important;
+      }
+      #file-tree-panel {
+        display: none !important;
+      }
+      .left-bottom {
+        display: none !important;
+      }
+    }
+
+    /* FILE TREE PANEL (left) */
+    #file-tree-panel {
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .file-tree-header {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .file-tree-toggle {
+      width: 100%;
+      padding: 6px 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 13px;
+      text-align: left;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .file-tree-toggle:hover {
+      background: var(--border);
+    }
+
+    .file-tree-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      font-size: 13px;
+      min-height: 0;
     }
 
     /* LEFT COLUMN: file tree + editor + lint/help */
     .left{
       border-right:1px solid var(--border);
       display:grid;
-      grid-template-rows: auto 1fr 180px;
+      grid-template-rows: 1fr minmax(150px, 25%);
       min-width:0; min-height:0;
+    }
+
+    @media (max-width: 960px) {
+      .left {
+        grid-template-rows: 1fr 120px;
+      }
     }
     .file-tree-wrapper {
       border-bottom: 1px solid var(--border);
@@ -128,6 +223,13 @@ if ($displayName === '') {
       display:grid;
       grid-template-columns: 40% 60%;
       min-width:0; min-height:0;
+      background: var(--bg);
+    }
+
+    @media (max-width: 960px) {
+      .left-bottom {
+        grid-template-columns: 50% 50%;
+      }
     }
     #lint-container{
       border-right:1px solid var(--border);
@@ -472,9 +574,22 @@ if ($displayName === '') {
     <span id="project-visibility"></span>
   </div>
 
-  <div class="app">
+  <!-- Editor View -->
+  <div class="app" id="editor-view" style="display:grid;">
+    <!-- LEFT SIDE: File tree panel -->
+    <div id="file-tree-panel" class="file-tree-panel">
+      <div class="file-tree-header" id="file-tree-header">
+        <button class="file-tree-toggle" id="file-tree-toggle" title="Dateibaum umschalten">
+          ▼ Ordner
+        </button>
+      </div>
+      <div class="file-tree-content" id="file-tree-wrapper">
+        <!-- Initialized by file-tree.js -->
+      </div>
+    </div>
+
+    <!-- CENTER PART: Editor + Lint/Help -->
     <div class="left">
-      <div class="file-tree-wrapper" id="file-tree-wrapper"></div>
       <div id="editor-container"></div>
 
       <div class="left-bottom">
@@ -483,6 +598,7 @@ if ($displayName === '') {
       </div>
     </div>
 
+    <!-- RIGHT SIDE: Output -->
     <div class="right">
       <div id="output-container"></div>
       <div id="plot-container"></div>
@@ -497,24 +613,6 @@ if ($displayName === '') {
     <div class="projects-body">
       <button class="new-project-btn" id="new-project-btn">+ Neues Projekt</button>
       <div id="projects-list">Lade Projekte...</div>
-    </div>
-  </div>
-
-  <!-- Success Modal (kept for future use) -->
-  <div id="success-modal" class="success-modal" style="display: none;">
-    <div class="success-modal-content">
-      <div class="success-modal-header">
-        <h2>🎉 Glückwunsch!</h2>
-      </div>
-      <div class="success-modal-body">
-        <p id="success-message" style="font-size: 18px; margin-bottom: 24px;"></p>
-        <div class="success-stats" id="success-stats"></div>
-      </div>
-      <div class="success-modal-footer">
-        <button id="success-ok-btn" class="success-btn success-btn-ok">✓ OK - Auf dieser Aufgabe bleiben</button>
-        <button id="success-next-task-btn" class="success-btn success-btn-next">→ Nächste Aufgabe</button>
-        <button id="success-next-assignment-btn" class="success-btn success-btn-next-assignment" style="display: none;">⇒ Nächstes Assignment</button>
-      </div>
     </div>
   </div>
 
@@ -567,6 +665,21 @@ if ($displayName === '') {
         }
       });
     })();
+
+      // File tree toggle
+      (function() {
+        const toggleBtn = document.getElementById('file-tree-toggle');
+        const content = document.getElementById('file-tree-wrapper');
+        let isExpanded = true; // Start expanded in projects.php
+
+        if (toggleBtn && content) {
+          toggleBtn.addEventListener('click', () => {
+            isExpanded = !isExpanded;
+            content.style.display = isExpanded ? 'block' : 'none';
+            toggleBtn.textContent = (isExpanded ? '▼' : '▶') + ' Ordner';
+          });
+        }
+      })();
 
     // Logout
     document.getElementById('logout-btn')?.addEventListener('click', async () => {

@@ -1,12 +1,12 @@
 // file-tree.js - Project file structure display and management
-// Shows default folder structure: ProjectName.py + images/ + scripts/
+// Shows default folder structure: ProjectName.py + images/ + includes/
 
 class FileTreeManager {
-  constructor(containerId) {
+  constructor(containerId, startExpanded = false) {
     this.container = document.getElementById(containerId);
     this.projectId = null;
     this.projectName = null;
-    this.isExpanded = false;
+    this.isExpanded = startExpanded;
   }
 
   /**
@@ -33,7 +33,7 @@ class FileTreeManager {
           ]
         },
         {
-          name: 'scripts',
+          name: 'includes',
           type: 'folder',
           icon: '📁',
           children: [
@@ -52,37 +52,16 @@ class FileTreeManager {
   render(structure) {
     if (!this.container) return;
 
+    // Render just the tree structure (toggle UI is in parent HTML)
     const html = `
       <div class="file-tree">
-        <div class="file-tree-header">
-          <button class="file-tree-toggle" id="file-tree-toggle" title="Dateibaum umschalten">
-            ▶ Dateien
-          </button>
-        </div>
-        <div class="file-tree-panel" id="file-tree-panel">
-          <div class="file-tree-content">
-            ${this.renderNode(structure, 0)}
-          </div>
-        </div>
+        ${this.renderNode(structure, 0)}
       </div>
     `;
 
     this.container.innerHTML = html;
 
     // Setup toggle
-    const toggleBtn = document.getElementById('file-tree-toggle');
-    const panel = document.getElementById('file-tree-panel');
-    
-    if (toggleBtn && panel) {
-      toggleBtn.addEventListener('click', () => {
-        this.isExpanded = !this.isExpanded;
-        panel.style.display = this.isExpanded ? 'block' : 'none';
-        toggleBtn.textContent = (this.isExpanded ? '▼' : '▶') + ' Dateien';
-      });
-      
-      // Start collapsed
-      panel.style.display = 'none';
-    }
   }
 
   /**
