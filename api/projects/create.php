@@ -65,6 +65,9 @@ if ($currentCount >= $maxProjects) {
     jsonResponse(['ok' => false, 'error' => "Project limit reached ($maxProjects projects)"], 403);
 }
 
+// Ensure project files tables exist before using them
+ensureProjectFilesTablesExist($conn);
+
 // Generate share token for public projects
 $shareToken = null;
 if ($visibility === 'public') {
@@ -77,6 +80,9 @@ $stmt->bind_param('isssss', $user['id'], $name, $description, $code, $visibility
 
 if ($stmt->execute()) {
     $projectId = $conn->insert_id;
+    
+    // Initialize default folder structure
+    initializeDefaultProjectStructure($conn, $projectId, $name);
     
     jsonResponse([
         'ok' => true,
@@ -91,4 +97,98 @@ if ($stmt->execute()) {
     ], 201);
 } else {
     jsonResponse(['ok' => false, 'error' => 'Failed to create project'], 500);
+}
+
+/**
+ * Initialize default project structure
+ * Creates: includes/, img/ folders and projectname.py file
+ */
+function initializeDefaultProjectStructure($conn, $projectId, $projectName)
+{
+    try {
+        // Create includes folder
+        $stmt = $conn->prepare('INSERT INTO project_folders (project_id, parent_folder_id, name) VALUES (?, NULL, ?)');
+        $folderName = 'includes';
+        $stmt->bind_param('is', $projectId, $folderName);
+        $stmt->execute();
+        
+        // Create img folder
+        $stmt = $conn->prepare('INSERT INTO project_folders (project_id, parent_folder_id, name) VALUES (?, NULL, ?)');
+        $folderName = 'img';
+        $stmt->bind_param('is', $projectId, $folderName);
+        $stmt->execute();
+        
+        // Create projectname.py file (at root, folder_id = NULL)
+        $safeName = preg_replace('/\s+/', '_', trim($projectName));
+        $safeName = preg_replace('/[^A-Za-z0-9_\-.]/', '', $safeName);
+        if ($safeName === '') {
+            $safeName = 'project';
+        }
+        $fileName = $safeName . '.py';
+        $content = "# " . $projectName . "\n\n# Start coding here!\n";
+        $mimeType = 'text/plain';
+        $fileSize = strlen($content);
+        
+        $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+        $stmt->bind_param('isssi', $projectId, $fileName, $content, $mimeType, $fileSize);
+        $stmt->execute();
+        
+    } catch (Exception $e) {
+        // Log error but don't fail project creation
+        error_log('Failed to initialize project structure: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Ensure required tables exist - creates them if missing (idempotent)
+ */
+function ensureProjectFilesTablesExist($conn) {
+    try {
+        // Check if project_folders table exists
+        $result = $conn->query("SHOW TABLES LIKE 'project_folders'");
+        if($result->num_rows == 0) {
+            // Create project_folders table
+            $conn->query("
+                CREATE TABLE IF NOT EXISTS project_folders (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    project_id INT UNSIGNED NOT NULL,
+                    parent_folder_id INT UNSIGNED,
+                    name VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (parent_folder_id) REFERENCES project_folders(id) ON DELETE CASCADE,
+                    INDEX (project_id),
+                    INDEX (parent_folder_id),
+                    UNIQUE KEY unique_folder_name (project_id, parent_folder_id, name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+        
+        // Check if project_files table exists
+        $result = $conn->query("SHOW TABLES LIKE 'project_files'");
+        if($result->num_rows == 0) {
+            // Create project_files table
+            $conn->query("
+                CREATE TABLE IF NOT EXISTS project_files (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    project_id INT UNSIGNED NOT NULL,
+                    folder_id INT UNSIGNED,
+                    name VARCHAR(255) NOT NULL,
+                    content MEDIUMTEXT,
+                    mime_type VARCHAR(100) DEFAULT 'text/plain',
+                    file_size INT UNSIGNED DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (folder_id) REFERENCES project_folders(id) ON DELETE CASCADE,
+                    INDEX (project_id),
+                    INDEX (folder_id),
+                    UNIQUE KEY unique_file_name (project_id, folder_id, name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to ensure project files tables: ' . $e->getMessage());
+    }
 }

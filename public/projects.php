@@ -158,17 +158,17 @@ if ($displayName === '') {
     }
 
     .file-tree-header {
-      padding: 8px;
+      padding: 0;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
     }
 
     .file-tree-toggle {
       width: 100%;
-      padding: 6px 8px;
+      padding: 0 6px;
       background: transparent;
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 0;
       color: var(--text-primary);
       cursor: pointer;
       font-size: 13px;
@@ -184,7 +184,7 @@ if ($displayName === '') {
     .file-tree-content {
       flex: 1;
       overflow-y: auto;
-      padding: 8px;
+      padding: 0;
       font-size: 13px;
       min-height: 0;
     }
@@ -522,6 +522,16 @@ if ($displayName === '') {
       font-weight: 600;
       color: var(--text-primary);
     }
+
+    .project-visibility {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-left: 8px;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -531,6 +541,7 @@ if ($displayName === '') {
     <button id="run-btn">Run</button>
     <button id="save-project-btn" style="display:none;">💾 Speichern</button>
     <button id="download-btn" style="display:none;">⬇ Herunterladen</button>
+    <span id="project-visibility" class="project-visibility"></span>
 
     <div style="flex:1"></div>
     
@@ -574,10 +585,6 @@ if ($displayName === '') {
     </label>
   </div>
 
-  <div class="current-project-bar" id="current-project-bar" style="display:none;">
-    <span>Projekt: <span class="current-project-name" id="current-project-name">Ungespeichert</span></span>
-    <span id="project-visibility"></span>
-  </div>
 
   <!-- Editor View -->
   <div class="app" id="editor-view" style="display:grid;">
@@ -585,11 +592,11 @@ if ($displayName === '') {
     <div id="file-tree-panel" class="file-tree-panel">
       <div class="file-tree-header" id="file-tree-header">
         <button class="file-tree-toggle" id="file-tree-toggle" title="Dateibaum umschalten">
-          ▼ Ordner
+          ▼ Projekt
         </button>
       </div>
       <div class="file-tree-content" id="file-tree-wrapper">
-        <!-- Initialized by file-tree.js -->
+        <!-- Initialized by file-tree-manager.js -->
       </div>
     </div>
 
@@ -631,7 +638,6 @@ if ($displayName === '') {
   <script src="pyodide/pyodide.js"></script>
 
   <!-- File Tree & Validation -->
-  <script src="js/file-tree.js"></script>
   <script src="js/code-validator.js"></script>
 
   <script type="module" src="js/editor-setup.js"></script>
@@ -678,10 +684,16 @@ if ($displayName === '') {
         let isExpanded = true; // Start expanded in projects.php
 
         if (toggleBtn && content) {
+          const getLabel = () => {
+            if (toggleBtn.dataset.label) return toggleBtn.dataset.label;
+            return toggleBtn.textContent.replace(/^[▼▶]\s*/, '').trim() || 'Projekt';
+          };
+
           toggleBtn.addEventListener('click', () => {
             isExpanded = !isExpanded;
             content.style.display = isExpanded ? 'block' : 'none';
-            toggleBtn.textContent = (isExpanded ? '▼' : '▶') + ' Ordner';
+            const label = getLabel();
+            toggleBtn.textContent = (isExpanded ? '▼ ' : '▶ ') + label;
           });
         }
       })();
@@ -709,6 +721,7 @@ if ($displayName === '') {
       projectsPanel.classList.remove('open');
     });
   </script>
+  <script src="js/file-tree-manager.js"></script>
   <script type="module" src="js/projects.js"></script>
 </body>
 </html>

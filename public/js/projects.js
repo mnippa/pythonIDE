@@ -2,9 +2,11 @@
 
 let currentProject = null;
 let editorInstance = null;
+let fileTreeManager = null;
 
 // Make currentProject globally accessible
 window.currentProject = null;
+window.fileTreeManager = null;
 
 // Wait for editor to be ready - improved version
 function waitForEditor() {
@@ -123,16 +125,36 @@ async function loadProject(projectId) {
         currentBar.style.display = 'flex';
       }
       
-      // Update name in UI
-      const nameEl = document.getElementById('current-project-name');
-      if (nameEl) {
-        nameEl.textContent = data.project.name;
+      // Update file tree header with project name
+      const treeToggle = document.getElementById('file-tree-toggle');
+      if (treeToggle) {
+        treeToggle.textContent = `▼ ${data.project.name}`;
+        treeToggle.dataset.label = data.project.name;
       }
       
-      // Initialize file tree with project name (if available)
-      if (window.FileTreeManager && window.fileTreeManager) {
-        const structure = window.fileTreeManager.initializeDefaultStructure(data.project.name);
-        window.fileTreeManager.render(structure);
+      // Initialize file tree manager for the project
+      if (window.FileTreeManager) {
+        fileTreeManager = new window.FileTreeManager('file-tree-wrapper', {
+          projectId: projectId,
+          projectName: data.project.name,
+          onFileSelected: (fileId, fileName, content) => {
+            console.log('File selected:', fileName);
+            if (editor) {
+              editor.setValue(content);
+            }
+          },
+          onFileSaved: (fileId, fileName) => {
+            console.log('File saved:', fileName);
+            // Optional: show toast notification
+          },
+          onFileDeleted: (fileId, fileName) => {
+            console.log('File deleted:', fileName);
+          }
+        });
+        window.fileTreeManager = fileTreeManager;
+        
+        // Load the file tree for this project
+        fileTreeManager.init();
       }
       
       const saveProjectBtn = document.getElementById('save-project-btn');
@@ -263,17 +285,24 @@ async function createNewProject() {
       showNotification('✓ Projekt erstellt', 'success');
       
       // Update UI
-      document.getElementById('current-project-bar').style.display = 'flex';
-      document.getElementById('current-project-name').textContent = data.project.name;
-      document.getElementById('save-btn').style.display = 'block';
+      const currentBar = document.getElementById('current-project-bar');
+      if (currentBar) currentBar.style.display = 'flex';
+      
+      const nameEl = document.getElementById('current-project-name');
+      if (nameEl) nameEl.textContent = data.project.name;
+      
+      const saveBtn = document.getElementById('save-project-btn');
+      if (saveBtn) saveBtn.style.display = 'inline-block';
       
       // Reload projects list
       loadProjects();
     } else {
+      console.error('Project creation failed:', data);
       alert('Fehler: ' + (data.error || 'Projekt konnte nicht erstellt werden'));
     }
   } catch (err) {
-    alert('Verbindungsfehler');
+    console.error('Connection error creating project:', err);
+    alert('Verbindungsfehler: ' + err.message);
   }
 }
 
@@ -374,7 +403,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
-      if (currentProject) {
+      
+      // If a file is selected in file tree, save it
+      if (window.fileTreeManager && window.fileTreeManager.selectedFileId) {
+        const content = editorInstance ? editorInstance.getValue() : '';
+        window.fileTreeManager.saveFile(window.fileTreeManager.selectedFileId, content);
+      }
+      // Otherwise save the project code
+      else if (currentProject) {
         saveProject();
       }
     }

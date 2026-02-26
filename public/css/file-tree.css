@@ -13,20 +13,21 @@
 }
 
 .file-tree-header {
-  padding: 10px;
+  padding: 0;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 
 .file-tree-toggle {
   width: 100%;
-  padding: 8px;
+  padding: 0 6px;
   background: var(--panel);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
   font-weight: 600;
+  font-size: 12px;
   text-align: left;
   transition: background 0.2s;
 }
@@ -38,11 +39,75 @@
 .file-tree-panel {
   overflow-y: auto;
   flex: 1;
-  padding: 8px;
+  padding: 0;
 }
 
 .file-tree-content {
   user-select: none;
+}
+
+/* Breadcrumb navigation */
+.file-tree-breadcrumb {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  gap: 4px;
+}
+
+.breadcrumb-item {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.breadcrumb-item:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+html.dark-mode .breadcrumb-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.breadcrumb-action {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: all 0.2s;
+  border-radius: 3px;
+}
+
+.breadcrumb-action:hover {
+  background: rgba(0, 0, 0, 0.1);
+  transform: scale(1.1);
+}
+
+html.dark-mode .breadcrumb-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Content items container */
+.file-tree-content-items {
+  padding: 4px;
+}
+
+.file-tree-empty {
+  padding: 20px 8px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .file-tree-item {
@@ -215,3 +280,131 @@ html.dark-mode .test-result.test-fail {
     display: none;
   }
 }
+
+/* ============================================================
+   FILE TREE MANAGER STYLES (v2)
+   ============================================================ */
+
+.file-tree-item {
+  padding: 3px 6px !important;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.file-tree-item:hover {
+  background-color: rgba(200, 210, 230, 0.3);
+}
+
+.file-tree-item.selected {
+  background-color: rgba(30, 100, 200, 0.95) !important;
+  color: #fff !important;
+  font-weight: bold;
+}
+
+.file-tree-icon {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.file-tree-name {
+  flex: 1;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inline editing input */
+.file-tree-name-input {
+  flex: 1;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid var(--primary-color);
+  border-radius: 2px;
+  background: #fff;
+  outline: none;
+  font-family: inherit;
+}
+
+.file-tree-item.inline-editing {
+  background-color: rgba(30, 100, 200, 0.1);
+  pointer-events: auto;
+}
+
+.file-tree-item.inline-editing .file-tree-actions {
+  display: none !important;
+}
+
+.file-tree-info {
+  font-size: 10px;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.file-tree-folder-indicator {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding-right: 4px;
+}
+
+.file-tree-item.selected .file-tree-info {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.file-tree-actions {
+  display: none;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.file-tree-item:hover .file-tree-actions {
+  display: flex;
+}
+
+.btn-file-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: #666;
+  transition: color 0.2s;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.btn-file-action:hover {
+  color: #000;
+  background-color: rgba(200, 200, 200, 0.3);
+  border-radius: 2px;
+}
+
+.file-tree-item.selected .btn-file-action {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.file-tree-item.selected .btn-file-action:hover {
+  color: #fff;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.file-tree-children {
+  transition: all 0.2s ease;
+}
+
+.file-tree-children[style*="display: none"] {
+  max-height: 0;
+  overflow: hidden;
+}
+
