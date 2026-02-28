@@ -788,6 +788,22 @@ if ($displayName === '') {
             <input id="task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
           </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="task-folderstructure" type="checkbox" />
+              <span>📁 Mit Ordnerstruktur</span>
+            </label>
+            <div class="hint">Schüler arbeiten mit einer Dateistruktur</div>
+          </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="task-allowDownload" type="checkbox" />
+              <span>📁 Herunterladen erlauben</span>
+            </label>
+            <div class="hint">Schüler dürfen Dateien herunterladen</div>
+          </div>
         </div>
         
         <!-- Tab 2: Optional Fields -->
@@ -1021,6 +1037,22 @@ if ($displayName === '') {
             <label for="edit-task-max-iterations">Iterationen</label>
             <input id="edit-task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+          </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="edit-task-folderstructure" type="checkbox" />
+              <span>📁 Mit Ordnerstruktur</span>
+            </label>
+            <div class="hint">Schüler arbeiten mit einer Dateistruktur</div>
+          </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="edit-task-allowDownload" type="checkbox" />
+              <span>📁 Herunterladen erlauben</span>
+            </label>
+            <div class="hint">Schüler dürfen Dateien herunterladen</div>
           </div>
         </div>
         

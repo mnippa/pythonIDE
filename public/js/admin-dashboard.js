@@ -515,6 +515,8 @@ async function handleTaskSubmit(e) {
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
     show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
+    folderstructure: $('task-folderstructure').checked ? 1 : 0,
+    allowDownload: $('task-allowDownload').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     code_template: $('task-template').value,
@@ -1184,6 +1186,22 @@ function openEditTaskModal(taskId) {
       task.show_solution_code === 'true';
   }
   
+  if ($('edit-task-folderstructure')) {
+    $('edit-task-folderstructure').checked =
+      task.folderstructure === 1 ||
+      task.folderstructure === true ||
+      task.folderstructure === '1' ||
+      task.folderstructure === 'true';
+  }
+  
+  if ($('edit-task-allowDownload')) {
+    $('edit-task-allowDownload').checked =
+      task.allowDownload === 1 ||
+      task.allowDownload === true ||
+      task.allowDownload === '1' ||
+      task.allowDownload === 'true';
+  }
+  
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
@@ -1314,12 +1332,15 @@ async function handleEditTaskSubmit(e) {
 
   const taskType = $('edit-task-type').value;
   
+  
   const payload = {
     id: taskId,
     title: $('edit-task-title').value.trim(),
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
     show_solution_code: $('edit-task-show-solution-code').checked ? 1 : 0,
+    folderstructure: $('edit-task-folderstructure').checked ? 1 : 0,
+    allowDownload: $('edit-task-allowDownload').checked ? 1 : 0,
     task_type: taskType,
     problem_type: taskType,  // Keep for backwards compatibility
     code_template: $('edit-task-template').value,

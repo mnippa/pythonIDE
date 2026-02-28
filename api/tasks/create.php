@@ -59,6 +59,8 @@ $imageUrl = trim($input['image_url'] ?? '') ?: null;
 $correctAnswer = trim($input['correct_answer'] ?? '') ?: null;
 $variableOverrides = $input['variable_overrides'] ?? null;
 $options = $input['options'] ?? [];
+$folderstructure = isset($input['folderstructure']) ? (int)(bool)$input['folderstructure'] : 0;
+$allowDownload = isset($input['allowDownload']) ? (int)(bool)$input['allowDownload'] : 0;
 
 $problemTypeMap = [
     'code' => 'code_completion',
@@ -206,8 +208,8 @@ $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -238,6 +240,8 @@ $types .= 's';     // image_url
 $types .= 's';     // correct_answer
 $types .= 's';     // variable_overrides
 $types .= 's';     // randomizer_code
+$types .= 'i';     // folderstructure
+$types .= 'i';     // allowDownload
 
 error_log('Type string: ' . $types . ' (length: ' . strlen($types) . ')');
 
@@ -267,7 +271,9 @@ $bindResult = @$stmt->bind_param(
     $imageUrl,
     $correctAnswer,
     $variableOverridesJson,
-    $randomizerCode
+    $randomizerCode,
+    $folderstructure,
+    $allowDownload
 );
 
 if (!$bindResult) {
@@ -277,6 +283,16 @@ if (!$bindResult) {
 
 if ($stmt->execute()) {
     $taskId = $conn->insert_id;
+    
+    // Create folder structure if folderstructure flag is set
+    if ($folderstructure == 1) {
+        $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+        if (!file_exists($folderPath)) {
+            if (!mkdir($folderPath, 0755, true)) {
+                error_log('Failed to create folder structure for task ' . $taskId);
+            }
+        }
+    }
     
     // Insert task options for single/multiple choice
     if (in_array($taskType, ['single_choice', 'multiple_choice']) && !empty($options)) {

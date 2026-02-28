@@ -399,6 +399,11 @@ function showTaskDetails(task, activeTab = 'details') {
     tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'hints' ? 'active' : ''}" data-tab="hints">Hinweise <span class="task-tab-count">${revealedCount}/${totalHints}</span></button>`;
   }
   
+  // Folder structure tab (if enabled for this task)
+  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+    tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'folders' ? 'active' : ''}" data-tab="folders">📁 Ordner</button>`;
+  }
+  
   // Solution toggle button (inside tabs container for proper alignment)
   if (hasSolution) {
     const solutionActive = assignmentState.solutionMode === true;
@@ -415,8 +420,23 @@ function showTaskDetails(task, activeTab = 'details') {
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
   }
+  
+  // Folder structure panel (empty for now)
+  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+    html += `<div class="task-details-panel-section ${activeTab === 'folders' ? 'active' : ''}" data-tab-panel="folders">
+      <div id="folder-panel-content-${task.id}" style="color: var(--text-secondary); font-size: 13px;">
+        Lade Dateien...
+      </div>
+    </div>`;
+  }
 
   contentEl.innerHTML = html;
+  
+  // Load folder files if this is a folder structure task
+  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+    const folderPanelId = `folder-panel-content-${task.id}`;
+    loadAndDisplayTaskFiles(folderPanelId, task.id);
+  }
 
   const tabButtons = contentEl.querySelectorAll('.task-details-tab');
   const tabPanels = contentEl.querySelectorAll('.task-details-panel-section');
@@ -1484,6 +1504,15 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
 
+  // Auto-save any open folder file (esp. init.py) before switching tasks
+  if (window.currentFile && window.editorInstance) {
+    try {
+      await saveTaskFile(true); // silent=true (no alerts/visual feedback)
+    } catch (err) {
+      console.warn('Auto-save before task switch failed:', err);
+    }
+  }
+
   // Normalize task data (convert escaped newlines)
   normalizeTaskData(task);
 
@@ -1834,6 +1863,11 @@ async function downloadCode() {
 }
 
 async function saveCode(options = {}) {
+  // Check if we're editing a folder structure file (from admin test view)
+  if (window.currentFile && window.currentFile.taskId) {
+    return await saveTaskFile();
+  }
+
   const { setStatus = true } = options;
   const task = assignmentState.currentTask;
   if (!task) {
@@ -2093,6 +2127,72 @@ function closeSuccessModal() {
   }
 }
 
+function detectEditorFileType() {
+  const path = window.currentFile?.path || '';
+  if (!path) return 'py';
+  const fileName = path.split('/').pop() || '';
+  const lower = fileName.toLowerCase();
+
+  if (lower === 'init.py' || lower.endsWith('.py')) return 'py';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  if (lower.endsWith('.css')) return 'css';
+  if (lower.endsWith('.json')) return 'json';
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'js';
+  if (lower.endsWith('.xml')) return 'xml';
+  return 'text';
+}
+
+function renderNonPythonCheckResult(fileType, code, outputEl) {
+  if (!outputEl) return;
+
+  if (fileType === 'json') {
+    try {
+      JSON.parse(code || '{}');
+      outputEl.innerHTML = `<div style="padding:12px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; color:#166534;">
+        <strong style="font-size:14px;">✅ JSON gültig</strong>
+        <div style="font-size:12px; margin-top:4px; color:#15803d;">Die Datei ist syntaktisch korrekt.</div>
+      </div>`;
+    } catch (err) {
+      outputEl.innerHTML = `<div style="padding:12px; background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; color:#991b1b;">
+        <strong style="font-size:14px;">❌ JSON-Fehler</strong>
+        <div style="font-size:12px; margin-top:4px; color:#dc2626; font-family:monospace;">${escapeHtml(String(err.message || err))}</div>
+      </div>`;
+    }
+    return;
+  }
+
+  if (fileType === 'js') {
+    // Einfache JS-Syntax-Check (nur offensichtliche Fehler)
+    try {
+      // Versuche, JavaScript zu kompilieren
+      new Function(code);
+      outputEl.innerHTML = `<div style="padding:12px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; color:#166534;">
+        <strong style="font-size:14px;">✅ JavaScript OK</strong>
+        <div style="font-size:12px; margin-top:4px; color:#15803d;">Keine offensichtlichen Syntaxfehler.</div>
+      </div>`;
+    } catch (err) {
+      outputEl.innerHTML = `<div style="padding:12px; background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; color:#991b1b;">
+        <strong style="font-size:14px;">❌ JavaScript-Fehler</strong>
+        <div style="font-size:12px; margin-top:4px; color:#dc2626; font-family:monospace;">${escapeHtml(String(err.message || err))}</div>
+      </div>`;
+    }
+    return;
+  }
+
+  const labels = {
+    html: 'HTML',
+    css: 'CSS',
+    xml: 'XML',
+    text: 'Textdatei'
+  };
+
+  const label = labels[fileType] || 'Datei';
+  outputEl.innerHTML = `<div style="padding:12px; background:#f3f4f6; border:1px solid #d1d5db; border-radius:6px; color:#374151;">
+    <strong style="font-size:14px;">ℹ️ ${label}</strong>
+    <div style="font-size:12px; margin-top:4px; color:#4b5563;">Für ${label.toLowerCase()} wird kein Python-Test ausgeführt. Die Datei ist lokal gespeichert.</div>
+  </div>`;
+}
+
 async function checkTask() {
   const task = assignmentState.currentTask;
   if (!task) {
@@ -2117,11 +2217,17 @@ async function checkTask() {
 
   // Get code from editor
   const code = editor.getValue();
+  const activeFileType = detectEditorFileType();
 
   // Run code in Pyodide
   const outputEl = $('output-container');
   if (outputEl) {
     outputEl.innerHTML = '<span style="color:#666;">Prüfe Code...</span>';
+  }
+
+  if (activeFileType !== 'py') {
+    renderNonPythonCheckResult(activeFileType, code, outputEl);
+    return;
   }
 
   try {
@@ -2276,8 +2382,14 @@ async function submitTask() {
   await saveCode({ setStatus: false });
 
   const code = editor.getValue();
+  const activeFileType = detectEditorFileType();
   const outputEl = $('output-container');
   if (outputEl) outputEl.innerHTML = '<span style="color:#666;">Überprüfe Code...</span>';
+
+  if (activeFileType !== 'py') {
+    renderNonPythonCheckResult(activeFileType, code, outputEl);
+    return;
+  }
 
   try {
     let pyodide = window.pyodide;
@@ -4229,3 +4341,770 @@ document.addEventListener('DOMContentLoaded', () => {
   window.closeSuccessModal = closeSuccessModal;
   window.renderTaskNavigation = renderTaskNavigation;
 });
+
+// Load and display task folder files
+async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  
+  try {
+    const response = await requestJson(`/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`, {
+      method: 'GET'
+    });
+    
+    if (!response.ok) {
+      panel.innerHTML = `<div style="color: var(--text-secondary); padding: 4px 8px; font-size: 12px;">Keine Dateien vorhanden</div>`;
+      return;
+    }
+    
+    const allFiles = response.files || [];
+    
+    // Trenne init.py (virtuell) von echten Filesystem-Dateien
+    const initPy = allFiles.find(f => f.name === 'init.py' && f.virtual);
+    const filesystemFiles = allFiles.filter(f => !f.virtual);
+    
+    // Store init.py content in window for openTaskFileInEditor to access
+    if (initPy) {
+      window.taskInitPyContent = window.taskInitPyContent || {};
+      window.taskInitPyContent[taskId] = initPy.content || '';
+    }
+    
+    // Bilde aktuellen Ordner-Inhalt ab
+    let currentFiles = filesystemFiles;
+    if (currentPath) {
+      currentFiles = findFolderContents(filesystemFiles, currentPath);
+      if (!currentFiles) {
+        currentFiles = filesystemFiles;
+        currentPath = '';
+      }
+    }
+    
+    // Build UI with toolbar and file tree
+    let html = `
+      <div style="display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); background: var(--bg);">
+        <button type="button" class="hspf-btn hspf-btn-sm" onclick="createTaskFolder(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Neuer Ordner">📁+</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" onclick="createTaskFile(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Neue Datei">📄+</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" onclick="uploadTaskFile(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Datei hochladen">⬆️</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" onclick="openTaskFileInEditor(${taskId}, 'init.py')" style="padding: 2px 6px; font-size: 11px;" title="init.py (Hauptdatei)">🐍</button>
+      </div>
+    `;
+    
+    // Breadcrumb Navigation
+    if (currentPath) {
+      const pathParts = currentPath.split('/').filter(p => p);
+      html += `<div style="padding: 4px 8px; font-size: 11px; border-bottom: 1px solid var(--border); background: var(--bg);">
+        <span style="cursor: pointer; color: #667eea;" onclick="loadAndDisplayTaskFiles('${panelId}', ${taskId}, '')">📁 Root</span>`;
+      let buildPath = '';
+      pathParts.forEach((part, idx) => {
+        buildPath += (buildPath ? '/' : '') + part;
+        html += ` / <span style="cursor: pointer; color: #667eea;" onclick="loadAndDisplayTaskFiles('${panelId}', ${taskId}, '${buildPath}')">${part}</span>`;
+      });
+      html += `</div>`;
+    }
+    
+    html += `<div id="task-file-tree-${taskId}" style="font-size: 12px; background: var(--panel);" data-current-path="${currentPath}" data-task-id="${taskId}">
+      <input type="file" id="task-file-upload-${taskId}" style="display: none;" onchange="handleTaskFileUpload(${taskId}, this, '${currentPath}')" />
+    `;
+    
+    // Render init.py FIRST (from tree root no matter currentPath)
+    if (initPy && !currentPath) {
+      html += renderTaskFileItem(initPy, taskId, 0, '');
+    }
+    
+    // Render file tree (nur echte Filesystem-Dateien im aktuellen Ordner)
+    if (!currentFiles || currentFiles.length === 0) {
+      html += `<div style="padding: 4px 8px; color: var(--text-secondary);">Leer</div>`;
+    } else {
+      currentFiles.forEach(item => {
+        html += renderTaskFileItem(item, taskId, 0, currentPath);
+      });
+    }
+    
+    html += `</div>`;
+    
+    panel.innerHTML = html;
+    
+    // Add event listeners for file items
+    setTimeout(() => {
+      const fileItems = panel.querySelectorAll('.task-file-item');
+      fileItems.forEach(item => {
+        const path = item.getAttribute('data-path');
+        const type = item.getAttribute('data-type');
+        const isVirtual = item.getAttribute('data-virtual') === 'true';
+        
+        // Single click - open file in editor or navigate folder
+        item.addEventListener('click', (e) => {
+          if (e.detail === 1) {
+            if (type === 'folder') {
+              loadAndDisplayTaskFiles(panelId, taskId, path);
+            } else if (type === 'file') {
+              openTaskFileInEditor(taskId, path);
+            }
+          }
+        });
+        
+        // Double click - rename (nur nicht-virtuelle Dateien)
+        if (!isVirtual) {
+          item.addEventListener('dblclick', (e) => {
+            const fileName = path.split('/').pop();
+            const fileNameEl = item.querySelector('.file-name');
+            startInlineEdit(fileNameEl, taskId, path);
+          });
+          
+          // Right click - context menu (nur nicht-virtuelle Dateien)
+          item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showTaskFileContextMenu(e, taskId, path, type);
+          });
+        }
+      });
+    }, 100);
+    
+  } catch (error) {
+    console.error('Error loading folder files:', error);
+    panel.innerHTML = `<div style="color: red; padding: 4px 8px; font-size: 12px;">Fehler beim Laden der Dateien</div>`;
+  }
+}
+
+// Find folder contents by path
+function findFolderContents(files, path) {
+  if (!path) return files;
+  
+  const parts = path.split('/').filter(p => p);
+  let current = files;
+  
+  for (let part of parts) {
+    let found = false;
+    for (let item of current) {
+      if (item.name === part && item.type === 'folder') {
+        current = item.children || [];
+        found = true;
+        break;
+      }
+    }
+    if (!found) return null;
+  }
+  
+  return current;
+}
+
+// Render individual file/folder item
+function renderTaskFileItem(item, taskId, depth, currentPath = '') {
+  const indent = depth * 12;
+  const icon = item.type === 'folder' ? '📁' : '📄';
+  const virtualBadge = item.virtual ? ' <span style="font-size: 9px; color: #667eea;">(v)</span>' : '';
+  const itemPath = currentPath ? currentPath + '/' + item.name : item.name;
+  const isClickable = item.type === 'file'; // Dateien klickbar machen
+  const cursorStyle = isClickable ? 'cursor: pointer;' : 'cursor: default;';
+  
+  let html = `
+    <div class="task-file-item" 
+         data-task-id="${taskId}"
+         data-path="${itemPath}" 
+         data-type="${item.type}"
+         data-virtual="${item.virtual || false}"
+         style="padding: 2px 4px; padding-left: ${indent}px; user-select: none; display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; ${cursorStyle} ${item.type === 'folder' ? 'font-weight: 500;' : ''}">
+      <span style="width: 16px; display: flex; justify-content: center;">${icon}</span>
+      <span class="file-name">${item.name}</span>${virtualBadge}
+    </div>
+  `;
+  
+  return html;
+}
+
+// Create new folder
+async function createTaskFolder(taskId, parentPath = '') {
+  // Find a unique name like "newfolder", "newfolder2", etc.
+  const tree = document.getElementById(`task-file-tree-${taskId}`);
+  const existingNames = Array.from(tree.querySelectorAll('.file-name'))
+    .map(el => el.textContent)
+    .filter(name => name.startsWith('newfolder'));
+  
+  let name = 'newfolder';
+  let counter = 1;
+  while (existingNames.includes(name)) {
+    counter++;
+    name = 'newfolder' + counter;
+  }
+  
+  try {
+    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_folder`, {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: taskId,
+        name: name,
+        parent_path: parentPath
+      })
+    });
+    
+    if (!response.ok) throw new Error(response.error);
+    
+    // Reload and start editing
+    const panelId = `folder-panel-content-${taskId}`;
+    loadAndDisplayTaskFiles(panelId, taskId, parentPath);
+    
+    // Trigger edit after reload
+    setTimeout(() => {
+      const fileNameEl = tree.querySelector(`[data-path="${parentPath ? parentPath + '/' : ''}${name}"] .file-name`);
+      if (fileNameEl) startInlineEdit(fileNameEl, taskId, parentPath ? parentPath + '/' + name : name);
+    }, 100);
+    
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+}
+
+// Create new file
+async function createTaskFile(taskId, parentPath = '') {
+  // Find a unique name like "newfile.py", "newfile2.py", etc.
+  const tree = document.getElementById(`task-file-tree-${taskId}`);
+  const existingNames = Array.from(tree.querySelectorAll('.file-name'))
+    .map(el => el.textContent)
+    .filter(name => name.startsWith('newfile'));
+  
+  let name = 'newfile.py';
+  let counter = 1;
+  while (existingNames.includes(name)) {
+    counter++;
+    name = 'newfile' + counter + '.py';
+  }
+  
+  try {
+    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_file`, {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: taskId,
+        name: name,
+        parent_path: parentPath,
+        content: ''
+      })
+    });
+    
+    if (!response.ok) throw new Error(response.error);
+    
+    // Reload and start editing
+    const panelId = `folder-panel-content-${taskId}`;
+    loadAndDisplayTaskFiles(panelId, taskId, parentPath);
+    
+    // Trigger edit after reload
+    setTimeout(() => {
+      const fileNameEl = tree.querySelector(`[data-path="${parentPath ? parentPath + '/' : ''}${name}"] .file-name`);
+      if (fileNameEl) startInlineEdit(fileNameEl, taskId, parentPath ? parentPath + '/' + name : name);
+    }, 100);
+    
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+}
+
+// Start inline editing
+function startInlineEdit(element, taskId, path) {
+  const fileName = path.split('/').pop();
+  const container = element.parentElement;
+  
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = fileName;
+  input.style.cssText = `
+    flex: 1;
+    padding: 0 2px;
+    border: 1px solid #667eea;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: inherit;
+  `;
+  
+  // Replace display element with input
+  element.style.display = 'none';
+  container.insertBefore(input, element.nextSibling);
+  input.focus();
+  input.select();
+  
+  async function finishEdit() {
+    const newName = input.value.trim();
+    
+    if (newName && newName !== fileName && newName !== '') {
+      try {
+        const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=rename`, {
+          method: 'POST',
+          body: JSON.stringify({
+            task_id: taskId,
+            old_path: path,
+            new_name: newName
+          })
+        });
+        
+        if (!response.ok) throw new Error(response.error);
+        
+        // Reload
+        const panelId = `folder-panel-content-${taskId}`;
+        loadAndDisplayTaskFiles(panelId, taskId);
+      } catch (error) {
+        alert('Fehler beim Umbenennen: ' + error.message);
+        element.style.display = '';
+        input.remove();
+      }
+    } else {
+      element.style.display = '';
+      input.remove();
+    }
+  }
+  
+  input.addEventListener('blur', finishEdit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finishEdit();
+    if (e.key === 'Escape') {
+      element.style.display = '';
+      input.remove();
+    }
+  });
+}
+
+// Upload file
+function uploadTaskFile(taskId, parentPath = '') {
+  document.getElementById(`task-file-upload-${taskId}`).click();
+}
+
+async function handleTaskFileUpload(taskId, input, parentPath = '') {
+  if (!input.files || input.files.length === 0) return;
+  
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  formData.append('task_id', taskId);
+  formData.append('parent_path', parentPath);
+  
+  try {
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=upload`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    const result = await response.json();
+    
+    if (!result.ok) {
+      throw new Error(result.error || 'Upload failed');
+    }
+    
+    // Reload files
+    const panelId = `folder-panel-content-${taskId}`;
+    loadAndDisplayTaskFiles(panelId, taskId, parentPath);
+    
+    // Reset input
+    input.value = '';
+  } catch (error) {
+    alert('Fehler beim Hochladen: ' + error.message);
+  }
+}
+
+// Context menu
+function showTaskFileContextMenu(event, taskId, path, type) {
+  // Remove existing context menu
+  const existingMenu = document.getElementById('task-file-context-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+  
+  // Create context menu
+  const menu = document.createElement('div');
+  menu.id = 'task-file-context-menu';
+  menu.style.cssText = `
+    position: fixed;
+    left: ${event.clientX}px;
+    top: ${event.clientY}px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 0;
+    z-index: 10000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    font-size: 12px;
+  `;
+  
+  const fileName = path.split('/').pop();
+  
+  // Umbenennen
+  const renameItem = document.createElement('div');
+  renameItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+  renameItem.textContent = '✏️ Umbenennen';
+  renameItem.addEventListener('mouseover', () => renameItem.style.background = 'var(--bg)');
+  renameItem.addEventListener('mouseout', () => renameItem.style.background = 'transparent');
+  renameItem.addEventListener('click', () => {
+    const fileNameEl = document.querySelector(`.task-file-item[data-path="${path}"] .file-name`);
+    if (fileNameEl) {
+      startInlineEdit(fileNameEl, taskId, path);
+    }
+    menu.remove();
+  });
+  menu.appendChild(renameItem);
+  
+  // Duplizieren
+  const dupItem = document.createElement('div');
+  dupItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+  dupItem.textContent = '📋 Duplizieren';
+  dupItem.addEventListener('mouseover', () => dupItem.style.background = 'var(--bg)');
+  dupItem.addEventListener('mouseout', () => dupItem.style.background = 'transparent');
+  dupItem.addEventListener('click', () => {
+    duplicateTaskItem(taskId, path);
+    menu.remove();
+  });
+  menu.appendChild(dupItem);
+  
+  // Herunterladen (nur für Dateien)
+  if (type === 'file') {
+    const downItem = document.createElement('div');
+    downItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+    downItem.textContent = '⬇️ Herunterladen';
+    downItem.addEventListener('mouseover', () => downItem.style.background = 'var(--bg)');
+    downItem.addEventListener('mouseout', () => downItem.style.background = 'transparent');
+    downItem.addEventListener('click', () => {
+      downloadTaskFile(taskId, path);
+      menu.remove();
+    });
+    menu.appendChild(downItem);
+  }
+  
+  // Löschen
+  const delItem = document.createElement('div');
+  delItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap; color: red;';
+  delItem.textContent = '🗑️ Löschen';
+  delItem.addEventListener('mouseover', () => delItem.style.background = 'var(--bg)');
+  delItem.addEventListener('mouseout', () => delItem.style.background = 'transparent');
+  delItem.addEventListener('click', () => {
+    deleteTaskItem(taskId, path);
+    menu.remove();
+  });
+  menu.appendChild(delItem);
+  
+  document.body.appendChild(menu);
+  
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', function closeMenu(e) {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    });
+  }, 100);
+}
+
+// Open task file in editor
+async function openTaskFileInEditor(taskId, path) {
+  try {
+    let fileName = path.split('/').pop();
+    let language = 'plaintext';
+    let content = '';
+    
+    // Special handling for init.py (virtual file from user_tasks.current_code)
+    if (path === 'init.py') {
+      // Get init.py content from stored window variable
+      if (window.taskInitPyContent && window.taskInitPyContent[taskId]) {
+        content = window.taskInitPyContent[taskId] || '';
+      }
+      
+      // Dispose old model
+      if (window.editorInstance && window.editorInstance.getModel()) {
+        window.editorInstance.getModel().dispose();
+      }
+      
+      language = 'python';
+      
+      if (window.editorInstance && window.monaco) {
+        const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/init.py`));
+        window.editorInstance.setModel(editorModel);
+        window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true };
+        
+        const title = document.querySelector('.editor-title');
+        if (title) {
+          title.textContent = 'init.py (Hauptdatei)';
+        }
+      }
+      return;
+    }
+    
+    // Real file handling (from filesystem)
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+    
+    if (!response.ok) {
+      throw new Error('Datei nicht gefunden: ' + path);
+    }
+    
+    const result = await response.json();
+    content = result.content || '';
+    
+    // Language detection
+    const ext = fileName.split('.').pop() || 'txt';
+    const languageMap = {
+      'py': 'python',
+      'js': 'javascript',
+      'ts': 'typescript',
+      'java': 'java',
+      'cpp': 'cpp',
+      'c': 'c',
+      'cs': 'csharp',
+      'php': 'php',
+      'rb': 'ruby',
+      'html': 'html',
+      'css': 'css',
+      'json': 'json',
+      'xml': 'xml',
+      'yaml': 'yaml',
+      'yml': 'yaml',
+      'txt': 'plaintext'
+    };
+    
+    language = languageMap[ext.toLowerCase()] || 'plaintext';
+    
+    // Dispose old model
+    if (window.editorInstance && window.editorInstance.getModel()) {
+      window.editorInstance.getModel().dispose();
+    }
+    
+    // Set editor content
+    if (window.editorInstance && window.monaco) {
+      const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/${path}`));
+      window.editorInstance.setModel(editorModel);
+      window.currentFile = { taskId, path, fileName };
+      
+      const title = document.querySelector('.editor-title');
+      if (title) {
+        title.textContent = fileName;
+      }
+    } else {
+      console.warn('Editor nicht initialisiert');
+    }
+  } catch (error) {
+    console.error('Fehler beim Öffnen der Datei:', error);
+    alert('Fehler beim Öffnen der Datei: ' + error.message);
+  }
+}
+
+// Save current file in editor
+// silent: true = no alerts or visual feedback (for auto-save)
+async function saveTaskFile(silent = false) {
+  if (!window.currentFile) {
+    if (!silent) alert('Keine Datei zum Speichern geöffnet');
+    return false;
+  }
+
+  const { taskId, path, fileName, isVirtual } = window.currentFile;
+
+  // Get editor content
+  if (!window.editorInstance) {
+    if (!silent) alert('Editor nicht initialisiert');
+    return false;
+  }
+
+  const content = window.editorInstance.getValue();
+
+  try {
+    // Special handling for init.py (virtual file) - save to tasks.code_template
+    if (isVirtual && path === 'init.py') {
+      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task_id: taskId,
+          content: content
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || 'Speichern fehlgeschlagen');
+      }
+
+      // Update stored init.py content
+      if (window.taskInitPyContent) {
+        window.taskInitPyContent[taskId] = content;
+      }
+
+      if (!silent) {
+        console.log('✅ Template gespeichert:', fileName);
+      }
+    } 
+    // Regular files - save to filesystem
+    else {
+      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task_id: taskId,
+          path: path,
+          content: content
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || 'Speichern fehlgeschlagen');
+      }
+
+      if (!silent) {
+        console.log('✅ Datei gespeichert:', fileName);
+      }
+    }
+    
+    // Add visual feedback only if not silent
+    if (!silent) {
+      const title = document.querySelector('.editor-title');
+      if (title) {
+        const original = title.textContent;
+        title.textContent = '✅ ' + original;
+        setTimeout(() => {
+          title.textContent = original;
+        }, 2000);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error('Fehler beim Speichern:', error);
+    if (!silent) {
+      alert('Fehler beim Speichern: ' + error.message);
+    }
+    return false;
+  }
+}
+
+async function deleteTaskItem(taskId, path) {
+  if (!confirm(`Wirklich löschen: ${path}?`)) return;
+  
+  try {
+    await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=delete`, {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: taskId,
+        path: path
+      })
+    });
+    
+    // Reload files mit aktuellem currentPath
+    const panelId = `folder-panel-content-${taskId}`;
+    const tree = document.getElementById(`task-file-tree-${taskId}`);
+    const currentPath = tree ? tree.getAttribute('data-current-path') || '' : '';
+    loadAndDisplayTaskFiles(panelId, taskId, currentPath);
+  } catch (error) {
+    alert('Fehler beim Löschen: ' + error.message);
+  }
+}
+
+// Duplicate item
+async function duplicateTaskItem(taskId, path) {
+  // Find unique name
+  const tree = document.getElementById(`task-file-tree-${taskId}`);
+  const fileName = path.split('/').pop();
+  const baseName = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+  const ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '';
+  
+  // Extract parent path from full path
+  const pathParts = path.split('/');
+  pathParts.pop(); // Remove file name
+  const parentPath = pathParts.join('/');
+  
+  const existingNames = Array.from(tree.querySelectorAll('.file-name'))
+    .map(el => el.textContent);
+  
+  let newName = baseName + '_copy' + ext;
+  let counter = 2;
+  while (existingNames.includes(newName)) {
+    newName = baseName + '_copy' + counter + ext;
+    counter++;
+  }
+  
+  try {
+    // Read content if file
+    let content = '';
+    const item = tree.querySelector(`[data-path="${path}"]`);
+    const isFile = item && item.getAttribute('data-type') === 'file';
+    
+    if (isFile) {
+      try {
+        const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+        if (response.ok) {
+          const result = await response.json();
+          content = result.content || '';
+        }
+      } catch (e) {
+        // Continue without content
+      }
+    }
+    
+    // Create new file/folder
+    if (isFile) {
+      await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_file`, {
+        method: 'POST',
+        body: JSON.stringify({
+          task_id: taskId,
+          name: newName,
+          parent_path: parentPath,
+          content: content
+        })
+      });
+    } else {
+      await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_folder`, {
+        method: 'POST',
+        body: JSON.stringify({
+          task_id: taskId,
+          name: newName,
+          parent_path: parentPath
+        })
+      });
+    }
+    
+    // Reload files
+    const panelId = `folder-panel-content-${taskId}`;
+    const currentPath = tree ? tree.getAttribute('data-current-path') || '' : '';
+    loadAndDisplayTaskFiles(panelId, taskId, currentPath);
+  } catch (error) {
+    alert('Fehler beim Duplizieren: ' + error.message);
+  }
+}
+
+// Download file
+async function downloadTaskFile(taskId, path) {
+  try {
+    // Fetch file content
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+    
+    if (!response.ok) {
+      throw new Error('Fehler beim Abrufen der Datei');
+    }
+    
+    const result = await response.json();
+    const content = result.content || '';
+    const fileName = path.split('/').pop();
+    
+    // Create blob and download
+    const blob = new Blob([content], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    alert('Fehler beim Herunterladen: ' + error.message);
+  }
+}
+
+// Make functions global
+window.loadAndDisplayTaskFiles = loadAndDisplayTaskFiles;
+window.createTaskFolder = createTaskFolder;
+window.createTaskFile = createTaskFile;
+window.uploadTaskFile = uploadTaskFile;
+window.handleTaskFileUpload = handleTaskFileUpload;
+window.startInlineEdit = startInlineEdit;
+window.openTaskFileInEditor = openTaskFileInEditor;
+window.saveTaskFile = saveTaskFile;
+window.showTaskFileContextMenu = showTaskFileContextMenu;
+window.deleteTaskItem = deleteTaskItem;
+window.duplicateTaskItem = duplicateTaskItem;
+window.downloadTaskFile = downloadTaskFile;

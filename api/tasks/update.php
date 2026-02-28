@@ -37,6 +37,8 @@ $existingTask = $result->fetch_assoc();
 $existingTaskType = $existingTask['task_type'] ?? null;
 $existingCodeTemplate = $existingTask['code_template'] ?? '';
 $existingOverrides = $existingTask['variable_overrides'] ?? null;
+$existingFolderstructure = (int)($existingTask['folderstructure'] ?? 0);
+$shouldCreateFolder = false;
 
 $allowedTypes = [
     'code_completion',
@@ -116,6 +118,25 @@ if (isset($input['show_solution_code'])) {
     $showSolutionCode = (int)$input['show_solution_code'];
     $updates[] = 'show_solution_code = ?';
     $params[] = $showSolutionCode;
+    $types .= 'i';
+}
+
+if (isset($input['folderstructure'])) {
+    $folderstructure = (int)(bool)$input['folderstructure'];
+    $updates[] = 'folderstructure = ?';
+    $params[] = $folderstructure;
+    $types .= 'i';
+    
+    // Check if we need to create the folder (transitioning from 0 to 1)
+    if ($folderstructure == 1 && $existingFolderstructure == 0) {
+        $shouldCreateFolder = true;
+    }
+}
+
+if (isset($input['allowDownload'])) {
+    $allowDownload = (int)(bool)$input['allowDownload'];
+    $updates[] = 'allowDownload = ?';
+    $params[] = $allowDownload;
     $types .= 'i';
 }
 
@@ -305,6 +326,16 @@ if (!$bindResult) {
 }
 
 if ($stmt->execute()) {
+    // Create folder structure if needed (transitioning from no folder to folder)
+    if ($shouldCreateFolder) {
+        $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+        if (!file_exists($folderPath)) {
+            if (!mkdir($folderPath, 0755, true)) {
+                error_log('Failed to create folder structure for task ' . $taskId);
+            }
+        }
+    }
+    
     // Update task options if provided (for single/multiple choice)
     if (isset($input['options'])) {
         // Delete existing options
