@@ -26,9 +26,35 @@ if (!$assignmentId) {
 
 $taskId = isset($_GET['task_id']) ? intval($_GET['task_id']) : null;
 
+// Support test_user_id for admin simulation of student view
+$testUserId = isset($_GET['test_user_id']) ? intval($_GET['test_user_id']) : null;
+$testUserInfo = null;
+
+if ($testUserId) {
+    $conn = getDbConnection();
+    $stmt = $conn->prepare('SELECT id, email, first_name, last_name FROM users WHERE id = ?');
+    $stmt->bind_param('i', $testUserId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $testUserInfo = $result->fetch_assoc();
+    
+    if (!$testUserInfo) {
+        die('Test user not found');
+    }
+}
+
 $displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
 if ($displayName === '') {
   $displayName = $user['email'] ?? 'Admin';
+}
+
+// Override display name if testing as student
+if ($testUserId && $testUserInfo) {
+  $studentName = trim(($testUserInfo['first_name'] ?? '') . ' ' . ($testUserInfo['last_name'] ?? ''));
+  if ($studentName === '') {
+    $studentName = $testUserInfo['email'];
+  }
+  $displayName = 'AS ' . $studentName;
 }
 ?>
 <!DOCTYPE html>
@@ -141,6 +167,7 @@ if ($displayName === '') {
       display: none;
       flex-direction: column-reverse;
       min-height:0;
+      overflow: hidden;
     }
     #task-details-panel.active {
       display: flex;
@@ -150,9 +177,27 @@ if ($displayName === '') {
     .task-navigation {
       border-bottom: 2px solid var(--border);
       background: var(--panel);
+      flex: 0 0 300px;
       max-height: 48vh;
-      overflow-y: auto;
+      min-height: 200px;
+      overflow-y: scroll;
+      overflow-x: hidden;
       padding: 8px;
+    }
+    
+    /* Force scrollbar to always show */
+    .task-navigation::-webkit-scrollbar {
+      width: 8px;
+    }
+    .task-navigation::-webkit-scrollbar-track {
+      background: var(--panel);
+    }
+    .task-navigation::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+    .task-navigation::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
     }
     .task-nav-item {
       padding: 8px 10px;
@@ -227,11 +272,12 @@ if ($displayName === '') {
     
     /* Task Details (unten) */
     .task-details-content {
-      flex: 1;
+      flex: 1 1 0;
       padding: 12px;
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.6;
+      min-height: 0;
     }
     .task-details-tabs {
       display: flex;
@@ -792,12 +838,16 @@ if ($displayName === '') {
   $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
   $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
   
+  // Yellow toolbar background if testing as student
+  $toolbarStyle = ($testUserId && $testUserInfo) ? ' style="background:#fbbf24; border-bottom:2px solid #f59e0b;"' : '';
+  $toolbarTextColor = ($testUserId && $testUserInfo) ? ' style="color:#78350f; font-weight:600;"' : '';
+  
   $headerActions = <<<HTML
-    <div class="toolbar">
-      <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
+    <div class="toolbar"{$toolbarStyle}>
+      <button id="dashboard-btn" onclick="if (window.refreshStudentLiveState) { window.refreshStudentLiveState(); } else { window.location.reload(); }" title="Live-Stand aktualisieren">↻</button>
       <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
       <button id="run-btn">Run</button>
-      <button id="check-btn" style="display:none; background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
+      <button id="check-btn" style="background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
       <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
       <span id="attempts-counter" style="display:none;"></span>
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
@@ -812,7 +862,7 @@ if ($displayName === '') {
       </div>
       <div style="flex:1"></div>
       <div class="user-bar">
-        <div class="user-info">
+        <div class="user-info"{$toolbarTextColor}>
           <span>{$displayNameEscaped}</span>
           {$adminBadge}
         </div>
@@ -930,7 +980,7 @@ HTML;
   <script src="js/quiz-renderer.js?v=20250224"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260301"></script>
+  <script type="module" src="js/editor-setup.js?v=20260302"></script>
 
   <script>
     // Theme Toggle
@@ -989,8 +1039,17 @@ HTML;
     window.EDITOR_MODE = true;
     window.ASSIGNMENT_ID = <?php echo (int)$assignmentId; ?>;
     window.TASK_ID = <?php echo $taskId ? (int)$taskId : 'null'; ?>;
+    <?php if ($testUserId && $testUserInfo): ?>
+    window.TEST_USER_ID = <?php echo (int)$testUserId; ?>;
+    window.TEST_USER_INFO = <?php echo json_encode([
+        'id' => (int)$testUserInfo['id'],
+        'email' => $testUserInfo['email'],
+        'name' => trim(($testUserInfo['first_name'] ?? '') . ' ' . ($testUserInfo['last_name'] ?? ''))
+    ]); ?>;
+    window.TEST_MODE_NO_PERSIST = true;  // DOM-only mode, no auto-save
+    <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260301"></script>
+  <script type="module" src="js/assignments.js?v=20260302"></script>
 </body>
 </html>

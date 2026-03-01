@@ -48,6 +48,10 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function getTestUserQueryParam() {
+  return window.TEST_USER_ID ? `&test_user_id=${encodeURIComponent(window.TEST_USER_ID)}` : '';
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -1091,38 +1095,37 @@ async function loadSingleAssignment(assignmentId) {
       });
     }
     
-    // Load user_tasks progress for this assignment (skip in test mode)
-    if (!window.testMode) {
-      try {
-        const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}`);
-        const userTasks = userTasksRes.tasks || [];
-        
-        // Populate status and attempts from user_tasks
-        userTasks.forEach(ut => {
-          assignmentState.taskStatuses[ut.task_id] = ut.status;
-          assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-          if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-            assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-          }
-          // Store user answers
-          assignmentState.taskUserAnswers[ut.task_id] = {
-            selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-            text_answer: ut.text_answer || '',
-            variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-          };
-          if (ut.run_count !== undefined && ut.run_count !== null) {
-            assignmentState.taskRuns[ut.task_id] = ut.run_count;
-          }
-          if (ut.completed_at) {
-            assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-          }
-          if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-            assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-          }
-        });
-      } catch (err) {
-        console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
-      }
+    // Load user_tasks progress for this assignment (also in test mode with test_user_id)
+    try {
+      const testUserParam = getTestUserQueryParam();
+      const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
+      const userTasks = userTasksRes.tasks || [];
+      
+      // Populate status and attempts from user_tasks
+      userTasks.forEach(ut => {
+        assignmentState.taskStatuses[ut.task_id] = ut.status;
+        assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+        if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+          assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+        }
+        // Store user answers
+        assignmentState.taskUserAnswers[ut.task_id] = {
+          selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+          text_answer: ut.text_answer || '',
+          variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+        };
+        if (ut.run_count !== undefined && ut.run_count !== null) {
+          assignmentState.taskRuns[ut.task_id] = ut.run_count;
+        }
+        if (ut.completed_at) {
+          assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+        }
+        if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+          assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+        }
+      });
+    } catch (err) {
+      console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
     }
     
     return true;
@@ -1153,38 +1156,37 @@ async function loadAssignments() {
         assignmentState.assignmentDetails[item.assignment_id] = assignmentRes.assignment;
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
-        // Load user_tasks progress for this assignment (skip in test mode)
-        if (!window.testMode) {
-          try {
-            const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}`);
-            const userTasks = userTasksRes.tasks || [];
-            
-            // Populate status and attempts from user_tasks
-            userTasks.forEach(ut => {
-              assignmentState.taskStatuses[ut.task_id] = ut.status;
-              assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-              if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-                assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-              }
-              // Store user answers
-              assignmentState.taskUserAnswers[ut.task_id] = {
-                selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-                text_answer: ut.text_answer || '',
-                variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-              };
-              if (ut.run_count !== undefined && ut.run_count !== null) {
-                assignmentState.taskRuns[ut.task_id] = ut.run_count;
-              }
-              if (ut.completed_at) {
-                assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-              }
-              if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-                assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-              }
-            });
-          } catch (err) {
-            console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
-          }
+        // Load user_tasks progress for this assignment (also in test mode with test_user_id)
+        try {
+          const testUserParam = getTestUserQueryParam();
+          const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
+          const userTasks = userTasksRes.tasks || [];
+          
+          // Populate status and attempts from user_tasks
+          userTasks.forEach(ut => {
+            assignmentState.taskStatuses[ut.task_id] = ut.status;
+            assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+            if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+              assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+            }
+            // Store user answers
+            assignmentState.taskUserAnswers[ut.task_id] = {
+              selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+              text_answer: ut.text_answer || '',
+              variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+            };
+            if (ut.run_count !== undefined && ut.run_count !== null) {
+              assignmentState.taskRuns[ut.task_id] = ut.run_count;
+            }
+            if (ut.completed_at) {
+              assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+            }
+            if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+              assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+            }
+          });
+        } catch (err) {
+          console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
         }
       } catch (err) {
         console.error(`Failed to load tasks for assignment ${item.assignment_id}:`, err);
@@ -1261,9 +1263,12 @@ function openAssignmentEditor(assignmentId) {
   if (listView) listView.style.display = 'none';
   if (editorView) editorView.style.display = 'grid';
   
-  // Switch buttons
-  if (dashboardBtn) dashboardBtn.style.display = 'none';
-  if (backToListBtn) backToListBtn.style.display = 'inline-block';
+  // Switch buttons (but keep refresh button visible in test mode)
+  const isTestMode = window.TEST_MODE_NO_PERSIST === true || window.testMode === true;
+  if (!isTestMode) {
+    if (dashboardBtn) dashboardBtn.style.display = 'none';
+    if (backToListBtn) backToListBtn.style.display = 'inline-block';
+  }
   if (runBtn) runBtn.style.display = 'inline-block';
   
   // Set current assignment
@@ -1388,7 +1393,8 @@ function renderAssignmentDetail(assignmentId, assignment, tasks) {
 
 async function loadSavedCode(taskId) {
   try {
-    const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}`);
+    const testUserParam = getTestUserQueryParam();
+    const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}${testUserParam}`);
     if (response && response.task && response.task.current_code) {
       return response.task.current_code;
     }
@@ -1505,7 +1511,8 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   if (!task) return;
 
   // Auto-save any open folder file (esp. init.py) before switching tasks
-  if (window.currentFile && window.editorInstance) {
+  // Skip in test mode to prevent API persistence
+  if (!window.TEST_MODE_NO_PERSIST && window.currentFile && window.editorInstance) {
     try {
       await saveTaskFile(true); // silent=true (no alerts/visual feedback)
     } catch (err) {
@@ -1765,6 +1772,12 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
       downloadBtn.style.display = 'inline-block';
     }
 
+    // Show share button (only in non-test mode)
+    const shareBtn = $('share-btn');
+    if (shareBtn && window.testMode !== true) {
+      shareBtn.style.display = 'inline-block';
+    }
+
     // Show undo/redo buttons
     if (undoBtn) undoBtn.style.display = 'inline-block';
     if (redoBtn) redoBtn.style.display = 'inline-block';
@@ -1863,6 +1876,11 @@ async function downloadCode() {
 }
 
 async function saveCode(options = {}) {
+  // In test mode, skip API persistence (keep changes in DOM only)
+  if (window.TEST_MODE_NO_PERSIST === true) {
+    return true;
+  }
+
   // Check if we're editing a folder structure file (from admin test view)
   if (window.currentFile && window.currentFile.taskId) {
     return await saveTaskFile();
@@ -4251,6 +4269,50 @@ function bindAssignmentsEvents() {
     downloadCode();
   });
 
+  // Share button - Generate admin test link
+  const shareBtn = $('share-btn');
+  shareBtn?.addEventListener('click', async () => {
+    const assignmentId = window.assignmentState?.currentAssignmentId;
+    const taskId = window.assignmentState?.currentTask?.id;
+    const userId = window.userId; // Should be set from PHP session
+    
+    if (!assignmentId || !taskId) {
+      alert('Keine Aufgabe geladen. Bitte öffnen Sie eine Aufgabe.');
+      return;
+    }
+    
+    if (!userId) {
+      alert('User-ID nicht verfügbar.');
+      return;
+    }
+    
+    const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+    const shareUrl = `${baseUrl}editor_assignment_test.php?assignment_id=${assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
+    
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      
+      // Visual feedback
+      const originalTitle = shareBtn.title;
+      const originalText = shareBtn.textContent;
+      shareBtn.textContent = '✓';
+      shareBtn.title = 'Link kopiert!';
+      shareBtn.style.background = '#10b981';
+      shareBtn.style.color = '#fff';
+      
+      setTimeout(() => {
+        shareBtn.textContent = originalText;
+        shareBtn.title = originalTitle;
+        shareBtn.style.background = '';
+        shareBtn.style.color = '';
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+      // Fallback: Show link in prompt
+      prompt('Link kopieren (Strg+C):', shareUrl);
+    }
+  });
+
   // Undo button
   const undoBtn = $('undo-btn');
   undoBtn?.addEventListener('click', () => {
@@ -4348,9 +4410,10 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
   if (!panel) return;
 
   const isAdminFolderMode = window.testMode === true;
+  const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
   const listEndpoint = isAdminFolderMode
     ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`
-    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${taskId}`;
+    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${taskId}${testUserParam}`;
   
   try {
     const response = await requestJson(listEndpoint, {
@@ -4840,9 +4903,10 @@ async function openTaskFileInEditor(taskId, path) {
     }
     
     const isAdminFolderMode = window.testMode === true;
+    const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
     const readEndpoint = isAdminFolderMode
       ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
-      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`;
+      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
     // Real file handling
     const response = await fetch(readEndpoint);
@@ -4904,6 +4968,11 @@ async function openTaskFileInEditor(taskId, path) {
 // Save current file in editor
 // silent: true = no alerts or visual feedback (for auto-save)
 async function saveTaskFile(silent = false) {
+  // In test mode, skip API persistence (keep changes in DOM only)
+  if (window.TEST_MODE_NO_PERSIST === true) {
+    return true;
+  }
+
   if (!window.currentFile) {
     if (!silent) alert('Keine Datei zum Speichern geöffnet');
     return false;
@@ -4923,7 +4992,8 @@ async function saveTaskFile(silent = false) {
   try {
     // Student mode: save all editable text files through user_tasks API
     if (!isAdminFolderMode) {
-      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save`, {
+      const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -5146,6 +5216,59 @@ async function downloadTaskFile(taskId, path) {
   }
 }
 
+async function refreshStudentLiveState() {
+  const refreshBtn = document.getElementById('dashboard-btn');
+  const originalLabel = refreshBtn ? refreshBtn.textContent : null;
+  const assignmentId = assignmentState.currentAssignmentId || window.ASSIGNMENT_ID;
+  const currentTaskId = assignmentState.currentTaskId || window.TASK_ID;
+
+  if (!assignmentId) {
+    window.location.reload();
+    return;
+  }
+
+  try {
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.style.opacity = '0.7';
+      refreshBtn.textContent = '⟳';
+    }
+
+    await loadSingleAssignment(assignmentId);
+
+    const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
+    let targetTaskId = currentTaskId;
+
+    if (!targetTaskId || !tasks.some(t => t.id === targetTaskId)) {
+      targetTaskId = tasks.length ? tasks[0].id : null;
+    }
+
+    if (targetTaskId) {
+      await loadTaskIntoEditor(assignmentId, targetTaskId);
+      if (window.renderTaskNavigation) {
+        window.renderTaskNavigation();
+      }
+    }
+
+    const outputEl = document.getElementById('output-container');
+    if (outputEl) {
+      outputEl.textContent = 'Live-Stand aktualisiert';
+    }
+  } catch (err) {
+    console.error('Failed to refresh student live state:', err);
+    const outputEl = document.getElementById('output-container');
+    if (outputEl) {
+      outputEl.textContent = `Aktualisierung fehlgeschlagen: ${err.message || err}`;
+    }
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.style.opacity = '';
+      refreshBtn.textContent = originalLabel || '↻';
+    }
+  }
+}
+
 // Make functions global
 window.loadAndDisplayTaskFiles = loadAndDisplayTaskFiles;
 window.createTaskFolder = createTaskFolder;
@@ -5159,3 +5282,4 @@ window.showTaskFileContextMenu = showTaskFileContextMenu;
 window.deleteTaskItem = deleteTaskItem;
 window.duplicateTaskItem = duplicateTaskItem;
 window.downloadTaskFile = downloadTaskFile;
+window.refreshStudentLiveState = refreshStudentLiveState;

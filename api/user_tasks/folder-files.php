@@ -35,7 +35,29 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
+// Support admin viewing/editing student files via test_user_id
 $userId = (int)$user['id'];
+$isAdminSimulation = false;
+
+if (isset($_GET['test_user_id']) || isset($_POST['test_user_id'])) {
+    $testUserId = isset($_GET['test_user_id']) ? (int)$_GET['test_user_id'] : (int)$_POST['test_user_id'];
+    
+    // Only allow admins to simulate other users
+    if (($user['role'] ?? '') === 'admin' && $testUserId > 0) {
+        // Verify test user exists
+        $stmt = $conn->prepare('SELECT id FROM users WHERE id = ?');
+        $stmt->bind_param('i', $testUserId);
+        $stmt->execute();
+        if ($stmt->get_result()->fetch_assoc()) {
+            $userId = $testUserId;
+            $isAdminSimulation = true;
+        } else {
+            jsonResponse(['ok' => false, 'error' => 'Test user not found'], 404);
+        }
+    } else {
+        jsonResponse(['ok' => false, 'error' => 'Unauthorized: Admin access required for test_user_id'], 403);
+    }
+}
 
 $binaryExtensions = [
     'png','jpg','jpeg','gif','bmp','webp','ico','svgz',

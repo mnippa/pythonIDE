@@ -808,7 +808,7 @@ if ($displayName === '') {
   <script src="js/file-tree.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260301"></script>
+  <script type="module" src="js/editor-setup.js?v=20260302"></script>
 
   <script>
     // Theme Toggle

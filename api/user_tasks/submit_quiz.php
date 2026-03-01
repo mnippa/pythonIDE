@@ -63,7 +63,7 @@ if (!$taskId) {
 }
 
 // Get task details
-$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, max_attempts, iterations_count, min_keywords_required, variable_overrides FROM tasks WHERE id = ?');
+$stmt = $conn->prepare('SELECT task_type, question_text, correct_answer, test_cases, max_attempts, iterations_count, min_keywords_required, variable_overrides FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 $stmt->execute();
 $task = $stmt->get_result()->fetch_assoc();
@@ -165,7 +165,7 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
     
     // Free-text uses test_cases array (same structure as OUTPUT tests)
     $testCases = [];
-    if ($task['test_cases']) {
+    if (!empty($task['test_cases'])) {
         $testCases = json_decode($task['test_cases'], true);
         if (!is_array($testCases)) {
             $testCases = [];

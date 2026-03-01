@@ -133,6 +133,7 @@ if ($displayName === '') {
       display: none;
       flex-direction: column-reverse;
       min-height:0;
+      overflow: hidden;
     }
     #task-details-panel.active {
       display: flex;
@@ -142,9 +143,27 @@ if ($displayName === '') {
     .task-navigation {
       border-bottom: 2px solid var(--border);
       background: var(--panel);
+      flex: 0 0 300px;
       max-height: 48vh;
-      overflow-y: auto;
+      min-height: 200px;
+      overflow-y: scroll;
+      overflow-x: hidden;
       padding: 8px;
+    }
+    
+    /* Force scrollbar to always show */
+    .task-navigation::-webkit-scrollbar {
+      width: 8px;
+    }
+    .task-navigation::-webkit-scrollbar-track {
+      background: var(--panel);
+    }
+    .task-navigation::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+    .task-navigation::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
     }
     .task-nav-item {
       padding: 8px 10px;
@@ -219,11 +238,12 @@ if ($displayName === '') {
     
     /* Task Details (unten) */
     .task-details-content {
-      flex: 1;
+      flex: 1 1 0;
       padding: 12px;
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.6;
+      min-height: 0;
     }
     .task-details-tabs {
       display: flex;
@@ -911,6 +931,7 @@ if ($displayName === '') {
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
       <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
+      <button id="share-btn" class="icon-btn" style="display:none;" title="Mit Admin teilen">🔗</button>
       <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
         <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
         <span>Abgegeben: <span id="submitted-date"></span></span>
@@ -1015,7 +1036,7 @@ HTML;
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260301"></script>
+  <script type="module" src="js/editor-setup.js?v=20260302"></script>
 
   <script>
     // Theme Toggle
@@ -1058,11 +1079,12 @@ HTML;
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/assignments.js?v=20260301"></script>
+  <script type="module" src="js/assignments.js?v=20260302"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;
     window.ASSIGNMENT_ID = <?= $assignmentId ?>;
+    window.userId = <?= (int)$user['id'] ?>;
   </script>
 </body>
 </html>

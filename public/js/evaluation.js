@@ -237,6 +237,7 @@ function renderParticipants() {
       <td>${sourceLabel}</td>
       <td>
         <button class="btn" data-action="view-user" data-user-id="${u.id}">View</button>
+        <button class="btn" data-action="test-view" data-user-id="${u.id}" style="margin-left:4px;">Test View</button>
       </td>
     `;
     body.appendChild(tr);
@@ -284,6 +285,9 @@ async function openUserDetail(userId) {
       <td class="num-right">${task.attempts}</td>
       <td class="num-right">${task.run_count}</td>
       <td class="num-right">${timeFormatted}</td>
+      <td>
+        <button class="btn" data-action="test-task" data-user-id="${data.user.id}" data-task-id="${task.id}">Test</button>
+      </td>
     `;
     body.appendChild(tr);
   });
@@ -347,14 +351,35 @@ function bindEvents() {
   });
 
   document.body.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action="view-user"]');
-    if (!btn) return;
-    const userId = parseInt(btn.dataset.userId, 10);
-    if (!userId) return;
-    try {
-      await openUserDetail(userId);
-    } catch (err) {
-      alert('Failed to load user: ' + err.message);
+    const viewBtn = e.target.closest('button[data-action="view-user"]');
+    if (viewBtn) {
+      const userId = parseInt(viewBtn.dataset.userId, 10);
+      if (!userId) return;
+      try {
+        await openUserDetail(userId);
+      } catch (err) {
+        alert('Failed to load user: ' + err.message);
+      }
+      return;
+    }
+
+    const testViewBtn = e.target.closest('button[data-action="test-view"]');
+    if (testViewBtn) {
+      const userId = parseInt(testViewBtn.dataset.userId, 10);
+      if (!userId || !state.assignmentId) return;
+      const url = `editor_assignment_test.php?assignment_id=${state.assignmentId}&test_user_id=${userId}`;
+      window.open(url, '_blank');
+      return;
+    }
+
+    const testTaskBtn = e.target.closest('button[data-action="test-task"]');
+    if (testTaskBtn) {
+      const userId = parseInt(testTaskBtn.dataset.userId, 10);
+      const taskId = parseInt(testTaskBtn.dataset.taskId, 10);
+      if (!userId || !taskId || !state.assignmentId) return;
+      const url = `editor_assignment_test.php?assignment_id=${state.assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
+      window.open(url, '_blank');
+      return;
     }
   });
 }

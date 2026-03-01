@@ -583,7 +583,8 @@ compile(code, "<usercode>", "exec")
             await window.saveTaskFile(true);
           }
 
-          const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}`, {
+          const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+          const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
             credentials: 'include'
           });
           const initData = await initResponse.json();

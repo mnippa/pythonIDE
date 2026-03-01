@@ -372,6 +372,7 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
                 <th class="num-right">Attempts</th>
                 <th class="num-right">Runs</th>
                 <th class="num-right">Zeit</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="user-detail-tasks"></tbody>
@@ -381,6 +382,6 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     </div>
   </div>
 
-  <script src="js/evaluation.js"></script>
+  <script src="js/evaluation.js?v=1"></script>
 </body>
 </html>

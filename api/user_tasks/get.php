@@ -17,6 +17,30 @@ $taskId = isset($_GET['task_id']) ? (int)$_GET['task_id'] : null;
 
 $userId = (int)$user['id'];
 
+// Support admin simulation via test_user_id (read-only context for test view)
+if (isset($_GET['test_user_id'])) {
+    $testUserId = (int)$_GET['test_user_id'];
+
+    if (($user['role'] ?? '') !== 'admin') {
+        jsonResponse(['ok' => false, 'error' => 'Unauthorized: Admin access required for test_user_id'], 403);
+    }
+
+    if ($testUserId <= 0) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid test_user_id'], 400);
+    }
+
+    $userCheckStmt = $conn->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+    $userCheckStmt->bind_param('i', $testUserId);
+    $userCheckStmt->execute();
+    $exists = $userCheckStmt->get_result()->fetch_assoc();
+
+    if (!$exists) {
+        jsonResponse(['ok' => false, 'error' => 'Test user not found'], 404);
+    }
+
+    $userId = $testUserId;
+}
+
 $columnExists = function (mysqli $conn, string $table, string $column): bool {
     $safeTable = $conn->real_escape_string($table);
     $safeColumn = $conn->real_escape_string($column);
