@@ -1,0 +1,33 @@
+{
+  "version": "3.0",
+  "title": "MwSt-Rechner (19%)",
+  "problem_type": "code_completion",
+  "task_type": "code",
+  "description": "<div class=\"test-requirements-section\"><h3>Test-Anforderungen</h3><table class=\"test-requirements-table\"><thead><tr><th>Aspekt</th><th>Details</th></tr></thead><tbody><tr><td>INPUT</td><td>Verwendet input() für Nettopreis-Eingabe</td></tr><tr><td>CODE</td><td>Korrekte MwSt-Berechnung (19%)</td></tr><tr><td>OUTPUT</td><td>Bruttopreis wird angezeigt</td></tr></tbody></table></div>",
+  "task_text": "# MwSt-Rechner mit input()\n\nSchreibe ein Python-Programm, das einen **Nettopreis** vom Benutzer einliest und den **Bruttopreis** (inkl. 19% MwSt) berechnet und ausgibt.\n\n## Anforderungen:\n\n1. **Eingabe**: Verwende `input()` um nach dem Nettopreis zu fragen\n2. **Berechnung**: Berechne den Bruttopreis mit 19% MwSt\n   - Formel: `Bruttopreis = Nettopreis × 1,19`\n3. **Ausgabe**: Gib den Bruttopreis aus\n\n## Beispiel-Ausführung:\n\n```\nNettopreis in Euro: 100\nBruttopreis: 119.00 Euro\n```\n\n```\nNettopreis in Euro: 49.99\nBruttopreis: 59.49 Euro\n```\n\n## Tipps:\n\n- Der MwSt-Satz in Deutschland beträgt **19%**\n- Nettopreis × 1,19 = Bruttopreis\n- Oder: Nettopreis + (Nettopreis × 0,19) = Bruttopreis\n- Nutze `float()` für Dezimalzahlen\n- Formatiere die Ausgabe mit `:.2f` für 2 Nachkommastellen",
+  "code_template": "# MwSt-Rechner: Berechne den Bruttopreis aus dem Nettopreis\n# MwSt-Satz: 19%\n\n# Hier Code schreiben\n",
+  "hint1": "Verwende input() um den Nettopreis einzulesen",
+  "hint2": "Formel: Bruttopreis = Nettopreis * 1.19",
+  "hint3": "Nutze float() um die Eingabe in eine Zahl zu konvertieren",
+  "stoff": "In Deutschland beträgt die Standard-Mehrwertsteuer (MwSt) 19%. Der Bruttopreis ist der Nettopreis plus 19% MwSt.",
+  "solution_code": "# Musterlösung: MwSt-Rechner\n\n# Nettopreis vom Benutzer einlesen\nnetto = input(\"Nettopreis in Euro: \")\n\n# In Zahl konvertieren\nnetto = float(netto)\n\n# Bruttopreis berechnen (19% MwSt)\nbrutto = netto * 1.19\n\n# Ergebnis ausgeben\nprint(f\"Bruttopreis: {brutto:.2f} Euro\")\nprint(f\"(enthält {netto * 0.19:.2f} Euro MwSt)\")",
+  "expected_output": "",
+  "max_attempts": 5,
+  "iterations_count": 1,
+  "show_solution": 1,
+  "show_solution_code": 1,
+  "randomizer_code": "import random\nvalues = {\n    'INPUT_01': round(random.uniform(1, 500), 2)\n}",
+  "test_cases": [
+    {
+      "type": "intelligent",
+      "mode": "vars",
+      "tests": 6,
+      "inputs": [
+        "INPUT_01"
+      ],
+      "outputs": [
+        "brutto"
+      ]
+    }
+  ]
+}

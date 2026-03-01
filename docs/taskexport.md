@@ -8,8 +8,9 @@ This document defines the JSON format for importing a single task into an existi
 - All fields are optional unless marked as required.
 
 ## Required Fields
-- `version` (string)
+- `version` (string, currently `3.0`)
 - `title` (string)
+- `task_type` (string) - One of: `code`, `single_choice`, `multiple_choice`, `free_text`, `code_reading`, `code_random_complex`.
 
 ## Optional Fields
 - `problem_type` (string) - Examples: `code_completion`, `code_fix`, `multiple_choice`, `essay`.
@@ -29,7 +30,8 @@ This document defines the JSON format for importing a single task into an existi
 ## Example
 ```json
 {
-  "version": "1.0",
+  "version": "3.0",
+  "task_type": "code",
   "title": "Primzahlen bis 100",
   "problem_type": "code_completion",
   "description": "Schreiben Sie ein Programm, das alle Primzahlen von 2 bis 100 findet und ausgibt.",
@@ -55,6 +57,20 @@ This document defines the JSON format for importing a single task into an existi
 ```
 
 ## Notes for AI Generation
-- Always include `version` and `title`.
+- Always include `version`, `task_type`, and `title`.
+- Use `version: "3.0"` for compatibility with current importer.
 - Use `problem_type` values that match the system.
 - Keep `test_cases` as an array that can be stored as JSON without transformation.
+
+## Intelligent `vars` Input Convention
+- For deterministic testing of programs using `input()`, use `test_cases` type `intelligent` with `mode: "vars"` and a `randomizer_code` that defines `values`.
+- Input placeholders in `values` should use `INPUT_01`, `INPUT_02`, ..., `INPUT_99`.
+- During check, `input()` is overridden and consumes these values in numeric order.
+- Example randomizer snippet:
+```python
+import random
+values = {
+  'INPUT_01': random.randint(1, 50),
+  'INPUT_02': random.randint(1, 50)
+}
+```

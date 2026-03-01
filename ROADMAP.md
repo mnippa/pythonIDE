@@ -8,8 +8,8 @@
 
 | Phase | Fokus | Dauer | Status |
 |-------|-------|-------|--------|
-| **Phase 1** | Unblock & Stabilize | Diese Woche | 🔴 Active |
-| **Phase 2** | User Input Support | Nächste Woche | ⚪ Waiting |
+| **Phase 1** | Unblock & Stabilize | Diese Woche | ✅ Complete |
+| **Phase 2** | User Input Support | Nächste Woche | 🟡 Partial (2/3) |
 | **Phase 3** | AI Task Generator | +2 Wochen | ⚪ Waiting |
 | **Phase 4** | Engagement Metrics | Laufend | ⚪ Waiting |
 
@@ -46,23 +46,125 @@
 ### Task 2.1: `input()` in Pyodide aktivieren
 - **Ziel**: Studierende können `input()`-basierte Programme schreiben
 - **Aufwand**: 1h
-- **Status**: ⏳ Waiting for Phase 1
+- **Status**: ✅ COMPLETED
+- **Implementation**: Phase 1 (Browser `prompt()`) implementiert
 - **Details**:
-  - [ ] Pyodide stdin Configuration researchen
-  - [ ] Popup-Modal für Eingaben implementieren
-  - [ ] Alternativ: Vorab-Input-Feld
-  - [ ] mit 2-3 Test-Programmen validieren
+  - [x] Pyodide stdin Configuration researchen
+  - [x] `builtins.input()` überschrieben in editor-setup.js
+  - [x] Nutzt `window.prompt()` für User-Input (synchron)
+  - [x] Test-Programme erstellt (5 Beispiele in test_input_examples.py)
+- **Technische Ansätze**:
+  - ✅ **Option A (Implementiert)**: `window.prompt()` - Einfach, synchron, funktioniert sofort
+  - ⏳ **Option B (Future)**: Custom Modal mit `pythonInput()` - Schönere UI, asyncron
+  - ❌ **Option C**: Pre-run Input-Panel - Komplexer, weniger intuitiv
+- **Testing**:
+  ```python
+  name = input("Wie heißt du? ")
+  print(f"Hallo, {name}!")
+  ```
+- **Known Limitations**:
+  - Nutzt Browser-nativen `prompt()` Dialog (funktional aber nicht schön)
+  - Modal-Version (`pythonInput()`) bereit, aber benötigt async-Wrapper für nahtlose Integration
+- **Next Steps (Optional)**:
+  - [ ] Modal-basierte Lösung fertigstellen (besseres UX)
+  - [ ] Multi-Input Optimierung (Batch-Eingaben)
 
 ### Task 2.2: Input-Testing Pattern freigeben
 - **Ziel**: Aufgabenersteller kennen beste Practices
 - **Aufwand**: 30m
-- **Status**: ⏳ Waiting for Phase 1
+- **Status**: ✅ COMPLETED
 - **Details**:
-  - [ ] Keyword-Check (`input`, type-conversion) + Output-Test Documentation
-  - [ ] Beispiel-Aufgaben erstellen
-  - [ ] in Admin-Docu hinzufügen
+  - [x] Keyword-Check (`input`, type-conversion) + Output-Test Documentation
+  - [x] Beispiel-Aufgaben erstellt (5 vollständige Aufgaben mit Test Cases)
+  - [x] Guide dokumentiert: docs/input-testing-guide.md
+  - [x] Test-Strategien definiert (Output-Tests, Code-Checks, Function-Tests)
+  - [x] **Produktions-fertige Beispielaufgabe**: MwSt-Rechner für Assignment #21
+- **Deliverables**:
+  - ✅ `docs/input-testing-guide.md` - Vollständiger Guide mit:
+    - Test-Strategien (Code-Check, Output-Tests)
+    - 4 fertige Beispiel-Aufgaben (Begrüßung, Alter, Temperatur, Addition)
+    - Best Practices für Error-Handling
+    - Workflow für Aufgabenersteller
+  - ✅ `test_input_examples.py` - 5 funktionierende Test-Programme
+  - ✅ **MwSt-Rechner Beispiel-Aufgabe (Assignment #21)**:
+    - `sql/add_mwst_task.sql` - SQL-Script für Datenbank-Installation
+    - `docs/task-mwst-rechner.md` - Vollständige Aufgaben-Dokumentation
+    - `docs/INSTALL_MWST_TASK.md` - Installation & Test-Anleitung
+    - `test_mwst_solution.py` - Ausführbare Musterlösung
+    - `test_mwst_scenarios.py` - Test-Szenarien (gültig/ungültig)
+- **Beispiel-Aufgabe Features**:
+  - ✓ 4 Code-Check Test-Cases (input, float/int, Berechnung, print)
+  - ✓ Vollständige Musterlösung mit Kommentaren
+  - ✓ 3 alternative Lösungsvarianten
+  - ✓ Beispiel-Berechnungen für 6 verschiedene Eingaben
+  - ✓ Troubleshooting-Guide
+  - ✓ Production-ready für sofortigen Einsatz
+- **Usage**:
+  ```json
+  {
+    "type": "code_check",
+    "pattern": "input\\s*\\(",
+    "description": "Verwendet input() Funktion"
+  }
+  ```
 
-**Exit Criteria**: Aufgaben mit `input()` kommen regulär vor
+### Task 2.3: UI-Elemente & Interaktive Widgets
+- **Ziel**: Studierende können grafische UI-Elemente erstellen (z.B. Taschenrechner)
+- **Aufwand**: 3-4h (Research + POC)
+- **Status**: 🔵 DESIGN PHASE
+- **Use Case**: Taschenrechner mit Buttons, Input-Feldern, Event-Handling
+- **Technische Diskussion**:
+  
+  #### Ansatz 1: IFRAME mit HTML (Vorschlag)
+  - **Pro**: 
+    - Volle HTML/CSS-Kontrolle
+    - Sandbox-Isolation
+    - Kann mit `document.getElementById()` aus Python interagieren
+  - **Contra**: 
+    - CORS-Issues bei lokalen Files
+    - Komplexere Python↔HTML Bridge nötig
+  - **Python-Interaktion**: 
+    - Pyodide's `js` module: `from js import document`
+    - Event-Handler in Python registrieren
+    - DOM-Manipulation via `js.document.querySelector()`
+  
+  #### Ansatz 2: Panel/PyScript Widgets
+  - **Pro**: 
+    - Native Python-Syntax für UI
+    - Built-in Pyodide-Integration
+  - **Contra**: 
+    - Zusätzliche Dependencies
+    - Learning Curve für Studierende
+  
+  #### Ansatz 3: Direct DOM Manipulation
+  - **Pro**: 
+    - Kein IFRAME nötig
+    - Direkter Zugriff auf Output-Container
+  - **Contra**: 
+    - Namespace-Pollution
+    - Schwerer zu isolieren/zurücksetzen
+  
+  #### Offene Fragen:
+  - [ ] Wo wird das HTML definiert? (Task-Template? Python-Code generiert?)
+  - [ ] Wie wird die UI zurückgesetzt beim erneuten Run?
+  - [ ] Wie werden Event-Handler gebunden? (Python-Callbacks vs. JS Bridge)
+  - [ ] Welche UI-Bibliotheken sind erlaubt? (Pure HTML? Bootstrap? Custom?)
+  
+  #### Implementierungs-Schritte:
+  - [ ] POC 1: IFRAME-Ansatz mit einfachem Taschenrechner testen
+  - [ ] POC 2: Direct DOM mit `js.document` testen
+  - [ ] Performance & Isolation vergleichen
+  - [ ] Didaktisches Beispiel ausarbeiten
+  - [ ] Testing-Strategy für UI-Aufgaben definieren (Screenshot-Tests? DOM-Assertions?)
+
+**Exit Criteria**: 
+- ✅ Aufgaben mit `input()` kommen regulär vor (2.1/2.2)
+  - ✅ `input()` funktioniert in allen Editor-Modi
+  - ✅ Dokumentation verfügbar
+  - ✅ 4+ Beispiel-Aufgaben bereit
+- ⏳ Mindestens 1 interaktive UI-Aufgabe funktioniert produktiv (2.3 - IN DESIGN)
+
+**Phase Status**: 🟡 Partial Complete (2.1 ✅ | 2.2 ✅ | 2.3 🔵 Design Phase)
 
 ---
 
@@ -175,6 +277,6 @@
 
 ---
 
-**Last Checkpoint**: Fertig mit Task-Export/Import Fixes ✅  
-**Next Checkpoint**: Phase 1 Task 1.1 starten  
-**Deadline Phase 1**: [TBD]
+**Last Checkpoint**: ✅ Phase 2 Tasks 2.1 & 2.2 Complete - `input()` Support aktiv!  
+**Next Checkpoint**: Phase 2 Task 2.3 - UI-Elemente Diskussion & POC  
+**Current Sprint**: Phase 2 (2/3 Complete) | Phase 3 Ready to Start

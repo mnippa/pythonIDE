@@ -1,5 +1,108 @@
 // public/js/editor-setup.js (ES module)
 
+/* ================ INPUT MODAL ================ */
+/**
+ * Show input modal and wait for user input
+ * @param {string} prompt - The prompt message to display
+ * @returns {Promise<string>} The user input
+ */
+window.pythonInput = function(prompt) {
+  return new Promise((resolve) => {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('python-input-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'python-input-modal';
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.5); display: none;
+        align-items: center; justify-content: center; z-index: 1001;
+        animation: fadeIn 0.2s;
+      `;
+      
+      modal.innerHTML = `
+        <div style="
+          background: var(--bg, #fff); color: var(--text-primary, #000);
+          border-radius: 12px; max-width: 400px; width: 90%;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: slideUp 0.3s;
+        ">
+          <div style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
+            <h3 style="margin: 0; font-size: 18px;" id="python-input-prompt">Eingabe</h3>
+          </div>
+          <div style="padding: 20px;">
+            <input type="text" id="python-input-field" style="
+              width: 100%; padding: 10px; font-size: 14px;
+              border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
+              background: var(--bg, #fff); color: var(--text-primary, #000);
+              font-family: monospace;
+            " autocomplete="off">
+          </div>
+          <div style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button id="python-input-cancel" style="
+              padding: 8px 16px; border: 1px solid var(--border, #e5e7eb);
+              border-radius: 6px; background: var(--panel, #f5f5f5);
+              color: var(--text-primary, #000); cursor: pointer;
+            ">Abbrechen</button>
+            <button id="python-input-submit" style="
+              padding: 8px 16px; border: none; border-radius: 6px;
+              background: #667eea; color: #fff; cursor: pointer; font-weight: 500;
+            ">OK</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+    }
+    
+    // Set prompt and show modal
+    const promptEl = document.getElementById('python-input-prompt');
+    const inputField = document.getElementById('python-input-field');
+    const submitBtn = document.getElementById('python-input-submit');
+    const cancelBtn = document.getElementById('python-input-cancel');
+    
+    promptEl.textContent = prompt || 'Eingabe:';
+    inputField.value = '';
+    modal.style.display = 'flex';
+    
+    // Focus input field
+    setTimeout(() => inputField.focus(), 100);
+    
+    // Handle submit
+    const handleSubmit = () => {
+      const value = inputField.value;
+      modal.style.display = 'none';
+      resolve(value);
+    };
+    
+    // Handle cancel
+    const handleCancel = () => {
+      modal.style.display = 'none';
+      resolve(''); // Return empty string on cancel
+    };
+    
+    // Bind events (remove old listeners first)
+    submitBtn.onclick = handleSubmit;
+    cancelBtn.onclick = handleCancel;
+    
+    // Enter key submits
+    inputField.onkeypress = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+    
+    // Escape key cancels
+    inputField.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+  });
+};
+
 async function initPyodideAndEditor() {
   /* ---------------- Pyodide ---------------- */
   const pyodide = await loadPyodide({ indexURL: "pyodide/" });
@@ -625,10 +728,24 @@ compile(code, "<usercode>", "exec")
 
       try {
         await pyodide.runPythonAsync(`
-from js import document
+from js import document, window as js_window
 import sys, warnings
+import builtins
 
 warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
+
+# Override input() to use JavaScript modal
+_original_input = builtins.input
+def _custom_input(prompt=''):
+    """Custom input() that uses JavaScript for user interaction"""
+    prompt_str = str(prompt) if prompt else ''
+    # Use synchronous JS prompt for now (TODO: async modal later)
+    result = js_window.prompt(prompt_str)
+    if result is None:  # User cancelled
+        return ''
+    return str(result)
+
+builtins.input = _custom_input
 
 enable_matplotlib = ${enableMatplotlib ? "True" : "False"}
 if enable_matplotlib:

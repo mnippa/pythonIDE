@@ -332,14 +332,16 @@ if ($displayName === '') {
       background: rgba(0, 0, 0, 0.5);
       z-index: 1000;
       padding: var(--hspf-spacing-lg);
-      overflow: auto;
+      overflow-y: auto;
       animation: fadeIn 0.2s ease-in;
     }
     
     .modal.active {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
+      padding-top: 32px;
+      padding-bottom: 32px;
     }
     
     .modal-content {
@@ -347,6 +349,8 @@ if ($displayName === '') {
       border-radius: var(--hspf-radius-md);
       padding: var(--hspf-spacing-xl);
       max-width: 800px;
+      max-height: calc(100vh - 64px);
+      overflow-y: auto;
       margin: auto;
       border: 2px solid var(--hspf-border);
       box-shadow: var(--hspf-shadow-xl);

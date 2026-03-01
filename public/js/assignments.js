@@ -1441,14 +1441,14 @@ function normalizeTaskData(task) {
  * Called before running tests to get latest solution_code, test_cases, etc.
  */
 async function refreshCurrentTaskFromAPI() {
-  if (!assignmentState.currentTaskId) {
-    console.log('[Task Refresh] No current task ID');
+  if (!assignmentState.currentTaskId || !assignmentState.currentAssignmentId) {
+    console.log('[Task Refresh] No current task ID or assignment ID');
     return false;
   }
 
   try {
     console.log('[Task Refresh] Fetching latest task data for task', assignmentState.currentTaskId);
-    const response = await requestJson('/api/tasks/list.php?task_id=' + assignmentState.currentTaskId);
+    const response = await requestJson('/api/tasks/list.php?assignment_id=' + assignmentState.currentAssignmentId);
     
     if (response && response.tasks && response.tasks.length > 0) {
       const updatedTask = response.tasks[0];
@@ -2509,6 +2509,33 @@ function detectTestType(testCases) {
  */
 function migrateLegacyTestCases(testCases) {
   if (!Array.isArray(testCases) || testCases.length === 0) return testCases;
+
+  // Migrate legacy CODE_CHECK structure:
+  // [{ type: 'code_check', pattern: '...', hint: '...' }]
+  // to
+  // [{ type: 'code_check', keywords: ['...'], operator: 'AND', feedback: '...' }]
+  const hasLegacyCodeCheck = testCases.some(tc =>
+    tc && tc.type === 'code_check' && !Array.isArray(tc.keywords) && (tc.pattern || tc.hint || tc.description)
+  );
+  if (hasLegacyCodeCheck) {
+    return testCases.map(tc => {
+      if (!tc || tc.type !== 'code_check') return tc;
+
+      if (Array.isArray(tc.keywords) && tc.keywords.length > 0) {
+        return tc;
+      }
+
+      const legacyPattern = typeof tc.pattern === 'string' ? tc.pattern.trim() : '';
+      const feedback = tc.feedback || tc.hint || tc.description || 'Code-Check';
+
+      return {
+        ...tc,
+        keywords: legacyPattern ? [legacyPattern] : [],
+        operator: tc.operator || 'AND',
+        feedback
+      };
+    });
+  }
   
   const firstTest = testCases[0];
   
@@ -2659,24 +2686,43 @@ output_buffer.getvalue()
   
   for (let idx = 0; idx < testCases.length; idx++) {
     const testCase = testCases[idx];
+    const mockInputs = Array.isArray(testCase.mock_inputs)
+      ? testCase.mock_inputs.map(v => String(v))
+      : [];
     
     try {
       // Run user code and capture output
       const output = await pyodide.runPythonAsync(`
 import sys
+import json
+import builtins
 from io import StringIO
 
 user_code = ${JSON.stringify(code)}
+mock_inputs_json = ${JSON.stringify(JSON.stringify(mockInputs))}
+mock_inputs = json.loads(mock_inputs_json)
 
 output_buffer = StringIO()
 old_stdout = sys.stdout
+old_input = builtins.input
 sys.stdout = output_buffer
+
+def _mock_input(prompt=''):
+    if prompt:
+        # emulate normal input prompt behavior in output stream
+        output_buffer.write(str(prompt))
+    if len(mock_inputs) == 0:
+        raise EOFError('No more mock_inputs available for this test case')
+    return str(mock_inputs.pop(0))
+
+builtins.input = _mock_input
 
 try:
     exec(compile(user_code, "<usercode>", "exec"), {})
 except Exception as e:
     output_buffer.write(f"Error: {e}")
 finally:
+    builtins.input = old_input
     sys.stdout = old_stdout
 
 output_buffer.getvalue()
@@ -3017,28 +3063,71 @@ def run_randomizer():
 def run_vars_mode(code, values_dict, output_names):
     """Run code with values injected, extract outputs"""
     namespace = {}
+    input_queue = []
+
+    def _extract_input_items(values):
+        items = []
+        for raw_key, raw_value in values.items():
+            key = str(raw_key)
+            idx = None
+
+            # Preferred format: INPUT_01, INPUT_02, ...
+            if key.startswith('INPUT_'):
+                suffix = key.split('_', 1)[1]
+                if suffix.isdigit():
+                    idx = int(suffix)
+            # Backward compatibility: INPUT#1, INPUT#2, ...
+            elif key.startswith('INPUT#'):
+                suffix = key.split('#', 1)[1]
+                if suffix.isdigit():
+                    idx = int(suffix)
+            # Backward compatibility: INPUT1, INPUT2, ...
+            elif key.startswith('INPUT'):
+                suffix = key[5:]
+                if suffix.isdigit():
+                    idx = int(suffix)
+
+            if idx is not None:
+                items.append((idx, raw_value))
+
+        items.sort(key=lambda x: x[0])
+        return items
+
+    input_items = _extract_input_items(values_dict)
+    input_queue = [str(v) for _, v in input_items]
+
+    import builtins
+    old_input = builtins.input
+
+    def _mock_input(prompt=''):
+        if len(input_queue) == 0:
+            raise EOFError("No more INPUT_XX values in randomizer values dict")
+        return str(input_queue.pop(0))
+
+    builtins.input = _mock_input
     
-    # For solution code: extract and run INIT block first, then override with randomizer values
-    # This allows the INIT block to demonstrate the structure, but randomizer overrides for actual test
     try:
-        exec(compile(code, "<code>", "exec"), namespace)
-    except Exception as e:
-        return {"error": str(e)}
-    
-    # Override the initialized variables with randomized values
-    namespace.update(values_dict)
-    
-    # Now we need to re-run the solution code to recalculate outputs based on new values
-    # Extract code after INIT block for recalculation
-    init_block_end = code.find("#INIT END")
-    if init_block_end != -1:
-        # Code after INIT block
-        calculation_code = code[init_block_end + len("#INIT END"):].strip()
-        if calculation_code.strip():
-            try:
-                exec(compile(calculation_code, "<calculation>", "exec"), namespace)
-            except Exception as e:
-                return {"error": str(e)}
+        try:
+            exec(compile(code, "<code>", "exec"), namespace)
+        except Exception as e:
+            return {"error": str(e)}
+        
+        # Override the initialized variables with randomized values
+        namespace.update(values_dict)
+        
+        # Now we need to re-run the solution code to recalculate outputs based on new values
+        # Extract code after INIT block for recalculation
+        init_block_end = code.find("#INIT END")
+        if init_block_end != -1:
+            # Code after INIT block
+            calculation_code = code[init_block_end + len("#INIT END"):].strip()
+            if calculation_code.strip():
+                try:
+                    exec(compile(calculation_code, "<calculation>", "exec"), namespace)
+                except Exception as e:
+                    return {"error": str(e)}
+    finally:
+        builtins.input = old_input
     
     out = {}
     for name in output_names:
@@ -3644,13 +3733,27 @@ function displayTestResults(results, testCases, outputEl) {
       const inputsDisplay = result.mode === 'function'
         ? JSON.stringify(result.args || [])
         : JSON.stringify(result.inputs || {});
+      
+      // Build input values display with actual values from result.values
+      let inputValuesDisplay = '';
+      if (result.mode === 'vars' && result.values && result.inputs) {
+        const inputPairs = (result.inputs || []).map(inputName => {
+          const value = result.values[inputName];
+          return `[${inputName} = ${JSON.stringify(value)}]`;
+        }).join(', ');
+        inputValuesDisplay = inputPairs;
+      }
+      
       const expectedDisplay = JSON.stringify(result.expected ?? null);
       const actualDisplay = JSON.stringify(result.actual ?? null);
       if (result.mode === 'function') {
         html += `<div style="color:#666; font-size:11px; margin-top:2px;">Funktion: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(result.functionName || '')}</code></div>`;
         html += `<div style="color:#666; font-size:11px; margin-top:2px;">Args: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
       } else {
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Inputs: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Namen: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+        if (inputValuesDisplay) {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Werte: <code style="background:#d1fae5; padding:1px 4px;">${escapeHtml(inputValuesDisplay)}</code></div>`;
+        }
       }
       html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
       html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualDisplay)}</code></div>`;
@@ -3754,12 +3857,27 @@ function displayTestResults(results, testCases, outputEl) {
 
       // Show generated cases (safe to display for intelligent randomized tests)
       items.forEach(({result}, itemIdx) => {
-        const payload = mode === 'function'
-          ? JSON.stringify(result.args || [])
-          : JSON.stringify(result.inputs || {});
+        let payload, payloadDisplay;
+        if (mode === 'function') {
+          payload = JSON.stringify(result.args || []);
+          payloadDisplay = payload;
+        } else {
+          payload = JSON.stringify(result.inputs || {});
+          // Build input values display: [INPUT_01 = 123] instead of just ["INPUT_01"]
+          if (result.values && result.inputs) {
+            const inputPairs = (result.inputs || []).map(inputName => {
+              const value = result.values[inputName];
+              return `[${inputName} = ${JSON.stringify(value)}]`;
+            }).join(', ');
+            payloadDisplay = inputPairs;
+          } else {
+            payloadDisplay = payload;
+          }
+        }
+        
         const expected = JSON.stringify(result.expected ?? null);
         const actual = JSON.stringify(result.actual ?? null);
-        const shortened = payload.length > 120 ? `${payload.slice(0, 120)}...` : payload;
+        const shortened = payloadDisplay.length > 120 ? `${payloadDisplay.slice(0, 120)}...` : payloadDisplay;
         const expectedShort = expected.length > 120 ? `${expected.slice(0, 120)}...` : expected;
         const actualShort = actual.length > 120 ? `${actual.slice(0, 120)}...` : actual;
         

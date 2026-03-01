@@ -3002,6 +3002,33 @@ function generateJSON(dataArray, textareaId) {
  */
 function migrateLegacyTestCases(testCases) {
   if (!Array.isArray(testCases) || testCases.length === 0) return testCases;
+
+  // Migrate legacy CODE_CHECK structure:
+  // [{ type: 'code_check', pattern: '...', hint: '...' }]
+  // to
+  // [{ type: 'code_check', keywords: ['...'], operator: 'AND', feedback: '...' }]
+  const hasLegacyCodeCheck = testCases.some(tc =>
+    tc && tc.type === 'code_check' && !Array.isArray(tc.keywords) && (tc.pattern || tc.hint || tc.description)
+  );
+  if (hasLegacyCodeCheck) {
+    return testCases.map(tc => {
+      if (!tc || tc.type !== 'code_check') return tc;
+
+      if (Array.isArray(tc.keywords) && tc.keywords.length > 0) {
+        return tc;
+      }
+
+      const legacyPattern = typeof tc.pattern === 'string' ? tc.pattern.trim() : '';
+      const feedback = tc.feedback || tc.hint || tc.description || 'Code-Check';
+
+      return {
+        ...tc,
+        keywords: legacyPattern ? [legacyPattern] : [],
+        operator: tc.operator || 'AND',
+        feedback
+      };
+    });
+  }
   
   const firstTest = testCases[0];
   
@@ -3146,6 +3173,7 @@ function generateAutoDescription(testCasesData, descFieldId) {
         // For vars mode, show inputs and checking like static variable tests
         const inputs = testCase.inputs || [];
         const checking = testCase.outputs || [];
+        tableRows += `<tr><td>INPUTS erwartet</td><td>${inputs.length}</td></tr>`;
         tableRows += `<tr><td>Input-Variablen</td><td>${inputs.join(', ') || 'keine'}</td></tr>`;
         tableRows += `<tr><td>Checking</td><td>${checking.join(', ') || 'keine'}</td></tr>`;
       }
