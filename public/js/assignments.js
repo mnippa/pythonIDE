@@ -4346,9 +4346,14 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
   const panel = document.getElementById(panelId);
   if (!panel) return;
+
+  const isAdminFolderMode = window.testMode === true;
+  const listEndpoint = isAdminFolderMode
+    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`
+    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${taskId}`;
   
   try {
-    const response = await requestJson(`/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`, {
+    const response = await requestJson(listEndpoint, {
       method: 'GET'
     });
     
@@ -4379,12 +4384,23 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
       }
     }
     
+    const disabledStyle = 'opacity: 0.45; cursor: not-allowed;';
+    const createFolderBtnAttrs = isAdminFolderMode
+      ? `onclick="createTaskFolder(${taskId}, '${currentPath}')" title="Neuer Ordner"`
+      : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
+    const createFileBtnAttrs = isAdminFolderMode
+      ? `onclick="createTaskFile(${taskId}, '${currentPath}')" title="Neue Datei"`
+      : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
+    const uploadBtnAttrs = isAdminFolderMode
+      ? `onclick="uploadTaskFile(${taskId}, '${currentPath}')" title="Datei hochladen"`
+      : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
+
     // Build UI with toolbar and file tree
     let html = `
       <div style="display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); background: var(--bg);">
-        <button type="button" class="hspf-btn hspf-btn-sm" onclick="createTaskFolder(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Neuer Ordner">📁+</button>
-        <button type="button" class="hspf-btn hspf-btn-sm" onclick="createTaskFile(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Neue Datei">📄+</button>
-        <button type="button" class="hspf-btn hspf-btn-sm" onclick="uploadTaskFile(${taskId}, '${currentPath}')" style="padding: 2px 6px; font-size: 11px;" title="Datei hochladen">⬆️</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" ${createFolderBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>📁+</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" ${createFileBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>📄+</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" ${uploadBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>⬆️</button>
         <button type="button" class="hspf-btn hspf-btn-sm" onclick="openTaskFileInEditor(${taskId}, 'init.py')" style="padding: 2px 6px; font-size: 11px;" title="init.py (Hauptdatei)">🐍</button>
       </div>
     `;
@@ -4402,9 +4418,10 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
       html += `</div>`;
     }
     
-    html += `<div id="task-file-tree-${taskId}" style="font-size: 12px; background: var(--panel);" data-current-path="${currentPath}" data-task-id="${taskId}">
-      <input type="file" id="task-file-upload-${taskId}" style="display: none;" onchange="handleTaskFileUpload(${taskId}, this, '${currentPath}')" />
-    `;
+    html += `<div id="task-file-tree-${taskId}" style="font-size: 12px; background: var(--panel);" data-current-path="${currentPath}" data-task-id="${taskId}">`;
+    if (isAdminFolderMode) {
+      html += `<input type="file" id="task-file-upload-${taskId}" style="display: none;" onchange="handleTaskFileUpload(${taskId}, this, '${currentPath}')" />`;
+    }
     
     // Render init.py FIRST (from tree root no matter currentPath)
     if (initPy && !currentPath) {
@@ -4444,7 +4461,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
         });
         
         // Double click - rename (nur nicht-virtuelle Dateien)
-        if (!isVirtual) {
+        if (isAdminFolderMode && !isVirtual) {
           item.addEventListener('dblclick', (e) => {
             const fileName = path.split('/').pop();
             const fileNameEl = item.querySelector('.file-name');
@@ -4822,8 +4839,13 @@ async function openTaskFileInEditor(taskId, path) {
       return;
     }
     
-    // Real file handling (from filesystem)
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+    const isAdminFolderMode = window.testMode === true;
+    const readEndpoint = isAdminFolderMode
+      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
+      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`;
+
+    // Real file handling
+    const response = await fetch(readEndpoint);
     
     if (!response.ok) {
       throw new Error('Datei nicht gefunden: ' + path);
@@ -4896,10 +4918,39 @@ async function saveTaskFile(silent = false) {
   }
 
   const content = window.editorInstance.getValue();
+  const isAdminFolderMode = window.testMode === true;
 
   try {
-    // Special handling for init.py (virtual file) - save to tasks.code_template
-    if (isVirtual && path === 'init.py') {
+    // Student mode: save all editable text files through user_tasks API
+    if (!isAdminFolderMode) {
+      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task_id: taskId,
+          path: path,
+          content: content
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || 'Speichern fehlgeschlagen');
+      }
+
+      if (window.taskInitPyContent && path === 'init.py') {
+        window.taskInitPyContent[taskId] = content;
+      }
+
+      if (!silent) {
+        console.log('✅ Datei gespeichert:', fileName);
+      }
+    }
+    // Admin/Test mode: init.py goes to tasks.code_template
+    else if (isVirtual && path === 'init.py') {
       const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
         method: 'POST',
         headers: {
@@ -4925,8 +4976,8 @@ async function saveTaskFile(silent = false) {
       if (!silent) {
         console.log('✅ Template gespeichert:', fileName);
       }
-    } 
-    // Regular files - save to filesystem
+    }
+    // Admin/Test mode: regular files -> filesystem
     else {
       const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save`, {
         method: 'POST',

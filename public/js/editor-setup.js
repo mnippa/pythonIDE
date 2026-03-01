@@ -567,11 +567,57 @@ compile(code, "<usercode>", "exec")
       liveSeq++;
       clearTimeout(liveTimer);
 
-      // harte Syntaxprüfung
-      const syntax = await runLiveSyntaxCheck({ quietOk: false });
-      if (!syntax.ok || hasAnyMarkers()) return;
+      const currentTask = window.assignmentState?.currentTask;
+      const hasFolderStructure = !!currentTask && (
+        currentTask.folderstructure === 1 ||
+        currentTask.folderstructure === true ||
+        currentTask.folderstructure === '1'
+      );
+      const runInitOnly = window.testMode !== true && hasFolderStructure;
 
-      const code = editor.getValue();
+      let code = editor.getValue();
+
+      if (runInitOnly) {
+        try {
+          if (window.saveTaskFile) {
+            await window.saveTaskFile(true);
+          }
+
+          const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}`, {
+            credentials: 'include'
+          });
+          const initData = await initResponse.json();
+
+          if (!initResponse.ok || (initData && initData.ok === false)) {
+            throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
+          }
+
+          code = initData.content || '';
+
+          const seq = ++liveSeq;
+          await pyodide.runPythonAsync(`
+code = ${JSON.stringify(code)}
+compile(code, "<usercode>", "exec")
+`);
+          if (seq !== liveSeq) return;
+
+          clearMarkers();
+          clearQuickFixState();
+          setLintOk();
+        } catch (e) {
+          const parsed = resolveErrorLine(e.message || String(e), code);
+          clearQuickFixState();
+          setLintError(parsed.line, parsed.error, null, null, null);
+          setErrorMarker(parsed.line, parsed.error);
+          return;
+        }
+      } else {
+        // harte Syntaxprüfung
+        const syntax = await runLiveSyntaxCheck({ quietOk: false });
+        if (!syntax.ok || hasAnyMarkers()) return;
+        code = editor.getValue();
+      }
+
       const selectedPackages = getSelectedPackages();
       await ensurePackages(selectedPackages);
       const enableMatplotlib = selectedPackages.includes("matplotlib");

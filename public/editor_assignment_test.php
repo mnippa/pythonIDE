@@ -930,7 +930,7 @@ HTML;
   <script src="js/quiz-renderer.js?v=20250224"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js"></script>
+  <script type="module" src="js/editor-setup.js?v=20260301"></script>
 
   <script>
     // Theme Toggle
@@ -991,6 +991,6 @@ HTML;
     window.TASK_ID = <?php echo $taskId ? (int)$taskId : 'null'; ?>;
   </script>
 
-  <script type="module" src="js/assignments.js?v=20250224"></script>
+  <script type="module" src="js/assignments.js?v=20260301"></script>
 </body>
 </html>

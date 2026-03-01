@@ -16,13 +16,37 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['ok' => false, 'error' => 'Admin access required']);
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'Authentication required']);
     exit;
 }
 
 try {
+    require_once __DIR__ . '/../../../config/database.php';
+    $conn = getDbConnection();
+
+    $sessionRole = $_SESSION['role'] ?? null;
+    $assignedBy = (int)$_SESSION['user_id'];
+
+    // Fallback: validate role from DB to avoid false 403 when session role is stale/missing
+    if ($sessionRole !== 'admin') {
+        $roleStmt = $conn->prepare('SELECT role FROM users WHERE id = ? LIMIT 1');
+        $roleStmt->bind_param('i', $assignedBy);
+        $roleStmt->execute();
+        $roleRow = $roleStmt->get_result()->fetch_assoc();
+        $dbRole = $roleRow['role'] ?? 'user';
+
+        if ($dbRole !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Admin access required']);
+            exit;
+        }
+
+        // Heal session for subsequent requests
+        $_SESSION['role'] = 'admin';
+    }
+
     $data = json_decode(file_get_contents('php://input'), true);
     
     if (!isset($data['assignment_id'])) {
@@ -32,11 +56,7 @@ try {
     }
     
     $assignmentId = (int)$data['assignment_id'];
-    $assignedBy = $_SESSION['user_id'];
     $dueDate = $data['due_date'] ?? null;
-    
-    require_once __DIR__ . '/../../../config/database.php';
-    $conn = getDbConnection();
     
     $conn->begin_transaction();
     

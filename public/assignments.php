@@ -191,6 +191,6 @@ HTML;
       }
     });
   </script>
-  <script type="module" src="js/assignments.js?v=20250224"></script>
+  <script type="module" src="js/assignments.js?v=20260301"></script>
 </body>
 </html>

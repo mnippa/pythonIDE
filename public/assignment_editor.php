@@ -1015,7 +1015,7 @@ HTML;
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
 
-  <script type="module" src="js/editor-setup.js"></script>
+  <script type="module" src="js/editor-setup.js?v=20260301"></script>
 
   <script>
     // Theme Toggle
@@ -1058,7 +1058,7 @@ HTML;
       projectsPanel.classList.remove('open');
     });
   </script>
-  <script type="module" src="js/assignments.js?v=20250224"></script>
+  <script type="module" src="js/assignments.js?v=20260301"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;
