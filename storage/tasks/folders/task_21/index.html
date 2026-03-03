@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MwSt-Rechner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="code-ui-wrapper">
+    <div class="calculator">
+      <h2>🧮 MwSt-Rechner (einfache Version)</h2>
+      
+      <!-- Eingabefelder mit data-Attributen -->
+      <div class="form-group">
+        <label for="netto">Nettopreis (€):</label>
+        <input type="number" id="netto" data-input="netto" 
+               placeholder="z.B. 100" step="0.01" min="0" />
+      </div>
+      
+      <div class="form-group">
+        <label for="mwst">MwSt-Satz (%):</label>
+        <input type="number" id="mwst" data-input="mwst" 
+               placeholder="z.B. 19" step="0.1" min="0" max="100" value="19" />
+      </div>
+
+      <button type="button" data-run-python="true" class="run-btn">Mit Python berechnen</button>
+      
+      <!-- Ausgabezonen mit data-Attributen -->
+      <div class="result">
+        <div class="result-item">
+          <span class="label">Nettopreis:</span>
+          <span class="value" data-output="result_netto">-</span>
+        </div>
+        <div class="result-item">
+          <span class="label">MwSt-Betrag:</span>
+          <span class="value" data-output="result_mwst">-</span>
+        </div>
+        <div class="result-item highlight">
+          <span class="label">Bruttopreis:</span>
+          <span class="value" data-output="result_brutto">-</span>
+        </div>
+        <div class="result-item error" hidden>
+          <span data-output="result_error"></span>
+        </div>
+      </div>
+    </div>
+    
+    <div id="idegui-root" data-idegui-root="true"></div>
+    <div id="idegui-output" data-idegui-output="true"></div>
+  </div>
+  <script src="ui-runtime.readonly.js"></script>
+</body>
+</html>

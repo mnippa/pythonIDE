@@ -1,5 +1,9 @@
 // public/js/editor-setup.js (ES module)
 
+// Imports
+import { initOutputPlotTabs } from './output-plot-tabs.js';
+import { guiBridge } from './gui-bridge.js';
+
 /* ================ INPUT MODAL ================ */
 /**
  * Show input modal and wait for user input
@@ -104,11 +108,301 @@ window.pythonInput = function(prompt) {
 };
 
 async function initPyodideAndEditor() {
+  // Initialize Output/Plot tab navigation
+  initOutputPlotTabs();
+  
+  // Make GUI bridge globally available
+  window.guiBridge = guiBridge;
+  
   /* ---------------- Pyodide ---------------- */
   const pyodide = await loadPyodide({ indexURL: "pyodide/" });
   window.pyodide = pyodide; // Make globally available for assignments.js
   window.pyodideReady = true; // Set flag for solution computation
   console.log("Pyodide ready");
+
+    async function ensureIdeGuiModule() {
+    await pyodide.runPythonAsync(`
+  import sys
+  import types
+  from js import document, window as js_window
+  from pyodide.ffi import create_proxy
+
+  if "idegui" not in sys.modules:
+    idegui = types.ModuleType("idegui")
+
+    def _container():
+      bridge = getattr(js_window, "guiBridge", None)
+      if bridge:
+        bridge.showGUI()
+        return bridge.getGUIContainer()
+      return document.getElementById("gui-container")
+
+    def _ensure_layout():
+      container = _container()
+      if container is None:
+        return None, None
+
+      root = container.querySelector("#idegui-root")
+      if root is None:
+        root = document.createElement("div")
+        root.id = "idegui-root"
+        root.setAttribute("data-idegui-root", "true")
+        root.style.display = "grid"
+        root.style.gap = "8px"
+        root.style.padding = "8px"
+        container.appendChild(root)
+
+      out = container.querySelector("#idegui-output")
+      if out is None:
+        out = document.createElement("div")
+        out.id = "idegui-output"
+        out.setAttribute("data-idegui-output", "true")
+        out.style.marginTop = "8px"
+        out.style.padding = "8px"
+        out.style.border = "1px solid var(--border, #e5e7eb)"
+        out.style.borderRadius = "8px"
+        out.style.whiteSpace = "pre-wrap"
+        container.appendChild(out)
+
+      return root, out
+
+    class _Widget:
+      def __init__(self, element=None, value=None):
+        self.element = element
+        self.value = value
+
+    class _Button(_Widget):
+      def on_click(self, callback):
+        if self.element is None or callback is None:
+          return self
+
+        def _handler(_event=None):
+          callback()
+
+        self._handler = create_proxy(_handler)
+        self.element.addEventListener("click", self._handler)
+        return self
+
+    class _Output(_Widget):
+      def write(self, value):
+        _, out = _ensure_layout()
+        if out is None:
+          return
+        text = "" if value is None else str(value)
+        if text:
+          out.textContent += text + "\\n"
+
+      def clear(self):
+        _, out = _ensure_layout()
+        if out is not None:
+          out.textContent = ""
+
+    def title(text=""):
+      root, _ = _ensure_layout()
+      if root is None:
+        return _Widget(None, str(text or ""))
+
+      heading = root.querySelector("[data-idegui-title='true']")
+      if heading is None:
+        heading = document.createElement("h3")
+        heading.setAttribute("data-idegui-title", "true")
+        heading.style.margin = "0 0 8px 0"
+        root.prepend(heading)
+
+      heading.textContent = str(text or "")
+      return _Widget(heading, heading.textContent)
+
+    def text(label="", value=""):
+      root, _ = _ensure_layout()
+      if root is None:
+        return _Widget(None, str(value or ""))
+
+      wrap = document.createElement("div")
+      if label:
+        lbl = document.createElement("label")
+        lbl.textContent = str(label)
+        lbl.style.display = "block"
+        lbl.style.marginBottom = "4px"
+        wrap.appendChild(lbl)
+
+      inp = document.createElement("input")
+      inp.type = "text"
+      inp.value = str(value or "")
+      inp.style.width = "100%"
+      inp.style.padding = "6px 8px"
+      wrap.appendChild(inp)
+      root.appendChild(wrap)
+
+      widget = _Widget(inp, inp.value)
+
+      def _sync(_event=None):
+        widget.value = inp.value
+
+      widget._sync = create_proxy(_sync)
+      inp.addEventListener("input", widget._sync)
+      return widget
+
+    def number(label="", value=0):
+      root, _ = _ensure_layout()
+      if root is None:
+        return _Widget(None, value)
+
+      wrap = document.createElement("div")
+      if label:
+        lbl = document.createElement("label")
+        lbl.textContent = str(label)
+        lbl.style.display = "block"
+        lbl.style.marginBottom = "4px"
+        wrap.appendChild(lbl)
+
+      inp = document.createElement("input")
+      inp.type = "number"
+      inp.value = str(value)
+      inp.style.width = "100%"
+      inp.style.padding = "6px 8px"
+      wrap.appendChild(inp)
+      root.appendChild(wrap)
+
+      widget = _Widget(inp, float(value))
+
+      def _sync(_event=None):
+        try:
+          widget.value = float(inp.value)
+        except Exception:
+          widget.value = inp.value
+
+      widget._sync = create_proxy(_sync)
+      inp.addEventListener("input", widget._sync)
+      return widget
+
+    def select(label="", options=None, value=None):
+      root, _ = _ensure_layout()
+      options = list(options or [])
+      if root is None:
+        start_value = value if value is not None else (options[0] if options else None)
+        return _Widget(None, start_value)
+
+      wrap = document.createElement("div")
+      if label:
+        lbl = document.createElement("label")
+        lbl.textContent = str(label)
+        lbl.style.display = "block"
+        lbl.style.marginBottom = "4px"
+        wrap.appendChild(lbl)
+
+      sel = document.createElement("select")
+      sel.style.width = "100%"
+      sel.style.padding = "6px 8px"
+
+      for opt in options:
+        option = document.createElement("option")
+        option.value = str(opt)
+        option.textContent = str(opt)
+        sel.appendChild(option)
+
+      if value is not None:
+        sel.value = str(value)
+      elif options:
+        sel.value = str(options[0])
+
+      wrap.appendChild(sel)
+      root.appendChild(wrap)
+
+      widget = _Widget(sel, sel.value)
+
+      def _sync(_event=None):
+        widget.value = sel.value
+
+      widget._sync = create_proxy(_sync)
+      sel.addEventListener("change", widget._sync)
+      return widget
+
+    def button(label="Button"):
+      root, _ = _ensure_layout()
+      if root is None:
+        return _Button(None, None)
+
+      btn = document.createElement("button")
+      btn.textContent = str(label)
+      btn.style.padding = "8px 10px"
+      btn.style.cursor = "pointer"
+      root.appendChild(btn)
+      return _Button(btn, None)
+
+    def output():
+      _ensure_layout()
+      return _Output(None, None)
+
+    def get_input_value(name, default=""):
+      container = _container()
+      if container is None:
+        return default
+
+      selector = f'[data-input="{name}"]'
+      element = container.querySelector(selector)
+      if element is None:
+        return default
+
+      value = getattr(element, "value", None)
+      if value is None:
+        value = getattr(element, "textContent", default)
+      return "" if value is None else str(value)
+
+    def set_output(name, value):
+      container = _container()
+      if container is None:
+        return None
+
+      selector = f'[data-output="{name}"]'
+      element = container.querySelector(selector)
+      if element is None:
+        return None
+
+      text = "" if value is None else str(value)
+
+      tag_name = (getattr(element, "tagName", "") or "").lower()
+      if tag_name in ["input", "textarea", "select"]:
+        element.value = text
+      else:
+        element.textContent = text
+
+      if element.hasAttribute("hidden"):
+        element.removeAttribute("hidden")
+
+      parent = getattr(element, "parentElement", None)
+      if parent is not None and parent.hasAttribute("hidden"):
+        parent.removeAttribute("hidden")
+
+      return text
+
+    def show():
+      container = _container()
+      if container is not None:
+        _ensure_layout()
+
+    def clear():
+      bridge = getattr(js_window, "guiBridge", None)
+      if bridge:
+        bridge.clearGUI()
+      _ensure_layout()
+
+    idegui.text = text
+    idegui.title = title
+    idegui.number = number
+    idegui.select = select
+    idegui.button = button
+    idegui.output = output
+    idegui.get_input_value = get_input_value
+    idegui.set_output = set_output
+    idegui.show = show
+    idegui.clear = clear
+    idegui.__all__ = ["title", "text", "number", "select", "button", "output", "get_input_value", "set_output", "show", "clear"]
+
+    sys.modules["idegui"] = idegui
+  `);
+    }
+
+    await ensureIdeGuiModule();
 
   const loadedPackages = new Set();
   const moduleCheckboxes = {
@@ -635,7 +929,14 @@ compile(code, "<usercode>", "exec")
 
         if (!quietOk) setLintOk();
         return { ok: true };
-      } catch (e) {
+              const guiContainer = document.getElementById('gui-container');
+              const alreadyRenderedForTask = guiContainer
+                && guiContainer.dataset.codeUiTaskId === String(currentTask.id)
+                && guiContainer.querySelector('[data-input], [data-output]');
+
+              if (!alreadyRenderedForTask) {
+                await window.renderCodeUiHtml(currentTask.id);
+              }
         if (seq !== liveSeq) return { ok: false };
 
         const parsed = resolveErrorLine(e.message || String(e), code);
@@ -679,24 +980,38 @@ compile(code, "<usercode>", "exec")
       const runInitOnly = window.testMode !== true && hasFolderStructure;
 
       let code = editor.getValue();
+      const activePath = String(window.currentFile?.path || '');
+      const activeIsPython = activePath.toLowerCase().endsWith('.py');
+
+      if (typeof window.cacheCurrentEditorDraft === 'function') {
+        window.cacheCurrentEditorDraft();
+      }
 
       if (runInitOnly) {
         try {
-          if (window.saveTaskFile) {
-            await window.saveTaskFile(true);
+          if (activeIsPython) {
+            code = editor.getValue();
+          } else {
+            const draftInit = typeof window.getTaskDraftContent === 'function'
+              ? window.getTaskDraftContent(currentTask.id, 'init.py')
+              : null;
+
+            if (draftInit !== null && draftInit !== undefined) {
+              code = String(draftInit || '');
+            } else {
+              const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+              const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
+                credentials: 'include'
+              });
+              const initData = await initResponse.json();
+
+              if (!initResponse.ok || (initData && initData.ok === false)) {
+                throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
+              }
+
+              code = initData.content || '';
+            }
           }
-
-          const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-          const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
-            credentials: 'include'
-          });
-          const initData = await initResponse.json();
-
-          if (!initResponse.ok || (initData && initData.ok === false)) {
-            throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
-          }
-
-          code = initData.content || '';
 
           const seq = ++liveSeq;
           await pyodide.runPythonAsync(`
@@ -727,6 +1042,28 @@ compile(code, "<usercode>", "exec")
       const enableMatplotlib = selectedPackages.includes("matplotlib");
 
       try {
+        const wantsIdeGui = /(^|\n)\s*(import\s+idegui\b|from\s+idegui\s+import\b)/m.test(code);
+        const currentTask = window.assignmentState?.currentTask || null;
+        const isCodeUiTask = currentTask?.task_type === 'code_ui';
+
+        if (window.guiBridge) {
+          if (wantsIdeGui) {
+            if (isCodeUiTask && typeof window.renderCodeUiHtml === 'function' && currentTask?.id) {
+              await window.renderCodeUiHtml(currentTask.id);
+            } else {
+              window.guiBridge.clearGUI();
+              window.guiBridge.showGUI();
+            }
+          } else {
+            if (!isCodeUiTask) {
+              window.guiBridge.hideGUI();
+              window.guiBridge.clearGUI();
+            }
+          }
+        }
+
+        await ensureIdeGuiModule();
+
         await pyodide.runPythonAsync(`
 from js import document, window as js_window
 import sys, warnings

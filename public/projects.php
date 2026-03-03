@@ -336,29 +336,83 @@ if ($displayName === '') {
       background:rgba(245, 245, 250, 0.95) !important;
     }
 
-    /* RIGHT COLUMN: output top + plot bottom */
+    /* RIGHT COLUMN: GUI top (50%) + Output/Plot tabs bottom (50%) */
     .right{
       display:grid;
       grid-template-rows: 1fr 1fr;
       min-width:0; min-height:0;
+      gap: 0;
     }
-    #output-container{
+    
+    /* GUI Container (top) */
+    #gui-container{
       padding:10px;
       overflow:auto;
       background:var(--bg);
       color:var(--text-primary);
       border-bottom:1px solid var(--border);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:13px;
-      white-space:pre-wrap;
+      min-width:0; min-height:0;
+      display:none;
+    }
+    #gui-container.active{
+      display:block;
+    }
+    
+    /* Output/Plot Section (bottom) */
+    #output-plot-section{
+      display:grid;
+      grid-template-rows: auto 1fr;
       min-width:0; min-height:0;
     }
+    
+    /* Tab Navigation for Output/Plot */
+    #output-plot-tabs{
+      display:flex;
+      gap:0;
+      border-bottom:1px solid var(--border);
+      background:var(--panel);
+      margin:0;
+      padding:0;
+    }
+    .output-plot-tab{
+      flex:1;
+      padding:10px 12px;
+      border:none;
+      background:var(--panel);
+      color:var(--text-secondary);
+      cursor:pointer;
+      font-size:12px;
+      font-weight:500;
+      border-bottom:3px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .output-plot-tab:hover{
+      background:var(--bg);
+      color:var(--text-primary);
+    }
+    .output-plot-tab.active{
+      color:var(--accent);
+      border-bottom-color:var(--accent);
+      background:var(--bg);
+    }
+    
+    /* Output & Plot Panels */
+    #output-container,
     #plot-container{
       padding:10px;
       overflow:auto;
       background:var(--bg);
       color:var(--text-primary);
       min-width:0; min-height:0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:13px;
+      white-space:pre-wrap;
+    }
+    .output-plot-panel{
+      display:none;
+    }
+    .output-plot-panel.active{
+      display:block;
     }
 
     .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
@@ -610,10 +664,18 @@ if ($displayName === '') {
       </div>
     </div>
 
-    <!-- RIGHT SIDE: Output -->
+    <!-- RIGHT SIDE: GUI + Output/Plot -->
     <div class="right">
-      <div id="output-container"></div>
-      <div id="plot-container"></div>
+      <div id="gui-container"></div>
+      
+      <div id="output-plot-section">
+        <div id="output-plot-tabs">
+          <button class="output-plot-tab active" data-tab="output">📜 Output</button>
+          <button class="output-plot-tab" data-tab="plot">📊 Plot</button>
+        </div>
+        <div id="output-container" class="output-plot-panel active"></div>
+        <div id="plot-container" class="output-plot-panel"></div>
+      </div>
     </div>
   </div>
 

@@ -40,7 +40,7 @@ $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected'])
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
 
 // Determine which columns to fetch based on context
-$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload';
+$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit';
 
 // Add solution/expected only if needed
 // Include in test mode, when include_expected is set, or for admins viewing solutions
@@ -143,7 +143,8 @@ foreach ($rawTasks as $taskId => $row) {
         'correct_answer' => $row['correct_answer'],
         'variable_overrides' => $row['variable_overrides'],
         'folderstructure' => (int)$row['folderstructure'],
-        'allowDownload' => (int)$row['allowDownload']
+        'allowDownload' => (int)$row['allowDownload'],
+        'allowCodeUiWebEdit' => (int)$row['allow_code_ui_web_edit']
     ];
 
     if (isset($row['randomizer_code'])) {
@@ -152,7 +153,7 @@ foreach ($rawTasks as $taskId => $row) {
     
     // Include solution_code for testing, admin/expected views, and specific task types
     if ($includeExpected || $isTestMode || 
-        $row['task_type'] === 'code' || $row['task_type'] === 'code_random_complex') {
+        $row['task_type'] === 'code' || $row['task_type'] === 'code_ui' || $row['task_type'] === 'code_random_complex') {
         if (isset($row['expected_output'])) {
             $task['expected_output'] = $row['expected_output'];
         }

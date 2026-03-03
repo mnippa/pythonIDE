@@ -11,6 +11,101 @@ header('Content-Type: application/json');
 $user = requireAdmin();
 $conn = getDbConnection();
 
+function getCodeUiTemplateVersion(): string {
+    return '1.1.0';
+}
+
+function getCodeUiDefaultCodeTemplate(): string {
+    return "import idegui as ui\n\nui.title('Code UI')\nui.text('Willkommen! Passe index.html und deinen Python-Code an.')\n";
+}
+
+function buildCodeUiIndexTemplate(string $version): string {
+    return <<<HTML
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- CODE_UI_TEMPLATE_VERSION: {$version} -->
+  <title>Code UI Container</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="code-ui-wrapper">
+    <h3>Code UI</h3>
+    <p>Diese Datei darf von Admins und Schülern bearbeitet werden.</p>
+    <div id="idegui-root" data-idegui-root="true"></div>
+    <div id="idegui-output" data-idegui-output="true"></div>
+  </div>
+</body>
+</html>
+HTML;
+}
+
+function buildCodeUiStyleTemplate(string $version): string {
+    return <<<CSS
+/* CODE_UI_TEMPLATE_VERSION: {$version} */
+.code-ui-wrapper {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    padding: 16px;
+}
+
+#idegui-root {
+    min-height: 180px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+#idegui-output {
+    margin-top: 12px;
+    font-size: 14px;
+    color: #374151;
+}
+CSS;
+}
+
+function buildCodeUiIdeguiTemplate(string $version): string {
+    return <<<PY
+# CODE_UI_TEMPLATE_VERSION: {$version}
+# Referenzdatei für die idegui-Struktur.
+# Diese Datei zeigt die erwarteten API-Ideen, die Laufzeit kann davon abweichen.
+
+def title(text):
+    return {"type": "title", "text": text}
+
+def text(value):
+    return {"type": "text", "text": value}
+PY;
+}
+
+function ensureCodeUiScaffold(int $taskId, bool $overwrite = false): void {
+    $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+    if (!is_dir($folderPath)) {
+        mkdir($folderPath, 0755, true);
+    }
+
+    $version = getCodeUiTemplateVersion();
+    $files = [
+        'index.html' => buildCodeUiIndexTemplate($version),
+        'style.css' => buildCodeUiStyleTemplate($version),
+        'idegui.py' => buildCodeUiIdeguiTemplate($version),
+        'code_ui.template.json' => json_encode([
+            'type' => 'code_ui',
+            'template_version' => $version,
+            'generated_at' => date('c')
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+    ];
+
+    foreach ($files as $fileName => $content) {
+        $target = $folderPath . '/' . $fileName;
+        if ($overwrite || !file_exists($target)) {
+            file_put_contents($target, $content);
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -61,9 +156,11 @@ $variableOverrides = $input['variable_overrides'] ?? null;
 $options = $input['options'] ?? [];
 $folderstructure = isset($input['folderstructure']) ? (int)(bool)$input['folderstructure'] : 0;
 $allowDownload = isset($input['allowDownload']) ? (int)(bool)$input['allowDownload'] : 0;
+$allowCodeUiWebEdit = isset($input['allowCodeUiWebEdit']) ? (int)(bool)$input['allowCodeUiWebEdit'] : 1;
 
 $problemTypeMap = [
     'code' => 'code_completion',
+    'code_ui' => 'code_completion',
     'code_reading' => 'code_completion',
     'code_random_complex' => 'code_completion',
     'single_choice' => 'multiple_choice',
@@ -94,9 +191,16 @@ if (!in_array($problemType, $allowedTypes, true)) {
 }
 
 // Validate task_type
-$allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+$allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
 if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
+}
+
+if ($taskType === 'code_ui') {
+    $folderstructure = 1;
+    if (!is_string($codeTemplate) || trim($codeTemplate) === '') {
+        $codeTemplate = getCodeUiDefaultCodeTemplate();
+    }
 }
 
 // Validate quiz tasks have task_text
@@ -208,8 +312,8 @@ $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -242,6 +346,7 @@ $types .= 's';     // variable_overrides
 $types .= 's';     // randomizer_code
 $types .= 'i';     // folderstructure
 $types .= 'i';     // allowDownload
+$types .= 'i';     // allow_code_ui_web_edit
 
 error_log('Type string: ' . $types . ' (length: ' . strlen($types) . ')');
 
@@ -273,7 +378,8 @@ $bindResult = @$stmt->bind_param(
     $variableOverridesJson,
     $randomizerCode,
     $folderstructure,
-    $allowDownload
+    $allowDownload,
+    $allowCodeUiWebEdit
 );
 
 if (!$bindResult) {
@@ -291,6 +397,10 @@ if ($stmt->execute()) {
             if (!mkdir($folderPath, 0755, true)) {
                 error_log('Failed to create folder structure for task ' . $taskId);
             }
+        }
+
+        if ($taskType === 'code_ui') {
+            ensureCodeUiScaffold($taskId, false);
         }
     }
     

@@ -1,0 +1,5 @@
+import idegui as ui
+name = ui.text("Name")
+btn = ui.button("OK")
+out = ui.output()
+btn.on_click(lambda: out.write("Hallo " + str(name.value)))

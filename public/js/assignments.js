@@ -21,10 +21,12 @@ const assignmentState = {
   solutionMode: false, // Track if currently in solution mode (readonly)
   savedCodeBeforeSolution: null, // Store user code before showing solution
   hasAutoLoaded: false, // Flag to prevent multiple auto-loads
+  taskLoadToken: 0, // Guards against async race conditions during fast task switching
   // Activity tracking: accumulated active seconds per task
   taskActiveSeconds: {}, // { taskId: totalSeconds }
   taskLastActivityTime: {}, // { taskId: timestamp }
-  taskActivityIntervals: {} // { taskId: timerId }
+  taskActivityIntervals: {}, // { taskId: timerId }
+  taskFileMeta: {} // { taskId: { path: { read_only, ... } } }
 };
 
 // Export to window for editor-setup.js access
@@ -56,6 +58,162 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
+}
+
+const taskDraftFiles = {};
+const taskSavedSnapshots = {};
+
+function ensureTaskFileMaps(taskId) {
+  const key = String(taskId);
+  taskDraftFiles[key] = taskDraftFiles[key] || {};
+  taskSavedSnapshots[key] = taskSavedSnapshots[key] || {};
+  return key;
+}
+
+function setTaskDraftContent(taskId, path, content) {
+  if (!taskId || !path) return;
+  const key = ensureTaskFileMaps(taskId);
+  taskDraftFiles[key][path] = String(content ?? '');
+}
+
+function getTaskDraftContent(taskId, path) {
+  if (!taskId || !path) return null;
+  const key = String(taskId);
+  const taskDraft = taskDraftFiles[key] || {};
+  return Object.prototype.hasOwnProperty.call(taskDraft, path) ? taskDraft[path] : null;
+}
+
+function setTaskSavedSnapshot(taskId, path, content) {
+  if (!taskId || !path) return;
+  const key = ensureTaskFileMaps(taskId);
+  taskSavedSnapshots[key][path] = String(content ?? '');
+}
+
+function clearTaskDrafts(taskId) {
+  if (!taskId) return;
+  const key = String(taskId);
+  delete taskDraftFiles[key];
+}
+
+function cacheCurrentEditorDraft() {
+  if (!window.editorInstance || !window.currentFile) return;
+  const { taskId, path } = window.currentFile;
+  if (!taskId || !path) return;
+  setTaskDraftContent(taskId, path, window.editorInstance.getValue());
+}
+
+function hasUnsavedDraftsForTask(taskId) {
+  if (!taskId) return false;
+  const key = String(taskId);
+  const drafts = taskDraftFiles[key] || {};
+  const snapshots = taskSavedSnapshots[key] || {};
+  return Object.keys(drafts).some((path) => {
+    const draftValue = String(drafts[path] ?? '');
+    const snapshotValue = String(snapshots[path] ?? '');
+    return draftValue !== snapshotValue;
+  });
+}
+
+async function persistTaskFileContent(taskId, path, content, isVirtual = false) {
+  if (window.TEST_MODE_NO_PERSIST === true) {
+    setTaskSavedSnapshot(taskId, path, content);
+    setTaskDraftContent(taskId, path, content);
+    return true;
+  }
+
+  const isAdminFolderMode = window.testMode === true;
+
+  if (!isAdminFolderMode) {
+    const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
+    const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, path, content })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result?.error || 'Speichern fehlgeschlagen');
+    }
+  } else if (isVirtual && path === 'init.py') {
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, content })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result?.error || 'Speichern fehlgeschlagen');
+    }
+  } else {
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, path, content })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result?.error || 'Speichern fehlgeschlagen');
+    }
+  }
+
+  if (window.taskInitPyContent && path === 'init.py') {
+    window.taskInitPyContent[taskId] = content;
+  }
+
+  setTaskSavedSnapshot(taskId, path, content);
+  setTaskDraftContent(taskId, path, content);
+  return true;
+}
+
+async function saveAllTaskDrafts(taskId) {
+  if (!taskId) return true;
+
+  cacheCurrentEditorDraft();
+
+  const key = String(taskId);
+  const drafts = taskDraftFiles[key] || {};
+  const snapshots = taskSavedSnapshots[key] || {};
+
+  for (const path of Object.keys(drafts)) {
+    const draftValue = String(drafts[path] ?? '');
+    const snapshotValue = String(snapshots[path] ?? '');
+    if (draftValue === snapshotValue) continue;
+
+    const isVirtual = path === 'init.py';
+    await persistTaskFileContent(taskId, path, draftValue, isVirtual);
+  }
+
+  return true;
+}
+
+async function confirmTaskSwitchWithDrafts(nextTaskId) {
+  const currentTaskId = assignmentState.currentTaskId;
+  if (!currentTaskId || Number(currentTaskId) === Number(nextTaskId)) return true;
+
+  cacheCurrentEditorDraft();
+
+  if (!hasUnsavedDraftsForTask(currentTaskId)) {
+    return true;
+  }
+
+  const shouldSave = window.confirm('Du hast ungespeicherte Änderungen. Speichern, bevor du den Task wechselst?');
+  if (shouldSave) {
+    try {
+      await saveAllTaskDrafts(currentTaskId);
+      return true;
+    } catch (error) {
+      alert('Speichern fehlgeschlagen: ' + (error?.message || error));
+      return false;
+    }
+  }
+
+  const shouldDiscard = window.confirm('Änderungen verwerfen und Task wechseln?');
+  if (!shouldDiscard) {
+    return false;
+  }
+
+  clearTaskDrafts(currentTaskId);
+  return true;
 }
 
 async function requestJson(url, options = {}) {
@@ -254,7 +412,7 @@ function showTaskDetails(task, activeTab = 'details') {
 
   // --- Extract test types for display (code tasks only) ---
   let testTypeHtml = '';
-  if (task.task_type === 'code' && task.test_cases) {
+  if ((task.task_type === 'code' || task.task_type === 'code_ui') && task.test_cases) {
     console.log('[TEST TYPES] Parsing test_cases for task:', task.id);
     let testTypes = new Set(); // Use Set to avoid duplicates
     
@@ -312,7 +470,7 @@ function showTaskDetails(task, activeTab = 'details') {
   let descriptionHtml = '';
   // Show only title in sidebar, description is shown centrally
   if (task.title) {
-    const attemptsInfo = task.task_type !== 'code' ? ` <span class="task-attempts-info" style="margin-left:8px;font-size:0.9em;color:var(--text-secondary);">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : '';
+    const attemptsInfo = (task.task_type !== 'code' && task.task_type !== 'code_ui') ? ` <span class="task-attempts-info" style="margin-left:8px;font-size:0.9em;color:var(--text-secondary);">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : '';
     descriptionHtml = `<div class="task-description-box">
       <h4 style="display:inline-flex;align-items:center;font-weight:normal;">AUFGABE: ${escapeHtml(task.title)} ${getStatusEmoji(status)}${testTypeHtml}${attemptsInfo}</h4>
     </div>`;
@@ -340,7 +498,7 @@ function showTaskDetails(task, activeTab = 'details') {
   // Check if solution exists based on task type
   let hasSolution = false;
   if (canShowSolution) {
-    if (task.task_type === 'code') {
+    if (task.task_type === 'code' || task.task_type === 'code_ui') {
       hasSolution = !!task.solution_code;
       console.log('[SOLUTION] Code task - hasSolution:', hasSolution, 'solution_code exists:', !!task.solution_code, 'solution_code:', task.solution_code?.substring(0, 50));
     } else if (task.task_type === 'single_choice' || task.task_type === 'multiple_choice') {
@@ -367,7 +525,7 @@ function showTaskDetails(task, activeTab = 'details') {
 
   if (detailsHtml === '' || detailsHtml.trim() === `<div class="task-status-header">
     <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
-    ${task.task_type !== 'code' ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
+    ${(task.task_type !== 'code' && task.task_type !== 'code_ui') ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
   </div>`) {
     detailsHtml += '<p>Keine weiteren Details vorhanden.</p>';
   }
@@ -514,7 +672,7 @@ async function loadSolutionIntoMainArea(task) {
   
   assignmentState.solutionMode = true;
   
-  if (task.task_type === 'code') {
+  if (task.task_type === 'code' || task.task_type === 'code_ui') {
     // Save current code before showing solution
     const editor = window.editorInstance;
     if (editor) {
@@ -1033,6 +1191,7 @@ function renderTaskNavigation() {
     'multiple_choice': '<i class="fas fa-square-check"></i>',
     'free_text': '<i class="fas fa-file-alt"></i>',
     'code': '<i class="fas fa-code"></i>',
+    'code_ui': '<i class="fas fa-code"></i>',
     'code_reading': '<i class="fas fa-eye"></i>',
     'code_random_complex': '<i class="fas fa-random"></i>'
   };
@@ -1505,19 +1664,166 @@ function waitForEditor(maxAttempts = 20, interval = 100) {
   });
 }
 
+function triggerCodeUiPythonRun() {
+  const runButton = document.getElementById('run-btn');
+  if (!runButton) return;
+  runButton.click();
+}
+
+function ensureCodeUiRunTriggers(guiContainer) {
+  if (!guiContainer || guiContainer.dataset.codeUiRunBound === '1') return;
+
+  guiContainer.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('[data-run-python="true"]');
+    if (!trigger || !guiContainer.contains(trigger)) return;
+    event.preventDefault();
+    triggerCodeUiPythonRun();
+  });
+
+  guiContainer.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.getAttribute('data-run-python') !== 'true') return;
+    event.preventDefault();
+    triggerCodeUiPythonRun();
+  });
+
+  guiContainer.dataset.codeUiRunBound = '1';
+}
+
+async function renderCodeUiHtml(taskId) {
+  const guiContainer = document.getElementById('gui-container');
+  if (!guiContainer || !taskId) return;
+
+  const requestedTaskId = Number(taskId);
+  if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
+
+  const isAdminFolderMode = window.testMode === true;
+  const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+
+  const readTaskFile = async (path) => {
+    const draft = getTaskDraftContent(taskId, path);
+    if (draft !== null) {
+      return String(draft || '');
+    }
+
+    const readEndpoint = isAdminFolderMode
+      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
+      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
+
+    const response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`${path} nicht gefunden`);
+    }
+
+    const result = await response.json();
+    const content = String(result?.content || '');
+    setTaskSavedSnapshot(taskId, path, content);
+    return content;
+  };
+
+  try {
+    const htmlContent = await readTaskFile('index.html');
+    const cssContent = await readTaskFile('style.css').catch(() => '');
+
+    if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
+
+    if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
+
+    if (window.guiBridge) {
+      window.guiBridge.clearGUI();
+      window.guiBridge.showGUI();
+    } else {
+      guiContainer.innerHTML = '';
+      guiContainer.classList.add('active');
+    }
+
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(htmlContent, 'text/html');
+    const bodyHtml = parsed?.body?.innerHTML?.trim();
+    const inlineStyleTags = parsed?.querySelectorAll?.('style') || [];
+    const inlineCss = Array.from(inlineStyleTags).map((tag) => tag.textContent || '').join('\n');
+
+    guiContainer.innerHTML = bodyHtml || '';
+    guiContainer.dataset.codeUiTaskId = String(taskId);
+    ensureCodeUiRunTriggers(guiContainer);
+
+    const styleTag = document.createElement('style');
+    styleTag.setAttribute('data-code-ui-style', 'true');
+    const mergedCss = [cssContent, inlineCss].filter(Boolean).join('\n\n');
+    const scopedCss = mergedCss
+      .replace(/\bbody\b(?=\s*\{)/g, '#gui-container')
+      .replace(/\bhtml\b(?=\s*\{)/g, '#gui-container');
+    styleTag.textContent = scopedCss;
+    if (styleTag.textContent.trim()) {
+      guiContainer.prepend(styleTag);
+    }
+
+    if (!guiContainer.querySelector('#idegui-root')) {
+      const root = document.createElement('div');
+      root.id = 'idegui-root';
+      root.setAttribute('data-idegui-root', 'true');
+      guiContainer.appendChild(root);
+    }
+    if (!guiContainer.querySelector('#idegui-output')) {
+      const output = document.createElement('div');
+      output.id = 'idegui-output';
+      output.setAttribute('data-idegui-output', 'true');
+      guiContainer.appendChild(output);
+    }
+  } catch (error) {
+    console.warn('Code UI index.html render skipped:', error?.message || error);
+    if (window.guiBridge) {
+      window.guiBridge.clearGUI();
+      window.guiBridge.showGUI();
+    }
+  }
+}
+
+function setEditorToInitPy(taskId, content = '') {
+  const editor = window.editorInstance;
+  const monaco = window.monaco;
+
+  if (!editor) return;
+
+  if (monaco) {
+    const oldModel = editor.getModel();
+    if (oldModel) {
+      oldModel.dispose();
+    }
+
+    const model = monaco.editor.createModel(
+      content,
+      'python',
+      monaco.Uri.parse(`task://task${taskId}/init.py`)
+    );
+    editor.setModel(model);
+  } else {
+    editor.setValue(content);
+  }
+
+  editor.updateOptions({ readOnly: false });
+  window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true };
+  setTaskSavedSnapshot(taskId, 'init.py', content);
+  setTaskDraftContent(taskId, 'init.py', content);
+
+  const title = document.querySelector('.editor-title');
+  if (title) {
+    title.textContent = 'init.py (Hauptdatei)';
+  }
+}
+
 async function loadTaskIntoEditor(assignmentId, taskId) {
+  const loadToken = ++assignmentState.taskLoadToken;
+  const isStaleLoad = () => assignmentState.taskLoadToken !== loadToken;
+
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
 
-  // Auto-save any open folder file (esp. init.py) before switching tasks
-  // Skip in test mode to prevent API persistence
-  if (!window.TEST_MODE_NO_PERSIST && window.currentFile && window.editorInstance) {
-    try {
-      await saveTaskFile(true); // silent=true (no alerts/visual feedback)
-    } catch (err) {
-      console.warn('Auto-save before task switch failed:', err);
-    }
+  const canSwitch = await confirmTaskSwitchWithDrafts(taskId);
+  if (!canSwitch) {
+    return;
   }
 
   // Normalize task data (convert escaped newlines)
@@ -1527,19 +1833,21 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.solutionMode = false;
 
   // Check if this is a quiz-style task
-  const isQuizTask = task.task_type && task.task_type !== 'code';
+  const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
+  const isCodeUiTask = task.task_type === 'code_ui';
   
   // For code tasks, wait for editor to be ready
   if (!isQuizTask) {
     try {
       await waitForEditor();
+      if (isStaleLoad()) return;
     } catch (err) {
       alert('Editor konnte nicht initialisiert werden. Bitte Seite neu laden.');
       console.error('Editor initialization failed:', err);
       return;
     }
   }
-  
+
   const editor = window.editorInstance;
 
   // Stop activity tracking for previous task
@@ -1551,6 +1859,14 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.currentTask = task;
   assignmentState.currentAssignmentId = assignmentId;
   assignmentState.currentTaskId = taskId;
+
+  if (isCodeUiTask) {
+    await renderCodeUiHtml(taskId);
+    if (isStaleLoad()) return;
+  } else if (window.guiBridge) {
+    window.guiBridge.hideGUI();
+    window.guiBridge.clearGUI();
+  }
 
   // Start activity tracking for new task (only if not finalized)
   const currentStatus = assignmentState.taskStatuses[task.id];
@@ -1625,23 +1941,21 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     
     // Restore saved code if returning from solution mode, otherwise load from DB
     if (assignmentState.savedCodeBeforeSolution !== null) {
-      editor.setValue(assignmentState.savedCodeBeforeSolution);
+      setEditorToInitPy(taskId, assignmentState.savedCodeBeforeSolution);
       assignmentState.savedCodeBeforeSolution = null;
-      editor.updateOptions({ readOnly: false });
     } else {
       // Load saved code from user_tasks if available
-      loadSavedCode(taskId).then(savedCode => {
+      try {
+        const savedCode = await loadSavedCode(taskId);
+        if (isStaleLoad()) return;
         const code = savedCode || task.code_template || '# Start here';
-        editor.setValue(code);
-        // Ensure editor is editable (not in solution mode)
-        editor.updateOptions({ readOnly: false });
-      }).catch(err => {
+        setEditorToInitPy(taskId, code);
+      } catch (err) {
         console.warn('Failed to load saved code, using template:', err);
+        if (isStaleLoad()) return;
         const code = task.code_template || '# Start here';
-        editor.setValue(code);
-        // Ensure editor is editable (not in solution mode)
-        editor.updateOptions({ readOnly: false });
-      });
+        setEditorToInitPy(taskId, code);
+      }
     }
   }
 
@@ -1662,6 +1976,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // Auto-save when task is loaded (mark as in_progress) - only for code tasks
   if (!isQuizTask) {
     setTimeout(() => {
+      if (assignmentState.currentTaskId !== taskId) return;
       saveCode();
     }, 500);
   }
@@ -1792,6 +2107,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // Watch for code changes to update status to in-progress (only if unbearbeitet)
   if (editor && !task._changeListenerAdded) {
     editor.onDidChangeModelContent(() => {
+      cacheCurrentEditorDraft();
       const currentStatus = assignmentState.taskStatuses[task.id];
       if (!currentStatus || currentStatus === 'unbearbeitet') {
         assignmentState.taskStatuses[task.id] = 'in-progress';
@@ -4544,6 +4860,24 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     }
     
     const allFiles = response.files || [];
+    const allTasks = Object.values(assignmentState.tasksByAssignment || {}).flat();
+    const currentTaskMeta = allTasks.find(t => Number(t.id) === Number(taskId));
+    const isCodeUiTask = currentTaskMeta?.task_type === 'code_ui';
+
+    const fileMetaMap = {};
+    const collectFileMeta = (items) => {
+      (items || []).forEach((item) => {
+        if (!item) return;
+        if (item.type === 'file' && item.path) {
+          fileMetaMap[item.path] = item;
+        }
+        if (item.type === 'folder' && Array.isArray(item.children)) {
+          collectFileMeta(item.children);
+        }
+      });
+    };
+    collectFileMeta(allFiles);
+    assignmentState.taskFileMeta[String(taskId)] = fileMetaMap;
     
     // Trenne init.py (virtuell) von echten Filesystem-Dateien
     const initPy = allFiles.find(f => f.name === 'init.py' && f.virtual);
@@ -4553,6 +4887,10 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     if (initPy) {
       window.taskInitPyContent = window.taskInitPyContent || {};
       window.taskInitPyContent[taskId] = initPy.content || '';
+      setTaskSavedSnapshot(taskId, 'init.py', initPy.content || '');
+      if (getTaskDraftContent(taskId, 'init.py') === null) {
+        setTaskDraftContent(taskId, 'init.py', initPy.content || '');
+      }
     }
     
     // Bilde aktuellen Ordner-Inhalt ab
@@ -4575,6 +4913,9 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     const uploadBtnAttrs = isAdminFolderMode
       ? `onclick="uploadTaskFile(${taskId}, '${currentPath}')" title="Datei hochladen"`
       : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
+    const resetCodeUiBtnAttrs = (!isAdminFolderMode && isCodeUiTask)
+      ? `onclick="resetCodeUiTemplate(${taskId}, '${currentPath}')" title="Code-UI Template zurücksetzen" style="padding: 2px 6px; font-size: 11px;"`
+      : `style="display:none;"`;
 
     // Build UI with toolbar and file tree
     let html = `
@@ -4582,6 +4923,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
         <button type="button" class="hspf-btn hspf-btn-sm" ${createFolderBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>📁+</button>
         <button type="button" class="hspf-btn hspf-btn-sm" ${createFileBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>📄+</button>
         <button type="button" class="hspf-btn hspf-btn-sm" ${uploadBtnAttrs} ${isAdminFolderMode ? 'style="padding: 2px 6px; font-size: 11px;"' : ''}>⬆️</button>
+        <button type="button" class="hspf-btn hspf-btn-sm" ${resetCodeUiBtnAttrs}>♻️</button>
         <button type="button" class="hspf-btn hspf-btn-sm" onclick="openTaskFileInEditor(${taskId}, 'init.py')" style="padding: 2px 6px; font-size: 11px;" title="init.py (Hauptdatei)">🐍</button>
       </div>
     `;
@@ -4629,6 +4971,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
         const path = item.getAttribute('data-path');
         const type = item.getAttribute('data-type');
         const isVirtual = item.getAttribute('data-virtual') === 'true';
+        const isReadOnly = item.getAttribute('data-read-only') === 'true';
         
         // Single click - open file in editor or navigate folder
         item.addEventListener('click', (e) => {
@@ -4641,18 +4984,20 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
           }
         });
         
-        // Double click - rename (nur nicht-virtuelle Dateien)
-        if (isAdminFolderMode && !isVirtual) {
+        // Double click - rename (nur nicht-virtuelle, nicht-readonly Dateien)
+        if (isAdminFolderMode && !isVirtual && !isReadOnly) {
           item.addEventListener('dblclick', (e) => {
             const fileName = path.split('/').pop();
             const fileNameEl = item.querySelector('.file-name');
             startInlineEdit(fileNameEl, taskId, path);
           });
-          
-          // Right click - context menu (nur nicht-virtuelle Dateien)
+        }
+
+        // Right click - context menu (nur nicht-virtuelle Dateien)
+        if (isAdminFolderMode && !isVirtual) {
           item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            showTaskFileContextMenu(e, taskId, path, type);
+            showTaskFileContextMenu(e, taskId, path, type, isReadOnly);
           });
         }
       });
@@ -4691,6 +5036,8 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
   const indent = depth * 12;
   const icon = item.type === 'folder' ? '📁' : '📄';
   const virtualBadge = item.virtual ? ' <span style="font-size: 9px; color: #667eea;">(v)</span>' : '';
+  const readOnly = !!item.read_only;
+  const lockBadge = readOnly ? ' <span style="font-size: 9px; color: #f59e0b;">🔒</span>' : '';
   const itemPath = currentPath ? currentPath + '/' + item.name : item.name;
   const isClickable = item.type === 'file'; // Dateien klickbar machen
   const cursorStyle = isClickable ? 'cursor: pointer;' : 'cursor: default;';
@@ -4701,9 +5048,10 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
          data-path="${itemPath}" 
          data-type="${item.type}"
          data-virtual="${item.virtual || false}"
+         data-read-only="${readOnly}"
          style="padding: 2px 4px; padding-left: ${indent}px; user-select: none; display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; ${cursorStyle} ${item.type === 'folder' ? 'font-weight: 500;' : ''}">
       <span style="width: 16px; display: flex; justify-content: center;">${icon}</span>
-      <span class="file-name">${item.name}</span>${virtualBadge}
+      <span class="file-name">${item.name}</span>${virtualBadge}${lockBadge}
     </div>
   `;
   
@@ -4895,7 +5243,7 @@ async function handleTaskFileUpload(taskId, input, parentPath = '') {
 }
 
 // Context menu
-function showTaskFileContextMenu(event, taskId, path, type) {
+function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false) {
   // Remove existing context menu
   const existingMenu = document.getElementById('task-file-context-menu');
   if (existingMenu) {
@@ -4946,6 +5294,19 @@ function showTaskFileContextMenu(event, taskId, path, type) {
     menu.remove();
   });
   menu.appendChild(dupItem);
+
+  if (type === 'file') {
+    const roItem = document.createElement('div');
+    roItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+    roItem.textContent = isReadOnly ? '🔓 Schreibschutz deaktivieren' : '🔒 Schreibschutz aktivieren';
+    roItem.addEventListener('mouseover', () => roItem.style.background = 'var(--bg)');
+    roItem.addEventListener('mouseout', () => roItem.style.background = 'transparent');
+    roItem.addEventListener('click', async () => {
+      await toggleTaskFileReadonly(taskId, path, !isReadOnly);
+      menu.remove();
+    });
+    menu.appendChild(roItem);
+  }
   
   // Herunterladen (nur für Dateien)
   if (type === 'file') {
@@ -4986,18 +5347,51 @@ function showTaskFileContextMenu(event, taskId, path, type) {
   }, 100);
 }
 
+async function toggleTaskFileReadonly(taskId, path, readOnly) {
+  try {
+    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=set_readonly`, {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: taskId,
+        path,
+        read_only: readOnly ? 1 : 0
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(response.error || 'Readonly-Status konnte nicht gesetzt werden');
+    }
+
+    const panelId = `folder-panel-content-${taskId}`;
+    const tree = document.getElementById(`task-file-tree-${taskId}`);
+    const currentPath = tree ? tree.getAttribute('data-current-path') || '' : '';
+    loadAndDisplayTaskFiles(panelId, taskId, currentPath);
+
+    if (window.currentFile && Number(window.currentFile.taskId) === Number(taskId) && String(window.currentFile.path) === String(path)) {
+      await openTaskFileInEditor(taskId, path);
+    }
+  } catch (error) {
+    alert('Fehler beim Setzen des Schreibschutzes: ' + error.message);
+  }
+}
+
 // Open task file in editor
 async function openTaskFileInEditor(taskId, path) {
   try {
+    cacheCurrentEditorDraft();
+
     let fileName = path.split('/').pop();
     let language = 'plaintext';
     let content = '';
     
     // Special handling for init.py (virtual file from user_tasks.current_code)
     if (path === 'init.py') {
-      // Get init.py content from stored window variable
-      if (window.taskInitPyContent && window.taskInitPyContent[taskId]) {
+      const draftContent = getTaskDraftContent(taskId, 'init.py');
+      if (draftContent !== null) {
+        content = draftContent;
+      } else if (window.taskInitPyContent && Object.prototype.hasOwnProperty.call(window.taskInitPyContent, taskId)) {
         content = window.taskInitPyContent[taskId] || '';
+        setTaskSavedSnapshot(taskId, 'init.py', content);
       }
       
       // Dispose old model
@@ -5010,7 +5404,9 @@ async function openTaskFileInEditor(taskId, path) {
       if (window.editorInstance && window.monaco) {
         const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/init.py`));
         window.editorInstance.setModel(editorModel);
-        window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true };
+        window.editorInstance.updateOptions({ readOnly: false });
+        window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false };
+        setTaskDraftContent(taskId, 'init.py', content);
         
         const title = document.querySelector('.editor-title');
         if (title) {
@@ -5026,15 +5422,21 @@ async function openTaskFileInEditor(taskId, path) {
       ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
       : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
-    // Real file handling
-    const response = await fetch(readEndpoint);
-    
-    if (!response.ok) {
-      throw new Error('Datei nicht gefunden: ' + path);
+    const draftContent = getTaskDraftContent(taskId, path);
+    if (draftContent !== null) {
+      content = draftContent;
+    } else {
+      // Real file handling
+      const response = await fetch(readEndpoint);
+      
+      if (!response.ok) {
+        throw new Error('Datei nicht gefunden: ' + path);
+      }
+      
+      const result = await response.json();
+      content = result.content || '';
+      setTaskSavedSnapshot(taskId, path, content);
     }
-    
-    const result = await response.json();
-    content = result.content || '';
     
     // Language detection
     const ext = fileName.split('.').pop() || 'txt';
@@ -5068,11 +5470,18 @@ async function openTaskFileInEditor(taskId, path) {
     if (window.editorInstance && window.monaco) {
       const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/${path}`));
       window.editorInstance.setModel(editorModel);
-      window.currentFile = { taskId, path, fileName };
+
+      const taskMeta = assignmentState.taskFileMeta[String(taskId)] || {};
+      const fileMeta = taskMeta[path] || {};
+      const readOnly = !!fileMeta.read_only;
+      window.editorInstance.updateOptions({ readOnly });
+
+      window.currentFile = { taskId, path, fileName, readOnly };
+      setTaskDraftContent(taskId, path, content);
       
       const title = document.querySelector('.editor-title');
       if (title) {
-        title.textContent = fileName;
+        title.textContent = readOnly ? `${fileName} (readonly)` : fileName;
       }
     } else {
       console.warn('Editor nicht initialisiert');
@@ -5088,6 +5497,12 @@ async function openTaskFileInEditor(taskId, path) {
 async function saveTaskFile(silent = false) {
   // In test mode, skip API persistence (keep changes in DOM only)
   if (window.TEST_MODE_NO_PERSIST === true) {
+    if (window.currentFile && window.editorInstance) {
+      const { taskId, path } = window.currentFile;
+      const content = window.editorInstance.getValue();
+      setTaskDraftContent(taskId, path, content);
+      setTaskSavedSnapshot(taskId, path, content);
+    }
     return true;
   }
 
@@ -5096,7 +5511,12 @@ async function saveTaskFile(silent = false) {
     return false;
   }
 
-  const { taskId, path, fileName, isVirtual } = window.currentFile;
+  const { taskId, path, fileName, isVirtual, readOnly } = window.currentFile;
+
+  if (readOnly) {
+    if (!silent) alert('Diese Datei ist schreibgeschützt.');
+    return false;
+  }
 
   // Get editor content
   if (!window.editorInstance) {
@@ -5105,89 +5525,13 @@ async function saveTaskFile(silent = false) {
   }
 
   const content = window.editorInstance.getValue();
-  const isAdminFolderMode = window.testMode === true;
+  setTaskDraftContent(taskId, path, content);
 
   try {
-    // Student mode: save all editable text files through user_tasks API
-    if (!isAdminFolderMode) {
-      const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          task_id: taskId,
-          path: path,
-          content: content
-        })
-      });
+    await persistTaskFileContent(taskId, path, content, !!isVirtual);
 
-      const result = await response.json();
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Speichern fehlgeschlagen');
-      }
-
-      if (window.taskInitPyContent && path === 'init.py') {
-        window.taskInitPyContent[taskId] = content;
-      }
-
-      if (!silent) {
-        console.log('✅ Datei gespeichert:', fileName);
-      }
-    }
-    // Admin/Test mode: init.py goes to tasks.code_template
-    else if (isVirtual && path === 'init.py') {
-      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          task_id: taskId,
-          content: content
-        })
-      });
-
-      const result = await response.json();
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Speichern fehlgeschlagen');
-      }
-
-      // Update stored init.py content
-      if (window.taskInitPyContent) {
-        window.taskInitPyContent[taskId] = content;
-      }
-
-      if (!silent) {
-        console.log('✅ Template gespeichert:', fileName);
-      }
-    }
-    // Admin/Test mode: regular files -> filesystem
-    else {
-      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          task_id: taskId,
-          path: path,
-          content: content
-        })
-      });
-
-      const result = await response.json();
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Speichern fehlgeschlagen');
-      }
-
-      if (!silent) {
-        console.log('✅ Datei gespeichert:', fileName);
-      }
+    if (!silent) {
+      console.log('✅ Datei gespeichert:', fileName);
     }
     
     // Add visual feedback only if not silent
@@ -5201,6 +5545,15 @@ async function saveTaskFile(silent = false) {
         }, 2000);
       }
     }
+
+    if (String(path).toLowerCase().endsWith('index.html')) {
+      await renderCodeUiHtml(taskId);
+    }
+
+    if (String(path).toLowerCase().endsWith('style.css')) {
+      await renderCodeUiHtml(taskId);
+    }
+
     return true;
   } catch (error) {
     console.error('Fehler beim Speichern:', error);
@@ -5230,6 +5583,33 @@ async function deleteTaskItem(taskId, path) {
     loadAndDisplayTaskFiles(panelId, taskId, currentPath);
   } catch (error) {
     alert('Fehler beim Löschen: ' + error.message);
+  }
+}
+
+async function resetCodeUiTemplate(taskId, currentPath = '') {
+  const confirmed = confirm('Code-UI auf Standardvorlage zurücksetzen? Eigene Änderungen an Template-Dateien werden verworfen.');
+  if (!confirmed) return;
+
+  try {
+    const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+    const response = await requestJson(`/pythonIDE/api/user_tasks/folder-files.php?action=reset_code_ui${testUserParam}`, {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId })
+    });
+
+    if (!response.ok) {
+      throw new Error(response.error || 'Reset fehlgeschlagen');
+    }
+
+    const panelId = `folder-panel-content-${taskId}`;
+    loadAndDisplayTaskFiles(panelId, taskId, currentPath);
+    await renderCodeUiHtml(taskId);
+
+    if (window.currentFile && Number(window.currentFile.taskId) === Number(taskId)) {
+      await openTaskFileInEditor(taskId, 'init.py');
+    }
+  } catch (error) {
+    alert('Fehler beim Zurücksetzen: ' + error.message);
   }
 }
 
@@ -5400,4 +5780,9 @@ window.showTaskFileContextMenu = showTaskFileContextMenu;
 window.deleteTaskItem = deleteTaskItem;
 window.duplicateTaskItem = duplicateTaskItem;
 window.downloadTaskFile = downloadTaskFile;
+window.toggleTaskFileReadonly = toggleTaskFileReadonly;
+window.resetCodeUiTemplate = resetCodeUiTemplate;
 window.refreshStudentLiveState = refreshStudentLiveState;
+window.renderCodeUiHtml = renderCodeUiHtml;
+window.cacheCurrentEditorDraft = cacheCurrentEditorDraft;
+window.getTaskDraftContent = getTaskDraftContent;

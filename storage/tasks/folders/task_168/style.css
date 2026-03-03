@@ -1,0 +1,20 @@
+/* CODE_UI_TEMPLATE_VERSION: 1.1.0 */
+body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 16px;
+        background-color: aqua;
+}
+
+#idegui-root {
+        min-height: 180px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 12px;
+}
+
+#idegui-output {
+        margin-top: 12px;
+        font-size: 14px;
+        color: #374151;
+}

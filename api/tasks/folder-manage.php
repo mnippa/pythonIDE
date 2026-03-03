@@ -68,7 +68,7 @@ try {
     }
 
     // For all other actions, verify task has folderstructure enabled
-    $stmt = $conn->prepare('SELECT folderstructure FROM tasks WHERE id = ?');
+    $stmt = $conn->prepare('SELECT folderstructure, task_type, allow_code_ui_web_edit FROM tasks WHERE id = ?');
     $stmt->bind_param('i', $taskId);
     $stmt->execute();
     $task = $stmt->get_result()->fetch_assoc();
@@ -78,10 +78,107 @@ try {
     }
 
     $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+    $taskType = (string)($task['task_type'] ?? '');
+    $allowStudentWebEdit = (int)($task['allow_code_ui_web_edit'] ?? 1) === 1;
+
+    $loadPolicies = function (string $baseFolderPath): array {
+        $policyPath = $baseFolderPath . '/.file-policies.json';
+        if (!is_file($policyPath)) {
+            return ['files' => []];
+        }
+
+        $raw = file_get_contents($policyPath);
+        if ($raw === false || trim($raw) === '') {
+            return ['files' => []];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return ['files' => []];
+        }
+
+        if (!isset($decoded['files']) || !is_array($decoded['files'])) {
+            $decoded['files'] = [];
+        }
+
+        return $decoded;
+    };
+
+    $savePolicies = function (string $baseFolderPath, array $policies): bool {
+        if (!is_dir($baseFolderPath)) {
+            mkdir($baseFolderPath, 0755, true);
+        }
+        $policyPath = $baseFolderPath . '/.file-policies.json';
+        $json = json_encode($policies, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return $json !== false && file_put_contents($policyPath, $json) !== false;
+    };
+
+    $resolveReadOnly = function (string $relativePath, array $policies) use ($taskType, $allowStudentWebEdit): bool {
+        $normalized = ltrim(str_replace('\\', '/', $relativePath), '/');
+
+        $readOnly = false;
+        if ($taskType === 'code_ui') {
+            if ($normalized === 'ui-runtime.readonly.js') {
+                $readOnly = true;
+            }
+            if (!$allowStudentWebEdit && ($normalized === 'index.html' || $normalized === 'style.css')) {
+                $readOnly = true;
+            }
+        }
+
+        if (isset($policies['files'][$normalized]) && is_array($policies['files'][$normalized]) && array_key_exists('read_only', $policies['files'][$normalized])) {
+            $readOnly = (bool)$policies['files'][$normalized]['read_only'];
+        }
+
+        return $readOnly;
+    };
+
+    $normalizedInputPath = function (string $path): string {
+        $normalized = ltrim(str_replace('\\', '/', trim($path)), '/');
+        if ($normalized === '' || strpos($normalized, '..') !== false) {
+            return '';
+        }
+        return $normalized;
+    };
 
     // Ensure folder exists
     if (!is_dir($folderPath)) {
         mkdir($folderPath, 0755, true);
+    }
+
+    // ============================================
+    // SET READONLY FLAG
+    // ============================================
+    if ($action === 'set_readonly') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $path = $normalizedInputPath((string)($input['path'] ?? ''));
+        $readOnly = (int)(bool)($input['read_only'] ?? 0) === 1;
+
+        if ($path === '' || $path === 'init.py') {
+            jsonResponse(['ok' => false, 'error' => 'Ungültiger Pfad'], 400);
+        }
+
+        $fullPath = $folderPath . '/' . $path;
+        if (!is_file($fullPath)) {
+            jsonResponse(['ok' => false, 'error' => 'Datei nicht gefunden'], 404);
+        }
+
+        $policies = $loadPolicies($folderPath);
+        if (!isset($policies['files']) || !is_array($policies['files'])) {
+            $policies['files'] = [];
+        }
+        if (!isset($policies['files'][$path]) || !is_array($policies['files'][$path])) {
+            $policies['files'][$path] = [];
+        }
+
+        $policies['files'][$path]['read_only'] = $readOnly;
+        $policies['updated_at'] = date('c');
+
+        if (!$savePolicies($folderPath, $policies)) {
+            jsonResponse(['ok' => false, 'error' => 'Readonly-Status konnte nicht gespeichert werden'], 500);
+        }
+
+        jsonResponse(['ok' => true, 'path' => $path, 'read_only' => $readOnly]);
     }
 
     // ============================================
@@ -215,12 +312,22 @@ try {
             jsonResponse(['ok' => false, 'error' => 'Invalid name'], 400);
         }
         
-        $fullOldPath = $folderPath . '/' . ltrim($oldPath, '/');
+        $oldPath = $normalizedInputPath($oldPath);
+        if ($oldPath === '') {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
+
+        $fullOldPath = $folderPath . '/' . $oldPath;
         
         if (!file_exists($fullOldPath)) {
             jsonResponse(['ok' => false, 'error' => 'File or folder not found at path: ' . $fullOldPath], 404);
         }
         
+        $policies = $loadPolicies($folderPath);
+        if (is_file($fullOldPath) && $resolveReadOnly($oldPath, $policies)) {
+            jsonResponse(['ok' => false, 'error' => 'Datei ist schreibgeschützt'], 403);
+        }
+
         $pathInfo = pathinfo($fullOldPath);
         $newPath = $pathInfo['dirname'] . '/' . $newName;
         
@@ -249,6 +356,11 @@ try {
             jsonResponse(['ok' => false, 'error' => 'Path required'], 400);
         }
         
+        $path = $normalizedInputPath($path);
+        if ($path === '') {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
+
         $fullPath = $folderPath . '/' . $path;
         $fullPath = str_replace('//', '/', $fullPath);
         
@@ -256,6 +368,11 @@ try {
             jsonResponse(['ok' => false, 'error' => 'File or folder not found'], 404);
         }
         
+        $policies = $loadPolicies($folderPath);
+        if (is_file($fullPath) && $resolveReadOnly($path, $policies)) {
+            jsonResponse(['ok' => false, 'error' => 'Datei ist schreibgeschützt'], 403);
+        }
+
         // Recursive delete for folders
         function deleteRecursive($dir) {
             if (!is_dir($dir)) {
@@ -323,7 +440,17 @@ try {
             jsonResponse(['ok' => false, 'error' => 'Path required'], 400);
         }
 
-        $fullPath = $folderPath . '/' . ltrim($path, '/');
+        $path = $normalizedInputPath($path);
+        if ($path === '') {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
+
+        $policies = $loadPolicies($folderPath);
+        if ($resolveReadOnly($path, $policies)) {
+            jsonResponse(['ok' => false, 'error' => 'Datei ist schreibgeschützt'], 403);
+        }
+
+        $fullPath = $folderPath . '/' . $path;
 
         // Security check: prevent directory traversal
         $real = realpath(dirname($fullPath));

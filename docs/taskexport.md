@@ -10,7 +10,7 @@ This document defines the JSON format for importing a single task into an existi
 ## Required Fields
 - `version` (string, currently `3.0`)
 - `title` (string)
-- `task_type` (string) - One of: `code`, `single_choice`, `multiple_choice`, `free_text`, `code_reading`, `code_random_complex`.
+- `task_type` (string) - One of: `code`, `code_ui`, `single_choice`, `multiple_choice`, `free_text`, `code_reading`, `code_random_complex`.
 
 ## Optional Fields
 - `problem_type` (string) - Examples: `code_completion`, `code_fix`, `multiple_choice`, `essay`.
@@ -61,6 +61,49 @@ This document defines the JSON format for importing a single task into an existi
 - Use `version: "3.0"` for compatibility with current importer.
 - Use `problem_type` values that match the system.
 - Keep `test_cases` as an array that can be stored as JSON without transformation.
+
+## Best Practices: Feldverwendung (verbindlich)
+
+### `title`
+- Wird in der Navigation/Liste angezeigt.
+- Kurz und eindeutig benennen (z. B. „MwSt-Rechner“).
+
+### `task_text`
+- Wird oben zentral als student-facing Aufgabenstellung angezeigt.
+- Für **alle** Task-Typen verwenden (`code`, `code_ui`, `single_choice`, `multiple_choice`, `free_text`, ...).
+- **Kurz und prägnant** halten (nur Kernauftrag).
+
+### `question_text`
+- Gilt als **deprecated**.
+- Für neue Aufgaben nicht inhaltlich nutzen.
+- Wenn vorhanden, leer lassen oder ignorieren.
+
+### `description`
+- Enthält die **Details** zur Aufgabe.
+- Hier stehen Randbedingungen, Eingabe-/Ausgabeformat, Beispiele und Hinweise zur Prüfmethode.
+- Typisch: Erläuterung, was die Tests prüfen.
+
+### `stoff`
+- Enthält Lernhinweise/Didaktik.
+- Bevorzugt als **HTML** speichern (z. B. `<h4>`, `<ul>`, `<li>`), damit die Darstellung im UI strukturiert ist.
+
+### Empfohlene Reihenfolge im Inhalt
+1. `task_text` → kurz: Was ist zu tun?
+2. `description` → detailliert: Wie/unter welchen Bedingungen?
+3. `stoff` → Lernhilfe und methodische Hinweise (HTML)
+4. `test_cases` → automatische Prüfung
+
+### Beispiel
+```json
+{
+  "title": "MwSt-Rechner",
+  "task_text": "Berechne für Nettopreis und MwSt-Satz den MwSt-Betrag und den Bruttopreis.",
+  "question_text": "",
+  "description": "Nutze die Eingabefelder netto/mwst. Berechne mwst_betrag und brutto. Gib alle Ergebnisse auf 2 Nachkommastellen aus. Die Prüfung kontrolliert Variablenwerte und Ausgabezuordnung.",
+  "stoff": "<h4>Prozentrechnung</h4><ul><li>mwst_betrag = netto * (mwst/100)</li><li>brutto = netto + mwst_betrag</li></ul>",
+  "test_cases": [...]
+}
+```
 
 ## Intelligent `vars` Input Convention
 - For deterministic testing of programs using `input()`, use `test_cases` type `intelligent` with `mode: "vars"` and a `randomizer_code` that defines `values`.

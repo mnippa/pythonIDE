@@ -524,6 +524,7 @@ if ($displayName === '') {
           <select id="tasks-filter-type" style="max-width: 220px;">
             <option value="all">All task types</option>
             <option value="code">Code (Python)</option>
+            <option value="code_ui">Code + UI</option>
             <option value="single_choice">Single-Choice</option>
             <option value="multiple_choice">Multiple-Choice</option>
             <option value="free_text">Freitext</option>
@@ -756,6 +757,7 @@ if ($displayName === '') {
             <label for="new-task-type">Task Type</label>
             <select id="new-task-type">
               <option value="code">Code (Python)</option>
+              <option value="code_ui">Code + UI</option>
               <option value="single_choice">Single-Choice</option>
               <option value="multiple_choice">Multiple-Choice</option>
               <option value="free_text">Freitext</option>
@@ -804,9 +806,17 @@ if ($displayName === '') {
           <div class="field checkbox-field">
             <label>
               <input id="task-allowDownload" type="checkbox" />
-              <span>📁 Herunterladen erlauben</span>
+              <span>� Download erlauben</span>
             </label>
-            <div class="hint">Schüler dürfen Dateien herunterladen</div>
+            <div class="hint">Schüler können Dateien herunterladen</div>
+          </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="task-allowCodeUiWebEdit" type="checkbox" />
+              <span>🎨 Code-UI HTML+CSS editierbar</span>
+            </label>
+            <div class="hint">Bei code_ui-Aufgaben: Schüler können index.html und style.css bearbeiten</div>
           </div>
         </div>
         
@@ -1009,6 +1019,7 @@ if ($displayName === '') {
             <label for="edit-task-type">Task Type</label>
             <select id="edit-task-type">
               <option value="code">Code (Python)</option>
+              <option value="code_ui">Code + UI</option>
               <option value="single_choice">Single-Choice</option>
               <option value="multiple_choice">Multiple-Choice</option>
               <option value="free_text">Freitext</option>
@@ -1054,9 +1065,17 @@ if ($displayName === '') {
           <div class="field checkbox-field">
             <label>
               <input id="edit-task-allowDownload" type="checkbox" />
-              <span>📁 Herunterladen erlauben</span>
+              <span>� Download erlauben</span>
             </label>
-            <div class="hint">Schüler dürfen Dateien herunterladen</div>
+            <div class="hint">Schüler können Dateien herunterladen</div>
+          </div>
+          
+          <div class="field checkbox-field">
+            <label>
+              <input id="edit-task-allowCodeUiWebEdit" type="checkbox" />
+              <span>🎨 Code-UI HTML+CSS editierbar</span>
+            </label>
+            <div class="hint">Bei code_ui-Aufgaben: Schüler können index.html und style.css bearbeiten</div>
           </div>
         </div>
         

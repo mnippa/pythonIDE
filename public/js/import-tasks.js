@@ -11,6 +11,7 @@ class TaskImporter {
   getProblemType(taskType) {
     const map = {
       code: 'code_completion',
+      code_ui: 'code_completion',
       code_reading: 'code_completion',
       code_random_complex: 'code_completion',
       single_choice: 'multiple_choice',
@@ -34,7 +35,7 @@ class TaskImporter {
       throw new Error(`Unsupported export version: ${version}`);
     }
 
-    const allowedTaskTypes = ['code', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+    const allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
     if (!allowedTaskTypes.includes(task.task_type)) {
       throw new Error(`Invalid task_type: ${task.task_type}`);
     }

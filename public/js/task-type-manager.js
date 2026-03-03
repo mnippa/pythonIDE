@@ -9,6 +9,10 @@
       label: 'Code (Python)',
       fields: ['code_template', 'randomizer_code', 'test_cases', 'solution', 'hints']
     },
+    code_ui: {
+      label: 'Code + UI',
+      fields: ['code_template', 'test_cases', 'solution', 'hints']
+    },
     single_choice: {
       label: 'Single-Choice',
       fields: ['image', 'options', 'hints']

@@ -227,7 +227,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
     const isFirst = fullIndex === 0;
     const isLast = fullIndex === state.tasks.length - 1;
     const taskTypeLabel = t.task_type || 'code';
-    const isQuizType = taskTypeLabel !== 'code';
+    const isQuizType = !['code', 'code_ui'].includes(taskTypeLabel);
 
     // Testtypen-Icons
     const testTypeIcons = {
@@ -517,6 +517,7 @@ async function handleTaskSubmit(e) {
     show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
     folderstructure: $('task-folderstructure').checked ? 1 : 0,
     allowDownload: $('task-allowDownload').checked ? 1 : 0,
+    allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     code_template: $('task-template').value,
@@ -562,7 +563,7 @@ async function handleTaskSubmit(e) {
   
   // NEW: Handle free text validation options
   // Handle test_cases for code and free_text tasks
-  if (taskType === 'code' || taskType === 'free_text') {
+  if (taskType === 'code' || taskType === 'code_ui' || taskType === 'free_text') {
     payload.test_cases = $('task-test-cases').value.trim() || null;
   }
   
@@ -607,7 +608,7 @@ async function handleTaskSubmit(e) {
   }
 
   // If builder has data, prefer it over manual JSON (for code tasks)
-  if (taskType === 'code' && Array.isArray(testCasesData) && testCasesData.length > 0) {
+  if ((taskType === 'code' || taskType === 'code_ui') && Array.isArray(testCasesData) && testCasesData.length > 0) {
     // Special case: if single intelligent test, save as object (not array)
     if (testCasesData.length === 1 && testCasesData[0].type === 'intelligent') {
       const intelligentConfig = {...testCasesData[0]};
@@ -625,7 +626,7 @@ async function handleTaskSubmit(e) {
   }
 
   // Validate test_cases JSON if provided (for code tasks)
-  if (taskType === 'code' && payload.test_cases) {
+  if ((taskType === 'code' || taskType === 'code_ui') && payload.test_cases) {
     try {
       const parsed = JSON.parse(payload.test_cases);
       const error = validateIntelligentTests(parsed, payload.solution_code);
@@ -1202,6 +1203,14 @@ function openEditTaskModal(taskId) {
       task.allowDownload === 'true';
   }
   
+  if ($('edit-task-allowCodeUiWebEdit')) {
+    $('edit-task-allowCodeUiWebEdit').checked =
+      task.allowCodeUiWebEdit === 1 ||
+      task.allowCodeUiWebEdit === true ||
+      task.allowCodeUiWebEdit === '1' ||
+      task.allowCodeUiWebEdit === 'true';
+  }
+  
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
@@ -1341,6 +1350,7 @@ async function handleEditTaskSubmit(e) {
     show_solution_code: $('edit-task-show-solution-code').checked ? 1 : 0,
     folderstructure: $('edit-task-folderstructure').checked ? 1 : 0,
     allowDownload: $('edit-task-allowDownload').checked ? 1 : 0,
+    allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
     problem_type: taskType,  // Keep for backwards compatibility
     code_template: $('edit-task-template').value,
@@ -1377,7 +1387,7 @@ async function handleEditTaskSubmit(e) {
   payload.variable_overrides = $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null;
   
   // Handle test_cases for code and free_text tasks
-  if (taskType === 'code' || taskType === 'free_text') {
+  if (taskType === 'code' || taskType === 'code_ui' || taskType === 'free_text') {
     payload.test_cases = $('edit-task-test-cases').value.trim() || null;
   }
 
@@ -1884,7 +1894,7 @@ function updateSolutionCodeVisibility() {
     // 1. code tasks (any type of tests)
     // 2. code_random_complex tasks
     // 3. code_reading tasks
-    if (newTaskType === 'code' || newTaskType === 'code_random_complex' || newTaskType === 'code_reading') {
+    if (newTaskType === 'code' || newTaskType === 'code_ui' || newTaskType === 'code_random_complex' || newTaskType === 'code_reading') {
       needsSolution = true;
     }
     
@@ -1904,7 +1914,7 @@ function updateSolutionCodeVisibility() {
     // 1. code tasks (any type of tests)
     // 2. code_random_complex tasks
     // 3. code_reading tasks
-    if (editTaskType === 'code' || editTaskType === 'code_random_complex' || editTaskType === 'code_reading') {
+    if (editTaskType === 'code' || editTaskType === 'code_ui' || editTaskType === 'code_random_complex' || editTaskType === 'code_reading') {
       needsSolution = true;
     }
     
@@ -1944,7 +1954,7 @@ function updateRandomButtonVisibility() {
     let showRandomizer = false;
     if (newTaskType === 'code_random_complex') {
       showRandomizer = true;
-    } else if (newTaskType === 'code') {
+    } else if (newTaskType === 'code' || newTaskType === 'code_ui') {
       // Check if there are any intelligent tests defined
       if (Array.isArray(testCasesData) && testCasesData.length > 0) {
         showRandomizer = testCasesData.some(tc => tc.type === 'intelligent');
@@ -1961,7 +1971,7 @@ function updateRandomButtonVisibility() {
     let showRandomizer = false;
     if (editTaskType === 'code_random_complex') {
       showRandomizer = true;
-    } else if (editTaskType === 'code') {
+    } else if (editTaskType === 'code' || editTaskType === 'code_ui') {
       // Check if there are any intelligent tests defined
       if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
         showRandomizer = editTestCasesData.some(tc => tc.type === 'intelligent');
@@ -3388,7 +3398,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // Update legacy problem_type for compatibility
-      $('task-type').value = taskType === 'code' ? 'code_completion' : taskType;
+      $('task-type').value = (taskType === 'code' || taskType === 'code_ui') ? 'code_completion' : taskType;
+      if (taskType === 'code_ui') {
+        const folderCheckbox = $('task-folderstructure');
+        if (folderCheckbox) {
+          folderCheckbox.checked = true;
+        }
+      }
       if (taskType === 'code_reading' || taskType === 'code_random_complex') {
         const attemptsInput = $('task-max-attempts');
         if (attemptsInput && (!attemptsInput.value || attemptsInput.value === '1')) {
@@ -3637,6 +3653,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Update OptionsBuilder task type
       if (window.editOptionsBuilder) {
         window.editOptionsBuilder.setTaskType(taskType);
+      }
+      if (taskType === 'code_ui') {
+        const folderCheckbox = $('edit-task-folderstructure');
+        if (folderCheckbox) {
+          folderCheckbox.checked = true;
+        }
       }
       updateMaxIterationsFromBuilder('edit-task');
     });

@@ -117,6 +117,49 @@ $scanDirectory = function ($dir, $basePath = '') use (&$scanDirectory, $isTextPa
     return $items;
 };
 
+$loadPolicies = function (string $baseFolderPath): array {
+    $policyPath = $baseFolderPath . '/.file-policies.json';
+    if (!is_file($policyPath)) {
+        return ['files' => []];
+    }
+
+    $raw = file_get_contents($policyPath);
+    if ($raw === false || trim($raw) === '') {
+        return ['files' => []];
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return ['files' => []];
+    }
+
+    if (!isset($decoded['files']) || !is_array($decoded['files'])) {
+        $decoded['files'] = [];
+    }
+
+    return $decoded;
+};
+
+$resolveReadOnly = function (string $relativePath, array $policies, bool $isCodeUiTask, bool $allowStudentWebEdit): bool {
+    $normalized = ltrim(str_replace('\\', '/', $relativePath), '/');
+
+    $readOnly = false;
+    if ($isCodeUiTask) {
+        if ($normalized === 'ui-runtime.readonly.js') {
+            $readOnly = true;
+        }
+        if (!$allowStudentWebEdit && ($normalized === 'index.html' || $normalized === 'style.css')) {
+            $readOnly = true;
+        }
+    }
+
+    if (isset($policies['files'][$normalized]) && is_array($policies['files'][$normalized]) && array_key_exists('read_only', $policies['files'][$normalized])) {
+        $readOnly = (bool)$policies['files'][$normalized]['read_only'];
+    }
+
+    return $readOnly;
+};
+
 try {
     // Ensure per-user text file table exists
     $conn->query(
@@ -136,7 +179,7 @@ try {
     );
 
     // Load task metadata
-    $taskStmt = $conn->prepare('SELECT id, assignment_id, folderstructure, code_template FROM tasks WHERE id = ?');
+    $taskStmt = $conn->prepare('SELECT id, assignment_id, folderstructure, code_template, task_type, allow_code_ui_web_edit FROM tasks WHERE id = ?');
     $taskStmt->bind_param('i', $taskId);
     $taskStmt->execute();
     $task = $taskStmt->get_result()->fetch_assoc();
@@ -150,6 +193,76 @@ try {
     }
 
     $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+    $isCodeUiTask = ($task['task_type'] ?? '') === 'code_ui';
+    $allowStudentWebEdit = (int)($task['allow_code_ui_web_edit'] ?? 1) === 1;
+    $policies = $loadPolicies($folderPath);
+
+    $scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryWithPolicy, $isTextPath, $resolveReadOnly, $policies, $isCodeUiTask, $allowStudentWebEdit) {
+        $items = [];
+
+        if (!is_dir($dir)) {
+            return $items;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+
+        foreach ($files as $file) {
+            if (substr($file, 0, 1) === '.') {
+                continue;
+            }
+
+            $filePath = $dir . '/' . $file;
+            $relativePath = $basePath ? $basePath . '/' . $file : $file;
+
+            if (is_dir($filePath)) {
+                $items[] = [
+                    'name' => $file,
+                    'type' => 'folder',
+                    'virtual' => false,
+                    'path' => $relativePath,
+                    'children' => $scanDirectoryWithPolicy($filePath, $relativePath)
+                ];
+            } else {
+                $items[] = [
+                    'name' => $file,
+                    'type' => 'file',
+                    'virtual' => false,
+                    'path' => $relativePath,
+                    'size' => filesize($filePath),
+                    'is_text' => $isTextPath($relativePath),
+                    'read_only' => $resolveReadOnly($relativePath, $policies, $isCodeUiTask, $allowStudentWebEdit)
+                ];
+            }
+        }
+
+        return $items;
+    };
+
+    // RESET CODE_UI TEMPLATE (student)
+    if ($action === 'reset_code_ui') {
+        if ($method !== 'POST') {
+            jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
+        }
+
+        if (($task['task_type'] ?? '') !== 'code_ui') {
+            jsonResponse(['ok' => false, 'error' => 'Reset is only available for code_ui tasks'], 400);
+        }
+
+        $resetFilesStmt = $conn->prepare('DELETE FROM user_task_files WHERE user_id = ? AND task_id = ?');
+        $resetFilesStmt->bind_param('ii', $userId, $taskId);
+        if (!$resetFilesStmt->execute()) {
+            jsonResponse(['ok' => false, 'error' => 'Failed to reset user file overrides'], 500);
+        }
+
+        $resetCodeStmt = $conn->prepare('UPDATE user_tasks SET current_code = ? WHERE user_id = ? AND task_id = ?');
+        $defaultCode = (string)($task['code_template'] ?? '');
+        $resetCodeStmt->bind_param('sii', $defaultCode, $userId, $taskId);
+        if (!$resetCodeStmt->execute()) {
+            jsonResponse(['ok' => false, 'error' => 'Failed to reset init.py'], 500);
+        }
+
+        jsonResponse(['ok' => true, 'message' => 'Code UI template reset complete']);
+    }
 
     // Resolve student's init.py content from user_tasks.current_code fallback to tasks.code_template
     $initCode = null;
@@ -171,11 +284,12 @@ try {
             'virtual' => true,
             'path' => 'init.py',
             'is_text' => true,
+            'read_only' => false,
             'content' => $initCode
         ]];
 
         if (is_dir($folderPath)) {
-            $realItems = $scanDirectory($folderPath);
+            $realItems = $scanDirectoryWithPolicy($folderPath);
             $files = array_merge($files, $realItems);
         }
 
@@ -266,6 +380,10 @@ try {
             }
 
             jsonResponse(['ok' => true, 'message' => 'init.py saved']);
+        }
+
+        if ($resolveReadOnly($path, $policies, $isCodeUiTask, $allowStudentWebEdit)) {
+            jsonResponse(['ok' => false, 'error' => 'Datei ist schreibgeschützt'], 403);
         }
 
         if (!$isTextPath($path)) {

@@ -104,6 +104,7 @@ Das JSON wird in ein Python IDE System importiert, um Aufgaben/Übungen zu verwa
   generateTaskSpecificPrompt(data) {
     const taskTypeNames = {
       'code': 'Code (Python)',
+      'code_ui': 'Code + UI',
       'single_choice': 'Single-Choice',
       'multiple_choice': 'Multiple-Choice',
       'free_text': 'Freitext',
@@ -129,7 +130,7 @@ ${data.title ? `**Titel (verwenden):** ${data.title}` : '**Titel:** (von dir zu 
 {
   "version": "1.0",
   "title": "string - Aufgabentitel",
-  "problem_type": "code|single_choice|multiple_choice|free_text|code_reading|code_random_complex",
+  "problem_type": "code|code_ui|single_choice|multiple_choice|free_text|code_reading|code_random_complex",
   "description": "string - Aufgabenbeschreibung/Kontext",
   "max_attempts": ${data.attempts}
 }
@@ -138,7 +139,7 @@ ${data.title ? `**Titel (verwenden):** ${data.title}` : '**Titel:** (von dir zu 
 `;
 
     // Add task-type specific guidance
-    if (data.taskType === 'code') {
+    if (data.taskType === 'code' || data.taskType === 'code_ui') {
       prompt += this.generateCodeTaskPrompt(data);
     } else if (data.taskType === 'single_choice') {
       prompt += this.generateSingleChoicePrompt(data);
