@@ -145,7 +145,7 @@ $resolveReadOnly = function (string $relativePath, array $policies, bool $isCode
 
     $readOnly = false;
     if ($isCodeUiTask) {
-        if ($normalized === 'ui-runtime.readonly.js') {
+        if ($normalized === 'ui-runtime.readonly.js' || $normalized === 'idegui.py') {
             $readOnly = true;
         }
         if (!$allowStudentWebEdit && ($normalized === 'index.html' || $normalized === 'style.css')) {

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo: Both Trigger Modes</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 15px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h2 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+    .mode-box { 
+      padding: 15px; 
+      border-radius: 6px; 
+      margin: 10px 0;
+      border-left: 4px solid;
+    }
+    .traditional { 
+      background: #f1f8f4; 
+      border-left-color: #4CAF50;
+    }
+    .event-driven { 
+      background: #f0f7ff; 
+      border-left-color: #2196F3;
+    }
+    input, button {
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      font-weight: bold;
+    }
+    button:hover { background: #5568d3; }
+    .output {
+      background: #f9f9f9;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+      border-left: 4px solid #667eea;
+      font-family: monospace;
+      min-height: 40px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    .badge-traditional { background: #4CAF50; color: white; }
+    .badge-event { background: #2196F3; color: white; }
+  </style>
+</head>
+<body>
+  <!-- SECTION 1: TRADITIONAL MODE (data-run-python) -->
+  <div class="container">
+    <h2><span class="badge badge-traditional">TRADITIONAL</span>Mode: data-run-python="true"</h2>
+    <div class="mode-box traditional">
+      <p><strong>Erklärung:</strong> Jeder Klick führt den kompletten Code neu aus. Der Python-Code prüft den Trigger mit if/elif.</p>
+      
+      <label for="input1">Zahl eingeben:</label>
+      <input type="number" data-element="num1" value="10">
+      
+      <div>
+        <button data-run-python="true" data-run-name="multiply">× 2</button>
+        <button data-run-python="true" data-run-name="divide">÷ 2</button>
+        <button data-run-python="true" data-run-name="reset_trad">Zurücksetzen</button>
+      </div>
+      
+      <div class="output" data-element="output1">Ergebnis: (Warte auf RUN)</div>
+      <small style="color: #666;">💡 Tip: Jeder Klick führt den ganzen Code aus. Die Variable wird neu initialisiert!</small>
+    </div>
+  </div>
+
+  <!-- SECTION 2: EVENT-DRIVEN MODE (data-function) -->
+  <div class="container">
+    <h2><span class="badge badge-event">EVENT-DRIVEN</span>Mode: data-function="functionName"</h2>
+    <div class="mode-box event-driven">
+      <p><strong>Erklärung:</strong> Der Code wird nur beim RUN ausgeführt. Dann werden nur spezifische Funktionen aufgerufen. Globale Variablen bleiben erhalten!</p>
+      
+      <label for="input2">Zahl eingeben:</label>
+      <input type="number" data-element="num2" value="10">
+      
+      <div>
+        <button data-function="multiply">× 2</button>
+        <button data-function="divide">÷ 2</button>
+        <button data-function="reset_event">Zurücksetzen</button>
+      </div>
+      
+      <div class="output" data-element="output2">Ergebnis: (Warte auf RUN)</div>
+      <small style="color: #666;">💡 Tip: Jeder Klick &nbsp;ruft NUR eine Funktion auf. Die globale Variable bleibt erhalten!</small>
+    </div>
+  </div>
+
+  <!-- COMPARISON -->
+  <div class="container">
+    <h2>Vergleich</h2>
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr>
+        <th style="text-align: left; padding: 10px; border-bottom: 2px solid #ddd;">Aspekt</th>
+        <th style="text-align: left; padding: 10px; border-bottom: 2px solid #ddd;">TRADITIONAL</th>
+        <th style="text-align: left; padding: 10px; border-bottom: 2px solid #ddd;">EVENT-DRIVEN</th>
+      </tr>
+      <tr style="background: #f9f9f9;">
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Code-Ausführung</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Vollständig jedesmal</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Nur beim RUN + Eine Funktion</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Globals persistiert?</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">❌ Nein (neu initialisiert)</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">✅ Ja (zwischen Triggers)</td>
+      </tr>
+      <tr style="background: #f9f9f9;">
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Dispatch im Code</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">if trigger == "plus": ...</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">def plus(trigger): ...</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Geeignet für</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Einfache UI</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">Apps mit State/Spielen</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- NOTICE -->
+  <div class="container" style="background: #fff3e0; border-left: 4px solid #ff9800;">
+    <h3>⚠️ Wichtig</h3>
+    <p>Beide Modi können in <strong>einer Task</strong> gemischt werden! Verwende <code>data-run-python</code> wo du If/elif brauchst und <code>data-function</code> für saubere State-Management.</p>
+  </div>
+</body>
+</html>

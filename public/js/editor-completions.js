@@ -1,5 +1,5 @@
 // public/js/editor-completions.js
-import * as C from "./editor-completions.config.js?t=1770415900";
+import * as C from "./editor-completions.config.js?t=1772551800";
 
 let helpJson = null; // Cached help.json data
 let NUMPY_COMPLETIONS = [];
@@ -10,6 +10,11 @@ let NP_SNIPPETS = [];
 let PLT_SNIPPETS = [];
 let AX_SNIPPETS = [];
 let BUILTIN_SNIPPETS = [];
+let IDEGUI_COMPLETIONS = [];
+let IDEGUI_SNIPPETS = [];
+let IDEGUI_HOVER_DOCS = {};
+let IDEGUI_TRIGGER_COMPLETIONS = [];
+let IDEGUI_TRIGGER_HOVER_DOCS = {};
 let STRING_HOVER_DOCS = {};
 let LIST_HOVER_DOCS = {};
 let DICT_HOVER_DOCS = {};
@@ -65,12 +70,19 @@ export async function registerPythonCompletions(monaco, editor) {
     plt: PLT_COMPLETIONS.length,
     ax: AX_COMPLETIONS.length,
     builtin: BUILTIN_COMPLETIONS.length,
+    idegui: IDEGUI_COMPLETIONS.length,
   });
 
   NP_SNIPPETS         = Array.isArray(C.NP_SNIPPETS) ? C.NP_SNIPPETS : [];
   PLT_SNIPPETS        = Array.isArray(C.PLT_SNIPPETS) ? C.PLT_SNIPPETS : [];
   AX_SNIPPETS         = Array.isArray(C.AX_SNIPPETS) ? C.AX_SNIPPETS : [];
   BUILTIN_SNIPPETS    = Array.isArray(C.BUILTIN_SNIPPETS) ? C.BUILTIN_SNIPPETS : [];
+
+  IDEGUI_COMPLETIONS  = Array.isArray(C.IDEGUI_COMPLETIONS) ? C.IDEGUI_COMPLETIONS : [];
+  IDEGUI_SNIPPETS     = Array.isArray(C.IDEGUI_SNIPPETS) ? C.IDEGUI_SNIPPETS : [];
+  IDEGUI_HOVER_DOCS   = C.IDEGUI_HOVER_DOCS && typeof C.IDEGUI_HOVER_DOCS === "object" ? C.IDEGUI_HOVER_DOCS : {};
+  IDEGUI_TRIGGER_COMPLETIONS = Array.isArray(C.IDEGUI_TRIGGER_COMPLETIONS) ? C.IDEGUI_TRIGGER_COMPLETIONS : [];
+  IDEGUI_TRIGGER_HOVER_DOCS = C.IDEGUI_TRIGGER_HOVER_DOCS && typeof C.IDEGUI_TRIGGER_HOVER_DOCS === "object" ? C.IDEGUI_TRIGGER_HOVER_DOCS : {};
 
   STRING_HOVER_DOCS   = C.STRING_HOVER_DOCS && typeof C.STRING_HOVER_DOCS === "object" ? C.STRING_HOVER_DOCS : {};
   LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
@@ -189,6 +201,10 @@ export async function registerPythonCompletions(monaco, editor) {
       // import matplotlib.pyplot as plt
       m = s.match(/^import\s+matplotlib\.pyplot\s+as\s+([A-Za-z_]\w*)\b/);
       if (m) { map.set(m[1], "matplotlib.pyplot"); continue; }
+
+      // import idegui as ui
+      m = s.match(/^import\s+idegui\s+as\s+([A-Za-z_]\w*)\b/);
+      if (m) { map.set(m[1], "idegui"); continue; }
     }
     return map;
   }
@@ -254,6 +270,43 @@ export async function registerPythonCompletions(monaco, editor) {
        if (/\bnp\.|plt\./.test(prefix)) {
          console.log("[DEBUG] Prefix contains np. or plt. but didn't match:", prefix);
        }
+
+      // UI/idegui completions (typically imported as "import idegui as ui")
+      // Match both ui. and idegui. patterns
+      if (/\b(?:ui|idegui)\.trigger\.\w*$/.test(prefix)) {
+        return {
+          suggestions: IDEGUI_TRIGGER_COMPLETIONS.map((name) => ({
+            label: name,
+            kind: monaco.languages.CompletionItemKind.Property,
+            insertText: name,
+            detail: "Code-UI Trigger",
+          })),
+        };
+      }
+
+      if (/\b(?:ui|idegui)\.\w*$/.test(prefix)) {
+        console.log("[UI] Matched! prefix:", prefix, "suggestions:", IDEGUI_COMPLETIONS.length);
+        const match = prefix.match(/\b(ui|idegui)\.\w*$/);
+        const matchStartIndex = match ? (prefix.length - match[0].length) : 0;
+        const matchStartColumn = matchStartIndex + 1;
+        const moduleName = match ? match[1] : 'ui';
+        
+        let sugs = [
+          ...IDEGUI_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Code-UI API (snippet)", s.doc)),
+          ...IDEGUI_COMPLETIONS.map((n) => mkPrefixedFunctionSuggestion(moduleName, n, "Code-UI API")),
+        ];
+        
+        // Set range to replace from start of 'ui' or 'idegui' to cursor
+        try {
+          const range = new monaco.Range(position.lineNumber, matchStartColumn, position.lineNumber, position.column);
+          sugs = sugs.map(s => ({ ...s, range }));
+          console.log('[UI] range:', { startColumn: matchStartColumn, endColumn: position.column });
+        } catch (e) {}
+        
+        console.log('[UI] suggestions count:', sugs.length);
+        return { suggestions: sugs };
+      }
+
       // AX completions
       if (/\bax\.\w*$/.test(prefix)) {
         return {
@@ -375,6 +428,8 @@ export async function registerPythonCompletions(monaco, editor) {
   NUMPY_COMPLETIONS.forEach(fn => knownHelpKeys.add(`np.${fn}`));
   PLT_COMPLETIONS.forEach(fn => knownHelpKeys.add(`plt.${fn}`));
   AX_COMPLETIONS.forEach(fn => knownHelpKeys.add(`ax.${fn}`));
+  IDEGUI_COMPLETIONS.forEach(fn => knownHelpKeys.add(`ui.${fn}`));
+  IDEGUI_TRIGGER_COMPLETIONS.forEach(name => knownHelpKeys.add(`ui.trigger.${name}`));
   STRING_METHODS.forEach(m => knownHelpKeys.add(`str.${m}`));
   LIST_METHODS.forEach(m => knownHelpKeys.add(`list.${m}`));
   DICT_METHODS.forEach(m => knownHelpKeys.add(`dict.${m}`));
@@ -385,6 +440,11 @@ export async function registerPythonCompletions(monaco, editor) {
 
   async function fetchHelp(key) {
     if (!key) return null;
+    if (String(key).startsWith('ui.')) {
+      const miss = { ok: false, md: null };
+      helpCache.set(key, miss);
+      return miss;
+    }
     // Skip API call if key is not in our known list
     if (!isKnownHelpKey(key)) {
       const miss = { ok: false, md: null };
@@ -413,6 +473,9 @@ export async function registerPythonCompletions(monaco, editor) {
     }
     if (ctx.kind === "module") {
       return `${ctx.module}.${ctx.name}`;
+    }
+    if (ctx.kind === "trigger") {
+      return `ui.trigger.${ctx.name}`;
     }
     return null;
   }
@@ -458,6 +521,18 @@ export async function registerPythonCompletions(monaco, editor) {
       return { kind: "module", module: "plt", name: best.name };
     }
 
+    // Handle idegui as ui
+    if (canon === "idegui" || best.left === "ui" || best.left === "idegui") {
+      const lineText = model.getLineContent(position.lineNumber);
+      const col0 = Math.max(0, position.column - 1);
+      const leftText = lineText.slice(0, col0);
+      const triggerMatch = leftText.match(/\b(?:ui|idegui)\.trigger\.(\w*)$/);
+      if (triggerMatch) {
+        return { kind: "trigger", module: "ui.trigger", name: best.name };
+      }
+      return { kind: "module", module: "ui", name: best.name };
+    }
+
     const upToLine = getTextUpToLine(model, position.lineNumber);
     const t = inferVarType(best.left, upToLine);
     if (!t) return null;
@@ -492,6 +567,25 @@ export async function registerPythonCompletions(monaco, editor) {
       if (ctx.type === "str") doc = STRING_HOVER_DOCS?.[ctx.name];
       else if (ctx.type === "list") doc = LIST_HOVER_DOCS?.[ctx.name];
       else if (ctx.type === "dict") doc = DICT_HOVER_DOCS?.[ctx.name];
+      if (doc) {
+        lastKey = key;
+        setHelpPanel(doc, { isMd:true });
+        return;
+      }
+    }
+
+    // Check for idegui/ui module fallback documentation
+    if (ctx.kind === "module" && ctx.module === "ui") {
+      const doc = IDEGUI_HOVER_DOCS?.[ctx.name];
+      if (doc) {
+        lastKey = key;
+        setHelpPanel(doc, { isMd:true });
+        return;
+      }
+    }
+
+    if (ctx.kind === "trigger") {
+      const doc = IDEGUI_TRIGGER_HOVER_DOCS?.[ctx.name];
       if (doc) {
         lastKey = key;
         setHelpPanel(doc, { isMd:true });
@@ -574,7 +668,7 @@ export async function registerPythonCompletions(monaco, editor) {
       const fullLabel = getFocusedSuggestText();
       console.log("[help] fullLabel from suggest text:", fullLabel);
       if (!fullLabel) return;
-      const direct = fullLabel.match(/^(math|np|plt|str|list|dict)\.([A-Za-z_]\w*)/);
+      const direct = fullLabel.match(/^(math|np|plt|ui|idegui|str|list|dict)\.([A-Za-z_]\w*)/);
       console.log("[help] direct match:", direct);
       if (direct) {
         const key = `${direct[1]}.${direct[2]}`;
@@ -629,6 +723,18 @@ export async function registerPythonCompletions(monaco, editor) {
       return;
     }
 
+    // Handle idegui as ui
+    if (canon === "idegui" || left === "ui" || left === "idegui") {
+      const key = `ui.${name}`;
+      if (key === lastKey) return;
+
+      const doc = IDEGUI_HOVER_DOCS?.[name];
+      lastKey = key;
+      if (doc) setHelpPanel(doc, { isMd:true });
+      else setHelpPanel(`<div class="help-muted">Keine lokale Hilfe für <code>${escapeHtml(key)}</code>.</div>`, { isMd:false });
+      return;
+    }
+
     // var method
     const upToLine = getTextUpToLine(model, pos.lineNumber);
     const t = inferVarType(left, upToLine);
@@ -651,7 +757,7 @@ export async function registerPythonCompletions(monaco, editor) {
 
   // Default help hint
   setHelpPanel(
-    "<div class=\"help-muted\">Tipp: Tippe <code>np.</code>, <code>plt.</code> oder <code>math.</code> und nutze die Autocomplete-Liste, um Hilfe zu sehen.</div>",
+    "<div class=\"help-muted\">Tipp: Tippe <code>np.</code>, <code>plt.</code>, <code>math.</code> oder <code>ui.</code> und nutze die Autocomplete-Liste, um Hilfe zu sehen.</div>",
     { isMd: false }
   );
 

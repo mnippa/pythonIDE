@@ -56,33 +56,23 @@ CODE,
     'solution_code' => <<<'SOLUTION'
 import idegui as ui
 
-ui.title("MwSt-Rechner (19%)")
-
-# Eingabefelder
-netto_str = ui.text_input("Nettopreis (Euro):", "100")
-mwst_str = ui.text_input("MwSt-Satz (%):", "19")
-
-# Umwandlung in Zahlen
 try:
-    netto = float(netto_str)
-    mwst_satz = float(mwst_str)
-    
-    # Berechnung
-    mwst_betrag = netto * (mwst_satz / 100)
+    netto = float(ui.get("netto"))
+    mwst = float(ui.get("mwst"))
+
+    mwst_betrag = netto * (mwst / 100)
     brutto = netto + mwst_betrag
-    
-    # Ausgabe
-    ui.text(f"Nettopreis: {netto:.2f} €")
-    ui.text(f"MwSt ({mwst_satz}%): {mwst_betrag:.2f} €")
-    ui.text(f"—" * 20)
-    ui.text(f"Bruttopreis: {brutto:.2f} €")
-    
+
+    ui.set("result_netto", f"{netto:.2f} €")
+    ui.set("result_mwst", f"{mwst_betrag:.2f} €")
+    ui.set("result_brutto", f"{brutto:.2f} €")
+    ui.set("result_error", "")
 except ValueError:
-    ui.text("❌ Bitte geben Sie gültige Zahlen ein!")
+    ui.set("result_error", "Bitte gib gültige Zahlen ein.")
 SOLUTION,
-    'hint1' => 'Nutze idegui.text_input() für die Eingabefelder',
+    'hint1' => 'Lies Werte mit ui.get("netto") und ui.get("mwst")',
     'hint2' => 'Formel: Bruttopreis = Nettopreis + (Nettopreis × MwSt-Satz / 100)',
-    'hint3' => 'Konvertiere die Eingaben mit float()',
+    'hint3' => 'Schreibe Ergebnisse mit ui.set("...") in data-element Felder',
     'stoff' => 'MwSt (Mehrwertsteuer) wird auf den Nettopreis addiert. Die Formel lautet: Bruttopreis = Nettopreis × (1 + MwSt-Satz/100)',
     'max_attempts' => 10,
     'max_iterations' => 1,

@@ -9,10 +9,11 @@ API:
   ui.reset(container)       - Clear container content
 
 Example:
-  netto = float(ui.get('netto'))  # Read from <input data-element="netto">
-  brutto = netto * 1.19
-  ui.set('result_brutto', f"{brutto:.2f}")  # Write to <span data-element="result_brutto">
-  ui.print('log', 'Calculation done!')      # Append to <div data-element="log">
+  a = float(ui.get('a'))  # Read from <input data-element="a">
+  b = float(ui.get('b'))
+  result = a + b
+  ui.set('result', result)         # Write to <span data-element="result">
+  ui.print('log', 'Calculated:', result)  # Append to <div data-element="log">
 """
 
 def get(name):

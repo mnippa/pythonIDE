@@ -7,7 +7,7 @@
   1) Button mit data-run-python="true" wird geklickt.
   2) Die Plattform fängt das Ereignis zentral ab (public/js/assignments.js).
   3) Der globale Run-Button (#run-btn) wird ausgelöst.
-  4) Python-Code (init.py) wird ausgeführt und schreibt mit idegui in data-output.
+  4) Python-Code wird ausgeführt und schreibt mit idegui in data-element.
 
   Warum zentral?
   - Einheitliches Verhalten für alle Code-UI-Tasks

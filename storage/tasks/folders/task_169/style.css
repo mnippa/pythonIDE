@@ -1,0 +1,55 @@
+.code-ui-wrapper {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  padding: 20px;
+}
+
+.calculator {
+  max-width: 480px;
+  margin: 0 auto;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  padding: 16px;
+  background: #fff;
+}
+
+.field {
+  margin-bottom: 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.buttons button {
+  padding: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.result-box {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f6f8fa;
+}
+
+.error {
+  margin-top: 6px;
+  color: #b42318;
+  font-size: 13px;
+}

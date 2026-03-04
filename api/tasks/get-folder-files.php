@@ -71,7 +71,7 @@ $resolveReadOnly = function (string $relativePath, array $policies, bool $codeUi
 
     $readOnly = false;
     if ($codeUiTask) {
-        if ($normalized === 'ui-runtime.readonly.js') {
+        if ($normalized === 'ui-runtime.readonly.js' || $normalized === 'idegui.py') {
             $readOnly = true;
         }
         if (!$studentWebEdit && ($normalized === 'index.html' || $normalized === 'style.css')) {

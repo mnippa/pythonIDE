@@ -122,284 +122,391 @@ async function initPyodideAndEditor() {
 
     async function ensureIdeGuiModule() {
     await pyodide.runPythonAsync(`
-  import sys
-  import types
-  from js import document, window as js_window
-  from pyodide.ffi import create_proxy
+import sys
+import types
+from js import document, window as js_window
+from pyodide.ffi import create_proxy
 
-  if "idegui" not in sys.modules:
-    idegui = types.ModuleType("idegui")
+if "idegui" not in sys.modules:
+  idegui = types.ModuleType("idegui")
 
-    def _container():
-      bridge = getattr(js_window, "guiBridge", None)
-      if bridge:
-        bridge.showGUI()
-        return bridge.getGUIContainer()
-      return document.getElementById("gui-container")
+  def _container():
+    bridge = getattr(js_window, "guiBridge", None)
+    if bridge:
+      bridge.showGUI()
+      return bridge.getGUIContainer()
+    return document.getElementById("gui-container")
 
-    def _ensure_layout():
-      container = _container()
-      if container is None:
-        return None, None
+  def _ensure_layout():
+    container = _container()
+    if container is None:
+      return None, None
 
-      root = container.querySelector("#idegui-root")
-      if root is None:
-        root = document.createElement("div")
-        root.id = "idegui-root"
-        root.setAttribute("data-idegui-root", "true")
-        root.style.display = "grid"
-        root.style.gap = "8px"
-        root.style.padding = "8px"
-        container.appendChild(root)
+    root = container.querySelector("#idegui-root")
+    if root is None:
+      root = document.createElement("div")
+      root.id = "idegui-root"
+      root.setAttribute("data-idegui-root", "true")
+      root.style.display = "grid"
+      root.style.gap = "8px"
+      root.style.padding = "8px"
+      container.appendChild(root)
 
-      out = container.querySelector("#idegui-output")
-      if out is None:
-        out = document.createElement("div")
-        out.id = "idegui-output"
-        out.setAttribute("data-idegui-output", "true")
-        out.style.marginTop = "8px"
-        out.style.padding = "8px"
-        out.style.border = "1px solid var(--border, #e5e7eb)"
-        out.style.borderRadius = "8px"
-        out.style.whiteSpace = "pre-wrap"
-        container.appendChild(out)
+    out = container.querySelector("#idegui-output")
+    if out is None:
+      out = document.createElement("div")
+      out.id = "idegui-output"
+      out.setAttribute("data-idegui-output", "true")
+      out.style.marginTop = "8px"
+      out.style.padding = "8px"
+      out.style.border = "1px solid var(--border, #e5e7eb)"
+      out.style.borderRadius = "8px"
+      out.style.whiteSpace = "pre-wrap"
+      container.appendChild(out)
 
-      return root, out
+    return root, out
 
-    class _Widget:
-      def __init__(self, element=None, value=None):
-        self.element = element
-        self.value = value
+  class _Widget:
+    def __init__(self, element=None, value=None):
+      self.element = element
+      self.value = value
 
-    class _Button(_Widget):
-      def on_click(self, callback):
-        if self.element is None or callback is None:
-          return self
-
-        def _handler(_event=None):
-          callback()
-
-        self._handler = create_proxy(_handler)
-        self.element.addEventListener("click", self._handler)
+  class _Button(_Widget):
+    def on_click(self, callback):
+      if self.element is None or callback is None:
         return self
 
-    class _Output(_Widget):
-      def write(self, value):
-        _, out = _ensure_layout()
-        if out is None:
-          return
-        text = "" if value is None else str(value)
-        if text:
-          out.textContent += text + "\\n"
+      def _handler(_event=None):
+        callback()
 
-      def clear(self):
-        _, out = _ensure_layout()
-        if out is not None:
-          out.textContent = ""
+      self._handler = create_proxy(_handler)
+      self.element.addEventListener("click", self._handler)
+      return self
 
-    def title(text=""):
-      root, _ = _ensure_layout()
-      if root is None:
-        return _Widget(None, str(text or ""))
+  class _Output(_Widget):
+    def write(self, value):
+      _, out = _ensure_layout()
+      if out is None:
+        return
+      text = "" if value is None else str(value)
+      if text:
+        out.textContent += text + "\\n"
 
-      heading = root.querySelector("[data-idegui-title='true']")
-      if heading is None:
-        heading = document.createElement("h3")
-        heading.setAttribute("data-idegui-title", "true")
-        heading.style.margin = "0 0 8px 0"
-        root.prepend(heading)
+    def clear(self):
+      _, out = _ensure_layout()
+      if out is not None:
+        out.textContent = ""
 
-      heading.textContent = str(text or "")
-      return _Widget(heading, heading.textContent)
+  class _Trigger:
+    def __init__(self, name="", value=""):
+      self.name = "" if name is None else str(name)
+      self.value = "" if value is None else str(value)
 
-    def text(label="", value=""):
-      root, _ = _ensure_layout()
-      if root is None:
-        return _Widget(None, str(value or ""))
+  def _safe_js_prop(obj, key, default=""):
+    if obj is None:
+      return default
+    try:
+      val = getattr(obj, key)
+      if val is None:
+        return default
+      return "" if val is None else str(val)
+    except Exception:
+      return default
 
-      wrap = document.createElement("div")
-      if label:
-        lbl = document.createElement("label")
-        lbl.textContent = str(label)
-        lbl.style.display = "block"
-        lbl.style.marginBottom = "4px"
-        wrap.appendChild(lbl)
+  def _refresh_trigger():
+    data = getattr(js_window, "__codeUiTrigger", None)
+    if data is not None:
+      name = _safe_js_prop(data, "name", "")
+      value = _safe_js_prop(data, "value", "")
+      idegui.trigger = _Trigger(name, value)
+      return idegui.trigger
 
-      inp = document.createElement("input")
-      inp.type = "text"
-      inp.value = str(value or "")
-      inp.style.width = "100%"
-      inp.style.padding = "6px 8px"
-      wrap.appendChild(inp)
-      root.appendChild(wrap)
+    container = _container()
+    if container is None:
+      idegui.trigger = _Trigger("", "")
+      return idegui.trigger
 
-      widget = _Widget(inp, inp.value)
+    name = ""
+    value = ""
 
-      def _sync(_event=None):
+    trigger_element = container.querySelector('[data-element="__trigger__"]')
+    if trigger_element is not None:
+      trigger_name = getattr(trigger_element, "value", None)
+      if trigger_name is None:
+        trigger_name = getattr(trigger_element, "textContent", "")
+      name = "" if trigger_name is None else str(trigger_name)
+
+    trigger_value_element = container.querySelector('[data-element="__trigger_value__"]')
+    if trigger_value_element is not None:
+      trigger_value = getattr(trigger_value_element, "value", None)
+      if trigger_value is None:
+        trigger_value = getattr(trigger_value_element, "textContent", "")
+      value = "" if trigger_value is None else str(trigger_value)
+
+    idegui.trigger = _Trigger(name, value)
+    return idegui.trigger
+
+  def title(text=""):
+    root, _ = _ensure_layout()
+    if root is None:
+      return _Widget(None, str(text or ""))
+
+    heading = root.querySelector("[data-idegui-title='true']")
+    if heading is None:
+      heading = document.createElement("h3")
+      heading.setAttribute("data-idegui-title", "true")
+      heading.style.margin = "0 0 8px 0"
+      root.prepend(heading)
+
+    heading.textContent = str(text or "")
+    return _Widget(heading, heading.textContent)
+
+  def text(label="", value=""):
+    root, _ = _ensure_layout()
+    if root is None:
+      return _Widget(None, str(value or ""))
+
+    wrap = document.createElement("div")
+    if label:
+      lbl = document.createElement("label")
+      lbl.textContent = str(label)
+      lbl.style.display = "block"
+      lbl.style.marginBottom = "4px"
+      wrap.appendChild(lbl)
+
+    inp = document.createElement("input")
+    inp.type = "text"
+    inp.value = str(value or "")
+    inp.style.width = "100%"
+    inp.style.padding = "6px 8px"
+    wrap.appendChild(inp)
+    root.appendChild(wrap)
+
+    widget = _Widget(inp, inp.value)
+
+    def _sync(_event=None):
+      widget.value = inp.value
+
+    widget._sync = create_proxy(_sync)
+    inp.addEventListener("input", widget._sync)
+    return widget
+
+  def number(label="", value=0):
+    root, _ = _ensure_layout()
+    if root is None:
+      return _Widget(None, value)
+
+    wrap = document.createElement("div")
+    if label:
+      lbl = document.createElement("label")
+      lbl.textContent = str(label)
+      lbl.style.display = "block"
+      lbl.style.marginBottom = "4px"
+      wrap.appendChild(lbl)
+
+    inp = document.createElement("input")
+    inp.type = "number"
+    inp.value = str(value)
+    inp.style.width = "100%"
+    inp.style.padding = "6px 8px"
+    wrap.appendChild(inp)
+    root.appendChild(wrap)
+
+    widget = _Widget(inp, float(value))
+
+    def _sync(_event=None):
+      try:
+        widget.value = float(inp.value)
+      except Exception:
         widget.value = inp.value
 
-      widget._sync = create_proxy(_sync)
-      inp.addEventListener("input", widget._sync)
-      return widget
+    widget._sync = create_proxy(_sync)
+    inp.addEventListener("input", widget._sync)
+    return widget
 
-    def number(label="", value=0):
-      root, _ = _ensure_layout()
-      if root is None:
-        return _Widget(None, value)
+  def select(label="", options=None, value=None):
+    root, _ = _ensure_layout()
+    options = list(options or [])
+    if root is None:
+      start_value = value if value is not None else (options[0] if options else None)
+      return _Widget(None, start_value)
 
-      wrap = document.createElement("div")
-      if label:
-        lbl = document.createElement("label")
-        lbl.textContent = str(label)
-        lbl.style.display = "block"
-        lbl.style.marginBottom = "4px"
-        wrap.appendChild(lbl)
+    wrap = document.createElement("div")
+    if label:
+      lbl = document.createElement("label")
+      lbl.textContent = str(label)
+      lbl.style.display = "block"
+      lbl.style.marginBottom = "4px"
+      wrap.appendChild(lbl)
 
-      inp = document.createElement("input")
-      inp.type = "number"
-      inp.value = str(value)
-      inp.style.width = "100%"
-      inp.style.padding = "6px 8px"
-      wrap.appendChild(inp)
-      root.appendChild(wrap)
+    sel = document.createElement("select")
+    sel.style.width = "100%"
+    sel.style.padding = "6px 8px"
 
-      widget = _Widget(inp, float(value))
+    for opt in options:
+      option = document.createElement("option")
+      option.value = str(opt)
+      option.textContent = str(opt)
+      sel.appendChild(option)
 
-      def _sync(_event=None):
-        try:
-          widget.value = float(inp.value)
-        except Exception:
-          widget.value = inp.value
+    if value is not None:
+      sel.value = str(value)
+    elif options:
+      sel.value = str(options[0])
 
-      widget._sync = create_proxy(_sync)
-      inp.addEventListener("input", widget._sync)
-      return widget
+    wrap.appendChild(sel)
+    root.appendChild(wrap)
 
-    def select(label="", options=None, value=None):
-      root, _ = _ensure_layout()
-      options = list(options or [])
-      if root is None:
-        start_value = value if value is not None else (options[0] if options else None)
-        return _Widget(None, start_value)
+    widget = _Widget(sel, sel.value)
 
-      wrap = document.createElement("div")
-      if label:
-        lbl = document.createElement("label")
-        lbl.textContent = str(label)
-        lbl.style.display = "block"
-        lbl.style.marginBottom = "4px"
-        wrap.appendChild(lbl)
+    def _sync(_event=None):
+      widget.value = sel.value
 
-      sel = document.createElement("select")
-      sel.style.width = "100%"
-      sel.style.padding = "6px 8px"
+    widget._sync = create_proxy(_sync)
+    sel.addEventListener("change", widget._sync)
+    return widget
 
-      for opt in options:
-        option = document.createElement("option")
-        option.value = str(opt)
-        option.textContent = str(opt)
-        sel.appendChild(option)
+  def button(label="Button"):
+    root, _ = _ensure_layout()
+    if root is None:
+      return _Button(None, None)
 
-      if value is not None:
-        sel.value = str(value)
-      elif options:
-        sel.value = str(options[0])
+    btn = document.createElement("button")
+    btn.textContent = str(label)
+    btn.style.padding = "8px 10px"
+    btn.style.cursor = "pointer"
+    root.appendChild(btn)
+    return _Button(btn, None)
 
-      wrap.appendChild(sel)
-      root.appendChild(wrap)
+  def output():
+    _ensure_layout()
+    return _Output(None, None)
 
-      widget = _Widget(sel, sel.value)
+  def get(name, default=""):
+    """Read value from HTML element with data-element attribute"""
+    container = _container()
+    if container is None:
+      return default
 
-      def _sync(_event=None):
-        widget.value = sel.value
+    selector = f'[data-element="{name}"]'
+    element = container.querySelector(selector)
+    if element is None:
+      return default
 
-      widget._sync = create_proxy(_sync)
-      sel.addEventListener("change", widget._sync)
-      return widget
+    value = getattr(element, "value", None)
+    if value is None:
+      value = getattr(element, "textContent", default)
+    return "" if value is None else str(value)
 
-    def button(label="Button"):
-      root, _ = _ensure_layout()
-      if root is None:
-        return _Button(None, None)
+  def set(name, value):
+    """Write value to HTML element with data-element attribute"""
+    container = _container()
+    if container is None:
+      return None
 
-      btn = document.createElement("button")
-      btn.textContent = str(label)
-      btn.style.padding = "8px 10px"
-      btn.style.cursor = "pointer"
-      root.appendChild(btn)
-      return _Button(btn, None)
+    selector = f'[data-element="{name}"]'
+    element = container.querySelector(selector)
+    if element is None:
+      return None
 
-    def output():
+    text = "" if value is None else str(value)
+
+    tag_name = (getattr(element, "tagName", "") or "").lower()
+    if tag_name in ["input", "textarea", "select"]:
+      element.value = text
+    else:
+      element.textContent = text
+
+    if element.hasAttribute("hidden"):
+      element.removeAttribute("hidden")
+
+    parent = getattr(element, "parentElement", None)
+    if parent is not None and parent.hasAttribute("hidden"):
+      parent.removeAttribute("hidden")
+
+    return text
+
+  def print_to(container_name, *args, sep=" ", end="\\n"):
+    """Print text to a container element (appends like Python print)"""
+    container = _container()
+    if container is None:
+      return None
+
+    selector = f'[data-element="{container_name}"]'
+    element = container.querySelector(selector)
+    if element is None:
+      return None
+
+    # Format text like Python print()
+    text_parts = [str(arg) for arg in args]
+    text = sep.join(text_parts) + end
+
+    # Append to container (not replace)
+    tag_name = (getattr(element, "tagName", "") or "").lower()
+    if tag_name in ["input", "textarea"]:
+      current = getattr(element, "value", "")
+      element.value = current + text
+    else:
+      current = getattr(element, "textContent", "")
+      element.textContent = current + text
+
+    if element.hasAttribute("hidden"):
+      element.removeAttribute("hidden")
+
+    parent = getattr(element, "parentElement", None)
+    if parent is not None and parent.hasAttribute("hidden"):
+      parent.removeAttribute("hidden")
+
+    return text
+
+  def reset(container_name=""):
+    """Clear content of a container element"""
+    container = _container()
+    if container is None:
+      return None
+
+    selector = f'[data-element="{container_name}"]'
+    element = container.querySelector(selector)
+    if element is None:
+      return None
+
+    tag_name = (getattr(element, "tagName", "") or "").lower()
+    if tag_name in ["input", "textarea", "select"]:
+      element.value = ""
+    else:
+      element.textContent = ""
+
+    return True
+
+  def show():
+    container = _container()
+    if container is not None:
       _ensure_layout()
-      return _Output(None, None)
 
-    def get_input_value(name, default=""):
-      container = _container()
-      if container is None:
-        return default
+  def clear():
+    bridge = getattr(js_window, "guiBridge", None)
+    if bridge:
+      bridge.clearGUI()
+    _ensure_layout()
 
-      selector = f'[data-input="{name}"]'
-      element = container.querySelector(selector)
-      if element is None:
-        return default
+  idegui.title = title
+  idegui.text = text
+  idegui.number = number
+  idegui.select = select
+  idegui.button = button
+  idegui.output = output
+  idegui.get = get
+  idegui.set = set
+  idegui.print = print_to
+  idegui.reset = reset
+  idegui.trigger = _Trigger("", "")
+  idegui._refresh_trigger = _refresh_trigger
+  idegui.show = show
+  idegui.clear = clear
+  idegui.__all__ = ["title", "text", "number", "select", "button", "output", "get", "set", "print", "reset", "trigger", "show", "clear"]
 
-      value = getattr(element, "value", None)
-      if value is None:
-        value = getattr(element, "textContent", default)
-      return "" if value is None else str(value)
-
-    def set_output(name, value):
-      container = _container()
-      if container is None:
-        return None
-
-      selector = f'[data-output="{name}"]'
-      element = container.querySelector(selector)
-      if element is None:
-        return None
-
-      text = "" if value is None else str(value)
-
-      tag_name = (getattr(element, "tagName", "") or "").lower()
-      if tag_name in ["input", "textarea", "select"]:
-        element.value = text
-      else:
-        element.textContent = text
-
-      if element.hasAttribute("hidden"):
-        element.removeAttribute("hidden")
-
-      parent = getattr(element, "parentElement", None)
-      if parent is not None and parent.hasAttribute("hidden"):
-        parent.removeAttribute("hidden")
-
-      return text
-
-    def show():
-      container = _container()
-      if container is not None:
-        _ensure_layout()
-
-    def clear():
-      bridge = getattr(js_window, "guiBridge", None)
-      if bridge:
-        bridge.clearGUI()
-      _ensure_layout()
-
-    idegui.text = text
-    idegui.title = title
-    idegui.number = number
-    idegui.select = select
-    idegui.button = button
-    idegui.output = output
-    idegui.get_input_value = get_input_value
-    idegui.set_output = set_output
-    idegui.show = show
-    idegui.clear = clear
-    idegui.__all__ = ["title", "text", "number", "select", "button", "output", "get_input_value", "set_output", "show", "clear"]
-
-    sys.modules["idegui"] = idegui
-  `);
+  sys.modules["idegui"] = idegui
+`);
     }
 
     await ensureIdeGuiModule();
@@ -929,14 +1036,7 @@ compile(code, "<usercode>", "exec")
 
         if (!quietOk) setLintOk();
         return { ok: true };
-              const guiContainer = document.getElementById('gui-container');
-              const alreadyRenderedForTask = guiContainer
-                && guiContainer.dataset.codeUiTaskId === String(currentTask.id)
-                && guiContainer.querySelector('[data-input], [data-output]');
-
-              if (!alreadyRenderedForTask) {
-                await window.renderCodeUiHtml(currentTask.id);
-              }
+      } catch (e) {
         if (seq !== liveSeq) return { ok: false };
 
         const parsed = resolveErrorLine(e.message || String(e), code);
@@ -1049,7 +1149,14 @@ compile(code, "<usercode>", "exec")
         if (window.guiBridge) {
           if (wantsIdeGui) {
             if (isCodeUiTask && typeof window.renderCodeUiHtml === 'function' && currentTask?.id) {
-              await window.renderCodeUiHtml(currentTask.id);
+              const guiContainer = document.getElementById('gui-container');
+              const alreadyRenderedForTask = guiContainer
+                && guiContainer.dataset.codeUiTaskId === String(currentTask.id)
+                && guiContainer.querySelector('[data-element]');
+
+              if (!alreadyRenderedForTask) {
+                await window.renderCodeUiHtml(currentTask.id);
+              }
             } else {
               window.guiBridge.clearGUI();
               window.guiBridge.showGUI();
@@ -1064,21 +1171,23 @@ compile(code, "<usercode>", "exec")
 
         await ensureIdeGuiModule();
 
+        // For Code-UI tasks: preserve globals between RUN and trigger calls
+        const isCodeUiTaskVar = isCodeUiTask;
+        const usePreservedGlobals = isCodeUiTaskVar;
+
         await pyodide.runPythonAsync(`
 from js import document, window as js_window
 import sys, warnings
 import builtins
+import re
 
 warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
 
-# Override input() to use JavaScript modal
 _original_input = builtins.input
 def _custom_input(prompt=''):
-    """Custom input() that uses JavaScript for user interaction"""
     prompt_str = str(prompt) if prompt else ''
-    # Use synchronous JS prompt for now (TODO: async modal later)
     result = js_window.prompt(prompt_str)
-    if result is None:  # User cancelled
+    if result is None:
         return ''
     return str(result)
 
@@ -1110,8 +1219,57 @@ sys.stdout = JSOut("output-container")
 sys.stderr = JSOut("lint-container")
 
 try:
-    g = {"__name__": "__main__"}
+    # For Code-UI tasks: use persistent globals to preserve state between triggers
+    use_preserved = ${usePreservedGlobals ? "True" : "False"}
+    if use_preserved:
+        # Try to restore from window.__codeUiGlobals if it exists
+        if hasattr(js_window, '__codeUiGlobals'):
+            g = js_window.__codeUiGlobals
+        else:
+            g = {"__name__": "__main__"}
+            js_window.__codeUiGlobals = g
+    else:
+        g = {"__name__": "__main__"}
+    
+    import idegui as ui
+    if hasattr(ui, "_refresh_trigger"):
+        ui._refresh_trigger()
+    
     exec(compile(code, "<usercode>", "exec"), g, g)
+    
+    # Store globals back to window for next trigger call
+    if use_preserved:
+        js_window.__codeUiGlobals = g
+
+    # Traditional mode ONLY: Auto-dispatch trigger if set
+    is_code_ui_task = ${isCodeUiTask ? "True" : "False"}
+    event_driven_mode = getattr(js_window, '__codeUiEventDrivenMode', False)
+    trigger_name = str(getattr(getattr(ui, "trigger", object()), "name", "") or "")
+
+    # Only dispatch in traditional mode (data-run-python), not in event-driven mode
+    if is_code_ui_task and trigger_name and not event_driven_mode:
+      def _as_identifier(name):
+        return re.sub(r"\\W|^(?=\\d)", "_", str(name or ""))
+
+      direct = trigger_name
+      ident = _as_identifier(trigger_name)
+      candidates = []
+      for candidate in [direct, f"run_{direct}", ident, f"run_{ident}"]:
+        if candidate and candidate not in candidates:
+          candidates.append(candidate)
+
+      callback = None
+      for candidate in candidates:
+        func = g.get(candidate)
+        if callable(func):
+          callback = func
+          break
+
+      if callback is not None:
+        try:
+          callback(ui.trigger)
+        except TypeError:
+          callback()
 
     if enable_matplotlib:
       fignums = list(plt.get_fignums())

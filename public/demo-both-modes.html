@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code-UI: Zwei Modi - Vergleich</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 30px; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+    .mode-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .mode-box {
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      padding: 15px;
+    }
+    .mode-box.traditional { border-color: #4CAF50; background: #f1f8f4; }
+    .mode-box.event-driven { border-color: #2196F3; background: #f0f7ff; }
+    .mode-box h3 { margin-top: 0; }
+    .badge { 
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      margin: 0 5px 10px 0;
+    }
+    .badge.traditional { background: #4CAF50; color: white; }
+    .badge.event-driven { background: #2196F3; color: white; }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+    .code-block {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 10px 0;
+      border-left: 4px solid #667eea;
+    }
+    .code-block code { background: none; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    th { background: #f5f5f5; font-weight: bold; }
+    .pros { color: #4CAF50; }
+    .cons { color: #f44336; }
+    ul { line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 Code-UI: Zwei Ausführungs-Modi</h1>
+    <p><strong>Neu implementiert:</strong> Wähle zwischen vollständiger Code-Neustartung oder gezielten Funktionsaufrufen mit persistentem Scope.</p>
+  </div>
+
+  <div class="container">
+    <h2>Mode-Vergleich</h2>
+    <div class="mode-comparison">
+      <div class="mode-box traditional">
+        <h3>
+          <span class="badge traditional">TRADITIONAL</span><br>
+          data-run-python="true"
+        </h3>
+        <p><strong>Was passiert beim Klick:</strong></p>
+        <ol>
+          <li>HTML wird gerendert</li>
+          <li>RUN-Button wird simuliert</li>
+          <li>📝 <strong>Kompletter Code wird ausgeführt</strong></li>
+          <li>Python dispatch: Trigger wird im Code geprüft</li>
+          <li>if/elif: Richtige Aktion wird gewählt</li>
+        </ol>
+        <p><strong>⚙️ Technisch:</strong></p>
+        <ul>
+          <li>Kompletter Python-Namespace wird neu initialisiert</li>
+          <li>Variables gehen verloren (außer der #Init Block)</li>
+          <li>Maximum Flexibilität</li>
+          <li>Leichte Fallunterscheidung im Python-Code</li>
+        </ul>
+      </div>
+
+      <div class="mode-box event-driven">
+        <h3>
+          <span class="badge event-driven">EVENT-DRIVEN (NEU)</span><br>
+          data-function="functionName"
+        </h3>
+        <p><strong>Was passiert beim Klick:</strong></p>
+        <ol>
+          <li>HTML wurde bereits beim RUN gerendert</li>
+          <li>❌ RUN wird <strong>NICHT</strong> aufgerufen</li>
+          <li>📞 <strong>Nur ONE Funktion wird ausgerufen</strong></li>
+          <li>Trigger als Parameter: func(ui.trigger)</li>
+          <li>Globale Variablen bleiben erhalten!</li>
+        </ol>
+        <p><strong>⚙️ Technisch:</strong></p>
+        <ul>
+          <li>Globaler Python-Namespace wird <strong>beibehalten</strong></li>
+          <li>State zwischen Triggers wird bewahrt</li>
+          <li>Kein If/elif nötig - sehr sauberer Code!</li>
+          <li>Performance: Nur die nötigste Logik wird ausgeführt</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Praktisches Code-Beispiel</h2>
+    
+    <h3>Szenario 1: TRADITIONAL (data-run-python)</h3>
+    <p>HTML:</p>
+    <div class="code-block"><code>&lt;button data-run-python="true" data-run-name="plus"&gt;+&lt;/button&gt;
+&lt;button data-run-python="true" data-run-name="minus"&gt;-&lt;/button&gt;</code></div>
+    
+    <p>Python Code (init.py):</p>
+    <div class="code-block"><code>#Init
+result = ui.get("result") or 0
+trigger = ui.get("__trigger__")
+
+if trigger == "plus":
+    result = int(result) + 1
+elif trigger == "minus":
+    result = int(result) - 1
+
+ui.set("result", str(result))</code></div>
+
+    <p><span class="badge traditional">TRADITIONAL</span> <strong>Problem:</strong> Wenn andere HTML-Input-Elemente Werte ändern, können diese vergessen gehen, weil alles zurückgesetzt wird!</p>
+
+    <hr style="margin: 30px 0;">
+
+    <h3>Szenario 2: EVENT-DRIVEN (data-function) - BESSER!</h3>
+    <p>HTML:</p>
+    <div class="code-block"><code>&lt;button data-function="plus"&gt;+&lt;/button&gt;
+&lt;button data-function="minus"&gt;-&lt;/button&gt;</code></div>
+    
+    <p>Python Code (init.py):</p>
+    <div class="code-block"><code">#Init
+result = 0  # Global variable!
+
+def plus(trigger):
+    global result
+    result += 1  # State wird beibehalten!
+    ui.set("result", str(result))
+
+def minus(trigger):
+    global result
+    result -= 1
+    ui.set("result", str(result))</code></div>
+
+    <p><span class="badge event-driven">EVENT-DRIVEN</span> <strong>Vorteile:</strong></p>
+    <ul>
+      <li>✅ Globale `result` Variablec bleibt zwischen Triggers erhalten</li>
+      <li>✅ Jede Funktion hat ihre eigene, klare Logik</li>
+      <li>✅ Keine If/elif Hierarchie nötig</li>
+      <li>✅ Performance: Nur 1 Funktion wird ausgeführt, nicht kompletter Code</li>
+      <li>✅ State-Management wird elegant</li>
+    </ul>
+  </div>
+
+  <div class="container">
+    <h2>Entscheidungs-Matrix</h2>
+    <table>
+      <tr>
+        <th>Kriterium</th>
+        <th>TRADITIONAL</th>
+        <th>EVENT-DRIVEN</th>
+      </tr>
+      <tr>
+        <td>HTML-Rendering</td>
+        <td>Beim RUN</td>
+        <td>Beim RUN</td>
+      </tr>
+      <tr>
+        <td>Trigger führt aus</td>
+        <td>Kompletter Code</td>
+        <td>Nur eine Funktion</td>
+      </tr>
+      <tr>
+        <td>Python-Dispatch</td>
+        <td>If/elif im Code</td>
+        <td>Automatisch (Funktionsname)</td>
+      </tr>
+      <tr>
+        <td>Global State</td>
+        <td>Wird VERLOREN</td>
+        <td><span class="pros">Bleibt erhalten ✓</span></td>
+      </tr>
+      <tr>
+        <td>Performance</td>
+        <td>Höher (kompletter Code)</td>
+        <td><span class="pros">Optimaler ✓</span></td>
+      </tr>
+      <tr>
+        <td>Code-Komplexität</td>
+        <td>Mittelhoch</td>
+        <td><span class="pros">Niedrig ✓</span></td>
+      </tr>
+      <tr>
+        <td>Best für</td>
+        <td>Einfache, Status-lose UI</td>
+        <td><span class="pros">Appsic, State-Machines, Spiele ✓</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="container">
+    <h2>Implementierungs-Details</h2>
+    
+    <h3>Wie es funktioniert (Technical Deep-Dive)</h3>
+    
+    <h4>Beim RUN-Button (<code>run-btn</code> klick):</h4>
+    <ol>
+      <li>HTML wird vom Task geladen und in <code>#gui-container</code> rendered</li>
+      <li>Alle Trigger-Elemente werden gebunden (beide Modi!)</li>
+      <li>Python-Code wird ausgeführt im Namespace</li>
+      <li><span class="badge traditional">TRADITIONAL</span> mode checked: wenn Trigger aktiv ist UND nicht event-driven, wird Funktion aufgerufen</li>
+      <li><span class="badge event-driven">EVENT-DRIVEN</span> mode: Trigger wird NICHT aufgerufen, nur Code ausgeführt</li>
+      <li><strong>Globals werden für CODE-UI-Tasks gespeichert</strong> → <code>window.__codeUiGlobals</code></li>
+    </ol>
+
+    <h4>Beim Trigger-Element klick (<code>data-function</code> oder <code>data-run-python</code>):</h4>
+    <p><strong>Mode: data-run-python="true"</strong></p>
+    <ol>
+      <li>Trigger-Kontext wird gesetzt (<code>ui.trigger.name</code>, <code>ui.trigger.value</code>)</li>
+      <li><code>__codeUiEventDrivenMode = false</code> wird gesetzt</li>
+      <li>RUN-Button wird simuliert → kompletter Code läuft nochmal</li>
+      <li>In Python: Trigger wird in <code>if/elif</code> geprüft</li>
+    </ol>
+
+    <p><strong>Mode: data-function="functionName"</strong></p>
+    <ol>
+      <li>Trigger-Kontext wird gesetzt</li>
+      <li><code>__codeUiEventDrivenMode = true</code> wird gesetzt</li>
+      <li>Nur <strong>eine</strong> Python-Funktion wird aufgerufen (nicht kompletter Code!)</li>
+      <li>Globals aus <code>window.__codeUiGlobals</code> werden genutzt → State bleibt!</li>
+      <li>Nach Ausführung werden Globals wieder gespeichert</li>
+    </ol>
+
+    <h3>Globals-Persistierung (Der Trick!)</h3>
+    <div class="code-block"><code># In JavaScript auf window verfügbar:
+window.__codeUiGlobals = {
+    'counter': 42,
+    'history': [],
+    'plus': &lt;function&gt;,
+    'minus': &lt;function&gt;,
+    ...
+}</code></div>
+    <p>Diese Variablensammlung wird nach jedem RUN und jedem Trigger-Aufruf aktualisiert, daher bleibt der State über mehrere Aufrufe hinweg erhalten!</p>
+  </div>
+
+  <div class="container">
+    <h2>Backward Compatibility ✓</h2>
+    <p>✅ <strong>Alle bisherigen Tasks bleiben unverändert!</strong></p>
+    <ul>
+      <li>Task 169 (data-run-python): läuft exakt wie vorher</li>
+      <li>Task 170 (data-run-python): läuft exakt wie vorher</li>
+      <li>Bestehende If/elif-Codes: funktionieren ohne Änderung</li>
+    </ul>
+    <p><strong>Neue Tasks/Updates können optional zu EVENT-DRIVEN migrieren!</strong></p>
+  </div>
+
+  <div class="container" style="background: #fffbea; border-left: 4px solid #ff9800;">
+    <h3>⚠️ Wichtige Notiz zu State-Handling</h3>
+    <p><strong>EVENT-DRIVEN Mode funktioniert am besten mit einem #Init-Block:</strong></p>
+    <div class="code-block"><code">#Init
+# Einmaliges Setup
+counter = 0
+history = []
+
+# Globals MUSS here initialized sein
+# Diese werden zwischen Triggers beibehalten
+
+def increment(trigger):
+    global counter, history
+    counter += 1
+    history.append(counter)
+    ui.set("output", f"Counter: {counter}, History: {history}")</code></div>
+    <p>Warum? Weil die Globals nur existieren, solange Pyodide läuft. Ein Browser-Refresh löscht alles.</p>
+  </div>
+</body>
+</html>

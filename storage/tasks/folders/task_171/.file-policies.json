@@ -1,0 +1,13 @@
+{
+    "files": {
+        "idegui.py": {
+            "read_only": true
+        },
+        "index.html": {
+            "read_only": false
+        },
+        "style.css": {
+            "read_only": false
+        }
+    }
+}

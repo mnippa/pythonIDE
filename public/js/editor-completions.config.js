@@ -45,6 +45,45 @@ export const BUILTIN_SNIPPETS = [
   { label: "def", insert: "def ${1:name}(${2:args}):\n\t${3:pass}", doc: "**def**\\n\\n```python\\ndef f(x):\n    pass\\n```" },
 ];
 
+// idegui (Code-UI) API
+export const IDEGUI_COMPLETIONS = ["get", "set", "print", "reset"];
+export const IDEGUI_TRIGGER_COMPLETIONS = ["name", "value"];
+
+export const IDEGUI_SNIPPETS = [
+  { 
+    label: "ui.get()", 
+    insert: "ui.get(\"${1:element_name}\")", 
+    doc: "**ui.get(name, default=\"\")**\n\nLiest den Wert eines HTML-Elements.\n\n```python\nvalue = ui.get(\"input_field\")\n```\n\n- **name**: Name des `data-element` Attributs\n- **default**: Rückgabewert wenn Element leer ist (Standard: \"\")\n- **Rückgabe**: String mit dem Wert des Elements"
+  },
+  { 
+    label: "ui.set()", 
+    insert: "ui.set(\"${1:element_name}\", ${2:value})", 
+    doc: "**ui.set(name, value)**\n\nSchreibt einen Wert in ein HTML-Element (ersetzt bestehenden Inhalt).\n\n```python\nui.set(\"output\", \"Hallo Welt\")\nui.set(\"result\", 42)\n```\n\n- **name**: Name des `data-element` Attributs\n- **value**: Wert zum Schreiben (wird automatisch in String konvertiert)"
+  },
+  { 
+    label: "ui.print()", 
+    insert: "ui.print(\"${1:container_name}\", ${2:value})", 
+    doc: "**ui.print(container_name, *args, sep=\" \", end=\"\\\\n\")**\n\nFügt Text zu einem Container hinzu (wie Python's print).\n\n```python\nui.print(\"log\", \"Schritt 1\")\nui.print(\"log\", \"Schritt 2\")\n```\n\n- **container_name**: Name des `data-element` Container-Elements\n- **args**: Beliebig viele Werte zum Ausgeben\n- **sep**: Trennzeichen zwischen Werten (Standard: \" \")\n- **end**: Zeichen am Ende (Standard: \"\\\\n\")"
+  },
+  { 
+    label: "ui.reset()", 
+    insert: "ui.reset(\"${1:container_name}\")", 
+    doc: "**ui.reset(container_name)**\n\nLöscht den Inhalt eines Containers.\n\n```python\nui.reset(\"log\")\nui.print(\"log\", \"Neuer Start\")\n```\n\n- **container_name**: Name des `data-element` Container-Elements"
+  },
+];
+
+export const IDEGUI_HOVER_DOCS = {
+  get: "**ui.get(name, default=\"\")**\n\nLiest den Wert eines HTML-Elements mit `data-element` Attribut.",
+  set: "**ui.set(name, value)**\n\nSchreibt einen Wert in ein HTML-Element (ersetzt bestehenden Inhalt).",
+  print: "**ui.print(container_name, *args, sep=\" \", end=\"\\\\n\")**\n\nFügt Text zu einem Container hinzu (wie Python's print).",
+  reset: "**ui.reset(container_name)**\n\nLöscht den Inhalt eines Containers.",
+};
+
+export const IDEGUI_TRIGGER_HOVER_DOCS = {
+  name: "**ui.trigger.name**\n\nName des auslösenden Elements (z.B. aus `data-run-name`).",
+  value: "**ui.trigger.value**\n\nWert/Text des auslösenden Elements (z.B. aus `data-run-value` oder Button-Text).",
+};
+
 // Optional handwritten fallback docs (used when help.json lacks an entry)
 export const STRING_HOVER_DOCS = {
   split: "**str.split(sep)**\\n\\nTeilt einen String in Teile.\\n\\n```python\\n'a,b'.split(',')\\n```",

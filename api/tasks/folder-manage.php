@@ -118,7 +118,7 @@ try {
 
         $readOnly = false;
         if ($taskType === 'code_ui') {
-            if ($normalized === 'ui-runtime.readonly.js') {
+            if ($normalized === 'ui-runtime.readonly.js' || $normalized === 'idegui.py') {
                 $readOnly = true;
             }
             if (!$allowStudentWebEdit && ($normalized === 'index.html' || $normalized === 'style.css')) {

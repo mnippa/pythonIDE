@@ -1670,13 +1670,136 @@ function triggerCodeUiPythonRun() {
   runButton.click();
 }
 
+async function triggerCodeUiFunctionCall(triggerElement) {
+  /* Event-Driven Mode: Call single function without full code restart.
+     Global variables persist between trigger calls. */
+  if (!window.pyodide) {
+    console.error('[CODE-UI] Pyodide not ready');
+    return;
+  }
+
+  const functionName = triggerElement?.getAttribute?.('data-function') || '';
+  if (!functionName) {
+    console.warn('[CODE-UI] No data-function attribute');
+    return;
+  }
+
+  const outputEl = document.getElementById('output-container');
+  const lintEl = document.getElementById('lint-container');
+  if (!outputEl || !lintEl) return;
+
+  try {
+    outputEl.innerText = '';
+
+    await window.pyodide.runPythonAsync(
+      `
+import sys
+
+class JSOut:
+    def __init__(self):
+        self.buffer = ""
+    def write(self, s):
+        s = str(s)
+        if s.strip():
+            self.buffer += s + "\\n"
+    def flush(self):
+        pass
+
+old_out = sys.stdout
+sys.stdout = JSOut()
+try:
+    from js import window as js_window
+    import idegui as ui
+    
+    # Get preserved globals from RUN button
+    g = getattr(js_window, '__codeUiGlobals', globals())
+    
+    # Update ui.trigger
+    if hasattr(ui, '_refresh_trigger'):
+        ui.trigger._name = "${functionName}"
+        ui.trigger._value = "${triggerElement?.getAttribute?.('value') || ''}"
+    
+    # Call function from preserved globals
+    func = g.get("${functionName}")
+    if callable(func):
+        try:
+            func(ui.trigger)
+        except TypeError:
+            func()
+    else:
+        print(f"Fehler: Funktion '${functionName}' nicht definiert")
+    
+    # Preserve globals for next call
+    if hasattr(js_window, '__codeUiGlobals'):
+        js_window.__codeUiGlobals = g
+finally:
+    sys.stdout = old_out
+`
+    );
+    lintEl.innerHTML = '<span class="lint-ok">✓</span>';
+  } catch (e) {
+    const errMsg = String(e?.message || e || '').split('\\n')[0];
+    outputEl.innerText = 'Fehler: ' + errMsg;
+  }
+}
+
+function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = false) {
+  if (!guiContainer || !triggerElement) return;
+
+  const triggerName =
+    triggerElement.getAttribute('data-run-name') ||
+    triggerElement.getAttribute('data-function') ||
+    triggerElement.getAttribute('name') ||
+    triggerElement.id ||
+    triggerElement.value ||
+    (triggerElement.textContent || '').trim() ||
+    '';
+
+  const triggerValue =
+    triggerElement.getAttribute('data-run-value') ||
+    triggerElement.value ||
+    (triggerElement.textContent || '').trim() ||
+    '';
+
+  let triggerInput = guiContainer.querySelector('[data-element="__trigger__"]');
+  if (!triggerInput) {
+    triggerInput = document.createElement('input');
+    triggerInput.type = 'hidden';
+    triggerInput.setAttribute('data-element', '__trigger__');
+    guiContainer.appendChild(triggerInput);
+  }
+
+  triggerInput.value = String(triggerName);
+
+  let triggerValueInput = guiContainer.querySelector('[data-element="__trigger_value__"]');
+  if (!triggerValueInput) {
+    triggerValueInput = document.createElement('input');
+    triggerValueInput.type = 'hidden';
+    triggerValueInput.setAttribute('data-element', '__trigger_value__');
+    guiContainer.appendChild(triggerValueInput);
+  }
+
+  triggerValueInput.value = String(triggerValue);
+
+  window.__codeUiTrigger = {
+    name: String(triggerName),
+    value: String(triggerValue),
+  };
+
+  // Signal for event-driven mode: no full code restart, only function call
+  window.__codeUiEventDrivenMode = isEventDriven;
+}
+
 function ensureCodeUiRunTriggers(guiContainer) {
   if (!guiContainer || guiContainer.dataset.codeUiRunBound === '1') return;
 
+  // === TRADITIONAL MODE: data-run-python="true" ===
+  // Full code restart, dispatch handled in Python
   guiContainer.addEventListener('click', (event) => {
     const trigger = event.target?.closest?.('[data-run-python="true"]');
     if (!trigger || !guiContainer.contains(trigger)) return;
     event.preventDefault();
+    setCodeUiTriggerContext(guiContainer, trigger, false); // Traditional mode
     triggerCodeUiPythonRun();
   });
 
@@ -1685,7 +1808,31 @@ function ensureCodeUiRunTriggers(guiContainer) {
     if (!(form instanceof HTMLFormElement)) return;
     if (form.getAttribute('data-run-python') !== 'true') return;
     event.preventDefault();
+    const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
+    setCodeUiTriggerContext(guiContainer, submitter, false); // Traditional mode
     triggerCodeUiPythonRun();
+  });
+
+  // === EVENT-DRIVEN MODE: data-function="functionName" ===
+  // Direct function call, global scope preserved, no full code restart
+  guiContainer.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('[data-function]');
+    if (!trigger || !guiContainer.contains(trigger)) return;
+    if (trigger.hasAttribute('data-run-python')) return; // Skip if also marked as data-run-python
+    event.preventDefault();
+    setCodeUiTriggerContext(guiContainer, trigger, true); // Event-driven mode
+    triggerCodeUiFunctionCall(trigger);
+  });
+
+  guiContainer.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute('data-function')) return;
+    if (form.getAttribute('data-run-python') === 'true') return; // Skip if data-run-python takes precedence
+    event.preventDefault();
+    const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
+    setCodeUiTriggerContext(guiContainer, submitter, true); // Event-driven mode
+    triggerCodeUiFunctionCall(submitter);
   });
 
   guiContainer.dataset.codeUiRunBound = '1';
@@ -1726,6 +1873,16 @@ async function renderCodeUiHtml(taskId) {
     const htmlContent = await readTaskFile('index.html');
     const cssContent = await readTaskFile('style.css').catch(() => '');
 
+    // Preserve existing input values before any clear/re-render operation
+    const preservedValues = {};
+    const existingInputs = guiContainer.querySelectorAll('[data-element]');
+    existingInputs.forEach(input => {
+      const name = input.getAttribute('data-element');
+      if (name && input.value !== undefined) {
+        preservedValues[name] = input.value;
+      }
+    });
+
     if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
 
     if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
@@ -1746,6 +1903,15 @@ async function renderCodeUiHtml(taskId) {
 
     guiContainer.innerHTML = bodyHtml || '';
     guiContainer.dataset.codeUiTaskId = String(taskId);
+
+    // Restore preserved input values
+    Object.entries(preservedValues).forEach(([name, value]) => {
+      const input = guiContainer.querySelector(`[data-element="${name}"]`);
+      if (input && input.value !== undefined) {
+        input.value = value;
+      }
+    });
+    
     ensureCodeUiRunTriggers(guiContainer);
 
     const styleTag = document.createElement('style');

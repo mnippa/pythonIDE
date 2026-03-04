@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo: Both Trigger Modes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- SECTION 1: TRADITIONAL MODE (data-run-python) -->
+  <div class="container">
+    <h2><span class="badge badge-traditional">TRADITIONAL</span>Mode: data-run-python="true"</h2>
+    <div class="mode-box traditional">
+      <p><strong>Erklärung:</strong> Jeder Klick führt den kompletten Code neu aus. Der Python-Code prüft den Trigger mit if/elif.</p>
+      
+      <label for="input1">Zahl eingeben:</label>
+      <input type="number" data-element="num1" value="10">
+      
+      <div>
+        <button data-run-python="true" data-trigger-name="multiply_trad">× 2</button>
+        <button data-run-python="true" data-trigger-name="divide_trad">÷ 2</button>
+        <button data-run-python="true" data-trigger-name="reset_trad">Zurücksetzen</button>
+      </div>
+      
+      <div class="output" data-element="output1">Ergebnis: (Warte auf RUN)</div>
+      <small>💡 Tip: Jeder Klick führt den ganzen Code aus. Die Variable wird neu initialisiert!</small>
+    </div>
+  </div>
+
+  <!-- SECTION 2: EVENT-DRIVEN MODE (data-function) -->
+  <div class="container">
+    <h2><span class="badge badge-event">EVENT-DRIVEN</span>Mode: data-function="functionName"</h2>
+    <div class="mode-box event-driven">
+      <p><strong>Erklärung:</strong> Der Code wird nur beim RUN ausgeführt. Dann werden nur spezifische Funktionen aufgerufen. Globale Variablen bleiben erhalten!</p>
+      
+      <label for="input2">Zahl eingeben:</label>
+      <input type="number" data-element="num2" value="10">
+      
+      <div>
+        <button data-function="multiply_event">× 2</button>
+        <button data-function="divide_event">÷ 2</button>
+        <button data-function="reset_event">Zurücksetzen</button>
+      </div>
+      
+      <div class="output" data-element="output2">Ergebnis: (Warte auf RUN)</div>
+      <small>💡 Tip: Jeder Klick ruft NUR eine Funktion auf. Die globale Variable bleibt erhalten!</small>
+    </div>
+  </div>
+
+  <!-- COMPARISON -->
+  <div class="container">
+    <h2>Vergleich</h2>
+    <table>
+      <tr>
+        <th>Aspekt</th>
+        <th>TRADITIONAL</th>
+        <th>EVENT-DRIVEN</th>
+      </tr>
+      <tr>
+        <td>Code-Ausführung</td>
+        <td>Vollständig jedesmal</td>
+        <td>Nur beim RUN + Eine Funktion</td>
+      </tr>
+      <tr>
+        <td>Globals persistiert?</td>
+        <td>❌ Nein (neu initialisiert)</td>
+        <td>✅ Ja (zwischen Triggers)</td>
+      </tr>
+      <tr>
+        <td>Dispatch im Code</td>
+        <td>if trigger.name == "plus": ...</td>
+        <td>def plus(trigger): ...</td>
+      </tr>
+      <tr>
+        <td>Geeignet für</td>
+        <td>Einfache UI</td>
+        <td>Apps mit State/Spielen</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- NOTICE -->
+  <div class="container notice-box">
+    <h3>⚠️ Wichtig</h3>
+    <p>Beide Modi können in <strong>einer Task</strong> gemischt werden! Verwende <code>data-run-python</code> wo du If/elif brauchst und <code>data-function</code> für saubere State-Management.</p>
+  </div>
+</body>
+</html>
