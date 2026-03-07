@@ -1,0 +1,17 @@
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: Segoe UI, sans-serif;
+  background: #f8fafc;
+  color: #111827;
+}
+.info {
+  max-width: 760px;
+  margin: 0 auto 16px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.info h2 { margin: 0 0 8px; }
+.info p { margin: 4px 0; }

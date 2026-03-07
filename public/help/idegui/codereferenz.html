@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>idegui Vollständige Codereferenz</title>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <header>
+    <h1>idegui Vollständige Codereferenz</h1>
+    <p>Referenz gemäß aktuell implementierter Runtime in editor-setup.js</p>
+  </header>
+  <div class="wrapper">
+    <nav class="nav">
+      <a href="index.html">Übersicht</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="codereferenz.html">Vollständige Codereferenz</a>
+    </nav>
+
+    <section class="card">
+      <h2>Import</h2>
+<pre><code>import idegui as ui</code></pre>
+      <p>Verfügbare API laut <code>idegui.__all__</code>:</p>
+<pre><code>["title", "text", "input", "number", "select", "button", "output", "get", "set", "print", "reset", "trigger", "show", "clear"]</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>UI-Erzeugung</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Funktion</th><th>Signatur</th><th>Beschreibung</th><th>Rückgabe</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>title</code></td>
+              <td><code>title(text="")</code></td>
+              <td>Setzt/aktualisiert eine H3-Überschrift im idegui-Root.</td>
+              <td><code>_Widget</code></td>
+            </tr>
+            <tr>
+              <td><code>text</code></td>
+              <td><code>text(label="", value="")</code></td>
+              <td>Erzeugt Text-Input (optional mit Label).</td>
+              <td><code>_Widget</code> mit <code>.value</code></td>
+            </tr>
+            <tr>
+              <td><code>input</code></td>
+              <td><code>input(label="", value="")</code></td>
+              <td>Alias von <code>text()</code>.</td>
+              <td><code>_Widget</code></td>
+            </tr>
+            <tr>
+              <td><code>number</code></td>
+              <td><code>number(label="", value=0)</code></td>
+              <td>Erzeugt Number-Input. Versucht Wert als <code>float</code> zu halten.</td>
+              <td><code>_Widget</code></td>
+            </tr>
+            <tr>
+              <td><code>select</code></td>
+              <td><code>select(label="", options=None, value=None)</code></td>
+              <td>Erzeugt Dropdown mit Optionen; setzt Initialwert.</td>
+              <td><code>_Widget</code></td>
+            </tr>
+            <tr>
+              <td><code>button</code></td>
+              <td><code>button(label="Button")</code></td>
+              <td>Erzeugt Button im idegui-Root.</td>
+              <td><code>_Button</code></td>
+            </tr>
+            <tr>
+              <td><code>output</code></td>
+              <td><code>output()</code></td>
+              <td>Gibt Output-Objekt für Textausgaben zurück.</td>
+              <td><code>_Output</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Datenzugriff auf HTML</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Funktion</th><th>Signatur</th><th>Beschreibung</th><th>Details</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>get</code></td>
+              <td><code>get(name, default="")</code></td>
+              <td>Liest Element über <code>[data-element="name"]</code>.</td>
+              <td>Bevorzugt <code>element.value</code>, sonst <code>textContent</code>; immer String.</td>
+            </tr>
+            <tr>
+              <td><code>set</code></td>
+              <td><code>set(name, value)</code></td>
+              <td>Schreibt in Element über <code>[data-element="name"]</code>.</td>
+              <td>Bei <code>input/textarea/select</code> wird <code>value</code> gesetzt, sonst <code>textContent</code>.</td>
+            </tr>
+            <tr>
+              <td><code>print</code></td>
+              <td><code>print(container_name, *args, sep=" ", end="\n")</code></td>
+              <td>Append-Ausgabe in ein Ziel-Element.</td>
+              <td>Entspricht intern <code>print_to</code>; hängt Text an bestehenden Inhalt an.</td>
+            </tr>
+            <tr>
+              <td><code>reset</code></td>
+              <td><code>reset(container_name="")</code></td>
+              <td>Leert Inhalt eines Ziel-Elements.</td>
+              <td>Bei Inputs wird <code>value=""</code>, sonst <code>textContent=""</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Trigger und Event-Kontext</h2>
+      <p><code>ui.trigger</code> wird bei Trigger-Aufrufen gesetzt/aktualisiert.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Objekt</th><th>Attribute</th><th>Beschreibung</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>ui.trigger</code></td>
+              <td><code>name</code>, <code>value</code></td>
+              <td>Aktueller Auslöser (z.B. Button-Name und optionaler Wert).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code>def berechne(trigger):
+    print(trigger.name)
+    print(trigger.value)
+
+# oder direkt:
+print(ui.trigger.name, ui.trigger.value)</code></pre>
+      <p class="small">Intern aktualisiert die Runtime Triggerdaten über <code>idegui._refresh_trigger()</code>.</p>
+    </section>
+
+    <section class="card">
+      <h2>Zusätzliche Laufzeitfunktionen</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Funktion</th><th>Signatur</th><th>Beschreibung</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>show</code></td><td><code>show()</code></td><td>Stellt GUI-Container sicher und sichtbar.</td></tr>
+            <tr><td><code>clear</code></td><td><code>clear()</code></td><td>Leert GUI über Bridge und initialisiert Grundlayout neu.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Widget-Objekte (intern, aber nutzbar)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Typ</th><th>Eigenschaften/Methoden</th><th>Hinweise</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>_Widget</code></td><td><code>.element</code>, <code>.value</code></td><td>Basisobjekt für Input/Select/Title.</td></tr>
+            <tr><td><code>_Button</code></td><td><code>.on_click(callback)</code></td><td>Bindet JS-Klicklistener; callback ohne Argumente.</td></tr>
+            <tr><td><code>_Output</code></td><td><code>.write(value)</code>, <code>.clear()</code></td><td>Schreibt in idegui-Outputbereich.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Komplette Event-Logik Vorlage</h2>
+<pre><code># init.py
+import idegui as ui
+
+if 'APP_STATE' not in globals():
+    APP_STATE = {'counter': 0}
+
+def plus(trigger):
+    APP_STATE['counter'] += 1
+    ui.set('count', str(APP_STATE['counter']))
+    ui.set('last_trigger', f'{trigger.name}:{trigger.value}')
+
+def minus(trigger):
+    APP_STATE['counter'] -= 1
+    ui.set('count', str(APP_STATE['counter']))
+    ui.set('last_trigger', f'{trigger.name}:{trigger.value}')
+
+ui.set('count', str(APP_STATE['counter']))
+ui.set('last_trigger', '-')</code></pre>
+<pre><code>&lt;!-- index.html --&gt;
+&lt;button data-run-python="true" data-run-name="plus"&gt;+&lt;/button&gt;
+&lt;button data-run-python="true" data-run-name="minus"&gt;-&lt;/button&gt;
+&lt;div data-element="count"&gt;0&lt;/div&gt;
+&lt;div data-element="last_trigger"&gt;-&lt;/div&gt;</code></pre>
+    </section>
+  </div>
+</body>
+</html>

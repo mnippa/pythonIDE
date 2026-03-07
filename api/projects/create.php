@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/templates.php';
 
 header('Content-Type: application/json');
 
@@ -27,6 +28,10 @@ $name = trim($input['name'] ?? '');
 $description = trim($input['description'] ?? '');
 $code = $input['code'] ?? '';
 $visibility = $input['visibility'] ?? 'private';
+$template = $input['template'] ?? 'empty_python';
+
+$templateData = ProjectTemplates::getTemplate($template);
+$projectType = $templateData['project_type'] ?? 'python';
 
 if (empty($name)) {
     jsonResponse(['ok' => false, 'error' => 'Project name is required'], 400);
@@ -34,6 +39,10 @@ if (empty($name)) {
 
 if (!in_array($visibility, ['private', 'public'])) {
     jsonResponse(['ok' => false, 'error' => 'Invalid visibility'], 400);
+}
+
+if (!in_array($projectType, ['python', 'html', 'mixed'])) {
+    jsonResponse(['ok' => false, 'error' => 'Invalid project type'], 400);
 }
 
 // Check code size limit
@@ -75,14 +84,14 @@ if ($visibility === 'public') {
 }
 
 // Create project
-$stmt = $conn->prepare('INSERT INTO projects (user_id, name, description, code, visibility, share_token) VALUES (?, ?, ?, ?, ?, ?)');
-$stmt->bind_param('isssss', $user['id'], $name, $description, $code, $visibility, $shareToken);
+$stmt = $conn->prepare('INSERT INTO projects (user_id, name, description, code, project_type, visibility, share_token) VALUES (?, ?, ?, ?, ?, ?, ?)');
+$stmt->bind_param('issssss', $user['id'], $name, $description, $code, $projectType, $visibility, $shareToken);
 
 if ($stmt->execute()) {
     $projectId = $conn->insert_id;
     
-    // Initialize default folder structure
-    initializeDefaultProjectStructure($conn, $projectId, $name);
+    // Initialize project with template
+    initializeProjectFromTemplate($conn, $projectId, $name, $template, $templateData);
     
     jsonResponse([
         'ok' => true,
@@ -90,6 +99,7 @@ if ($stmt->execute()) {
             'id' => $projectId,
             'name' => $name,
             'description' => $description,
+            'project_type' => $projectType,
             'visibility' => $visibility,
             'share_token' => $shareToken,
             'created_at' => date('Y-m-d H:i:s')
@@ -100,10 +110,75 @@ if ($stmt->execute()) {
 }
 
 /**
- * Initialize default project structure
- * Creates: includes/, img/ folders and projectname.py file
+ * Initialize project from template
  */
-function initializeDefaultProjectStructure($conn, $projectId, $projectName)
+function initializeProjectFromTemplate($conn, $projectId, $projectName, $templateName, $templateData = null)
+{
+    try {
+        // Get template
+        if ($templateData === null) {
+            $templateData = ProjectTemplates::getTemplate($templateName);
+        }
+        
+        // Ensure expected files exist for HTML/mixed templates
+        $templateProjectType = $templateData['project_type'] ?? 'python';
+        if (($templateProjectType === 'html' || $templateProjectType === 'mixed') && isset($templateData['files']) && is_array($templateData['files'])) {
+            if (!isset($templateData['files']['index.html'])) {
+                $templateData['files']['index.html'] = [
+                    'content' => "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>{$projectName}</title>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <h1>{$projectName}</h1>\n</body>\n</html>\n",
+                    'mime_type' => 'text/html'
+                ];
+            }
+
+            if (!isset($templateData['files']['style.css'])) {
+                $templateData['files']['style.css'] = [
+                    'content' => "body {\n  font-family: system-ui, -apple-system, sans-serif;\n  margin: 0;\n  padding: 20px;\n}\n",
+                    'mime_type' => 'text/css'
+                ];
+            }
+
+            if (!isset($templateData['files']['init.py'])) {
+                $templateData['files']['init.py'] = [
+                    'content' => "import idegui as ui\n",
+                    'mime_type' => 'text/x-python'
+                ];
+            }
+        }
+        
+        // Create includes folder
+        $stmt = $conn->prepare('INSERT INTO project_folders (project_id, parent_folder_id, name) VALUES (?, NULL, ?)');
+        $folderName = 'includes';
+        $stmt->bind_param('is', $projectId, $folderName);
+        $stmt->execute();
+        
+        // Create img folder
+        $stmt = $conn->prepare('INSERT INTO project_folders (project_id, parent_folder_id, name) VALUES (?, NULL, ?)');
+        $folderName = 'img';
+        $stmt->bind_param('is', $projectId, $folderName);
+        $stmt->execute();
+        
+        // Create files from template
+        $fileStmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+        
+        foreach ($templateData['files'] as $fileName => $fileData) {
+            $content = $fileData['content'];
+            $mimeType = $fileData['mime_type'];
+            $fileSize = strlen($content);
+            
+            $fileStmt->bind_param('isssi', $projectId, $fileName, $content, $mimeType, $fileSize);
+            $fileStmt->execute();
+        }
+        
+    } catch (Exception $e) {
+        error_log('Failed to initialize project from template: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Initialize default project structure (deprecated - kept for backwards compatibility)
+ * Creates: includes/, img/ folders and files based on project type
+ */
+function initializeDefaultProjectStructure($conn, $projectId, $projectName, $projectType = 'python')
 {
     try {
         // Create includes folder
@@ -118,19 +193,184 @@ function initializeDefaultProjectStructure($conn, $projectId, $projectName)
         $stmt->bind_param('is', $projectId, $folderName);
         $stmt->execute();
         
-        // Create projectname.py file (at root, folder_id = NULL)
         $safeName = preg_replace('/\s+/', '_', trim($projectName));
         $safeName = preg_replace('/[^A-Za-z0-9_\-.]/', '', $safeName);
         if ($safeName === '') {
             $safeName = 'project';
         }
-        $fileName = $safeName . '.py';
-        $content = "# " . $projectName . "\n\n# Start coding here!\n";
-        $mimeType = 'text/plain';
-        $fileSize = strlen($content);
+
+        $initContent = "# " . $projectName . "\n\n# Start coding here!\n";
         
+        // Create files based on project type
+        if ($projectType === 'html' || $projectType === 'mixed') {
+            // Create index.html (matching code_ui structure)
+            $htmlContent = <<<HTML
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{$projectName}</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="code-ui-wrapper">
+    <h3>{$projectName}</h3>
+    <p>idegui-Projekt - HTML und Python können frei bearbeitet werden.</p>
+    <div id="idegui-root" data-idegui-root="true"></div>
+    <div id="idegui-output" data-idegui-output="true"></div>
+  </div>
+</body>
+</html>
+HTML;
+            
+            $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+            $fileName = 'index.html';
+            $mimeType = 'text/html';
+            $fileSize = strlen($htmlContent);
+            $stmt->bind_param('isssi', $projectId, $fileName, $htmlContent, $mimeType, $fileSize);
+            $stmt->execute();
+            
+            // Create style.css
+            $cssContent = <<<CSS
+.code-ui-wrapper {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 16px;
+}
+
+#idegui-root {
+    min-height: 180px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+}
+
+#idegui-output {
+    margin-top: 12px;
+    font-size: 14px;
+    color: #374151;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 4px;
+}
+CSS;
+            
+            $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+            $fileName = 'style.css';
+            $mimeType = 'text/css';
+            $fileSize = strlen($cssContent);
+            $stmt->bind_param('isssi', $projectId, $fileName, $cssContent, $mimeType, $fileSize);
+            $stmt->execute();
+            
+            // Create main.py with idegui import
+            $pythonContent = <<<PYTHON
+# {$projectName}
+import idegui as ui
+
+# GUI Title
+ui.title("{$projectName}")
+
+# Beispiel: Text-Element
+ui.text("Willkommen bei {$projectName}!")
+
+# Beispiel: Button
+button = ui.button("Klick mich!")
+
+# Beispiel: Input
+name_input = ui.input("Name:", "Ihr Name")
+
+# Event-Handler (wird bei Button-Klick aufgerufen)
+def button_clicked(trigger):
+    name = ui.get("Name:")
+    ui.text(f"Hallo, {name}!")
+
+PYTHON;
+            
+            $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+            $fileName = 'main.py';
+            $mimeType = 'text/plain';
+            $fileSize = strlen($pythonContent);
+            $stmt->bind_param('isssi', $projectId, $fileName, $pythonContent, $mimeType, $fileSize);
+            $stmt->execute();
+            
+            // Create idegui.py (reference file)
+            $ideguiContent = <<<PYTHON
+# idegui Referenzdatei
+# Diese Datei zeigt die erwarteten API-Ideen, die Laufzeit kann davon abweichen.
+
+def title(text):
+    """Setzt den Titel der GUI"""
+    return {"type": "title", "text": text}
+
+def text(label="", value=""):
+    """Erstellt ein Text-Eingabefeld mit optionalem Label"""
+    return {"type": "text", "label": label, "value": value}
+
+def input(label="", value=""):
+    """Alias für text() - erstellt ein Text-Eingabefeld"""
+    return text(label, value)
+
+def number(label="", value=0):
+    """Erstellt ein Zahlen-Eingabefeld"""
+    return {"type": "number", "label": label, "value": value}
+
+def select(label="", options=None, value=None):
+    """Erstellt ein Dropdown-Auswahlfeld"""
+    return {"type": "select", "label": label, "options": options or [], "value": value}
+
+def button(label):
+    """Erstellt einen Button"""
+    return {"type": "button", "label": label}
+
+def output():
+    """Gibt ein Output-Widget zurück"""
+    return {"type": "output"}
+
+def get(name):
+    """Liest den Wert eines Elements mit data-element Attribut"""
+    pass
+
+def set(name, value):
+    """Setzt den Wert eines Elements mit data-element Attribut"""
+    pass
+
+def print(container_name, *args, sep=" ", end="\\n"):
+    """Schreibt Text in einen Container (wie Python print)"""
+    pass
+
+def reset(container_name=""):
+    """Löscht den Inhalt eines Containers"""
+    pass
+
+PYTHON;
+            
+            $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+            $fileName = 'idegui.py';
+            $mimeType = 'text/plain';
+            $fileSize = strlen($ideguiContent);
+            $stmt->bind_param('isssi', $projectId, $fileName, $ideguiContent, $mimeType, $fileSize);
+            $stmt->execute();
+            
+        } else {
+            // Python project: single .py file
+            $fileName = $safeName . '.py';
+            $content = "# " . $projectName . "\n\n# Start coding here!\n";
+            $mimeType = 'text/plain';
+            $fileSize = strlen($content);
+            
+            $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
+            $stmt->bind_param('isssi', $projectId, $fileName, $content, $mimeType, $fileSize);
+            $stmt->execute();
+        }
+
+        // Always create init.py as start script
         $stmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, NULL, ?, ?, ?, ?)');
-        $stmt->bind_param('isssi', $projectId, $fileName, $content, $mimeType, $fileSize);
+        $initName = 'init.py';
+        $initMimeType = 'text/plain';
+        $initSize = strlen($initContent);
+        $stmt->bind_param('isssi', $projectId, $initName, $initContent, $initMimeType, $initSize);
         $stmt->execute();
         
     } catch (Exception $e) {

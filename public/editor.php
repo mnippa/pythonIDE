@@ -1,22 +1,13 @@
 <?php
 /**
- * Protected Editor for logged-in users
+ * Legacy entrypoint.
+ * Use projects.php as single source of truth for project editing UI.
  */
 
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../api/auth/middleware.php';
-
-// Check if user is logged in
-if (!isLoggedIn()) {
-    header('Location: login.php');
-    exit;
-}
-
-$user = getCurrentUser();
-$displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
-if ($displayName === '') {
-  $displayName = $user['email'] ?? 'Benutzer';
-}
+$query = $_SERVER['QUERY_STRING'] ?? '';
+$target = 'projects.php' . ($query !== '' ? ('?' . $query) : '');
+header('Location: ' . $target, true, 302);
+exit;
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -876,7 +867,7 @@ if ($displayName === '') {
   <script src="pyodide/pyodide.js"></script>
 
   <!-- File Tree & Validation -->
-  <script src="js/file-tree.js"></script>
+  <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
   <script type="module" src="js/editor-setup.js?v=20260302"></script>

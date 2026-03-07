@@ -89,31 +89,31 @@ if ($displayName === '') {
     #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
     html.dark-mode #theme-toggle::after{ content:'☀️'; }
 
-    /* MASTER GRID: left sidebar | editor | right output */
+    /* MASTER GRID: left sidebar | editor | splitter | right output */
     .app{
       height: 100%;
       display:grid;
-      grid-template-columns: 1fr 240px;
+      grid-template-columns: 1fr 5px 240px;
       min-height:0;
       overflow: hidden;
     }
     
     /* Medium: Navigation 264px, Code Rest, Output 240px (base) */
     .app.with-task-details {
-      grid-template-columns: 264px 1fr 240px !important;
+      grid-template-columns: 264px 1fr 5px 240px !important;
     }
 
     /* Desktop: Navigation 440px fix, Code Rest, Output 320px fix */
     @media (min-width: 1201px) {
       .app {
-        grid-template-columns: minmax(0, 800px) minmax(320px, 1fr);
+        grid-template-columns: 1fr 5px 1fr;
       }
       .app.with-task-details {
-        grid-template-columns: 440px minmax(0, 800px) minmax(320px, 1fr) !important;
+        grid-template-columns: 440px 1fr 5px 1fr !important;
       }
     }
 
-    /* Mobile: Navigation collapsible, Code 70%, Output 30% */
+    /* Mobile: Navigation collapsible, Code 70%, Output 30% - NO SPLITTER */
     @media (max-width: 768px) {
       .app {
         grid-template-columns: 1fr 30%;
@@ -124,6 +124,40 @@ if ($displayName === '') {
       #task-details-panel {
         display: none !important;
       }
+      .column-splitter {
+        display: none !important;
+      }
+    }
+    
+    /* Resizable Splitter */
+    .column-splitter {
+      width: 5px;
+      background: var(--border);
+      cursor: col-resize;
+      position: relative;
+      transition: background 0.2s;
+      min-height: 0;
+    }
+    .column-splitter:hover,
+    .column-splitter.dragging {
+      background: var(--accent);
+    }
+    .column-splitter::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 3px;
+      height: 60px;
+      background: var(--text-secondary);
+      border-radius: 3px;
+      opacity: 0.3;
+    }
+    .column-splitter:hover::before,
+    .column-splitter.dragging::before {
+      opacity: 1;
+      background: white;
     }
 
     /* TASK DETAILS SIDEBAR (left) */
@@ -1046,6 +1080,9 @@ HTML;
       </div>
     </div>
 
+    <!-- Resizable Splitter -->
+    <div class="column-splitter" id="column-splitter"></div>
+
     <div class="right">
       <div id="gui-container"></div>
       
@@ -1140,6 +1177,100 @@ HTML;
     closeProjectsBtn?.addEventListener('click', () => {
       projectsPanel.classList.remove('open');
     });
+
+    // Resizable Column Splitter
+    (function initColumnSplitter() {
+      const splitter = document.getElementById('column-splitter');
+      const app = document.querySelector('.app');
+      const leftCol = document.querySelector('.left');
+      const rightCol = document.querySelector('.right');
+
+      if (!splitter || !app || !leftCol || !rightCol) {
+        return;
+      }
+
+      let isDragging = false;
+      let startX = 0;
+      let startLeftWidth = 0;
+      let startRightWidth = 0;
+
+      splitter.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+
+        const leftRect = leftCol.getBoundingClientRect();
+        const rightRect = rightCol.getBoundingClientRect();
+        startLeftWidth = leftRect.width;
+        startRightWidth = rightRect.width;
+
+        splitter.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        splitter.setPointerCapture(e.pointerId);
+
+        e.preventDefault();
+      });
+
+      document.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+
+        const deltaX = e.clientX - startX;
+        const totalWidth = startLeftWidth + startRightWidth;
+
+        let newLeftWidth = startLeftWidth + deltaX;
+        let newRightWidth = startRightWidth - deltaX;
+
+        const minWidth = 300;
+        if (newLeftWidth < minWidth) {
+          newLeftWidth = minWidth;
+          newRightWidth = totalWidth - minWidth;
+        }
+        if (newRightWidth < minWidth) {
+          newRightWidth = minWidth;
+          newLeftWidth = totalWidth - minWidth;
+        }
+
+        const hasTaskDetails = app.classList.contains('with-task-details');
+        const newGridTemplate = hasTaskDetails 
+          ? `440px ${newLeftWidth}px 5px ${newRightWidth}px`
+          : `${newLeftWidth}px 5px ${newRightWidth}px`;
+        
+        console.log('SETZE Grid:', newGridTemplate);
+        // WICHTIG: !important verwenden, um CSS !important zu überschreiben
+        app.style.setProperty('grid-template-columns', newGridTemplate, 'important');
+
+        // Prüfe, ob es tatsächlich gesetzt wurde
+        const actualGrid = window.getComputedStyle(app).gridTemplateColumns;
+        console.log('Computed Grid:', actualGrid);
+
+        e.preventDefault();
+      });
+
+      const stopDragging = (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        splitter.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        if (typeof e.pointerId === 'number' && splitter.hasPointerCapture?.(e.pointerId)) {
+          splitter.releasePointerCapture(e.pointerId);
+        }
+
+        // DEBUG: Ausgabe der tatsächlichen Breiten
+        console.log('=== NACH LOSLASSEN ===');
+        console.log('Grid Template Columns:', app.style.gridTemplateColumns);
+        const leftActual = leftCol.getBoundingClientRect().width;
+        const rightActual = rightCol.getBoundingClientRect().width;
+        const splitterActual = splitter.getBoundingClientRect().width;
+        console.log('Linke Spalte (Editor):', leftActual + 'px');
+        console.log('Mittlere Spalte (Splitter):', splitterActual + 'px');
+        console.log('Rechte Spalte (Output):', rightActual + 'px');
+        console.log('Summe Editor + Output:', (leftActual + rightActual) + 'px');
+      };
+
+      document.addEventListener('pointerup', stopDragging);
+      document.addEventListener('pointercancel', stopDragging);
+    })();
   </script>
   <script type="module" src="js/assignments.js?v=20260302"></script>
   <script>

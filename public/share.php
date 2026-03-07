@@ -4,8 +4,14 @@
  */
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../api/auth/middleware.php';
 
 $shareToken = isset($_GET['token']) ? trim($_GET['token']) : null;
+
+if ($shareToken && isLoggedIn()) {
+  header('Location: projects.php?token=' . urlencode($shareToken));
+  exit;
+}
 
 if (!$shareToken) {
     die('Ungültiger Share-Link');

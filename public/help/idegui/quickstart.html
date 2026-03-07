@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>idegui Quickstart</title>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <header>
+    <h1>idegui Quickstart</h1>
+    <p>Schneller Start für Python + HTML Projekte</p>
+  </header>
+  <div class="wrapper">
+    <nav class="nav">
+      <a href="index.html">Übersicht</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="codereferenz.html">Vollständige Codereferenz</a>
+    </nav>
+
+    <section class="card">
+      <h2>Minimaler Event-Handler</h2>
+<pre><code>&lt;!-- index.html --&gt;
+&lt;input data-element="name" value="Markus"&gt;
+&lt;button data-run-python="true" data-run-name="say_hello"&gt;Hallo&lt;/button&gt;
+&lt;div data-element="msg"&gt;-&lt;/div&gt;</code></pre>
+<pre><code># init.py
+import idegui as ui
+
+def say_hello(trigger):
+    name = ui.get('name')
+    ui.set('msg', f'Hallo {name}!')</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>Direkte Logik (ohne Trigger)</h2>
+<pre><code># init.py
+import idegui as ui
+
+zahl1 = 12
+zahl2 = 30
+ui.set('summe', str(zahl1 + zahl2))</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>Wichtige Attribute in HTML</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Attribut</th><th>Bedeutung</th><th>Beispiel</th></tr></thead>
+          <tbody>
+            <tr><td><code>data-element</code></td><td>Name für <code>ui.get()</code>/<code>ui.set()</code></td><td><code>&lt;input data-element="preis"&gt;</code></td></tr>
+            <tr><td><code>data-run-python="true"</code></td><td>Markiert Trigger-Element</td><td><code>&lt;button ...&gt;</code></td></tr>
+            <tr><td><code>data-run-name</code></td><td>Python-Funktionsname</td><td><code>data-run-name="berechne"</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Best Practices</h2>
+      <ul>
+        <li>Nutze globale Dicts für Zustand (z.B. <code>APP_STATE</code>).</li>
+        <li>Validiere Eingaben aus <code>ui.get()</code> mit <code>try/except</code>.</li>
+        <li>Schreibe alle sichtbaren Ergebnisse mit <code>ui.set()</code> in HTML.</li>
+        <li>Verwende keine zusätzlichen JavaScript-Skripte in Projekt-HTML.</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

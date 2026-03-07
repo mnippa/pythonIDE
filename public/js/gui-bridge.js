@@ -59,9 +59,18 @@ export class GUIBridge {
   
   /**
    * Show GUI when Python code imports idegui
+   * For projects: GUI visibility is controlled by project_type on load, ignore runtime changes
    */
   showGUI() {
     if (!this.guiContainer) return;
+    
+    // Projects manage GUI visibility statically - don't change on RUN
+    const currentProject = window.currentProject || null;
+    if (currentProject) {
+      console.log('[GUIBridge] Ignoring showGUI() - project mode (GUI controlled by project_type)');
+      return;
+    }
+    
     this.guiContainer.classList.add('active');
     this.hasGUI = true;
     console.log('[GUIBridge] GUI activated');
@@ -69,9 +78,18 @@ export class GUIBridge {
   
   /**
    * Hide GUI
+   * For projects: GUI visibility is controlled by project_type on load, ignore runtime changes
    */
   hideGUI() {
     if (!this.guiContainer) return;
+    
+    // Projects manage GUI visibility statically - don't change on RUN
+    const currentProject = window.currentProject || null;
+    if (currentProject) {
+      console.log('[GUIBridge] Ignoring hideGUI() - project mode (GUI controlled by project_type)');
+      return;
+    }
+    
     this.guiContainer.classList.remove('active');
     this.hasGUI = false;
     console.log('[GUIBridge] GUI deactivated');
@@ -79,11 +97,19 @@ export class GUIBridge {
   
   /**
    * Clear GUI
+   * For projects: Don't clear - HTML is managed by renderProjectHtml()
    */
   clearGUI() {
-    if (this.guiContainer) {
-      this.guiContainer.innerHTML = '';
+    if (!this.guiContainer) return;
+    
+    // Projects manage GUI content statically - don't clear on RUN
+    const currentProject = window.currentProject || null;
+    if (currentProject) {
+      console.log('[GUIBridge] Ignoring clearGUI() - project mode (HTML controlled by renderProjectHtml)');
+      return;
     }
+    
+    this.guiContainer.innerHTML = '';
   }
   
   /**

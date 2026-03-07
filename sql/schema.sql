@@ -12,10 +12,12 @@ CREATE TABLE IF NOT EXISTS users (
     last_name VARCHAR(80) NOT NULL DEFAULT '',
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('admin', 'user') NOT NULL DEFAULT 'user',
+    last_opened_project_id INT UNSIGNED NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP NULL DEFAULT NULL,
     INDEX idx_email (email),
-    INDEX idx_role (role)
+    INDEX idx_role (role),
+    INDEX idx_last_opened_project_id (last_opened_project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Projects table (user's saved scripts)

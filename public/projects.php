@@ -1,6 +1,6 @@
 <?php
 /**
- * Projects Editor - For creating and managing personal Python projects
+ * Projects Editor - Code editor view for managing personal projects
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -73,124 +73,251 @@ if ($displayName === '') {
     }
     .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
-    #settings-toggle{ width:34px; height:34px; padding:0; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+    .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
     #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
     #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
     html.dark-mode #theme-toggle::after{ content:'☀️'; }
-    .toolcheck{ display:flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:var(--panel); color:var(--text-primary); }
-    .toolcheck input{ transform: translateY(0.5px); }
 
-    .settings-panel{
-      position:fixed;
-      top:58px;
-      right:10px;
-      z-index:120;
-      background:var(--panel);
-      color:var(--text-primary);
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:10px;
-      min-width:190px;
-      display:none;
-      flex-direction:column;
-      gap:8px;
-      box-shadow:0 12px 30px rgba(0,0,0,0.12);
-    }
-    .settings-panel.open{ display:flex; }
-    .settings-title{
-      font-size:12px;
-      font-weight:300;
-      letter-spacing:0.04em;
-      text-transform:uppercase;
-      color:var(--text-secondary);
-    }
-
-    /* MASTER GRID: left editor | right output */
+    /* MASTER GRID: left sidebar | editor | splitter | right output */
     .app{
       height: 100%;
       display:grid;
-      grid-template-columns: 1fr 240px;
+      grid-template-columns: 1fr 5px 240px;
       min-height:0;
       overflow: hidden;
     }
 
-    /* MASTER GRID: 3 columns (file-tree | editor | output) */
-    /* Base: file-tree 264px, editor flex, output 240px */
-    .app {
-      grid-template-columns: 264px 1fr 240px !important;
+    /* Medium: Project sidebar 264px, Code Rest, Output 240px */
+    .app.with-project-details {
+      grid-template-columns: 264px 1fr 5px 240px !important;
     }
 
-    /* Desktop: file-tree 264px, editor flex, output 320px */
+    /* Desktop: Sidebar 440px, Code Rest, Output 320px */
     @media (min-width: 1201px) {
       .app {
-        grid-template-columns: 264px 1fr 320px !important;
+        grid-template-columns: 1fr 5px 1fr;
+      }
+      .app.with-project-details {
+        grid-template-columns: 440px 1fr 5px 1fr !important;
       }
     }
 
-    /* Tablet: file-tree 220px, editor flex, output 240px */
-    @media (max-width: 1200px) and (min-width: 769px) {
-      .app {
-        grid-template-columns: 220px 1fr 240px !important;
-      }
-    }
-
-    /* Mobile: Hide file-tree, editor flex, output 30% */
+    /* Mobile: Sidebar hidden, Code 70%, Output 30% - no splitter */
     @media (max-width: 768px) {
       .app {
+        grid-template-columns: 1fr 30%;
+      }
+      .app.with-project-details {
         grid-template-columns: 1fr 30% !important;
       }
-      #file-tree-panel {
+      #project-list-panel {
         display: none !important;
       }
-      .left-bottom {
+      .column-splitter {
         display: none !important;
       }
     }
+    
+    /* Resizable Splitter */
+    .column-splitter {
+      width: 5px;
+      background: var(--border);
+      cursor: col-resize;
+      position: relative;
+      transition: background 0.2s;
+      min-height: 0;
+    }
+    .column-splitter:hover,
+    .column-splitter.dragging {
+      background: var(--hspf-accent, #667eea);
+    }
+    .column-splitter::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 3px;
+      height: 60px;
+      background: var(--text-secondary);
+      border-radius: 3px;
+      opacity: 0.3;
+    }
+    .column-splitter:hover::before,
+    .column-splitter.dragging::before {
+      opacity: 1;
+      background: white;
+    }
 
-    /* FILE TREE PANEL (left) */
-    #file-tree-panel {
+    /* PROJECT LIST SIDEBAR (left) */
+    #project-list-panel {
       border-right: 1px solid var(--border);
+      background: var(--bg);
+      display: none;
+      flex-direction: column;
+      min-height:0;
+      overflow: hidden;
+    }
+    #project-list-panel.active {
+      display: flex;
+    }
+
+    /* Project Navigation (top) */
+    .project-navigation {
+      border-bottom: 2px solid var(--border);
+      background: var(--panel);
+      flex: 0 0 220px;
+      min-height: 180px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    #file-tree-wrapper {
+      border-bottom: 1px solid var(--border);
       background: var(--bg);
       display: flex;
       flex-direction: column;
-      min-height: 0;
+      flex: 1 1 auto;
+      min-height: 220px;
       overflow: hidden;
+      font-size: 13px;
     }
 
-    .file-tree-header {
-      padding: 0;
+    #file-tree-wrapper .tree-header {
+      padding: 8px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
-    }
-
-    .file-tree-toggle {
-      width: 100%;
-      padding: 0 6px;
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 0;
-      color: var(--text-primary);
-      cursor: pointer;
-      font-size: 13px;
-      text-align: left;
       font-weight: 600;
-      transition: background 0.2s;
+      font-size: 12px;
+      color: var(--text-primary);
     }
 
-    .file-tree-toggle:hover {
-      background: var(--border);
-    }
-
-    .file-tree-content {
+    #project-file-tree {
       flex: 1;
       overflow-y: auto;
-      padding: 0;
-      font-size: 13px;
+      overflow-x: hidden;
+      padding: 4px;
       min-height: 0;
     }
+    
+    /* Force scrollbar to always show */
+    .project-navigation::-webkit-scrollbar {
+      width: 8px;
+    }
+    .project-navigation::-webkit-scrollbar-track {
+      background: var(--panel);
+    }
+    .project-navigation::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+    .project-navigation::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
+    }
+    .project-nav-item {
+      padding: 8px 10px;
+      margin: 0;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+      position: relative;
+    }
+    .project-nav-item:hover {
+      background: var(--bg);
+    }
+    .project-nav-item.active {
+      background: var(--bg);
+      border-left-color: #667eea;
+      font-weight: 600;
+    }
+    .project-nav-title {
+      flex: 1;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-nav-delete {
+      font-size: 11px;
+      color: #ef4444;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+      padding: 2px 4px;
+    }
+    .project-nav-item:hover .project-nav-delete {
+      opacity: 1;
+    }
+    .project-nav-type {
+      font-size: 11px;
+      color: var(--text-secondary);
+      min-width: 45px;
+      text-align: right;
+    }
+    
+    /* Project Details (bottom) */
+    .project-details-content {
+      flex: 0 0 180px;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 0;
+      display: block;
+    }
+    
+    .project-info-section {
+      margin-bottom: 12px;
+    }
+    .project-info-section h4 {
+      margin: 0 0 6px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      text-transform: uppercase;
+    }
+    .project-info-value {
+      color: var(--text-secondary);
+      font-size: 12px;
+      word-break: break-word;
+    }
+    .project-visibility-toggle {
+      width: 100%;
+      padding: 8px 10px;
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .project-visibility-toggle:hover {
+      background: var(--border);
+    }
+    .project-visibility-toggle.public {
+      border-color: #10b981;
+      background: #d1fae5;
+      color: #065f46;
+    }
+    html.dark-mode .project-visibility-toggle.public {
+      background: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+    }
 
-    /* LEFT COLUMN: file tree + editor + lint/help */
-    .left{
+    /* EDITOR AREA (middle) */
+    .editor-area {
       border-right:1px solid var(--border);
       display:grid;
       grid-template-rows: 1fr minmax(150px, 25%);
@@ -198,27 +325,21 @@ if ($displayName === '') {
     }
 
     @media (max-width: 960px) {
-      .left {
+      .editor-area {
         grid-template-rows: 1fr 120px;
       }
     }
-    .file-tree-wrapper {
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
-      overflow: hidden;
-      max-height: 0;
-      padding: 0;
-      min-height: 0;
-      transition: max-height 0.2s;
-    }
-    .file-tree-wrapper.active {
-      max-height: 250px;
-      overflow: auto;
-      padding: 8px;
-    }
-    #editor-container{ width:100%; height:100%; min-width:0; min-height:0; }
 
-    .left-bottom{
+    .editor-container-wrapper {
+      min-width:0; 
+      min-height:0;
+      display:flex;
+      flex-direction: column;
+    }
+
+    #editor-container{ width:100%; flex:1; min-width:0; min-height:0; }
+
+    .editor-bottom{
       border-top:1px solid var(--border);
       display:grid;
       grid-template-columns: 40% 60%;
@@ -227,10 +348,11 @@ if ($displayName === '') {
     }
 
     @media (max-width: 960px) {
-      .left-bottom {
+      .editor-bottom {
         grid-template-columns: 50% 50%;
       }
     }
+    
     #lint-container{
       border-right:1px solid var(--border);
       background:var(--bg);
@@ -253,6 +375,7 @@ if ($displayName === '') {
     #lint-container .lint-fix-label{ color:var(--text-primary); font-weight:600; }
     #lint-container .lint-fix-link{ cursor:pointer; text-decoration:underline; color:#2563eb; }
     html.dark-mode #lint-container .lint-fix-link{ color:#60a5fa; }
+    
     #help-container{
       padding:6px 8px;
       overflow:auto;
@@ -298,128 +421,187 @@ if ($displayName === '') {
     }
     #help-container a{
       color:#3b82f6;
-      text-decoration:none;
     }
-    #help-container a:hover{
-      text-decoration:underline;
-    }
-
-    /* Autocomplete: light background, semi-transparent */
-    .monaco-editor .suggest-widget{
-      z-index:100 !important;
-      opacity:0.9 !important;
-      background:rgba(245, 245, 250, 0.95) !important;
-      border:1px solid rgba(180, 180, 190, 0.9) !important;
-      color:#333 !important;
-    }
-    .editor-widget.suggest-widget{
-      z-index:100 !important;
-      opacity:0.9 !important;
-      background:rgba(245, 245, 250, 0.95) !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row{
-      background:rgba(245, 245, 250, 0.95) !important;
-      color:#333 !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row:hover{
-      background:rgba(230, 235, 245, 0.95) !important;
-    }
-    .monaco-editor .suggest-widget .monaco-list-row.selected,
-    .monaco-editor .suggest-widget .monaco-list-row.focused{
-      background:rgba(30, 100, 200, 0.95) !important;
-      color:#fff !important;
-      font-weight: bold !important;
-      border-left:4px solid #0044aa !important;
-      padding-left:calc(8px - 4px) !important;
-    }
-    .monaco-editor .suggest-widget-details{
-      background:rgba(245, 245, 250, 0.95) !important;
+    html.dark-mode #help-container a{
+      color:#60a5fa;
     }
 
-    /* RIGHT COLUMN: GUI top (50%) + Output/Plot tabs bottom (50%) */
+    /* RIGHT PANEL: Output/GUI */
     .right{
       display:grid;
       grid-template-rows: 1fr 1fr;
       min-width:0; min-height:0;
-      gap: 0;
+      background: var(--bg);
+      overflow: hidden;
     }
-    
-    /* GUI Container (top) */
+
     #gui-container{
-      padding:10px;
-      overflow:auto;
+      border-bottom:1px solid var(--border);
       background:var(--bg);
       color:var(--text-primary);
-      border-bottom:1px solid var(--border);
+      padding:2px;
+      overflow:auto;
+      font-size:13px;
       min-width:0; min-height:0;
-      display:none;
+      display: none;
     }
     #gui-container.active{
-      display:block;
+      display: block;
     }
-    
-    /* Output/Plot Section (bottom) */
-    #output-plot-section{
-      display:grid;
-      grid-template-rows: auto 1fr;
-      min-width:0; min-height:0;
+
+    #output-plot-section {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
     }
-    
-    /* Tab Navigation for Output/Plot */
+
     #output-plot-tabs{
       display:flex;
-      gap:0;
       border-bottom:1px solid var(--border);
       background:var(--panel);
-      margin:0;
-      padding:0;
+      flex:0 0 auto;
     }
     .output-plot-tab{
-      flex:1;
-      padding:10px 12px;
+      padding:8px 12px;
       border:none;
-      background:var(--panel);
+      background:transparent;
       color:var(--text-secondary);
       cursor:pointer;
-      font-size:12px;
-      font-weight:500;
-      border-bottom:3px solid transparent;
-      transition: all 0.2s ease;
-    }
-    .output-plot-tab:hover{
-      background:var(--bg);
-      color:var(--text-primary);
+      font-size:13px;
+      transition:all 0.2s;
+      border-bottom:2px solid transparent;
     }
     .output-plot-tab.active{
-      color:var(--accent);
-      border-bottom-color:var(--accent);
-      background:var(--bg);
-    }
-    
-    /* Output & Plot Panels */
-    #output-container,
-    #plot-container{
-      padding:10px;
-      overflow:auto;
-      background:var(--bg);
       color:var(--text-primary);
-      min-width:0; min-height:0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:13px;
-      white-space:pre-wrap;
+      border-bottom-color:#667eea;
+      font-weight:600;
     }
     .output-plot-panel{
       display:none;
+      flex:1;
+      overflow:auto;
+      padding:8px;
+      background:var(--bg);
+      color:var(--text-primary);
+      font-size:13px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      min-width:0; min-height:0;
+      white-space:pre-wrap;
     }
     .output-plot-panel.active{
       display:block;
     }
+    #output-container {
+      background: var(--bg);
+      color: var(--text-primary);
+    }
+    html.dark-mode #output-container {
+      background: #252526;
+      color: #e6edf3;
+    }
+    #plot-container {
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #plot-container canvas {
+      max-width: 100%;
+      max-height: 100%;
+    }
 
-    .plot-card{ border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; }
-    .plot-card-header{ padding:8px 10px; background:var(--panel); color:var(--text-primary); font-weight:300; border-bottom:1px solid var(--border); }
-    .plot-img{ width:100%; height:auto; display:block; }
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.open {
+      display: flex;
+    }
+    .modal-content {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    }
+    .modal-header h2 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+    .modal-body {
+      margin: 15px 0;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+    .modal-footer {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+    .modal-footer button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .modal-footer button:hover {
+      background: var(--border);
+    }
+    .modal-footer button.danger {
+      background: #ef4444;
+      color: white;
+      border-color: #ef4444;
+    }
+    .modal-footer button.danger:hover {
+      background: #dc2626;
+    }
+    .modal-footer button.primary {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+    .modal-footer button.primary:hover {
+      background: #5568d3;
+    }
 
-    /* User bar & projects panel */
+    /* Project Type Badge */
+    .project-type-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #dbeafe;
+      color: #0c4a6e;
+    }
+    .project-type-badge.html {
+      background: #fef08a;
+      color: #713f12;
+    }
+    .project-type-badge.mixed {
+      background: #fce7f3;
+      color: #831843;
+    }
+
+    /* User bar */
     .user-bar {
       display: flex;
       align-items: center;
@@ -458,213 +640,95 @@ if ($displayName === '') {
     .admin-link:hover {
       background: #0b5f57;
     }
-    #projects-btn {
-      background: var(--panel);
-      border: 1px solid var(--border);
-    }
-    #projects-btn:hover {
-      background: var(--border);
-    }
-    .projects-panel {
-      position: fixed;
-      top: 0;
-      right: -400px;
-      width: 400px;
-      height: 100vh;
-      background: var(--bg);
-      border-left: 1px solid var(--border);
-      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-      transition: right 0.3s;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-    }
-    .projects-panel.open {
-      right: 0;
-    }
-    .projects-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .projects-header h2 {
-      margin: 0;
-      font-size: 18px;
-      color: var(--text-primary);
-    }
-    .close-panel {
-      background: transparent;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      padding: 4px 8px;
-      color: var(--text-secondary);
-    }
-    .projects-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-    .project-item {
-      padding: 12px;
-      margin-bottom: 8px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .project-item:hover {
-      border-color: #667eea;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-    }
-    .project-name {
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 4px;
-    }
-    .project-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 12px;
-    }
-    .visibility-badge {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .visibility-private {
-      background: #fee;
-      color: #c00;
-    }
-    .visibility-public {
-      background: #efe;
-      color: #060;
-    }
-    .new-project-btn {
-      width: 100%;
-      padding: 12px;
-      margin-bottom: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .project-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .current-project-bar {
-      padding: 8px 12px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-    }
-    .current-project-name {
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .project-visibility {
+    
+    /* Help link in project details */
+    .help-link {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-left: 8px;
-      white-space: nowrap;
+      padding: 8px 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+    }
+    .help-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
     }
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <button id="dashboard-btn" onclick="window.location.href='dashboard.php'">⬅ Dashboard</button>
-    <button id="projects-btn">📁 Projekte</button>
-    <button id="run-btn">Run</button>
-    <button id="save-project-btn" style="display:none;">💾 Speichern</button>
-    <button id="download-btn" style="display:none;">⬇ Herunterladen</button>
-    <span id="project-visibility" class="project-visibility"></span>
-
-    <div style="flex:1"></div>
-    
-    <div class="user-bar">
-      <div class="user-info">
-        <span><?= htmlspecialchars($displayName) ?></span>
-        <?php if ($user['role'] === 'admin'): ?>
-        <span class="user-badge">Admin</span>
-        <?php endif; ?>
+  <?php
+  $pageTitle = '<span id="project-page-title">Meine Projekte</span>';
+  $showUser = false;
+  $userInfo = [];
+  
+  $displayNameEscaped = htmlspecialchars($displayName);
+  $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
+  $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
+  
+  $headerActions = <<<HTML
+    <div class="toolbar">
+      <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
+      <button id="run-btn">Run</button>
+      <button id="web-help-btn" style="display:none;" title="idegui Hilfe (Python + HTML)">❓ Hilfe</button>
+      <button id="new-project-btn" style="background:#667eea; color:#fff; border-color:transparent;">+ Neues Projekt</button>
+      <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
+      <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
+      <button id="save-project-btn" class="icon-btn" title="Speichern">💾</button>
+      <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
+      <div style="flex:1"></div>
+      <div class="user-bar">
+        <div class="user-info">
+          <span>{$displayNameEscaped}</span>
+          {$adminBadge}
+        </div>
+        {$adminLink}
+        <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
+        <button id="logout-btn" title="Abmelden">🚪</button>
       </div>
-      <?php if ($user['role'] === 'admin'): ?>
-      <a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>
-      <?php endif; ?>
-      <button id="settings-toggle" title="Module" aria-label="Module settings">⚙</button>
-      <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-      <button id="logout-btn" title="Abmelden">🚪</button>
     </div>
-  </div>
-
-  <div id="settings-panel" class="settings-panel" aria-hidden="true">
-    <div class="settings-title">Module</div>
-    <label class="toolcheck" title="NumPy laden">
-      <input id="pkg-numpy" type="checkbox" checked>
-      <span>NumPy</span>
-    </label>
-    <label class="toolcheck" title="Matplotlib laden">
-      <input id="pkg-matplotlib" type="checkbox" checked>
-      <span>Matplotlib</span>
-    </label>
-    <label class="toolcheck" title="Pandas laden">
-      <input id="pkg-pandas" type="checkbox">
-      <span>Pandas</span>
-    </label>
-    <label class="toolcheck" title="Panel nicht verfuegbar in Pyodide">
-      <input id="pkg-panel" type="checkbox" disabled>
-      <span>Panel (nicht verfuegbar)</span>
-    </label>
-    <label class="toolcheck" title="Seaborn nicht verfuegbar in Pyodide">
-      <input id="pkg-seaborn" type="checkbox" disabled>
-      <span>Seaborn (nicht verfuegbar)</span>
-    </label>
-  </div>
-
+HTML;
+  include(__DIR__ . '/../components/header.php');
+  ?>
 
   <!-- Editor View -->
-  <div class="app" id="editor-view" style="display:grid;">
-    <!-- LEFT SIDE: File tree panel -->
-    <div id="file-tree-panel" class="file-tree-panel">
-      <div class="file-tree-header" id="file-tree-header">
-        <button class="file-tree-toggle" id="file-tree-toggle" title="Dateibaum umschalten">
-          ▼ Projekt
-        </button>
+  <div class="app with-project-details" id="editor-view" style="display:grid;">
+    <!-- Project Sidebar -->
+    <div id="project-list-panel" class="active">
+      <div class="project-navigation" id="project-navigation">
+        <p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Projekte...</p>
       </div>
-      <div class="file-tree-content" id="file-tree-wrapper">
-        <!-- Initialized by file-tree-manager.js -->
+      <div id="file-tree-wrapper">
+        <div class="tree-header">📁 Dateien</div>
+        <div id="project-file-tree"></div>
+      </div>
+      <div class="project-details-content" id="project-details-content">
+        <p>Wählen Sie ein Projekt um zu starten</p>
       </div>
     </div>
 
-    <!-- CENTER PART: Editor + Lint/Help -->
-    <div class="left">
-      <div id="editor-container"></div>
+    <!-- Main Editor Area (middle) -->
+    <div class="editor-area">
+      <div class="editor-container-wrapper">
+        <div id="editor-container"></div>
+      </div>
 
-      <div class="left-bottom">
+      <div class="editor-bottom">
         <div id="lint-container"></div>
         <div id="help-container"></div>
       </div>
     </div>
 
-    <!-- RIGHT SIDE: GUI + Output/Plot -->
+    <!-- Resizable Splitter -->
+    <div class="column-splitter" id="column-splitter"></div>
+
+    <!-- Right Output Panel -->
     <div class="right">
       <div id="gui-container"></div>
       
@@ -679,14 +743,73 @@ if ($displayName === '') {
     </div>
   </div>
 
-  <div id="projects-panel" class="projects-panel">
-    <div class="projects-header">
-      <h2>Meine Projekte</h2>
-      <button class="close-panel" id="close-projects">×</button>
+  <!-- Modals -->
+  <div id="create-project-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Neues Projekt</h2>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; font-weight: 600;">Projektname:</label>
+          <input id="project-name-input" type="text" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);" placeholder="Mein Projekt">
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600;">Vorlage:</label>
+          <select id="project-template-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);">
+            <option value="empty_python">Leeres Python Projekt</option>
+            <option value="empty_python_html">Leeres Python-HTML Projekt</option>
+            <option value="python_logic" selected>Python-HTML mit Python-Logik</option>
+            <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
+            <option value="kniffel_demo">🎲 Demo: Kniffel (Yahtzee)</option>
+            <option value="blackjack_demo">🎰 Demo: Blackjack</option>
+          </select>
+          <small style="display: block; margin-top: 5px; color: var(--text-secondary);">
+            Wähle eine Vorlage als Ausgangspunkt für dein Projekt
+          </small>
+        </div>
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; font-weight: 600;">Beschreibung:</label>
+          <textarea id="project-desc-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary); min-height:80px; font-family:inherit; resize:vertical;" placeholder="Optional..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="document.getElementById('create-project-modal').classList.remove('open')">↪ Abbrechen</button>
+        <button class="primary" onclick="createProjectFromDialog()">✓ Erstellen</button>
+      </div>
     </div>
-    <div class="projects-body">
-      <button class="new-project-btn" id="new-project-btn">+ Neues Projekt</button>
-      <div id="projects-list">Lade Projekte...</div>
+  </div>
+
+  <div id="delete-project-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Projekt löschen?</h2>
+      </div>
+      <div class="modal-body">
+        <p>Das Projekt "<span id="delete-project-name">Unbekannt</span>" wird permanent gelöscht. Dies kann nicht rückgängig gemacht werden.</p>
+      </div>
+      <div class="modal-footer">
+        <button onclick="document.getElementById('delete-project-modal').classList.remove('open')">↪ Abbrechen</button>
+        <button class="danger" onclick="confirmDeleteProject()">🗑️ Löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="unsaved-changes-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Ungespeicherte Änderungen</h2>
+      </div>
+      <div class="modal-body">
+        <p>Du hast ungespeicherte Änderungen in <strong id="unsaved-file-name">dieser Datei</strong>.</p>
+        <p style="color:var(--text-secondary); margin-top:8px;">Was möchtest du tun?</p>
+      </div>
+      <div class="modal-footer">
+        <button id="unsaved-cancel-btn">↪ Abbrechen</button>
+        <button id="unsaved-discard-btn" class="danger">Änderungen verwerfen</button>
+        <button id="unsaved-save-btn" class="primary">Änderungen speichern</button>
+      </div>
     </div>
   </div>
 
@@ -699,10 +822,11 @@ if ($displayName === '') {
   <!-- Pyodide -->
   <script src="pyodide/pyodide.js"></script>
 
-  <!-- File Tree & Validation -->
+  <!-- File Tree -->
+  <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js"></script>
+  <script type="module" src="js/editor-setup.js?v=20260302"></script>
 
   <script>
     // Theme Toggle
@@ -722,44 +846,6 @@ if ($displayName === '') {
       });
     })();
 
-    // Settings Toggle
-    (function() {
-      const settingsBtn = document.getElementById('settings-toggle');
-      const settingsPanel = document.getElementById('settings-panel');
-      
-      settingsBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        settingsPanel.classList.toggle('open');
-      });
-      
-      document.addEventListener('click', (e) => {
-        if (settingsPanel && !settingsPanel.contains(e.target)) {
-          settingsPanel.classList.remove('open');
-        }
-      });
-    })();
-
-      // File tree toggle
-      (function() {
-        const toggleBtn = document.getElementById('file-tree-toggle');
-        const content = document.getElementById('file-tree-wrapper');
-        let isExpanded = true; // Start expanded in projects.php
-
-        if (toggleBtn && content) {
-          const getLabel = () => {
-            if (toggleBtn.dataset.label) return toggleBtn.dataset.label;
-            return toggleBtn.textContent.replace(/^[▼▶]\s*/, '').trim() || 'Projekt';
-          };
-
-          toggleBtn.addEventListener('click', () => {
-            isExpanded = !isExpanded;
-            content.style.display = isExpanded ? 'block' : 'none';
-            const label = getLabel();
-            toggleBtn.textContent = (isExpanded ? '▼ ' : '▶ ') + label;
-          });
-        }
-      })();
-
     // Logout
     document.getElementById('logout-btn')?.addEventListener('click', async () => {
       const response = await fetch('../api/auth/logout.php', {
@@ -770,20 +856,156 @@ if ($displayName === '') {
       }
     });
 
-    // Projects panel toggle
-    const projectsBtn = document.getElementById('projects-btn');
-    const projectsPanel = document.getElementById('projects-panel');
-    const closeProjectsBtn = document.getElementById('close-projects');
+    // Resizable Column Splitter
+    (function initColumnSplitter() {
+      const splitter = document.getElementById('column-splitter');
+      const app = document.querySelector('.app');
+      const editorArea = document.querySelector('.editor-area');
+      const rightCol = document.querySelector('.right');
 
-    projectsBtn?.addEventListener('click', () => {
-      projectsPanel.classList.add('open');
+      if (!splitter || !app || !editorArea || !rightCol) {
+        return;
+      }
+
+      let isDragging = false;
+      let startX = 0;
+      let startLeftWidth = 0;
+      let startRightWidth = 0;
+
+      splitter.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+
+        const editorRect = editorArea.getBoundingClientRect();
+        const rightRect = rightCol.getBoundingClientRect();
+        startLeftWidth = editorRect.width;
+        startRightWidth = rightRect.width;
+
+        splitter.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        splitter.setPointerCapture(e.pointerId);
+
+        e.preventDefault();
+      });
+
+      document.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+
+        const deltaX = e.clientX - startX;
+        const totalWidth = startLeftWidth + startRightWidth;
+
+        let newLeftWidth = startLeftWidth + deltaX;
+        let newRightWidth = startRightWidth - deltaX;
+
+        const minWidth = 300;
+        if (newLeftWidth < minWidth) {
+          newLeftWidth = minWidth;
+          newRightWidth = totalWidth - minWidth;
+        }
+        if (newRightWidth < minWidth) {
+          newRightWidth = minWidth;
+          newLeftWidth = totalWidth - minWidth;
+        }
+
+        const hasProjectDetails = app.classList.contains('with-project-details');
+        const sidebarWidth = 440;
+        const newGridTemplate = hasProjectDetails
+          ? `${sidebarWidth}px ${newLeftWidth}px 5px ${newRightWidth}px`
+          : `${newLeftWidth}px 5px ${newRightWidth}px`;
+        
+        app.style.setProperty('grid-template-columns', newGridTemplate, 'important');
+
+        e.preventDefault();
+      });
+
+      const stopDragging = (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        splitter.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        if (typeof e.pointerId === 'number' && splitter.hasPointerCapture?.(e.pointerId)) {
+          splitter.releasePointerCapture(e.pointerId);
+        }
+      };
+
+      document.addEventListener('pointerup', stopDragging);
+      document.addEventListener('pointercancel', stopDragging);
+    })();
+
+    // Output/Plot Tab Switching
+    document.querySelectorAll('.output-plot-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.output-plot-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.output-plot-panel').forEach(p => p.classList.remove('active'));
+        
+        tab.classList.add('active');
+        const tabName = tab.getAttribute('data-tab');
+        const panel = document.getElementById(tabName + '-container');
+        if (panel) panel.classList.add('active');
+      });
     });
 
-    closeProjectsBtn?.addEventListener('click', () => {
-      projectsPanel.classList.remove('open');
+    // Create Project from Dialog
+    async function createProjectFromDialog() {
+      const name = document.getElementById('project-name-input').value.trim();
+      const description = document.getElementById('project-desc-input').value.trim();
+      const template = document.getElementById('project-template-input').value;
+
+      if (!name) {
+        alert('Bitte gib einen Projektnamen ein.');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/projects/create.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: name,
+            description: description,
+            template: template,
+            visibility: 'private'
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.ok) {
+          // Close modal
+          document.getElementById('create-project-modal').classList.remove('open');
+          
+          // Clear inputs
+          document.getElementById('project-name-input').value = '';
+          document.getElementById('project-desc-input').value = '';
+          
+          // Reload page to show new project
+          window.location.href = 'projects.php?project_id=' + data.project.id;
+        } else {
+          alert('Fehler beim Erstellen: ' + (data.error || 'Unbekannter Fehler'));
+        }
+      } catch (error) {
+        console.error('Create project error:', error);
+        alert('Fehler beim Erstellen des Projekts.');
+      }
+    }
+
+    // New Project Button
+    document.getElementById('new-project-btn')?.addEventListener('click', () => {
+      document.getElementById('create-project-modal').classList.add('open');
+      document.getElementById('project-name-input').focus();
     });
   </script>
-  <script src="js/file-tree-manager.js"></script>
-  <script type="module" src="js/projects.js"></script>
+
+  <script type="module" src="js/projects-editor.js?v=20260302"></script>
+  <script>
+    // Set project editor mode for editor-setup.js
+    window.PROJECT_EDITOR_MODE = true;
+    window.userId = <?= (int)$user['id'] ?>;
+    window.isAdmin = <?= ($user['role'] === 'admin' ? 'true' : 'false') ?>;
+  </script>
 </body>
 </html>

@@ -123,16 +123,40 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
 
   const isAdminFolderMode = window.testMode === true;
 
+  // Find the current task to check if it has folderstructure
+  const allTasks = Object.values(assignmentState.tasksByAssignment || {}).flat();
+  const currentTaskMeta = allTasks.find(t => Number(t.id) === Number(taskId));
+  const hasFolderStructure = currentTaskMeta && (
+    currentTaskMeta.folderstructure === 1 || 
+    currentTaskMeta.folderstructure === true || 
+    currentTaskMeta.folderstructure === '1'
+  );
+
   if (!isAdminFolderMode) {
     const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
-    const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task_id: taskId, path, content })
-    });
-    const result = await response.json();
-    if (!response.ok || !result.ok) {
-      throw new Error(result?.error || 'Speichern fehlgeschlagen');
+    
+    // If task has no folder structure, use simple update API
+    if (!hasFolderStructure) {
+      const response = await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, current_code: content })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result?.error || 'Speichern fehlgeschlagen');
+      }
+    } else {
+      // Task has folder structure, use folder-files API
+      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, path, content })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result?.error || 'Speichern fehlgeschlagen');
+      }
     }
   } else if (isVirtual && path === 'init.py') {
     const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
@@ -2027,7 +2051,16 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.currentTaskId = taskId;
 
   if (isCodeUiTask) {
-    await renderCodeUiHtml(taskId);
+    // Mark that HTML should be rendered on first RUN, not immediately
+    window.__codeUiHtmlNeedsFirstRun = true;
+    
+    // Show placeholder message in GUI container
+    const guiContainer = document.getElementById('gui-container');
+    if (guiContainer) {
+      guiContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 14px;">▶️ Klicke auf RUN, um die HTML-Oberfläche zu laden</div>';
+      guiContainer.classList.add('active');
+    }
+    
     if (isStaleLoad()) return;
   } else if (window.guiBridge) {
     window.guiBridge.hideGUI();
@@ -2139,13 +2172,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // Show/update attempts counter if task has test_cases
   updateAttemptsCounter(task);
 
-  // Auto-save when task is loaded (mark as in_progress) - only for code tasks
-  if (!isQuizTask) {
-    setTimeout(() => {
-      if (assignmentState.currentTaskId !== taskId) return;
-      saveCode();
-    }, 500);
-  }
+  // NOTE: Auto-save removed - only save when user clicks Save button or switches tasks
 
   // Hide file tree initially, show only if needed
   const fileTreeWrapper = document.getElementById('file-tree-wrapper');

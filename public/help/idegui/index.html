@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>idegui Hilfe</title>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <header>
+    <h1>idegui Hilfe (Python + HTML)</h1>
+    <p>Übersicht, Ablauf, Quickstart und vollständige API-Referenz</p>
+  </header>
+  <div class="wrapper">
+    <nav class="nav">
+      <a href="index.html">Übersicht</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="codereferenz.html">Vollständige Codereferenz</a>
+      <a class="secondary" href="../../projects.php">Zurück zu Projekten</a>
+    </nav>
+
+    <section class="card">
+      <h2>Was ist idegui?</h2>
+      <p>
+        <code>idegui</code> verbindet Python-Code in <code>init.py</code> mit HTML-Elementen in <code>index.html</code>.
+        Die Oberfläche wird in <code>#gui-container</code> gerendert, Python läuft über Pyodide im Browser.
+      </p>
+      <ul>
+        <li>HTML/CSS definieren das UI</li>
+        <li>Python steuert Logik und Interaktionen</li>
+        <li>Kein eigenes JavaScript in Projekt-HTML nötig</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Schematischer Ablauf</h2>
+      <p class="small">Das Diagramm zeigt den technischen Lauf von Projektstart bis Trigger-Ausführung.</p>
+      <img src="ablauf.svg" alt="Ablaufdiagramm idegui" style="width:100%;height:auto;border:1px solid #e5e7eb;border-radius:10px;background:#fff;">
+    </section>
+
+    <section class="card">
+      <h2>Die zwei Logik-Modi</h2>
+      <h3>1) Direkte Python-Logik</h3>
+      <p>Code läuft bei <strong>Run</strong> einmal durch und schreibt Ergebnisse mit <code>ui.set()</code> ins HTML.</p>
+      <h3>2) Event-Logik</h3>
+      <p>Buttons/Forms mit <code>data-run-python="true"</code> rufen Python-Funktionen per <code>data-run-name</code> auf.</p>
+      <div class="note">Python-Handler-Signatur: <code>def meine_funktion(trigger):</code></div>
+    </section>
+
+    <section class="card">
+      <h2>Dateien pro Webprojekt</h2>
+      <ul>
+        <li><code>index.html</code> – Struktur und Elemente mit <code>data-element</code></li>
+        <li><code>style.css</code> – Styling</li>
+        <li><code>init.py</code> – Python-Logik mit <code>import idegui as ui</code></li>
+      </ul>
+      <p>Bei HTML-/Mixed-Templates werden diese Dateien automatisch angelegt.</p>
+    </section>
+  </div>
+</body>
+</html>

@@ -24,8 +24,10 @@ class FileTreeManager {
     this.projectName = options.projectName || 'Project';
     this.readOnly = options.readOnly || false;
     this.onFileSelected = options.onFileSelected || (() => {});
+    this.beforeFileSelect = options.beforeFileSelect || (async () => true);
     this.onFileDeleted = options.onFileDeleted || (() => {});
     this.onFileSaved = options.onFileSaved || (() => {});
+    this.doubleClickAction = options.doubleClickAction || 'open-folder';
     
     this.uploadExtensions = options.uploadExtensions || ['.py', '.txt', '.md', '.json', '.html', '.htm', '.jpg', '.jpeg', '.webp', '.gif'];
     this.uploadInput = null;
@@ -36,6 +38,10 @@ class FileTreeManager {
     this.currentFolderId = null; // null = root
     this.folderPath = []; // Breadcrumb path
     this.listenersAttached = false; // Prevent duplicate listeners
+
+    this._onClick = null;
+    this._onDblClick = null;
+    this._onContextMenu = null;
   }
 
   /**
@@ -95,6 +101,11 @@ class FileTreeManager {
 
     this.container.innerHTML = html;
     this.attachEventListeners();
+    
+    // Restore selection after re-render
+    if (this.selectedFileId) {
+      this.markFileAsSelected(this.selectedFileId);
+    }
   }
 
   /**
@@ -264,7 +275,7 @@ class FileTreeManager {
       console.error('[FileTreeManager] Cannot attach listeners: container is null');
       return;
     }
-    
+
     // Prevent duplicate event listeners
     if (this.listenersAttached) {
       console.log('[FileTreeManager] Event listeners already attached, skipping');
@@ -273,63 +284,92 @@ class FileTreeManager {
     this.listenersAttached = true;
     console.log('[FileTreeManager] Attaching event listeners to container:', this.container);
 
-    // Single click on items
-    this.container.addEventListener('click', (e) => {
+    this._onClick = (e) => {
       console.log('[FileTreeManager] Click detected:', e.target);
       const item = e.target.closest('.file-tree-item');
       const action = e.target.closest('[data-action]');
       const breadcrumb = e.target.closest('.breadcrumb-item');
-      
+
       console.log('[FileTreeManager] Click handlers:', { item, action, breadcrumb });
-      
+
       if (breadcrumb) {
         const folderId = breadcrumb.dataset.folderId;
         this.navigateToFolder(folderId === 'null' ? null : parseInt(folderId));
         return;
       }
-      
+
       if (action) {
         console.log('[FileTreeManager] Action button clicked:', action.dataset.action);
         this.handleAction(action);
         return;
       }
-      
+
       if (item) {
         // Don't try to select items that are being created inline
         if (item.classList.contains('inline-editing') || item.dataset.isNew === 'true') {
           return;
         }
-        
+
         const type = item.dataset.type;
         const id = parseInt(item.dataset.nodeId);
-        
+
         if (type === 'file') {
           this.selectFile(id, item);
         }
       }
-    });
+    };
 
-    // Double click to navigate into folders
-    this.container.addEventListener('dblclick', (e) => {
+    this._onDblClick = (e) => {
       const item = e.target.closest('.file-tree-item');
       if (!item) return;
-      
+
       const type = item.dataset.type;
       const id = parseInt(item.dataset.nodeId);
-      
+
+      if (this.doubleClickAction === 'rename') {
+        this.renameNode(id, type);
+        return;
+      }
+
       if (type === 'folder') {
         this.navigateIntoFolder(id, item);
       }
-    });
+    };
 
-    // Context menu (right-click)
-    this.container.addEventListener('contextmenu', (e) => {
+    this._onContextMenu = (e) => {
       e.preventDefault();
       const item = e.target.closest('.file-tree-item');
       if (!item) return;
-      
+
       this.showContextMenu(item, e.pageX, e.pageY);
-    });
+    };
+
+    // Single click on items
+    this.container.addEventListener('click', this._onClick);
+    // Double click to navigate into folders
+    this.container.addEventListener('dblclick', this._onDblClick);
+    // Context menu (right-click)
+    this.container.addEventListener('contextmenu', this._onContextMenu);
+  }
+
+  destroy() {
+    if (!this.container) return;
+
+    if (this._onClick) {
+      this.container.removeEventListener('click', this._onClick);
+      this._onClick = null;
+    }
+    if (this._onDblClick) {
+      this.container.removeEventListener('dblclick', this._onDblClick);
+      this._onDblClick = null;
+    }
+    if (this._onContextMenu) {
+      this.container.removeEventListener('contextmenu', this._onContextMenu);
+      this._onContextMenu = null;
+    }
+
+    this.listenersAttached = false;
+    this.uploadInput = null;
   }
 
   /**
@@ -394,9 +434,43 @@ class FileTreeManager {
   }
 
   /**
+   * Mark a file as selected in the UI without loading it
+   */
+  markFileAsSelected(fileId) {
+    const normalizedFileId = Number(fileId);
+    if (!Number.isFinite(normalizedFileId)) {
+      return;
+    }
+
+    this.selectedFileId = normalizedFileId;
+
+    // FileTreeManager file DOM uses data-node-id for real file IDs.
+    const itemEl = this.container.querySelector(`[data-node-id="${normalizedFileId}"][data-type="file"]`);
+    if (!itemEl) {
+      return;
+    }
+
+    // Update UI only when we can actually mark a real item.
+    this.container.querySelectorAll('.file-tree-item.selected').forEach(el => {
+      el.classList.remove('selected');
+    });
+    itemEl.classList.add('selected');
+  }
+
+  /**
    * Select a file and load it
    */
   async selectFile(fileId, itemEl) {
+    try {
+      const shouldContinue = await this.beforeFileSelect(fileId, itemEl);
+      if (!shouldContinue) {
+        return;
+      }
+    } catch (guardErr) {
+      console.error('[FileTreeManager] beforeFileSelect failed:', guardErr);
+      return;
+    }
+
     this.selectedFileId = fileId;
     
     // Update UI
@@ -800,6 +874,9 @@ class FileTreeManager {
    * Finish creating new item
    */
   async finishInlineCreate(itemElement, name, type, parentFolderId) {
+    if (!itemElement || itemElement.dataset.submitting === 'true') return;
+    itemElement.dataset.submitting = 'true';
+
     console.log('[FileTreeManager] finishInlineCreate called:', { name, type, parentFolderId, projectId: this.projectId });
     // Validate name
     name = name.trim();
@@ -809,9 +886,13 @@ class FileTreeManager {
     }
     
     if (!name.match(/^[\w\-. ]+$/)) {
+      itemElement.dataset.submitting = 'false';
       alert('Invalid name. Use only letters, numbers, spaces, dots, hyphens and underscores.');
       const input = itemElement.querySelector('.file-tree-name-input');
-      if (input) input.focus();
+      if (input) {
+        input.disabled = false;
+        input.focus();
+      }
       return;
     }
     
@@ -839,6 +920,7 @@ class FileTreeManager {
         if (result.ok) {
           await this.loadTree();
         } else {
+          itemElement.dataset.submitting = 'false';
           console.error('[FileTreeManager] File creation failed:', result.error);
           alert('Error: ' + result.error);
           this.cancelInlineEdit(itemElement);
@@ -864,6 +946,7 @@ class FileTreeManager {
         try {
           result = JSON.parse(responseText);
         } catch (e) {
+          itemElement.dataset.submitting = 'false';
           console.error('[FileTreeManager] Failed to parse JSON:', e);
           alert('Server error: ' + responseText.substring(0, 200));
           this.cancelInlineEdit(itemElement);
@@ -874,12 +957,14 @@ class FileTreeManager {
         if (result.ok) {
           await this.loadTree();
         } else {
+          itemElement.dataset.submitting = 'false';
           console.error('[FileTreeManager] Folder creation failed:', result.error);
           alert('Error: ' + result.error);
           this.cancelInlineEdit(itemElement);
         }
       }
     } catch (err) {
+      itemElement.dataset.submitting = 'false';
       console.error('[FileTreeManager] Error creating item:', err);
       alert('Error creating ' + type);
       this.cancelInlineEdit(itemElement);

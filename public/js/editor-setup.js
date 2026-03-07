@@ -489,8 +489,12 @@ if "idegui" not in sys.modules:
       bridge.clearGUI()
     _ensure_layout()
 
+  # Alias: input() is the same as text()
+  input = text
+
   idegui.title = title
   idegui.text = text
+  idegui.input = input
   idegui.number = number
   idegui.select = select
   idegui.button = button
@@ -503,7 +507,7 @@ if "idegui" not in sys.modules:
   idegui._refresh_trigger = _refresh_trigger
   idegui.show = show
   idegui.clear = clear
-  idegui.__all__ = ["title", "text", "number", "select", "button", "output", "get", "set", "print", "reset", "trigger", "show", "clear"]
+  idegui.__all__ = ["title", "text", "input", "number", "select", "button", "output", "get", "set", "print", "reset", "trigger", "show", "clear"]
 
   sys.modules["idegui"] = idegui
 `);
@@ -1064,6 +1068,14 @@ compile(code, "<usercode>", "exec")
         await window.incrementTaskRunCount(window.assignmentState.currentTask.id);
       }
 
+      if (typeof window.beforeRunExecution === 'function') {
+        try {
+          await window.beforeRunExecution();
+        } catch (preRunError) {
+          console.warn('[Run] beforeRunExecution failed:', preRunError);
+        }
+      }
+
       outputEl.innerText = "";
       plotEl.innerHTML = "";
       setLintChecking();
@@ -1072,12 +1084,19 @@ compile(code, "<usercode>", "exec")
       clearTimeout(liveTimer);
 
       const currentTask = window.assignmentState?.currentTask;
+      const currentProject = window.currentProject || null;
       const hasFolderStructure = !!currentTask && (
         currentTask.folderstructure === 1 ||
         currentTask.folderstructure === true ||
         currentTask.folderstructure === '1'
       );
       const runInitOnly = window.testMode !== true && hasFolderStructure;
+
+      const projectRunContext = currentProject && typeof window.getProjectRunContext === 'function'
+        ? await window.getProjectRunContext()
+        : null;
+      const hasProjectRunCode = !!projectRunContext && typeof projectRunContext.code === 'string';
+      const runWithProvidedCode = runInitOnly || hasProjectRunCode;
 
       let code = editor.getValue();
       const activePath = String(window.currentFile?.path || '');
@@ -1087,30 +1106,34 @@ compile(code, "<usercode>", "exec")
         window.cacheCurrentEditorDraft();
       }
 
-      if (runInitOnly) {
+      if (runWithProvidedCode) {
         try {
-          if (activeIsPython) {
-            code = editor.getValue();
-          } else {
-            const draftInit = typeof window.getTaskDraftContent === 'function'
-              ? window.getTaskDraftContent(currentTask.id, 'init.py')
-              : null;
-
-            if (draftInit !== null && draftInit !== undefined) {
-              code = String(draftInit || '');
+          if (runInitOnly) {
+            if (activeIsPython) {
+              code = editor.getValue();
             } else {
-              const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-              const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
-                credentials: 'include'
-              });
-              const initData = await initResponse.json();
+              const draftInit = typeof window.getTaskDraftContent === 'function'
+                ? window.getTaskDraftContent(currentTask.id, 'init.py')
+                : null;
 
-              if (!initResponse.ok || (initData && initData.ok === false)) {
-                throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
+              if (draftInit !== null && draftInit !== undefined) {
+                code = String(draftInit || '');
+              } else {
+                const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+                const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
+                  credentials: 'include'
+                });
+                const initData = await initResponse.json();
+
+                if (!initResponse.ok || (initData && initData.ok === false)) {
+                  throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
+                }
+
+                code = initData.content || '';
               }
-
-              code = initData.content || '';
             }
+          } else {
+            code = String(projectRunContext.code || '');
           }
 
           const seq = ++liveSeq;
@@ -1145,17 +1168,29 @@ compile(code, "<usercode>", "exec")
         const wantsIdeGui = /(^|\n)\s*(import\s+idegui\b|from\s+idegui\s+import\b)/m.test(code);
         const currentTask = window.assignmentState?.currentTask || null;
         const isCodeUiTask = currentTask?.task_type === 'code_ui';
+        const currentProject = window.currentProject || null;
+        const projectType = String(currentProject?.project_type || '').toLowerCase();
+        const isProjectCodeUiMode = projectType === 'html' || projectType === 'mixed';
+        const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
 
-        if (window.guiBridge) {
+        // GUI visibility logic: ONLY for tasks, NOT for projects
+        // Projects set GUI visibility once on load based on project_type
+        if (!currentProject && window.guiBridge) {
+          // Task/Free editor mode: dynamic GUI management
           if (wantsIdeGui) {
             if (isCodeUiTask && typeof window.renderCodeUiHtml === 'function' && currentTask?.id) {
+              // Check if this is the first RUN for a code_ui task
+              const needsFirstRun = window.__codeUiHtmlNeedsFirstRun === true;
+              
               const guiContainer = document.getElementById('gui-container');
               const alreadyRenderedForTask = guiContainer
                 && guiContainer.dataset.codeUiTaskId === String(currentTask.id)
                 && guiContainer.querySelector('[data-element]');
 
-              if (!alreadyRenderedForTask) {
+              if (needsFirstRun || !alreadyRenderedForTask) {
                 await window.renderCodeUiHtml(currentTask.id);
+                // Clear the flag after first run
+                window.__codeUiHtmlNeedsFirstRun = false;
               }
             } else {
               window.guiBridge.clearGUI();
@@ -1168,12 +1203,12 @@ compile(code, "<usercode>", "exec")
             }
           }
         }
+        // For projects: GUI container visibility is managed by projects.js on load
 
         await ensureIdeGuiModule();
 
-        // For Code-UI tasks: preserve globals between RUN and trigger calls
-        const isCodeUiTaskVar = isCodeUiTask;
-        const usePreservedGlobals = isCodeUiTaskVar;
+        // Preserve globals between RUN and trigger calls for code_ui tasks and HTML/mixed projects
+        const usePreservedGlobals = isCodeUiMode;
 
         await pyodide.runPythonAsync(`
 from js import document, window as js_window
@@ -1242,7 +1277,7 @@ try:
         js_window.__codeUiGlobals = g
 
     # Traditional mode ONLY: Auto-dispatch trigger if set
-    is_code_ui_task = ${isCodeUiTask ? "True" : "False"}
+    is_code_ui_task = ${isCodeUiMode ? "True" : "False"}
     event_driven_mode = getattr(js_window, '__codeUiEventDrivenMode', False)
     trigger_name = str(getattr(getattr(ui, "trigger", object()), "name", "") or "")
 

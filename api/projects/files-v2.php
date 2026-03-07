@@ -87,6 +87,20 @@ try {
                 jsonResponse(['ok' => false, 'error' => 'Folder not found'], 404);
             }
         }
+
+        // Prevent duplicate names in same folder (also works for root folder_id IS NULL)
+        if ($parentFolderId === null || $parentFolderId === '' || (int)$parentFolderId === 0) {
+            $dupStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id IS NULL AND name = ? LIMIT 1');
+            $dupStmt->bind_param('is', $projectId, $fileName);
+        } else {
+            $parentFolderId = (int)$parentFolderId;
+            $dupStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id = ? AND name = ? LIMIT 1');
+            $dupStmt->bind_param('iis', $projectId, $parentFolderId, $fileName);
+        }
+        $dupStmt->execute();
+        if ($dupStmt->get_result()->num_rows > 0) {
+            jsonResponse(['ok' => false, 'error' => 'Dateiname bereits vorhanden'], 409);
+        }
         
         $fileSize = strlen($content);
         $mimeType = getMimeType($fileName);
@@ -132,6 +146,53 @@ try {
     }
     
     // ============================================
+    // RENAME FILE
+    // ============================================
+    elseif ($action === 'rename' && $method === 'PUT') {
+        $fileId = isset($jsonInput['file_id']) ? (int)$jsonInput['file_id'] : null;
+        $newName = trim($jsonInput['name'] ?? '');
+
+        if (!$fileId || $newName === '') {
+            jsonResponse(['ok' => false, 'error' => 'File ID and name required'], 400);
+        }
+
+        if (!preg_match('/^[\w\-. ]+$/', $newName)) {
+            jsonResponse(['ok' => false, 'error' => 'Invalid filename'], 400);
+        }
+
+        $fileStmt = $conn->prepare('SELECT id, folder_id FROM project_files WHERE id = ? AND project_id = ?');
+        $fileStmt->bind_param('ii', $fileId, $projectId);
+        $fileStmt->execute();
+        $fileRow = $fileStmt->get_result()->fetch_assoc();
+        if (!$fileRow) {
+            jsonResponse(['ok' => false, 'error' => 'File not found'], 404);
+        }
+
+        $folderId = $fileRow['folder_id'];
+        if ($folderId === null) {
+            $dupStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id IS NULL AND name = ? AND id != ? LIMIT 1');
+            $dupStmt->bind_param('isi', $projectId, $newName, $fileId);
+        } else {
+            $folderId = (int)$folderId;
+            $dupStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id = ? AND name = ? AND id != ? LIMIT 1');
+            $dupStmt->bind_param('iisi', $projectId, $folderId, $newName, $fileId);
+        }
+        $dupStmt->execute();
+        if ($dupStmt->get_result()->num_rows > 0) {
+            jsonResponse(['ok' => false, 'error' => 'Dateiname bereits vorhanden'], 409);
+        }
+
+        $renameStmt = $conn->prepare('UPDATE project_files SET name = ?, updated_at = NOW() WHERE id = ? AND project_id = ?');
+        $renameStmt->bind_param('sii', $newName, $fileId, $projectId);
+
+        if ($renameStmt->execute()) {
+            jsonResponse(['ok' => true, 'message' => 'File renamed']);
+        } else {
+            jsonResponse(['ok' => false, 'error' => $conn->error], 500);
+        }
+    }
+
+    // ============================================
     // UPDATE FILE (SAVE)
     // ============================================
     elseif ($action === 'update' && $method === 'PUT') {
@@ -166,7 +227,7 @@ try {
     // ============================================
     elseif ($action === 'delete' && $method === 'DELETE') {
 
-        $fileId = isset($input['file_id']) ? (int)$input['file_id'] : null;
+        $fileId = isset($jsonInput['file_id']) ? (int)$jsonInput['file_id'] : null;
         
         if (!$fileId) {
             jsonResponse(['ok' => false, 'error' => 'File ID required'], 400);

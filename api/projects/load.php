@@ -74,6 +74,7 @@ jsonResponse([
         'name' => $project['name'],
         'description' => $project['description'],
         'code' => $project['code'],
+        'project_type' => $project['project_type'],
         'visibility' => $project['visibility'],
         'share_token' => $project['share_token'],
         'owner_name' => $ownerName,

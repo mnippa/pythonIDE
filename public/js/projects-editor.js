@@ -1,0 +1,1424 @@
+/**
+ * Projects Editor - Manages project loading, creation, deletion, and UI updates
+ * Based on assignment_editor.php structure but adapted for projects
+ */
+
+let currentProject = null;
+let projects = [];
+let projectFileManager = null;
+let projectNavBound = false;
+let currentOpenFileId = null;
+let currentOpenFileName = '';
+let currentOpenFileSnapshot = '';
+let unsavedChoiceResolver = null;
+let lastOpenedProjectIdFromDb = null;
+
+async function waitForEditorInstance() {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (window.editor) return window.editor;
+    if (window.editorInstance) return window.editorInstance;
+    if (window.monaco?.editor?.getEditors) {
+      const editors = window.monaco.editor.getEditors();
+      if (editors.length > 0) return editors[0];
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return null;
+}
+
+function setEditorContent(editor, code) {
+  if (!editor || typeof editor.setValue !== 'function') return;
+  editor.setValue(code || '');
+  if (typeof editor.clearSelection === 'function') {
+    editor.clearSelection();
+  } else if (typeof editor.setSelection === 'function' && window.monaco?.Selection) {
+    editor.setSelection(new window.monaco.Selection(1, 1, 1, 1));
+  }
+}
+
+function findFileIdByName(nodes, fileName) {
+  if (!Array.isArray(nodes)) return null;
+  for (const node of nodes) {
+    if (node?.type === 'file' && node?.name === fileName) {
+      return node.id;
+    }
+    const childMatch = findFileIdByName(node?.children, fileName);
+    if (childMatch) return childMatch;
+  }
+  return null;
+}
+
+function isPythonFile(fileName) {
+  return typeof fileName === 'string' && fileName.toLowerCase().endsWith('.py');
+}
+
+function getEditorInstance() {
+  return window.editor || window.editorInstance || null;
+}
+
+function isCurrentFileDirty() {
+  const editor = getEditorInstance();
+  if (!editor || !currentOpenFileId) return false;
+  return String(editor.getValue() || '') !== String(currentOpenFileSnapshot || '');
+}
+
+async function readProjectFileById(projectId, fileId) {
+  const contentResponse = await fetch(`../api/projects/files-v2.php?action=read&project_id=${projectId}&file_id=${fileId}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!contentResponse.ok) return null;
+  const contentData = await contentResponse.json();
+  if (!contentData?.ok) return null;
+  return {
+    fileId,
+    fileName: contentData.name || '',
+    content: contentData.content || ''
+  };
+}
+
+async function readProjectFileByName(projectId, fileName) {
+  const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!treeResponse.ok) return null;
+
+  const treeData = await treeResponse.json();
+  const treeNodes = Array.isArray(treeData?.tree)
+    ? treeData.tree
+    : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+  const fileId = findFileIdByName(treeNodes, fileName);
+  if (!fileId) return null;
+  return readProjectFileById(projectId, fileId);
+}
+
+async function ensureInitPyExists(projectId, projectName, fallbackCode = '') {
+  const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!treeResponse.ok) return;
+
+  const treeData = await treeResponse.json();
+  const treeNodes = Array.isArray(treeData?.tree)
+    ? treeData.tree
+    : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+  const initId = findFileIdByName(treeNodes, 'init.py');
+  if (initId) return;
+
+  const safeName = (projectName || 'Projekt').trim() || 'Projekt';
+  const defaultContent = fallbackCode && String(fallbackCode).trim() !== ''
+    ? String(fallbackCode)
+    : `# ${safeName}\n\n# Start coding here\n`;
+
+  await fetch('../api/projects/files-v2.php?action=create', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      folder_id: null,
+      name: 'init.py',
+      content: defaultContent
+    })
+  });
+}
+
+async function openFileInEditor(fileId, fileName, content) {
+  const editor = await waitForEditorInstance();
+  if (!editor) return;
+  setEditorContent(editor, content || '');
+  window.editor = editor;
+  currentOpenFileId = Number(fileId) || null;
+  currentOpenFileName = fileName || '';
+  currentOpenFileSnapshot = String(content || '');
+  
+  markFileInTreeWithRetry(fileId);
+}
+
+function markFileInTreeWithRetry(fileId, attempt = 0) {
+  const normalizedFileId = Number(fileId);
+  if (!normalizedFileId) {
+    return;
+  }
+
+  if (window.fileTreeManager && typeof window.fileTreeManager.markFileAsSelected === 'function') {
+    window.fileTreeManager.markFileAsSelected(normalizedFileId);
+    const selectedEl = document.querySelector(`#project-file-tree .file-tree-item.selected[data-node-id="${normalizedFileId}"]`);
+    if (selectedEl) {
+      return;
+    }
+  }
+
+  if (attempt < 8) {
+    setTimeout(() => markFileInTreeWithRetry(normalizedFileId, attempt + 1), 120);
+  }
+}
+
+function isHtmlLikeProject(project) {
+  const type = String(project?.project_type || '').toLowerCase();
+  return type === 'html' || type === 'mixed';
+}
+
+function updateWebHelpButton(project) {
+  const helpBtn = document.getElementById('web-help-btn');
+  if (!helpBtn) return;
+
+  const shouldShow = Boolean(project && isHtmlLikeProject(project));
+  helpBtn.style.display = shouldShow ? '' : 'none';
+  helpBtn.disabled = !shouldShow;
+}
+
+async function beforeRunExecution() {
+  if (!currentProject || !isHtmlLikeProject(currentProject)) {
+    return;
+  }
+
+  const guiContainer = document.getElementById('gui-container');
+  const alreadyRendered = Boolean(
+    guiContainer
+    && guiContainer.dataset.projectHtmlRendered === '1'
+    && guiContainer.dataset.projectId === String(currentProject.id)
+    && guiContainer.querySelector('[data-element]')
+  );
+
+  const skipRenderForTrigger = window.__projectSkipHtmlRerenderOnce === true;
+  if (skipRenderForTrigger && alreadyRendered) {
+    window.__projectSkipHtmlRerenderOnce = false;
+    return;
+  }
+
+  window.__projectSkipHtmlRerenderOnce = false;
+  await renderProjectHtml();
+}
+
+async function getProjectRunContext() {
+  if (!currentProject) {
+    return null;
+  }
+
+  const editor = getEditorInstance();
+  let code = String(editor?.getValue?.() || '');
+  let fileName = currentOpenFileName || '';
+
+  if (!isPythonFile(fileName)) {
+    const initFile = await readProjectFileByName(currentProject.id, 'init.py');
+    if (initFile?.content != null) {
+      code = String(initFile.content || '');
+      fileName = 'init.py';
+    }
+  }
+
+  return {
+    code,
+    fileName,
+    projectType: String(currentProject.project_type || 'python').toLowerCase(),
+    isCodeUiMode: isHtmlLikeProject(currentProject)
+  };
+}
+
+function triggerProjectPythonRun() {
+  const runButton = document.getElementById('run-btn');
+  if (!runButton) return;
+  runButton.click();
+}
+
+function setProjectTriggerContext(guiContainer, triggerElement, isEventDriven = false) {
+  if (!guiContainer || !triggerElement) return;
+
+  const triggerName =
+    triggerElement.getAttribute('data-run-name') ||
+    triggerElement.getAttribute('data-function') ||
+    triggerElement.getAttribute('name') ||
+    triggerElement.id ||
+    triggerElement.value ||
+    (triggerElement.textContent || '').trim() ||
+    '';
+
+  const triggerValue =
+    triggerElement.getAttribute('data-run-value') ||
+    triggerElement.value ||
+    (triggerElement.textContent || '').trim() ||
+    '';
+
+  let triggerInput = guiContainer.querySelector('[data-element="__trigger__"]');
+  if (!triggerInput) {
+    triggerInput = document.createElement('input');
+    triggerInput.type = 'hidden';
+    triggerInput.setAttribute('data-element', '__trigger__');
+    guiContainer.appendChild(triggerInput);
+  }
+  triggerInput.value = String(triggerName);
+
+  let triggerValueInput = guiContainer.querySelector('[data-element="__trigger_value__"]');
+  if (!triggerValueInput) {
+    triggerValueInput = document.createElement('input');
+    triggerValueInput.type = 'hidden';
+    triggerValueInput.setAttribute('data-element', '__trigger_value__');
+    guiContainer.appendChild(triggerValueInput);
+  }
+  triggerValueInput.value = String(triggerValue);
+
+  window.__codeUiTrigger = {
+    name: String(triggerName),
+    value: String(triggerValue)
+  };
+  window.__codeUiEventDrivenMode = isEventDriven;
+  window.__projectSkipHtmlRerenderOnce = true;
+}
+
+async function triggerProjectFunctionCall(triggerElement) {
+  if (!window.pyodide) {
+    return;
+  }
+
+  const functionName = triggerElement?.getAttribute?.('data-function') || '';
+  if (!functionName) {
+    return;
+  }
+
+  const outputEl = document.getElementById('output-container');
+  const lintEl = document.getElementById('lint-container');
+  if (outputEl) {
+    outputEl.innerText = '';
+  }
+
+  try {
+    await window.pyodide.runPythonAsync(`
+import sys
+
+class JSOut:
+    def __init__(self):
+        self.buffer = ""
+    def write(self, s):
+        s = str(s)
+        if s.strip():
+            self.buffer += s + "\\n"
+    def flush(self):
+        pass
+
+old_out = sys.stdout
+sys.stdout = JSOut()
+try:
+    from js import window as js_window
+    import idegui as ui
+
+    g = getattr(js_window, '__codeUiGlobals', globals())
+
+    if hasattr(ui, '_refresh_trigger'):
+        ui.trigger._name = "${functionName}"
+        ui.trigger._value = "${triggerElement?.getAttribute?.('value') || ''}"
+
+    func = g.get("${functionName}")
+    if callable(func):
+        try:
+            func(ui.trigger)
+        except TypeError:
+            func()
+    else:
+        print(f"Fehler: Funktion '${functionName}' nicht definiert")
+
+    if hasattr(js_window, '__codeUiGlobals'):
+        js_window.__codeUiGlobals = g
+finally:
+    sys.stdout = old_out
+`);
+    if (lintEl) {
+      lintEl.innerHTML = '<span class="lint-ok">✓</span>';
+    }
+  } catch (error) {
+    if (outputEl) {
+      outputEl.innerText = 'Fehler: ' + String(error?.message || error || '').split('\n')[0];
+    }
+  }
+}
+
+function ensureProjectCodeUiRunTriggers(guiContainer) {
+  if (!guiContainer || guiContainer.dataset.codeUiRunBound === '1') {
+    return;
+  }
+
+  guiContainer.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('[data-run-python="true"], [data-run="true"], [data-run]');
+    if (!trigger || !guiContainer.contains(trigger)) return;
+    event.preventDefault();
+    setProjectTriggerContext(guiContainer, trigger, false);
+    triggerProjectPythonRun();
+  });
+
+  guiContainer.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const isRunForm = form.getAttribute('data-run-python') === 'true' || form.getAttribute('data-run') === 'true' || form.hasAttribute('data-run');
+    if (!isRunForm) return;
+    event.preventDefault();
+    const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
+    setProjectTriggerContext(guiContainer, submitter, false);
+    triggerProjectPythonRun();
+  });
+
+  guiContainer.addEventListener('click', (event) => {
+    const trigger = event.target?.closest?.('[data-function]');
+    if (!trigger || !guiContainer.contains(trigger)) return;
+    if (trigger.hasAttribute('data-run-python') || trigger.hasAttribute('data-run')) return;
+    event.preventDefault();
+    setProjectTriggerContext(guiContainer, trigger, true);
+    triggerProjectFunctionCall(trigger);
+  });
+
+  guiContainer.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute('data-function')) return;
+    if (form.getAttribute('data-run-python') === 'true' || form.getAttribute('data-run') === 'true' || form.hasAttribute('data-run')) return;
+    event.preventDefault();
+    const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
+    setProjectTriggerContext(guiContainer, submitter, true);
+    triggerProjectFunctionCall(submitter);
+  });
+
+  guiContainer.dataset.codeUiRunBound = '1';
+}
+
+async function saveCurrentOpenFile() {
+  const editor = getEditorInstance();
+  if (!currentProject || !editor) {
+    return false;
+  }
+
+  if (!currentOpenFileId) {
+    const initFile = await readProjectFileByName(currentProject.id, 'init.py');
+    if (!initFile?.fileId) {
+      throw new Error('Keine aktive Datei zum Speichern');
+    }
+    currentOpenFileId = Number(initFile.fileId);
+    currentOpenFileName = initFile.fileName || 'init.py';
+  }
+
+  const content = String(editor.getValue() || '');
+  const response = await fetch('../api/projects/files-v2.php?action=update', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: currentProject.id,
+      file_id: currentOpenFileId,
+      content
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error || 'Speichern fehlgeschlagen');
+  }
+
+  currentOpenFileSnapshot = content;
+  return true;
+}
+
+function showUnsavedChangesModal(fileName = '') {
+  const modal = document.getElementById('unsaved-changes-modal');
+  const fileNameEl = document.getElementById('unsaved-file-name');
+  if (!modal) {
+    return Promise.resolve('cancel');
+  }
+
+  if (fileNameEl) {
+    fileNameEl.textContent = fileName || 'dieser Datei';
+  }
+
+  modal.classList.add('open');
+
+  return new Promise((resolve) => {
+    unsavedChoiceResolver = resolve;
+  });
+}
+
+function resolveUnsavedChangesModal(choice) {
+  const modal = document.getElementById('unsaved-changes-modal');
+  if (modal) {
+    modal.classList.remove('open');
+  }
+
+  if (unsavedChoiceResolver) {
+    const resolver = unsavedChoiceResolver;
+    unsavedChoiceResolver = null;
+    resolver(choice);
+  }
+}
+
+async function confirmDiscardOrSaveCurrentFile() {
+  if (!isCurrentFileDirty()) return true;
+
+  const choice = await showUnsavedChangesModal(currentOpenFileName);
+
+  if (choice === 'save') {
+    try {
+      await saveCurrentOpenFile();
+      return true;
+    } catch (saveErr) {
+      alert('Speichern fehlgeschlagen: ' + (saveErr?.message || saveErr));
+      return false;
+    }
+  }
+
+  if (choice === 'discard') {
+    return true;
+  }
+
+  return false;
+}
+
+async function loadPreferredProjectFile(projectId, projectFallbackCode) {
+  const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
+    credentials: 'include'
+  });
+  if (!treeResponse.ok) {
+    return {
+      fileId: null,
+      fileName: 'init.py',
+      content: projectFallbackCode || ''
+    };
+  }
+
+  const treeData = await treeResponse.json();
+  const treeNodes = Array.isArray(treeData?.tree)
+    ? treeData.tree
+    : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+  let fileId = findFileIdByName(treeNodes, 'init.py');
+  if (!fileId) {
+    fileId = findFileIdByName(treeNodes, `${(currentProject?.name || '').trim()}.py`);
+  }
+
+  if (!fileId) {
+    const firstPyNode = (function pickFirstPy(nodes) {
+      if (!Array.isArray(nodes)) return null;
+      for (const node of nodes) {
+        if (node?.type === 'file' && typeof node?.name === 'string' && node.name.toLowerCase().endsWith('.py')) {
+          return node;
+        }
+        const nested = pickFirstPy(node?.children);
+        if (nested) return nested;
+      }
+      return null;
+    })(treeNodes);
+    fileId = firstPyNode?.id || null;
+  }
+
+  if (!fileId) {
+    return {
+      fileId: null,
+      fileName: 'init.py',
+      content: projectFallbackCode || ''
+    };
+  }
+
+  const fileData = await readProjectFileById(projectId, fileId);
+  if (!fileData) {
+    return {
+      fileId: null,
+      fileName: 'init.py',
+      content: projectFallbackCode || ''
+    };
+  }
+
+  return fileData;
+}
+
+/**
+ * Initialize projects editor on page load
+ */
+async function initProjectsEditor() {
+  console.log('Initializing projects editor...');
+
+  document.getElementById('project-list-panel')?.classList.add('active');
+  
+  // Load projects list
+  await loadProjects();
+  
+  // Set up event listeners
+  setupEventListeners();
+  
+  // Auto-load last opened project (DB first, localStorage fallback)
+  const localProjectId = localStorage.getItem('lastOpenedProjectId');
+  const effectiveLastProjectId = Number(lastOpenedProjectIdFromDb || localProjectId || 0);
+  if (effectiveLastProjectId && projects.length > 0) {
+    const project = projects.find(p => p.id === effectiveLastProjectId);
+    if (project) {
+      console.log('[projects-editor] Auto-loading last project:', effectiveLastProjectId);
+      await loadProject(project.id);
+    } else {
+      console.log('[projects-editor] Last project not found, staying on project list');
+    }
+  }
+}
+
+/**
+ * Load all projects from API
+ */
+async function loadProjects() {
+  try {
+    const response = await fetch('../api/projects/list.php', {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to load projects');
+    }
+    
+    const data = await response.json();
+    projects = data.projects || [];
+    lastOpenedProjectIdFromDb = Number(data.last_opened_project_id || 0) || null;
+    
+    renderProjectList();
+  } catch (error) {
+    console.error('Error loading projects:', error);
+    document.getElementById('project-navigation').innerHTML = 
+      '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Fehler beim Laden</p>';
+  }
+}
+
+async function persistLastOpenedProject(projectId) {
+  const normalizedProjectId = Number(projectId || 0);
+  if (!normalizedProjectId) {
+    return;
+  }
+
+  localStorage.setItem('lastOpenedProjectId', String(normalizedProjectId));
+
+  try {
+    const response = await fetch('../api/projects/set-last-opened.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: normalizedProjectId })
+    });
+
+    if (response.ok) {
+      lastOpenedProjectIdFromDb = normalizedProjectId;
+    }
+  } catch (err) {
+    console.warn('[projects-editor] Could not persist last opened project in DB:', err);
+  }
+}
+
+/**
+ * Render project list in sidebar
+ */
+function renderProjectList() {
+  const nav = document.getElementById('project-navigation');
+  
+  if (projects.length === 0) {
+    nav.innerHTML = '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Keine Projekte vorhanden</p>';
+    return;
+  }
+  
+  nav.innerHTML = projects.map(project => `
+    <div class="project-nav-item ${currentProject?.id === project.id ? 'active' : ''}" 
+         data-project-id="${project.id}">
+      <span class="project-nav-title">${escapeHtml(project.name)}</span>
+      <span class="project-nav-type">${project.project_type || 'python'}</span>
+      <span class="project-nav-delete" data-project-id="${project.id}" data-project-name="${escapeHtml(project.name)}" 
+            title="Löschen">🗑️</span>
+    </div>
+  `).join('');
+}
+
+/**
+ * Load a specific project
+ */
+async function loadProject(projectId) {
+  try {
+    window.currentProject = null;
+    updateWebHelpButton(null);
+    
+    const response = await fetch(`../api/projects/load.php?id=${projectId}`, {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to load project');
+    }
+    
+    const data = await response.json();
+    const project = data.project;
+    const access = data.access;
+    
+    // Check access
+    if (!access || !access.can_edit) {
+      alert('Sie haben keine Berechtigung, dieses Projekt zu bearbeiten.');
+      return;
+    }
+    
+    currentProject = project;
+    window.currentProject = project;
+    updateWebHelpButton(project);
+    currentOpenFileId = null;
+    currentOpenFileName = '';
+    currentOpenFileSnapshot = '';
+
+    await ensureInitPyExists(projectId, project.name, project.code || '');
+    
+    // Update UI
+    document.getElementById('project-page-title').textContent = project.name || 'Projekt';
+    
+    // Render project list with active state
+    renderProjectList();
+    
+    // Update project details panel
+    updateProjectDetails(project);
+    
+    // Load editor code from init.py (fallback to project.code)
+    console.log('[projects-editor] Loading project code...');
+    const editorReady = await waitForEditorInstance();
+    if (editorReady) {
+      try {
+        const preferredFile = await loadPreferredProjectFile(projectId, project.code || '');
+        setEditorContent(editorReady, preferredFile.content || '');
+        window.editor = editorReady;
+        currentOpenFileId = preferredFile.fileId ? Number(preferredFile.fileId) : null;
+        currentOpenFileName = preferredFile.fileName || 'init.py';
+        currentOpenFileSnapshot = String(preferredFile.content || '');
+        console.log('[projects-editor] Editor loaded, file:', currentOpenFileName, 'length:', (preferredFile.content || '').length);
+      } catch (err) {
+        console.warn('[projects-editor] Could not load from file tree, using project.code:', err);
+        setEditorContent(editorReady, project.code || '');
+        window.editor = editorReady;
+        currentOpenFileId = null;
+        currentOpenFileName = 'init.py';
+        currentOpenFileSnapshot = String(project.code || '');
+      }
+    } else {
+      console.warn('[projects-editor] Editor not available, code not loaded');
+    }
+    
+    // File tree like assignment-test/projects.js: use FileTreeManager first
+    console.log('[projects-editor] Starting file tree initialization for project:', projectId);
+    const treeContainer = document.getElementById('project-file-tree');
+    if (treeContainer) {
+      treeContainer.innerHTML = '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Dateibaum...</p>';
+    } else {
+      console.error('[projects-editor] Tree container #project-file-tree not found!');
+    }
+
+    if (projectFileManager && typeof projectFileManager.destroy === 'function') {
+      console.log('[projects-editor] Destroying existing FileTreeManager');
+      projectFileManager.destroy();
+    }
+
+    console.log('[projects-editor] FileTreeManager available:', typeof window.FileTreeManager !== 'undefined');
+    if (typeof window.FileTreeManager !== 'undefined') {
+      try {
+        console.log('[projects-editor] Creating FileTreeManager instance...');
+        projectFileManager = new window.FileTreeManager('project-file-tree', {
+          projectId,
+          projectName: project.name,
+          readOnly: false,
+          doubleClickAction: 'rename',
+          beforeFileSelect: async () => {
+            return confirmDiscardOrSaveCurrentFile();
+          },
+          onFileSelected: async (fileId, fileName, content) => {
+            await openFileInEditor(fileId, fileName, content);
+            console.log('[projects-editor] Opened file from tree:', fileName);
+          },
+          onFileSaved: () => {},
+          onFileDeleted: () => {}
+        });
+        console.log('[projects-editor] FileTreeManager instance created, calling init()...');
+        if (typeof projectFileManager.init === 'function') {
+          await projectFileManager.init();
+          console.log('[projects-editor] FileTreeManager init() completed successfully');
+        } else {
+          console.error('[projects-editor] FileTreeManager has no init() method!');
+          throw new Error('No init method');
+        }
+      } catch (treeErr) {
+        console.error('[projects-editor] FileTreeManager failed, fallback to manual tree:', treeErr);
+        projectFileManager = null;
+        await renderFileTreeManually(projectId);
+      }
+    } else {
+      console.log('[projects-editor] FileTreeManager not available, using manual tree');
+      await renderFileTreeManually(projectId);
+    }
+    
+    // Show GUI container only for HTML/Mixed projects
+    const guiContainer = document.getElementById('gui-container');
+    
+    // Load and render HTML if project_type is html or mixed
+    if (project.project_type === 'html' || project.project_type === 'mixed') {
+      // Always show GUI container for HTML/Mixed, even if empty (will render on first RUN)
+      guiContainer.classList.add('active');
+      guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
+      guiContainer.dataset.projectHtmlRendered = '0';
+      guiContainer.dataset.projectId = String(project.id);
+      delete guiContainer.dataset.codeUiRunBound;
+    } else {
+      // For python-only projects: hide GUI container completely
+      guiContainer.classList.remove('active');
+      guiContainer.innerHTML = '';
+      delete guiContainer.dataset.projectHtmlRendered;
+      delete guiContainer.dataset.projectId;
+      delete guiContainer.dataset.codeUiRunBound;
+    }
+    
+    // Clear output
+    document.getElementById('output-container').textContent = '';
+    document.getElementById('plot-container').innerHTML = '';
+    
+    // Save as last opened project (DB + localStorage fallback)
+    await persistLastOpenedProject(projectId);
+    
+    // Auto-open init.py after FileTreeManager is ready
+    setTimeout(async () => {
+      try {
+        const initFile = await readProjectFileByName(projectId, 'init.py');
+        const initFileId = Number(initFile?.id || initFile?.fileId || 0);
+        if (initFileId) {
+          console.log('[projects-editor] Auto-opening init.py:', initFileId);
+          await openFileInEditor(initFileId, 'init.py', initFile.content || '');
+          markFileInTreeWithRetry(initFileId);
+        } else {
+          console.warn('[projects-editor] init.py not found');
+        }
+      } catch (autoOpenErr) {
+        console.warn('[projects-editor] Could not auto-open init.py:', autoOpenErr);
+      }
+    }, 500);
+    
+  } catch (error) {
+    console.error('Error loading project:', error);
+    alert('Fehler beim Laden des Projekts');
+  }
+}
+
+/**
+ * Update project details panel
+ */
+function updateProjectDetails(project) {
+  const detailsPanel = document.getElementById('project-details-content');
+  
+  const visibilityLabel = project.visibility === 'public' ? '🌐 Öffentlich' : '🔒 Privat';
+  const visibilityClass = project.visibility === 'public' ? 'public' : '';
+  
+  detailsPanel.innerHTML = `
+    <div class="project-info-section">
+      <h4>Typ</h4>
+      <span class="project-type-badge ${project.project_type || 'python'}">
+        ${project.project_type === 'html' ? 'HTML/Web' : project.project_type === 'mixed' ? 'Gemischt' : 'Python'}
+      </span>
+    </div>
+    
+    <div class="project-info-section">
+      <h4>Beschreibung</h4>
+      <div class="project-info-value">
+        ${project.description ? escapeHtml(project.description) : '<em>Keine Beschreibung</em>'}
+      </div>
+    </div>
+    
+    <div class="project-info-section">
+      <h4>Sichtbarkeit</h4>
+      <button class="project-visibility-toggle ${visibilityClass}" 
+              onclick="toggleProjectVisibility(${project.id}, '${project.visibility}')">
+        ${visibilityLabel}
+      </button>
+    </div>
+    
+    ${project.project_type === 'html' || project.project_type === 'mixed' ? `
+      <div class="project-info-section">
+        <h4>Hilfe</h4>
+        <a href="/public/help/idegui/index.html" target="_blank" rel="noopener noreferrer" class="help-link">
+          ❓ idegui Dokumentation
+        </a>
+      </div>
+    ` : ''}
+  `;
+  
+  detailsPanel.classList.add('active');
+}
+
+/**
+ * Toggle project visibility
+ */
+async function toggleProjectVisibility(projectId, currentVisibility) {
+  try {
+    const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
+    
+    const response = await fetch('../api/projects/update.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, visibility: newVisibility })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update visibility');
+    }
+    
+    // Update current project and UI
+    if (currentProject?.id === projectId) {
+      currentProject.visibility = newVisibility;
+      updateProjectDetails(currentProject);
+    }
+    
+    // Reload project list to reflect changes
+    await loadProjects();
+    
+  } catch (error) {
+    console.error('Error toggling visibility:', error);
+    alert('Fehler beim Aktualisieren der Sichtbarkeit');
+  }
+}
+
+/**
+ * Render HTML from project index.html
+ */
+async function renderProjectHtml() {
+  try {
+    if (!currentProject) return;
+    
+    const guiContainer = document.getElementById('gui-container');
+    if (!guiContainer) {
+      console.error('[projects-editor] GUI container not found');
+      return;
+    }
+    
+    // Helper to read a project file by name
+    const readProjectFile = async (fileName) => {
+      console.log(`[projects-editor] Reading file: ${fileName}`);
+      // Get file tree to find file ID
+      const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      
+      if (!treeResponse.ok) {
+        throw new Error(`Failed to load file tree`);
+      }
+      
+      const treeData = await treeResponse.json();
+      if (!treeData.ok) {
+        throw new Error(treeData.error || 'Failed to load file tree');
+      }
+      
+      // Find file in tree
+      let fileId = null;
+      const findFile = (nodes) => {
+        if (!nodes || !Array.isArray(nodes)) return false;
+        for (const node of nodes) {
+          if (node.type === 'file' && node.name === fileName) {
+            fileId = node.id;
+            console.log(`[projects-editor] Found ${fileName} with ID:`, fileId);
+            return true;
+          }
+          if (node.children && findFile(node.children)) {
+            return true;
+          }
+        }
+        return false;
+      };
+      
+      const tree = treeData.tree || treeData || [];
+      console.log('[projects-editor] File tree structure:', tree);
+      const filesToSearch = Array.isArray(tree) ? tree : (tree.children || []);
+      findFile(filesToSearch);
+      
+      if (!fileId) {
+        console.warn(`[projects-editor] File not found: ${fileName}`);
+        return null; // File not found
+      }
+      
+      // Read file content
+      const fileResponse = await fetch(`../api/projects/files-v2.php?action=read&project_id=${currentProject.id}&file_id=${fileId}`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      
+      if (!fileResponse.ok) {
+        throw new Error(`Failed to read ${fileName}`);
+      }
+      
+      const fileData = await fileResponse.json();
+      return fileData.content || null;
+    };
+    
+    // Load index.html
+    const htmlContent = await readProjectFile('index.html');
+    console.log('[projects-editor] index.html loaded:', htmlContent ? `${htmlContent.length} chars` : 'NOT FOUND');
+    if (!htmlContent) {
+      // Keep container visible but show placeholder
+      guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
+      return;
+    }
+    
+    // Load style.css
+    let cssContent = '';
+    try {
+      cssContent = await readProjectFile('style.css');
+      console.log('[projects-editor] style.css loaded:', cssContent ? `${cssContent.length} chars` : 'NOT FOUND');
+    } catch (err) {
+      console.warn('[projects-editor] Could not load style.css:', err);
+    }
+    
+    // Clear and set up GUI container
+    // BUT: Preserve input values before clearing
+    const preservedValues = {};
+    const existingInputs = guiContainer.querySelectorAll('[data-element]');
+    existingInputs.forEach(input => {
+      const name = input.getAttribute('data-element');
+      if (name && input.value !== undefined) {
+        preservedValues[name] = input.value;
+      }
+    });
+    
+    guiContainer.innerHTML = '';
+    console.log('[projects-editor] GUI container cleared, parsing HTML...');
+    
+    // Parse HTML using DOMParser (like assignments.js does) to extract body content
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(htmlContent, 'text/html');
+    const bodyHtml = parsed?.body?.innerHTML?.trim() || '';
+    const inlineStyleTags = parsed?.querySelectorAll?.('style') || [];
+    const inlineCss = Array.from(inlineStyleTags).map((tag) => tag.textContent || '').join('\n');
+    
+    // Inject body HTML into container
+    guiContainer.innerHTML = bodyHtml;
+    console.log('[projects-editor] HTML content injected');
+    
+    // Restore preserved input values BEFORE binding triggers
+    Object.entries(preservedValues).forEach(([name, value]) => {
+      const input = guiContainer.querySelector(`[data-element="${name}"]`);
+      if (input && input.value !== undefined) {
+        input.value = value;
+      }
+    });
+    console.log('[projects-editor] Input values restored');
+    
+    // Bind UI triggers AFTER restoring values
+    ensureProjectCodeUiRunTriggers(guiContainer);
+    console.log('[projects-editor] UI triggers bound');
+    
+    // Create and inject scoped CSS
+    const styleTag = document.createElement('style');
+    styleTag.setAttribute('data-project-style', 'true');
+    const mergedCss = [cssContent, inlineCss].filter(Boolean).join('\n\n');
+    
+    // Scope CSS to #gui-container - exactly like assignments.js
+    // Replace body/html selectors and wrap standalone selectors
+    let scopedCss = mergedCss
+      .replace(/\bbody\b(?=\s*\{)/g, '#gui-container')
+      .replace(/\bhtml\b(?=\s*\{)/g, '#gui-container');
+    
+    styleTag.textContent = scopedCss;
+    if (styleTag.textContent.trim()) {
+      guiContainer.prepend(styleTag);
+      console.log('[projects-editor] Scoped CSS style injected');
+    }
+    
+    guiContainer.classList.add('active');
+    guiContainer.dataset.projectHtmlRendered = '1';
+    guiContainer.dataset.projectId = String(currentProject.id);
+    console.log('[projects-editor] GUI container marked active');
+    
+  } catch (error) {
+    console.error('[projects-editor] Error rendering HTML:', error);
+    // Keep container visible but show error placeholder
+    const guiContainer = document.getElementById('gui-container');
+    guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Fehler beim Laden der GUI</p>';
+    guiContainer.classList.add('active');
+  }
+}
+
+/**
+ * Render file tree manually (fallback if FileTreeManager not available)
+ */
+async function renderFileTreeManually(projectId) {
+  console.log('[projects-editor] renderFileTreeManually called for project:', projectId);
+  try {
+    const treeWrapper = document.getElementById('project-file-tree');
+    if (!treeWrapper) {
+      console.error('[projects-editor] Tree wrapper not found in renderFileTreeManually');
+      return;
+    }
+    treeWrapper.innerHTML = '';
+    
+    console.log('[projects-editor] Fetching tree from API...');
+    const response = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      console.error('[projects-editor] Tree API returned error:', response.status);
+      treeWrapper.innerHTML = '<p style="padding: 8px; color: var(--text-secondary); font-size: 12px;">Fehler beim Laden</p>';
+      return;
+    }
+    
+    const data = await response.json();
+    console.log('[projects-editor] Tree API response:', data);
+    if (!data.ok || !data.tree) {
+      console.log('[projects-editor] Tree data invalid or missing');
+      treeWrapper.innerHTML = '<p style="padding: 8px; color: var(--text-secondary); font-size: 12px;">Keine Dateien</p>';
+      return;
+    }
+
+    console.log('[projects-editor] Adding create file/folder buttons');
+    treeWrapper.insertAdjacentHTML('afterbegin', `
+      <div style="display:flex; gap:6px; padding:6px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:6px;">
+        <button id="project-tree-new-file" style="font-size:12px; padding:4px 6px; border:1px solid var(--border); background:var(--panel); color:var(--text-primary); border-radius:4px; cursor:pointer;">📄➕ Datei</button>
+        <button id="project-tree-new-folder" style="font-size:12px; padding:4px 6px; border:1px solid var(--border); background:var(--panel); color:var(--text-primary); border-radius:4px; cursor:pointer;">📁➕ Ordner</button>
+      </div>
+    `);
+
+    const rootNodes = Array.isArray(data.tree)
+      ? data.tree
+      : (Array.isArray(data.tree?.children) ? data.tree.children : []);
+    console.log('[projects-editor] Root nodes:', rootNodes.length, 'items');
+
+    const renderNode = (node, depth = 0) => {
+      const padding = 10 + depth * 14;
+      if (node?.type === 'folder') {
+        return `
+          <div class="project-tree-folder" data-folder-id="${node.id}" style="padding-left:${padding}px; padding-top:4px; padding-bottom:4px; cursor:pointer; color:var(--text-primary); user-select:none;">📁 ${escapeHtml(node.name || 'Ordner')}</div>
+          <div class="project-tree-children" data-parent-folder="${node.id}" style="display:none;">
+            ${(node.children || []).map(child => renderNode(child, depth + 1)).join('')}
+          </div>
+        `;
+      }
+      if (node?.type === 'file') {
+        return `<div class="project-tree-file" data-file-id="${node.id}" style="padding-left:${padding}px; padding-top:4px; padding-bottom:4px; cursor:pointer; color:var(--text-secondary); user-select:none;">📄 ${escapeHtml(node.name || 'datei')}</div>`;
+      }
+      return '';
+    };
+
+    if (!rootNodes.length) {
+      console.log('[projects-editor] No root nodes, showing empty message');
+      treeWrapper.insertAdjacentHTML('beforeend', '<p style="padding: 8px; color: var(--text-secondary); font-size: 12px;">Keine Dateien</p>');
+    } else {
+      console.log('[projects-editor] Rendering tree nodes...');
+      treeWrapper.insertAdjacentHTML('beforeend', rootNodes.map(node => renderNode(node)).join(''));
+      console.log('[projects-editor] Tree nodes rendered');
+    }
+
+    const createNode = async (type) => {
+      const name = prompt(type === 'file' ? 'Dateiname:' : 'Ordnername:', type === 'file' ? 'new_file.py' : 'new_folder');
+      if (!name) return;
+      const endpoint = type === 'file'
+        ? '../api/projects/files-v2.php?action=create'
+        : '../api/projects/folders-v2.php?action=create';
+      const payload = type === 'file'
+        ? { project_id: projectId, folder_id: null, name: name.trim(), content: '' }
+        : { project_id: projectId, parent_folder_id: null, name: name.trim() };
+
+      const createResponse = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const createData = await createResponse.json();
+      if (!createResponse.ok || !createData?.ok) {
+        alert(createData?.error || 'Erstellen fehlgeschlagen');
+        return;
+      }
+      await renderFileTreeManually(projectId);
+    };
+
+    document.getElementById('project-tree-new-file')?.addEventListener('click', () => {
+      createNode('file').catch(err => console.error('Create file failed:', err));
+    });
+    document.getElementById('project-tree-new-folder')?.addEventListener('click', () => {
+      createNode('folder').catch(err => console.error('Create folder failed:', err));
+    });
+
+    console.log('[projects-editor] Attaching folder click handlers...');
+    treeWrapper.querySelectorAll('.project-tree-folder').forEach((folderEl) => {
+      folderEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const folderId = folderEl.getAttribute('data-folder-id');
+        const children = treeWrapper.querySelector(`.project-tree-children[data-parent-folder="${folderId}"]`);
+        if (!children) return;
+        children.style.display = children.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+
+    console.log('[projects-editor] Attaching file click handlers...');
+    treeWrapper.querySelectorAll('.project-tree-file').forEach((fileEl) => {
+      fileEl.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const canSwitch = await confirmDiscardOrSaveCurrentFile();
+        if (!canSwitch) return;
+        const fileId = fileEl.getAttribute('data-file-id');
+        if (!fileId) return;
+        
+        // Mark as selected immediately
+        treeWrapper.querySelectorAll('.project-tree-file').forEach(el => {
+          el.style.backgroundColor = '';
+          el.style.color = 'var(--text-secondary)';
+        });
+        fileEl.style.backgroundColor = 'var(--accent-color)';
+        fileEl.style.color = '#fff';
+        
+        try {
+          const fileResponse = await fetch(`../api/projects/files-v2.php?action=read&project_id=${projectId}&file_id=${encodeURIComponent(fileId)}`, {
+            credentials: 'include',
+            cache: 'no-store'
+          });
+          if (!fileResponse.ok) return;
+          const fileData = await fileResponse.json();
+          if (fileData?.ok) {
+            await openFileInEditor(fileId, fileData.name || '', fileData.content || '');
+          }
+        } catch (readErr) {
+          console.error('Error opening file from tree:', readErr);
+        }
+      });
+    });
+    
+    console.log('[projects-editor] renderFileTreeManually completed successfully');
+  } catch (error) {
+    console.error('[projects-editor] Error rendering file tree:', error);
+  }
+}
+
+/**
+ * Show delete project confirmation modal
+ */
+function showDeleteProjectModal(projectId, projectName) {
+  document.getElementById('delete-project-name').textContent = projectName;
+  document.getElementById('delete-project-modal').classList.add('open');
+  window.projectToDelete = projectId;
+}
+
+/**
+ * Confirm and delete project
+ */
+async function confirmDeleteProject() {
+  const projectId = window.projectToDelete;
+  if (!projectId) return;
+  
+  try {
+    const response = await fetch('../api/projects/delete.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete project');
+    }
+    
+    // Close modal
+    document.getElementById('delete-project-modal').classList.remove('open');
+    
+    // If deleted project was current, clear editor
+    if (currentProject?.id === projectId) {
+      currentProject = null;
+      window.currentProject = null;
+      if (window.editor) {
+        window.editor.setValue('');
+      }
+      document.getElementById('project-details-content').classList.remove('active');
+    }
+    
+    // Reload projects
+    await loadProjects();
+    
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    alert('Fehler beim Löschen des Projekts');
+  }
+}
+
+/**
+ * Create project from dialog
+ */
+async function createProjectFromDialog() {
+  const name = document.getElementById('project-name-input').value.trim();
+  const template = document.getElementById('project-template-input')?.value || 'empty_python';
+  const description = document.getElementById('project-desc-input').value.trim();
+  
+  if (!name) {
+    alert('Bitte geben Sie einen Projektnamen ein');
+    return;
+  }
+  
+  try {
+    const response = await fetch('../api/projects/create.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        description,
+        template,
+        visibility: 'private',
+        code: ''
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to create project');
+    }
+    
+    const data = await response.json();
+    const newProjectId = data?.project?.id || data?.project_id;
+    if (!newProjectId) {
+      throw new Error('Ungültige Projekt-Antwort');
+    }
+    
+    // Close modal
+    document.getElementById('create-project-modal').classList.remove('open');
+    
+    // Clear form
+    document.getElementById('project-name-input').value = '';
+    document.getElementById('project-desc-input').value = '';
+    const templateSelect = document.getElementById('project-template-input');
+    if (templateSelect) {
+      templateSelect.value = 'python_logic';
+    }
+    
+    // Reload projects and load the new one
+    await loadProjects();
+    await loadProject(newProjectId);
+    
+  } catch (error) {
+    console.error('Error creating project:', error);
+    alert('Fehler beim Erstellen des Projekts');
+  }
+}
+
+/**
+ * Setup event listeners
+ */
+function setupEventListeners() {
+  if (!projectNavBound) {
+    const nav = document.getElementById('project-navigation');
+    nav?.addEventListener('click', async (e) => {
+      const item = e.target.closest('.project-nav-item');
+      if (item && !e.target.closest('.project-nav-delete')) {
+        const projectId = parseInt(item.dataset.projectId, 10);
+        if (!Number.isNaN(projectId)) {
+          if (currentProject?.id !== projectId) {
+            const canSwitch = await confirmDiscardOrSaveCurrentFile();
+            if (!canSwitch) return;
+          }
+          loadProject(projectId);
+        }
+      }
+
+      const deleteBtn = e.target.closest('.project-nav-delete');
+      if (deleteBtn) {
+        e.stopPropagation();
+        const projectId = parseInt(deleteBtn.dataset.projectId, 10);
+        const projectName = deleteBtn.dataset.projectName;
+        if (!Number.isNaN(projectId)) {
+          showDeleteProjectModal(projectId, projectName);
+        }
+      }
+    });
+    projectNavBound = true;
+  }
+
+  // Save project button
+  document.getElementById('save-project-btn')?.addEventListener('click', async () => {
+    try {
+      await saveCurrentOpenFile();
+      console.log('[projects-editor] File saved:', currentOpenFileName);
+    } catch (error) {
+      console.error('[projects-editor] Save failed:', error);
+      alert('Speichern fehlgeschlagen');
+    }
+  });
+
+  document.getElementById('web-help-btn')?.addEventListener('click', () => {
+    const basePath = window.location.pathname.replace(/\/projects\.php$/i, '');
+    const helpUrl = `${window.location.origin}${basePath}/help/idegui/index.html`;
+    window.open(helpUrl, 'idegui_help', 'noopener,noreferrer,width=1200,height=900');
+  });
+  
+  // Close modals on overlay click
+  document.getElementById('create-project-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'create-project-modal') {
+      e.target.classList.remove('open');
+    }
+  });
+  
+  document.getElementById('delete-project-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'delete-project-modal') {
+      e.target.classList.remove('open');
+    }
+  });
+
+  document.getElementById('unsaved-save-btn')?.addEventListener('click', () => {
+    resolveUnsavedChangesModal('save');
+  });
+
+  document.getElementById('unsaved-discard-btn')?.addEventListener('click', () => {
+    resolveUnsavedChangesModal('discard');
+  });
+
+  document.getElementById('unsaved-cancel-btn')?.addEventListener('click', () => {
+    resolveUnsavedChangesModal('cancel');
+  });
+
+  document.getElementById('unsaved-changes-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'unsaved-changes-modal') {
+      resolveUnsavedChangesModal('cancel');
+    }
+  });
+}
+
+/**
+ * Save project code to API
+ */
+async function saveProjectCode(projectId, code) {
+  try {
+    const response = await fetch('../api/projects/update.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, code })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to save project');
+    }
+    
+    console.log('Project saved successfully');
+  } catch (error) {
+    console.error('Error saving project:', error);
+  }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initProjectsEditor);
+
+// Expose functions to global scope for module context
+window.initProjectsEditor = initProjectsEditor;
+window.loadProjects = loadProjects;
+window.loadProject = loadProject;
+window.showDeleteProjectModal = showDeleteProjectModal;
+window.confirmDeleteProject = confirmDeleteProject;
+window.createProjectFromDialog = createProjectFromDialog;
+window.toggleProjectVisibility = toggleProjectVisibility;
+window.beforeRunExecution = beforeRunExecution;
+window.getProjectRunContext = getProjectRunContext;

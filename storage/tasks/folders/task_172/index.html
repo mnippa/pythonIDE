@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taschenrechner (Run-Logik)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="calculator">
+    <h2>Taschenrechner (Python-Run-Dispatch)</h2>
+
+    <div class="input-group">
+      <label>Erste Zahl:</label>
+      <input type="number" data-element="a" step="any" placeholder="z.B. 10">
+    </div>
+
+    <div class="input-group">
+      <label>Zweite Zahl:</label>
+      <input type="number" data-element="b" step="any" placeholder="z.B. 5">
+    </div>
+
+    <div class="button-group">
+      <button class="btn" data-run-python="true" data-run-name="plus">+ Addition</button>
+      <button class="btn" data-run-python="true" data-run-name="minus">- Subtraktion</button>
+      <button class="btn" data-run-python="true" data-run-name="mal">* Multiplikation</button>
+      <button class="btn" data-run-python="true" data-run-name="geteilt">/ Division</button>
+    </div>
+
+    <div class="result" data-element="result">---</div>
+  </div>
+</body>
+</html>
