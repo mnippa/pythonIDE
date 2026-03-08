@@ -8,7 +8,6 @@ def render_app(count):
     global active_count
     active_count = max(1, min(5, int(count)))
 
-    ui.clear()
     ui.title('Dynamische Summen-App (Elemente ersetzen)')
 
     count_select = ui.select('Wie viele Zahlen? (1-5)', options=[1, 2, 3, 4, 5], value=active_count)

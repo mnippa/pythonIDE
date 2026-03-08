@@ -22,10 +22,10 @@
       </div>
 
       <div class="buttons">
-        <button type="button" data-function="plus" name="plus" value="plus">+</button>
-        <button type="button" data-function="minus" name="minus" value="minus">−</button>
-        <button type="button" data-function="mal" name="mal" value="mal">×</button>
-        <button type="button" data-function="geteilt" name="geteilt" value="geteilt">÷</button>
+        <button type="button" data-run-python="true" data-run-name="plus">+</button>
+        <button type="button" data-run-python="true" data-run-name="minus">−</button>
+        <button type="button" data-run-python="true" data-run-name="mal">×</button>
+        <button type="button" data-run-python="true" data-run-name="geteilt">÷</button>
       </div>
 
       <div class="result-box">

@@ -1702,15 +1702,25 @@ async function triggerCodeUiFunctionCall(triggerElement) {
     return;
   }
 
-  const functionName = triggerElement?.getAttribute?.('data-function') || '';
+  const functionName = triggerElement?.getAttribute?.('data-function') || triggerElement?.getAttribute?.('data-run-name') || '';
   if (!functionName) {
-    console.warn('[CODE-UI] No data-function attribute');
+    console.warn('[CODE-UI] No function trigger attribute (data-function / data-run-name)');
     return;
   }
+
+  const functionValue = triggerElement?.getAttribute?.('value') ?? triggerElement?.value ?? '';
 
   const outputEl = document.getElementById('output-container');
   const lintEl = document.getElementById('lint-container');
   if (!outputEl || !lintEl) return;
+
+  // First click after load: no preserved globals yet.
+  // Fallback to full RUN so functions are defined, then auto-dispatch via trigger context.
+  if (!window.__codeUiGlobals) {
+    window.__codeUiEventDrivenMode = false;
+    triggerCodeUiPythonRun();
+    return;
+  }
 
   try {
     outputEl.innerText = '';
@@ -1741,7 +1751,7 @@ try:
     # Update ui.trigger
     if hasattr(ui, '_refresh_trigger'):
         ui.trigger._name = "${functionName}"
-        ui.trigger._value = "${triggerElement?.getAttribute?.('value') || ''}"
+        ui.trigger._value = "${functionValue}"
     
     # Call function from preserved globals
     func = g.get("${functionName}")
@@ -1771,18 +1781,18 @@ function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = f
   if (!guiContainer || !triggerElement) return;
 
   const triggerName =
-    triggerElement.getAttribute('data-run-name') ||
-    triggerElement.getAttribute('data-function') ||
     triggerElement.getAttribute('name') ||
     triggerElement.id ||
-    triggerElement.value ||
-    (triggerElement.textContent || '').trim() ||
+    triggerElement.getAttribute('data-run-name') ||
+    triggerElement.getAttribute('data-function') ||
     '';
 
+  const explicitValueAttr = triggerElement.getAttribute('value');
   const triggerValue =
+    (explicitValueAttr !== null
+      ? explicitValueAttr
+      : (typeof triggerElement.value === 'string' ? triggerElement.value : '')) ||
     triggerElement.getAttribute('data-run-value') ||
-    triggerElement.value ||
-    (triggerElement.textContent || '').trim() ||
     '';
 
   let triggerInput = guiContainer.querySelector('[data-element="__trigger__"]');
@@ -1817,10 +1827,10 @@ function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = f
 function ensureCodeUiRunTriggers(guiContainer) {
   if (!guiContainer || guiContainer.dataset.codeUiRunBound === '1') return;
 
-  // === TRADITIONAL MODE: data-run-python="true" ===
+  // === RUN MODE: data-run="true" (legacy: data-run-python="true") ===
   // Full code restart, dispatch handled in Python
   guiContainer.addEventListener('click', (event) => {
-    const trigger = event.target?.closest?.('[data-run-python="true"]');
+    const trigger = event.target?.closest?.('[data-run="true"], [data-run], [data-run-python="true"]');
     if (!trigger || !guiContainer.contains(trigger)) return;
     event.preventDefault();
     setCodeUiTriggerContext(guiContainer, trigger, false); // Traditional mode
@@ -1830,7 +1840,8 @@ function ensureCodeUiRunTriggers(guiContainer) {
   guiContainer.addEventListener('submit', (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    if (form.getAttribute('data-run-python') !== 'true') return;
+    const isRunForm = form.getAttribute('data-run') === 'true' || form.hasAttribute('data-run') || form.getAttribute('data-run-python') === 'true';
+    if (!isRunForm) return;
     event.preventDefault();
     const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
     setCodeUiTriggerContext(guiContainer, submitter, false); // Traditional mode
@@ -1842,7 +1853,7 @@ function ensureCodeUiRunTriggers(guiContainer) {
   guiContainer.addEventListener('click', (event) => {
     const trigger = event.target?.closest?.('[data-function]');
     if (!trigger || !guiContainer.contains(trigger)) return;
-    if (trigger.hasAttribute('data-run-python')) return; // Skip if also marked as data-run-python
+    if (trigger.hasAttribute('data-run-python') || trigger.hasAttribute('data-run')) return;
     event.preventDefault();
     setCodeUiTriggerContext(guiContainer, trigger, true); // Event-driven mode
     triggerCodeUiFunctionCall(trigger);
@@ -1852,11 +1863,12 @@ function ensureCodeUiRunTriggers(guiContainer) {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     if (!form.hasAttribute('data-function')) return;
-    if (form.getAttribute('data-run-python') === 'true') return; // Skip if data-run-python takes precedence
+    if (form.getAttribute('data-run-python') === 'true' || form.getAttribute('data-run') === 'true' || form.hasAttribute('data-run')) return;
     event.preventDefault();
     const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
-    setCodeUiTriggerContext(guiContainer, submitter, true); // Event-driven mode
-    triggerCodeUiFunctionCall(submitter);
+    const functionTarget = submitter.hasAttribute('data-function') ? submitter : form;
+    setCodeUiTriggerContext(guiContainer, functionTarget, true); // Event-driven mode
+    triggerCodeUiFunctionCall(functionTarget);
   });
 
   guiContainer.dataset.codeUiRunBound = '1';
@@ -2050,22 +2062,23 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.currentAssignmentId = assignmentId;
   assignmentState.currentTaskId = taskId;
 
-  if (isCodeUiTask) {
-    // Mark that HTML should be rendered on first RUN, not immediately
-    window.__codeUiHtmlNeedsFirstRun = true;
-    
-    // Show placeholder message in GUI container
-    const guiContainer = document.getElementById('gui-container');
-    if (guiContainer) {
-      guiContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 14px;">▶️ Klicke auf RUN, um die HTML-Oberfläche zu laden</div>';
-      guiContainer.classList.add('active');
+  // GUI setup: Only for tasks (not projects)
+  if (!window.currentProject && window.guiBridge) {
+    if (isCodeUiTask) {
+      // code_ui Tasks: Initialize GUI container with placeholder, HTML renders on first RUN
+      const guiContainer = document.getElementById('gui-container');
+      if (guiContainer) {
+        guiContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 14px;">▶️ Klicke auf RUN, um die HTML-Oberfläche zu laden</div>';
+        guiContainer.classList.add('active');
+      }
+    } else {
+      // Normal code tasks: Hide GUI container completely
+      window.guiBridge.hideGUI();
+      window.guiBridge.clearGUI();
     }
-    
-    if (isStaleLoad()) return;
-  } else if (window.guiBridge) {
-    window.guiBridge.hideGUI();
-    window.guiBridge.clearGUI();
   }
+  
+  if (isStaleLoad()) return;
 
   // Start activity tracking for new task (only if not finalized)
   const currentStatus = assignmentState.taskStatuses[task.id];
@@ -5979,3 +5992,4 @@ window.refreshStudentLiveState = refreshStudentLiveState;
 window.renderCodeUiHtml = renderCodeUiHtml;
 window.cacheCurrentEditorDraft = cacheCurrentEditorDraft;
 window.getTaskDraftContent = getTaskDraftContent;
+window.setTaskSavedSnapshot = setTaskSavedSnapshot;

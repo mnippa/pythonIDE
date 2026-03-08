@@ -22,7 +22,7 @@
       <h2>Minimaler Event-Handler</h2>
 <pre><code>&lt;!-- index.html --&gt;
 &lt;input data-element="name" value="Markus"&gt;
-&lt;button data-run-python="true" data-run-name="say_hello"&gt;Hallo&lt;/button&gt;
+&lt;button data-function="say_hello" name="say_hello" value="hallo"&gt;Hallo&lt;/button&gt;
 &lt;div data-element="msg"&gt;-&lt;/div&gt;</code></pre>
 <pre><code># init.py
 import idegui as ui
@@ -49,8 +49,9 @@ ui.set('summe', str(zahl1 + zahl2))</code></pre>
           <thead><tr><th>Attribut</th><th>Bedeutung</th><th>Beispiel</th></tr></thead>
           <tbody>
             <tr><td><code>data-element</code></td><td>Name für <code>ui.get()</code>/<code>ui.set()</code></td><td><code>&lt;input data-element="preis"&gt;</code></td></tr>
-            <tr><td><code>data-run-python="true"</code></td><td>Markiert Trigger-Element</td><td><code>&lt;button ...&gt;</code></td></tr>
-            <tr><td><code>data-run-name</code></td><td>Python-Funktionsname</td><td><code>data-run-name="berechne"</code></td></tr>
+            <tr><td><code>data-run="true"</code></td><td>Startet kompletten Python-Run</td><td><code>&lt;button data-run="true" name="calc"&gt;</code></td></tr>
+            <tr><td><code>data-function</code></td><td>Ruft gezielt eine Python-Funktion auf</td><td><code>data-function="berechne"</code></td></tr>
+            <tr><td><code>name</code> / <code>value</code></td><td>Füllen <code>trigger.name</code> / <code>trigger.value</code></td><td><code>name="plus" value="1"</code></td></tr>
           </tbody>
         </table>
       </div>

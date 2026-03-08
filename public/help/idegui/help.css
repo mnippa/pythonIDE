@@ -86,6 +86,13 @@ pre {
   line-height: 1.45;
 }
 
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

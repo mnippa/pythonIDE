@@ -20,19 +20,19 @@
     </div>
     
     <div class="button-group">
-      <button class="btn btn-operation" data-function="plus" name="plus" value="plus">
+      <button class="btn btn-operation" data-run-python="true" data-run-name="plus">
         <span class="operator">+</span>
         Addition
       </button>
-      <button class="btn btn-operation" data-function="minus" name="minus" value="minus">
+      <button class="btn btn-operation" data-run-python="true" data-run-name="minus">
         <span class="operator">−</span>
         Subtraktion
       </button>
-      <button class="btn btn-operation" data-function="mal" name="mal" value="mal">
+      <button class="btn btn-operation" data-run-python="true" data-run-name="mal">
         <span class="operator">×</span>
         Multiplikation
       </button>
-      <button class="btn btn-operation" data-function="geteilt" name="geteilt" value="geteilt">
+      <button class="btn btn-operation" data-run-python="true" data-run-name="geteilt">
         <span class="operator">÷</span>
         Division
       </button>

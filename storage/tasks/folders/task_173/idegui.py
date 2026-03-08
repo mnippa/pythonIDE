@@ -1,6 +1,5 @@
 import idegui as ui
 
-ui.clear()
 ui.title('Dynamische UI: Einfaches Beispiel')
 
 zahl_a = ui.number('Zahl A', 10)

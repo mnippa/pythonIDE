@@ -229,18 +229,18 @@ function setProjectTriggerContext(guiContainer, triggerElement, isEventDriven = 
   if (!guiContainer || !triggerElement) return;
 
   const triggerName =
-    triggerElement.getAttribute('data-run-name') ||
-    triggerElement.getAttribute('data-function') ||
     triggerElement.getAttribute('name') ||
     triggerElement.id ||
-    triggerElement.value ||
-    (triggerElement.textContent || '').trim() ||
+    triggerElement.getAttribute('data-run-name') ||
+    triggerElement.getAttribute('data-function') ||
     '';
 
+  const explicitValueAttr = triggerElement.getAttribute('value');
   const triggerValue =
+    (explicitValueAttr !== null
+      ? explicitValueAttr
+      : (typeof triggerElement.value === 'string' ? triggerElement.value : '')) ||
     triggerElement.getAttribute('data-run-value') ||
-    triggerElement.value ||
-    (triggerElement.textContent || '').trim() ||
     '';
 
   let triggerInput = guiContainer.querySelector('[data-element="__trigger__"]');
@@ -274,15 +274,25 @@ async function triggerProjectFunctionCall(triggerElement) {
     return;
   }
 
-  const functionName = triggerElement?.getAttribute?.('data-function') || '';
+  const functionName = triggerElement?.getAttribute?.('data-function') || triggerElement?.getAttribute?.('data-run-name') || '';
   if (!functionName) {
     return;
   }
+
+  const functionValue = triggerElement?.getAttribute?.('value') ?? triggerElement?.value ?? '';
 
   const outputEl = document.getElementById('output-container');
   const lintEl = document.getElementById('lint-container');
   if (outputEl) {
     outputEl.innerText = '';
+  }
+
+  // First click after load: no preserved globals yet.
+  // Fallback to full RUN so functions are defined, then auto-dispatch via trigger context.
+  if (!window.__codeUiGlobals) {
+    window.__codeUiEventDrivenMode = false;
+    triggerProjectPythonRun();
+    return;
   }
 
   try {
@@ -308,8 +318,8 @@ try:
     g = getattr(js_window, '__codeUiGlobals', globals())
 
     if hasattr(ui, '_refresh_trigger'):
-        ui.trigger._name = "${functionName}"
-        ui.trigger._value = "${triggerElement?.getAttribute?.('value') || ''}"
+      ui.trigger.name = "${functionName}"
+      ui.trigger.value = "${functionValue}"
 
     func = g.get("${functionName}")
     if callable(func):
@@ -375,8 +385,9 @@ function ensureProjectCodeUiRunTriggers(guiContainer) {
     if (form.getAttribute('data-run-python') === 'true' || form.getAttribute('data-run') === 'true' || form.hasAttribute('data-run')) return;
     event.preventDefault();
     const submitter = event.submitter instanceof HTMLElement ? event.submitter : form;
-    setProjectTriggerContext(guiContainer, submitter, true);
-    triggerProjectFunctionCall(submitter);
+    const functionTarget = submitter.hasAttribute('data-function') ? submitter : form;
+    setProjectTriggerContext(guiContainer, functionTarget, true);
+    triggerProjectFunctionCall(functionTarget);
   });
 
   guiContainer.dataset.codeUiRunBound = '1';

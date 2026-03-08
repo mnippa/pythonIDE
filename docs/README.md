@@ -75,7 +75,7 @@ def button_clicked(trigger):
 <p data-element="output">Ausgabe</p>
 
 <!-- Button mit Event-Handler -->
-<button data-run-python="true" data-run-name="button_clicked">
+<button data-function="button_clicked" name="button_clicked" value="click">
     Klick mich
 </button>
 ```

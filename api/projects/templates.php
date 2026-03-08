@@ -242,7 +242,7 @@ CSS
 import idegui as ui
 
 # Event-basierte Logik: Funktionen werden bei Button-Klicks aufgerufen
-# HTML-Elemente mit data-run-python="true" und data-run-name="funktionsname"
+# HTML-Elemente mit data-run="true" und name="funktionsname"
 # rufen die entsprechende Python-Funktion auf
 
 def berechnen(trigger):
@@ -303,10 +303,10 @@ PYTHON
         </div>
         
         <div class="buttons">
-            <button class="btn primary" data-run-python="true" data-run-name="berechnen">
+            <button class="btn primary" data-run="true" name="berechnen">
                 🔢 Berechnen
             </button>
-            <button class="btn secondary" data-run-python="true" data-run-name="reset">
+            <button class="btn secondary" data-run="true" name="reset">
                 🔄 Reset
             </button>
         </div>
@@ -476,16 +476,16 @@ CSS
         </div>
 
         <div class="buttons">
-            <button class="btn large" data-run-python="true" data-run-name="roll">🎲 Würfeln</button>
-            <button class="btn secondary" data-run-python="true" data-run-name="new_round">🔄 Neue Runde</button>
+            <button class="btn large" data-run="true" name="action" value="roll">🎲 Würfeln</button>
+            <button class="btn secondary" data-run="true" name="action" value="new_round">🔄 Neue Runde</button>
         </div>
 
         <div class="hold-grid">
-            <button class="btn hold" data-run-python="true" data-run-name="hold_1">Würfel 1 halten/lösen</button>
-            <button class="btn hold" data-run-python="true" data-run-name="hold_2">Würfel 2 halten/lösen</button>
-            <button class="btn hold" data-run-python="true" data-run-name="hold_3">Würfel 3 halten/lösen</button>
-            <button class="btn hold" data-run-python="true" data-run-name="hold_4">Würfel 4 halten/lösen</button>
-            <button class="btn hold" data-run-python="true" data-run-name="hold_5">Würfel 5 halten/lösen</button>
+            <button class="btn hold" data-run="true" name="hold" value="1">Würfel 1 halten/lösen</button>
+            <button class="btn hold" data-run="true" name="hold" value="2">Würfel 2 halten/lösen</button>
+            <button class="btn hold" data-run="true" name="hold" value="3">Würfel 3 halten/lösen</button>
+            <button class="btn hold" data-run="true" name="hold" value="4">Würfel 4 halten/lösen</button>
+            <button class="btn hold" data-run="true" name="hold" value="5">Würfel 5 halten/lösen</button>
         </div>
 
         <div class="combinations-section">
@@ -784,6 +784,13 @@ def roll(trigger):
 
     render_state(msg)
 
+def action(trigger):
+    action_value = str(getattr(trigger, 'value', '') or '')
+    if action_value == 'roll':
+        roll(trigger)
+    elif action_value == 'new_round':
+        new_round(trigger)
+
 def toggle_hold(index):
     if index < 0 or index > 4:
         return
@@ -797,20 +804,12 @@ def toggle_hold(index):
     state = 'gehalten' if GAME_STATE['held'][index] else 'freigegeben'
     render_state(f'Würfel {index + 1} wurde {state}.')
 
-def hold_1(trigger):
-    toggle_hold(0)
-
-def hold_2(trigger):
-    toggle_hold(1)
-
-def hold_3(trigger):
-    toggle_hold(2)
-
-def hold_4(trigger):
-    toggle_hold(3)
-
-def hold_5(trigger):
-    toggle_hold(4)
+def hold(trigger):
+    try:
+        index = int(trigger.value) - 1
+    except (TypeError, ValueError):
+        return
+    toggle_hold(index)
 
 render_state('Klicke auf „Würfeln", um die Runde zu starten')
 PYTHON;
@@ -853,9 +852,9 @@ PYTHON;
         </div>
         
         <div class="buttons">
-            <button class="btn" data-run-python="true" data-run-name="new_game">🎰 Neues Spiel</button>
-            <button class="btn" data-run-python="true" data-run-name="hit">✋ Hit</button>
-            <button class="btn" data-run-python="true" data-run-name="stand">✋ Stand</button>
+            <button class="btn" data-run="true" name="new_game">🎰 Neues Spiel</button>
+            <button class="btn" data-run="true" name="hit">✋ Hit</button>
+            <button class="btn" data-run="true" name="stand">✋ Stand</button>
         </div>
         
         <div class="result" data-element="message">Klicke "Neues Spiel" zum Starten</div>

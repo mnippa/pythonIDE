@@ -938,15 +938,17 @@ if "idegui" not in sys.modules:
     function setErrorMarker(line, message) {
       const model = editor.getModel();
       const ln = Math.max(1, Number(line) || 1);
+      const maxLine = model.getLineCount();
+      const safeLine = Math.min(ln, maxLine);
 
       monaco.editor.setModelMarkers(model, "python", [
         {
           severity: monaco.MarkerSeverity.Error,
           message: message || "Error",
-          startLineNumber: ln,
-          endLineNumber: ln,
+          startLineNumber: safeLine,
+          endLineNumber: safeLine,
           startColumn: 1,
-          endColumn: Math.min(2, model.getLineMaxColumn(ln)),
+          endColumn: Math.min(2, model.getLineMaxColumn(safeLine)),
         },
       ]);
     }
@@ -1171,41 +1173,13 @@ compile(code, "<usercode>", "exec")
         const currentProject = window.currentProject || null;
         const projectType = String(currentProject?.project_type || '').toLowerCase();
         const isProjectCodeUiMode = projectType === 'html' || projectType === 'mixed';
-        const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
 
-        // GUI visibility logic: ONLY for tasks, NOT for projects
-        // Projects set GUI visibility once on load based on project_type
-        if (!currentProject && window.guiBridge) {
-          // Task/Free editor mode: dynamic GUI management
-          if (wantsIdeGui) {
-            if (isCodeUiTask && typeof window.renderCodeUiHtml === 'function' && currentTask?.id) {
-              // Check if this is the first RUN for a code_ui task
-              const needsFirstRun = window.__codeUiHtmlNeedsFirstRun === true;
-              
-              const guiContainer = document.getElementById('gui-container');
-              const alreadyRenderedForTask = guiContainer
-                && guiContainer.dataset.codeUiTaskId === String(currentTask.id)
-                && guiContainer.querySelector('[data-element]');
-
-              if (needsFirstRun || !alreadyRenderedForTask) {
-                await window.renderCodeUiHtml(currentTask.id);
-                // Clear the flag after first run
-                window.__codeUiHtmlNeedsFirstRun = false;
-              }
-            } else {
-              window.guiBridge.clearGUI();
-              window.guiBridge.showGUI();
-            }
-          } else {
-            if (!isCodeUiTask) {
-              window.guiBridge.hideGUI();
-              window.guiBridge.clearGUI();
-            }
-          }
+        // Only ensure idegui module for code_ui tasks or html/mixed projects (not for regular code tasks)
+        if ((isCodeUiTask || isProjectCodeUiMode) && wantsIdeGui) {
+          await ensureIdeGuiModule();
         }
-        // For projects: GUI container visibility is managed by projects.js on load
 
-        await ensureIdeGuiModule();
+        const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
 
         // Preserve globals between RUN and trigger calls for code_ui tasks and HTML/mixed projects
         const usePreservedGlobals = isCodeUiMode;
@@ -1254,6 +1228,15 @@ sys.stdout = JSOut("output-container")
 sys.stderr = JSOut("lint-container")
 
 try:
+    # Block idegui import for non-code_ui tasks (prevent GUI activation for regular code tasks)
+    is_code_ui_mode = ${isCodeUiMode ? "True" : "False"}
+    if not is_code_ui_mode:
+        # Create a dummy idegui module that blocks real imports
+        class DummyIdeguiModule:
+            def __getattr__(self, name):
+                raise ImportError("idegui is only available for code_ui tasks")
+        sys.modules['idegui'] = DummyIdeguiModule()
+    
     # For Code-UI tasks: use persistent globals to preserve state between triggers
     use_preserved = ${usePreservedGlobals ? "True" : "False"}
     if use_preserved:
@@ -1266,45 +1249,47 @@ try:
     else:
         g = {"__name__": "__main__"}
     
-    import idegui as ui
-    if hasattr(ui, "_refresh_trigger"):
-        ui._refresh_trigger()
-    
+    # Execute user code (user code imports idegui itself if needed)
     exec(compile(code, "<usercode>", "exec"), g, g)
     
     # Store globals back to window for next trigger call
     if use_preserved:
         js_window.__codeUiGlobals = g
 
-    # Traditional mode ONLY: Auto-dispatch trigger if set
-    is_code_ui_task = ${isCodeUiMode ? "True" : "False"}
-    event_driven_mode = getattr(js_window, '__codeUiEventDrivenMode', False)
-    trigger_name = str(getattr(getattr(ui, "trigger", object()), "name", "") or "")
+    # Traditional mode ONLY: Auto-dispatch trigger if set (only for code_ui tasks)
+    if is_code_ui_mode:
+        # Check if user code imported idegui
+        ui = g.get('ui') or sys.modules.get('idegui')
+        if ui:
+            if hasattr(ui, '_refresh_trigger'):
+                ui._refresh_trigger()
+            event_driven_mode = getattr(js_window, '__codeUiEventDrivenMode', False)
+            trigger_name = str(getattr(getattr(ui, "trigger", object()), "name", "") or "")
 
-    # Only dispatch in traditional mode (data-run-python), not in event-driven mode
-    if is_code_ui_task and trigger_name and not event_driven_mode:
-      def _as_identifier(name):
-        return re.sub(r"\\W|^(?=\\d)", "_", str(name or ""))
+            # Only dispatch in traditional mode (data-run-python), not in event-driven mode
+            if trigger_name and not event_driven_mode:
+              def _as_identifier(name):
+                return re.sub(r"\\W|^(?=\\d)", "_", str(name or ""))
 
-      direct = trigger_name
-      ident = _as_identifier(trigger_name)
-      candidates = []
-      for candidate in [direct, f"run_{direct}", ident, f"run_{ident}"]:
-        if candidate and candidate not in candidates:
-          candidates.append(candidate)
+              direct = trigger_name
+              ident = _as_identifier(trigger_name)
+              candidates = []
+              for candidate in [direct, f"run_{direct}", ident, f"run_{ident}"]:
+                if candidate and candidate not in candidates:
+                  candidates.append(candidate)
 
-      callback = None
-      for candidate in candidates:
-        func = g.get(candidate)
-        if callable(func):
-          callback = func
-          break
+              callback = None
+              for candidate in candidates:
+                func = g.get(candidate)
+                if callable(func):
+                  callback = func
+                  break
 
-      if callback is not None:
-        try:
-          callback(ui.trigger)
-        except TypeError:
-          callback()
+              if callback is not None:
+                try:
+                  callback(ui.trigger)
+                except TypeError:
+                  callback()
 
     if enable_matplotlib:
       fignums = list(plt.get_fignums())
@@ -1341,6 +1326,13 @@ finally:
 `);
         clearQuickFixState();
         setLintOk();
+
+        // After successful RUN: sync Draft to Snapshot to prevent false "unsaved changes" warnings
+        // RUN doesn't modify code, so the draft state should match the snapshot (saved) state
+        const currentPath = String(window.currentFile?.path || '');
+        if (currentTask?.id && currentPath && typeof window.setTaskSavedSnapshot === 'function') {
+          window.setTaskSavedSnapshot(currentTask.id, currentPath, code);
+        }
       } catch (e) {
         const parsed = resolveErrorLine(e.message || String(e), code);
 

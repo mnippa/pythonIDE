@@ -17,9 +17,9 @@
       <input type="number" data-element="num1" value="10">
       
       <div>
-        <button data-trigger-name="multiply_trad" data-run="true">× 2</button>
-        <button data-trigger-name="divide_trad" data-run="true">÷ 2</button>
-        <button data-trigger-name="reset_trad" data-run="true">Zurücksetzen</button>
+        <button data-run-python="true" data-trigger-name="multiply_trad">× 2</button>
+        <button data-run-python="true" data-trigger-name="divide_trad">÷ 2</button>
+        <button data-run-python="true" data-trigger-name="reset_trad">Zurücksetzen</button>
       </div>
       
       <div class="output" data-element="output1">Ergebnis: (Warte auf RUN)</div>
@@ -37,9 +37,9 @@
       <input type="number" data-element="num2" value="10">
       
       <div>
-        <button data-function="multiply_event" name="multiply_event" value="multiply_event">× 2</button>
-        <button data-function="divide_event" name="divide_event" value="divide_event">÷ 2</button>
-        <button data-function="reset_event" name="reset_event" value="reset_event">Zurücksetzen</button>
+        <button data-function="multiply_event">× 2</button>
+        <button data-function="divide_event">÷ 2</button>
+        <button data-function="reset_event">Zurücksetzen</button>
       </div>
       
       <div class="output" data-element="output2">Ergebnis: (Warte auf RUN)</div>

@@ -128,10 +128,10 @@ ui.set('nachricht', 'Gib Zahlen ein.')
         <input type="number" data-element="input1" placeholder="Zahl 1">
         <input type="number" data-element="input2" placeholder="Zahl 2">
         
-        <button data-run-python="true" data-run-name="berechnen">
+        <button data-function="berechnen" name="berechnen" value="berechnen">
             Berechnen
         </button>
-        <button data-run-python="true" data-run-name="reset">
+        <button data-function="reset" name="reset" value="reset">
             Reset
         </button>
         
@@ -145,7 +145,8 @@ ui.set('nachricht', 'Gib Zahlen ein.')
 ```
 
 **Wichtig:**
-- Button benötigt `data-run-python="true"` und `data-run-name="funktionsname"`
+- Für direkten Skript-Run: `data-run="true"` (optional mit `name`/`value` für Trigger-Infos)
+- Für Event-Handler-Aufruf: `data-function="funktionsname"` (zusätzlich `name`/`value` für Trigger-Infos)
 - Python-Funktion muss `trigger` Parameter haben (wird automatisch übergeben)
 - `ui.get('name')` liest den `.value` von `<input data-element="name">`
 - `ui.get('name')` liest `.textContent` von `<span data-element="name">`
@@ -190,10 +191,20 @@ def meine_funktion(trigger):
 
 **HTML-Binding:**
 ```html
-<button data-run-python="true" data-run-name="meine_funktion">
+<button data-function="meine_funktion" name="meine_funktion" value="klick">
     Klick mich
 </button>
 ```
+
+**`name` vs `value`:**
+- **`name`**: Muss mit der Python-Funktionsname übereinstimmen (Funktionsaufruf)
+- **`value`**: Beliebiger semantischer Wert (z.B. `"2"` für Würfelanzahl, `"0"` für Reset)
+- Können unterschiedlich sein, um die Aktion zu charakterisieren:
+  ```html
+  <button data-function="roll_dice" name="roll_dice" value="2">🎲 Würfeln (2 Würfel)</button>
+  <button data-function="roll_dice" name="roll_dice" value="5">🎲 Würfeln (5 Würfel)</button>
+  ```
+- Im Python-Code: `trigger.name` = Funktionsname, `trigger.value` = Semantischer Wert
 
 ## State Management
 
@@ -251,7 +262,7 @@ def reset_game(trigger):
         <p data-element="output">Ausgabe hier</p>
         
         <!-- Buttons für Event-Handler -->
-        <button data-run-python="true" data-run-name="submit">
+        <button data-function="submit" name="submit" value="submit">
             Absenden
         </button>
     </div>
@@ -443,6 +454,10 @@ ui.set('score', '0')
 ui.set('rolls', '0')
 ```
 
+**Buttons mit semantischen Werten:**
+- `name`: Funktionsname (welche Funktion aufgerufen wird)
+- `value`: Semantischer Wert (was die Funktion bedeutet, z.B. "2" = Anzahl Würfel, "0" = Zurückgesetzt)
+
 ```html
 <!-- index.html -->
 <!DOCTYPE html>
@@ -464,10 +479,10 @@ ui.set('rolls', '0')
         <p>Gesamtpunktzahl: <span data-element="score">0</span></p>
         <p>Würfe: <span data-element="rolls">0</span></p>
         
-        <button data-run-python="true" data-run-name="roll_dice">
+        <button data-function="roll_dice" name="roll_dice" value="2">
             🎲 Würfeln
         </button>
-        <button data-run-python="true" data-run-name="reset">
+        <button data-function="reset" name="reset" value="0">
             🔄 Reset
         </button>
     </div>
@@ -632,7 +647,9 @@ ui.set('sortiert', ', '.join(str(z) for z in sortiert))
 **Problem:** Button-Klick tut nichts.
 
 **Lösung:**
-- Button benötigt `data-run-python="true"` UND `data-run-name="funktionsname"`
+- Für Skript-Run: Element hat `data-run="true"` (legacy: `data-run-python="true"`)
+- Für Funktionsaufruf: Element hat `data-function="funktionsname"`
+- Wenn Trigger-Daten benötigt werden: `name` und optional `value` im HTML setzen
 - Funktionsname muss exakt mit Python-Funktion übereinstimmen
 - Funktion muss `trigger` Parameter haben
 
@@ -656,7 +673,8 @@ Wenn du als KI ein Programm erstellst, prüfe:
 
 - [ ] **3 Dateien:** index.html, style.css, init.py
 - [ ] **HTML:** Alle interaktiven Elemente haben `data-element="name"`
-- [ ] **HTML:** Buttons haben `data-run-python="true"` und `data-run-name="funktion"`
+- [ ] **HTML:** Für Run-Modus `data-run="true"`, für Event-Modus `data-function="funktion"`
+- [ ] **HTML:** Trigger-Infos über `name` und optional `value` setzen
 - [ ] **Python:** Event-Handler-Funktionen haben `trigger` Parameter
 - [ ] **Python:** State-Variablen sind global und haben Init-Check
 - [ ] **Python:** Nur erlaubte Module werden importiert

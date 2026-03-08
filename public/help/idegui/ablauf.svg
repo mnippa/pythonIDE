@@ -43,8 +43,8 @@
 
   <rect x="560" y="220" width="360" height="120" class="b"/>
   <text x="578" y="250" class="h">5b) Event-Logik</text>
-  <text x="578" y="275" class="t">Button: data-run-python="true"</text>
-  <text x="578" y="297" class="t">+ data-run-name="funktion"</text>
+  <text x="578" y="275" class="t">Button: data-function="funktion"</text>
+  <text x="578" y="297" class="t">oder data-run="true" für Voll-Run</text>
   <text x="578" y="319" class="t">Python-Funktion(trigger) wird aufgerufen</text>
 
   <line x1="860" y1="130" x2="860" y2="220" class="a"/>

@@ -24,7 +24,7 @@
                placeholder="z.B. 19" step="0.1" min="0" max="100" value="19" />
       </div>
 
-      <button type="button" class="run-btn" data-run="true">Mit Python berechnen</button>
+      <button type="button" data-run-python="true" class="run-btn">Mit Python berechnen</button>
       
       <!-- Ausgabezonen mit data-Attributen -->
       <div class="result">

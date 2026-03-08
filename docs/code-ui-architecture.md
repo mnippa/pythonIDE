@@ -58,27 +58,27 @@ ui.set('result', result)     # Write to span
 
 ### 3. Interactive Triggers
 
-#### `data-run-python="true"`
-**Purpose:** Mark an HTML element (button, form) as a trigger for Python execution.
+#### `data-run="true"`
+**Purpose:** Mark an HTML element (button, form) as a trigger for full Python execution.
 
 When clicked/submitted, the entire Python code runs (simulating RUN button press).
 
 ```html
-<button data-run-python="true">Calculate</button>
-<form data-run-python="true">
+<button data-run="true" name="calculate" value="run">Calculate</button>
+<form data-run="true" name="submit_form">
     <input type="text" data-element="name">
     <input type="submit" value="Submit">
 </form>
 ```
 
-#### `data-run-name` (Multi-Button Scenarios)
-**Purpose:** Identify which button was clicked so Python can distinguish between multiple triggers.
+#### `data-function` (Event-Driven Function Calls)
+**Purpose:** Call a specific Python function directly without full code re-run.
 
-Store the clicked button's identifier in the hidden `__trigger__` input. Python reads it via `ui.get('__trigger__')`.
+The trigger metadata comes from standard HTML attributes (`name`, `value`) and is available via `trigger.name`/`trigger.value`.
 
 ```html
-<button data-run-python="true" data-run-name="add">+ Add</button>
-<button data-run-python="true" data-run-name="remove">- Remove</button>
+<button data-function="add" name="add" value="+1">+ Add</button>
+<button data-function="remove" name="remove" value="-1">- Remove</button>
 ```
 
 ```python
@@ -148,11 +148,11 @@ When a Code-UI task loads, the system:
 3. **Preserves any existing input values** (from previous RUN)
 
 ### Step 2: Trigger Setup
-The system scans the HTML for elements with `data-run-python="true"` and attaches click/submit handlers.
+The system scans the HTML for `data-run` (full run) and `data-function` (single function call) and attaches click/submit handlers.
 
 ### Step 3: Python Execution
 When a trigger fires (button click or form submit):
-1. **Multi-button case:** If the trigger has `data-run-name`, store it in hidden `data-element="__trigger__"`
+1. Read trigger metadata from HTML attributes (`name`, `value`) with legacy fallbacks
 2. Run the Python code
 3. Python can read `ui.get('__trigger__')` to know which button was clicked
 
@@ -215,15 +215,15 @@ Students see:
 
 Students cannot edit readonly files even if they try direct API calls. The enforcement happens on the server.
 
-## Planned Features
+## Trigger Standards (Current)
 
-### `data-function-python` (Future)
-**Goal:** Call specific Python functions directly from HTML elements, not just the full RUN.
+### `data-function`
+**Goal:** Call specific Python functions directly from HTML elements.
 
-**Proposed Syntax:**
+**Syntax:**
 ```html
 <!-- Call handle_click(element) when button clicked -->
-<button data-function-python="handle_click">Click me</button>
+<button data-function="handle_click" name="handle_click" value="click">Click me</button>
 ```
 
 **Python:**
@@ -238,11 +238,8 @@ def handle_click(element):
 - Cleaner separation of concerns
 - Progressive disclosure (button → function → result)
 
-**Implementation Notes:**
-- Registry of callable functions in Python
-- Button click passes element reference to function
-- Return value displayed as toast/message or set to output element
-- Requires new handler in `assignments.js` `ensureCodeUiRunTriggers()`
+**Compatibility:**
+- Legacy `data-run-python="true"` and `data-run-name` are still accepted for old content.
 
 ## Best Practices
 
@@ -295,7 +292,7 @@ print(f"Done! Results: {result}")
 → Used to happen! Now fixed. Values are preserved between runs.
 
 ### "Button click doesn't work"
-→ Check that button has `data-run-python="true"`
+→ Check that button has `data-run="true"` (or legacy `data-run-python="true"`)
 
 ### "Can't read the value Python wrote"
 → Use same element name in both `ui.set()` and `data-element` attribute:
@@ -304,7 +301,7 @@ ui.set('result', 42)  # Make sure HTML has data-element="result"
 ```
 
 ### "Can't tell which button was clicked"
-→ Add `data-run-name` to each button and read `ui.get('__trigger__')`
+→ Add `name`/`value` to each button and read `trigger.name` / `trigger.value`
 
 ## Examples
 
@@ -312,8 +309,8 @@ ui.set('result', 42)  # Make sure HTML has data-element="result"
 ```html
 <input type="number" data-element="a" placeholder="A">
 <input type="number" data-element="b" placeholder="B">
-<button data-run-python="true" data-run-name="add">Add</button>
-<button data-run-python="true" data-run-name="multiply">Multiply</button>
+<button data-run="true" name="add" value="add">Add</button>
+<button data-run="true" name="multiply" value="multiply">Multiply</button>
 <span data-element="result"></span>
 ```
 
@@ -333,7 +330,7 @@ ui.set('result', result)
 ### Example 2: Text Processing with Log Output
 ```html
 <textarea data-element="input_text" placeholder="Enter text"></textarea>
-<button data-run-python="true">Analyze</button>
+<button data-run="true" name="analyze" value="run">Analyze</button>
 <div>
   <strong>Word Count:</strong> <span data-element="word_count">-</span>
 </div>

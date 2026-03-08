@@ -302,7 +302,8 @@ $kniffelHtml = <<<'HTML'
         </div>
         
         <div class="buttons">
-            <button class="btn large" data-run-python="true" data-run-name="roll">🎲 Würfeln</button>
+            <button class="btn large" data-function="roll_dice" name="roll_dice" value="2">🎲 Würfeln</button>
+            <button class="btn" data-function="reset" name="reset" value="0">🔄 Reset</button>
         </div>
         
         <div class="scoring-section">
@@ -433,39 +434,56 @@ $kniffelPy = <<<'PY'
 import idegui as ui
 import random
 
-def roll(trigger):
-    """Würfeln"""
-    dice = [random.randint(1, 6) for _ in range(5)]
+if 'GAME' not in globals():
+    GAME = {'score': 0, 'rolls': 0, 'dice': [1, 1, 1, 1, 1]}
+
+def roll_dice(trigger):
+    """Würfelt (trigger.value enthält Anzahl der Würfel: 2, 3, 4, oder 5)"""
+    global GAME
+    num_dice = int(trigger.value) if trigger.value else 5
+    
+    # Würfel neu werfen
+    GAME['dice'] = [random.randint(1, 6) for _ in range(5)]
+    GAME['rolls'] += 1
     
     # Würfel anzeigen
-    dice_str = ' '.join(['🎲' if i % 2 == 0 else '⚫' for i in dice])
+    dice_str = ' '.join(['🎲' for _ in GAME['dice']])
     ui.set('dice', dice_str)
     
-    # Score berechnen (einfach: summe aller würfel)
-    score = sum(dice)
-    ui.set('score', str(score))
+    # Score berechnen
+    score = sum(GAME['dice'])
+    GAME['score'] += score
+    ui.set('score', str(GAME['score']))
+    ui.set('selected_dice', f'Würfel: {GAME["dice"]} | Summe: {score}')
     
     # Häufigste zahlen finden
     from collections import Counter
-    counts = Counter(dice)
+    counts = Counter(GAME['dice'])
     most_common = counts.most_common(1)
     
     if most_common:
         number, count = most_common[0]
         if count == 5:
-            ui.set('message', f'🎉 KNIFFEL! 5x {number}! Punkte: {score}')
+            ui.set('message', f'🎉 KNIFFEL! 5x {number}! Gesamt: {GAME["score"]}')
         elif count == 4:
-            ui.set('message', f'✅ Viererpasch! 4x {number}. Score: {score}')
-        elif count == 3:
-            ui.set('message', f'👍 Dreierpasch! 3x {number}. Score: {score}')
+            ui.set('message', f'✅ Viererpasch! 4x {number}. Gesamt: {GAME["score"]}')
         else:
-            ui.set('message', f'Würfelergebnis: {dice}. Score: {score}')
-    else:
-        ui.set('message', f'Score: {score}')
+            ui.set('message', f'Würfe: {GAME["rolls"]} | Gesamt: {GAME["score"]}')
+
+def reset(trigger):
+    """Setzt das Spiel zurück (trigger.value = 0)"""
+    global GAME
+    GAME = {'score': 0, 'rolls': 0, 'dice': [1, 1, 1, 1, 1]}
+    ui.set('dice', '⚪ ⚪ ⚪ ⚪ ⚪')
+    ui.set('score', '0')
+    ui.set('selected_dice', 'Keine Würfel ausgewählt')
+    ui.set('message', 'Spiel zurückgesetzt! Klicke Würfeln zum Starten')
 
 # Initialize
 ui.set('message', 'Willkommen zu Kniffel! Klicke "Würfeln"')
 ui.set('score', '0')
+ui.set('dice', '⚪ ⚪ ⚪ ⚪ ⚪')
+ui.set('selected_dice', 'Keine Würfel ausgewählt')
 PY;
 
 // Create Kniffel project

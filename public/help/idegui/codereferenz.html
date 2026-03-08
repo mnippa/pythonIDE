@@ -195,8 +195,8 @@ def minus(trigger):
 ui.set('count', str(APP_STATE['counter']))
 ui.set('last_trigger', '-')</code></pre>
 <pre><code>&lt;!-- index.html --&gt;
-&lt;button data-run-python="true" data-run-name="plus"&gt;+&lt;/button&gt;
-&lt;button data-run-python="true" data-run-name="minus"&gt;-&lt;/button&gt;
+&lt;button data-function="plus" name="plus" value="+1"&gt;+&lt;/button&gt;
+&lt;button data-function="minus" name="minus" value="-1"&gt;-&lt;/button&gt;
 &lt;div data-element="count"&gt;0&lt;/div&gt;
 &lt;div data-element="last_trigger"&gt;-&lt;/div&gt;</code></pre>
     </section>

@@ -80,8 +80,8 @@ export const IDEGUI_HOVER_DOCS = {
 };
 
 export const IDEGUI_TRIGGER_HOVER_DOCS = {
-  name: "**ui.trigger.name**\n\nName des auslösenden Elements (z.B. aus `data-run-name`).",
-  value: "**ui.trigger.value**\n\nWert/Text des auslösenden Elements (z.B. aus `data-run-value` oder Button-Text).",
+  name: "**ui.trigger.name**\n\nName des auslösenden Elements (primär aus HTML-Attribut `name`).",
+  value: "**ui.trigger.value**\n\nWert des auslösenden Elements (primär aus HTML-Attribut `value`).",
 };
 
 // Optional handwritten fallback docs (used when help.json lacks an entry)
