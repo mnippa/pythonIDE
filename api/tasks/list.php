@@ -40,16 +40,9 @@ $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected'])
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
 
 // Determine which columns to fetch based on context
-$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit';
+$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit, expected_output, solution_code, randomizer_code';
 
-// Add solution/expected only if needed
-// Include in test mode, when include_expected is set, or for admins viewing solutions
-$needsSolution = $includeExpected || $isTestMode || ($user['role'] === 'admin');
-if ($needsSolution) {
-    $selectColumns .= ', expected_output, solution_code, randomizer_code';
-}
-
-// Always fetch solution_code and expected_output (needed for intelligent tests)
+// Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
 $sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";
 
 $stmt = $conn->prepare($sql);

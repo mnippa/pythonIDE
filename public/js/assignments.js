@@ -74,6 +74,7 @@ function setTaskDraftContent(taskId, path, content) {
   if (!taskId || !path) return;
   const key = ensureTaskFileMaps(taskId);
   taskDraftFiles[key][path] = String(content ?? '');
+  updateTaskFileDirtyIndicator(taskId, path);
 }
 
 function getTaskDraftContent(taskId, path) {
@@ -87,6 +88,7 @@ function setTaskSavedSnapshot(taskId, path, content) {
   if (!taskId || !path) return;
   const key = ensureTaskFileMaps(taskId);
   taskSavedSnapshots[key][path] = String(content ?? '');
+  updateTaskFileDirtyIndicator(taskId, path);
 }
 
 function clearTaskDrafts(taskId) {
@@ -112,6 +114,26 @@ function hasUnsavedDraftsForTask(taskId) {
     const snapshotValue = String(snapshots[path] ?? '');
     return draftValue !== snapshotValue;
   });
+}
+
+function isTaskPathDirty(taskId, path) {
+  if (!taskId || !path) return false;
+  const key = String(taskId);
+  const drafts = taskDraftFiles[key] || {};
+  const snapshots = taskSavedSnapshots[key] || {};
+  if (!Object.prototype.hasOwnProperty.call(drafts, path)) return false;
+  return String(drafts[path] ?? '') !== String(snapshots[path] ?? '');
+}
+
+function updateTaskFileDirtyIndicator(taskId, path) {
+  if (!taskId || !path) return;
+  const item = Array.from(document.querySelectorAll(`.task-file-item[data-task-id="${taskId}"]`))
+    .find((node) => String(node.getAttribute('data-path') || '') === String(path));
+  const nameEl = item ? item.querySelector('.file-name') : null;
+  if (!nameEl) return;
+  const baseName = nameEl.dataset.baseName || String(nameEl.textContent || '').replace(/\s\*$/, '');
+  nameEl.dataset.baseName = baseName;
+  nameEl.textContent = isTaskPathDirty(taskId, path) ? `${baseName} *` : baseName;
 }
 
 async function persistTaskFileContent(taskId, path, content, isVirtual = false) {
@@ -218,6 +240,25 @@ async function confirmTaskSwitchWithDrafts(nextTaskId) {
 
   if (!hasUnsavedDraftsForTask(currentTaskId)) {
     return true;
+  }
+
+  const allTasks = Object.values(assignmentState.tasksByAssignment || {}).flat();
+  const currentTaskMeta = allTasks.find(t => Number(t.id) === Number(currentTaskId));
+  const hasFolderStructure = currentTaskMeta && (
+    currentTaskMeta.folderstructure === 1 ||
+    currentTaskMeta.folderstructure === true ||
+    currentTaskMeta.folderstructure === '1'
+  );
+  const isCodeLike = currentTaskMeta && (currentTaskMeta.task_type === 'code' || currentTaskMeta.task_type === 'code_ui');
+
+  if (hasFolderStructure && isCodeLike) {
+    try {
+      await saveAllTaskDrafts(currentTaskId);
+      return true;
+    } catch (error) {
+      alert('Auto-Speichern beim Task-Wechsel fehlgeschlagen: ' + (error?.message || error));
+      return false;
+    }
   }
 
   const shouldSave = window.confirm('Du hast ungespeicherte Änderungen. Speichern, bevor du den Task wechselst?');
@@ -2205,11 +2246,14 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     if (checkBtn) {
       // Show button if test cases exist
       if (task.test_cases) {
+        const attempts = assignmentState.taskAttempts[task.id] || 0;
+        const maxAttempts = task.max_attempts || 10;
+        const reachedMaxAttempts = attempts >= maxAttempts;
         checkBtn.style.display = 'inline-block';
         if (submitBtn) submitBtn.style.display = 'inline-block';
-        checkBtn.disabled = false;
-        checkBtn.style.opacity = '1';
-        checkBtn.style.cursor = 'pointer';
+        checkBtn.disabled = reachedMaxAttempts;
+        checkBtn.style.opacity = reachedMaxAttempts ? '0.6' : '1';
+        checkBtn.style.cursor = reachedMaxAttempts ? 'not-allowed' : 'pointer';
       } else {
         checkBtn.style.display = 'none';
         if (submitBtn) submitBtn.style.display = 'none';
@@ -2327,11 +2371,18 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 function updateAttemptsCounter(task) {
   const maxAttempts = task.max_attempts || 10;
   const attempts = assignmentState.taskAttempts[task.id] || 0;
+  const reachedMaxAttempts = attempts >= maxAttempts;
   
   // Update check button text with attempts
   const checkBtn = $('check-btn');
   if (checkBtn) {
     checkBtn.textContent = `🔍 Check (${attempts}/${maxAttempts})`;
+    checkBtn.disabled = reachedMaxAttempts;
+    checkBtn.style.opacity = reachedMaxAttempts ? '0.6' : '1';
+    checkBtn.style.cursor = reachedMaxAttempts ? 'not-allowed' : 'pointer';
+    checkBtn.title = reachedMaxAttempts
+      ? `Maximale Anzahl Prüfungen erreicht (${maxAttempts})`
+      : '';
   }
 }
 
@@ -2740,6 +2791,17 @@ async function checkTask() {
     return;
   }
 
+  const attempts = assignmentState.taskAttempts[task.id] || 0;
+  const maxAttempts = task.max_attempts || 10;
+  if (attempts >= maxAttempts) {
+    const outputEl = $('output-container');
+    if (outputEl) {
+      outputEl.innerHTML = `<div style="color:#b45309;"><strong>Hinweis:</strong> Maximale Anzahl Prüfungen erreicht (${attempts}/${maxAttempts}).</div>`;
+    }
+    updateAttemptsCounter(task);
+    return;
+  }
+
   // Only show error if test_cases is missing
   if (!task.test_cases) {
     alert('No test cases available');
@@ -2858,8 +2920,10 @@ async function checkTask() {
       results: allResults
     };
     
-    // Increment attempts counter and save to database
-    assignmentState.taskAttempts[task.id] = (assignmentState.taskAttempts[task.id] || 0) + 1;
+    // Increment attempts counter and save to database (clamped to max_attempts)
+    const currentAttempts = assignmentState.taskAttempts[task.id] || 0;
+    const maxAttempts = Number(task.max_attempts || 1);
+    assignmentState.taskAttempts[task.id] = Math.min(currentAttempts + 1, maxAttempts);
     updateAttemptsCounter(task);
     
     // Save attempts to database
@@ -5245,6 +5309,8 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
   const readOnly = !!item.read_only;
   const lockBadge = readOnly ? ' <span style="font-size: 9px; color: #f59e0b;">🔒</span>' : '';
   const itemPath = currentPath ? currentPath + '/' + item.name : item.name;
+  const isDirty = isTaskPathDirty(taskId, itemPath);
+  const displayName = isDirty ? `${item.name} *` : item.name;
   const isClickable = item.type === 'file'; // Dateien klickbar machen
   const cursorStyle = isClickable ? 'cursor: pointer;' : 'cursor: default;';
   
@@ -5257,7 +5323,7 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
          data-read-only="${readOnly}"
          style="padding: 2px 4px; padding-left: ${indent}px; user-select: none; display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; ${cursorStyle} ${item.type === 'folder' ? 'font-weight: 500;' : ''}">
       <span style="width: 16px; display: flex; justify-content: center;">${icon}</span>
-      <span class="file-name">${item.name}</span>${virtualBadge}${lockBadge}
+      <span class="file-name" data-base-name="${escapeHtml(item.name)}">${escapeHtml(displayName)}</span>${virtualBadge}${lockBadge}
     </div>
   `;
   

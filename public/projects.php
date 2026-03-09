@@ -674,13 +674,14 @@ if ($displayName === '') {
   
   $headerActions = <<<HTML
     <div class="toolbar">
-      <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
+      <button id="dashboard-btn" title="Zurück">⬅</button>
       <button id="run-btn">Run</button>
       <button id="web-help-btn" style="display:none;" title="idegui Hilfe (Python + HTML)">❓ Hilfe</button>
       <button id="new-project-btn" style="background:#667eea; color:#fff; border-color:transparent;">+ Neues Projekt</button>
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
       <button id="save-project-btn" class="icon-btn" title="Speichern">💾</button>
+      <button id="save-all-project-btn" class="icon-btn" title="Alle speichern">💾💾</button>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
       <div style="flex:1"></div>
       <div class="user-bar">
@@ -802,8 +803,8 @@ HTML;
         <h2>Ungespeicherte Änderungen</h2>
       </div>
       <div class="modal-body">
-        <p>Du hast ungespeicherte Änderungen in <strong id="unsaved-file-name">dieser Datei</strong>.</p>
-        <p style="color:var(--text-secondary); margin-top:8px;">Was möchtest du tun?</p>
+        <p id="unsaved-changes-description">Du hast ungespeicherte Änderungen in <strong id="unsaved-file-name">dieser Datei</strong>.</p>
+        <p id="unsaved-changes-subtext" style="color:var(--text-secondary); margin-top:8px;">Was möchtest du tun?</p>
       </div>
       <div class="modal-footer">
         <button id="unsaved-cancel-btn">↪ Abbrechen</button>
@@ -846,8 +847,21 @@ HTML;
       });
     })();
 
+    // Dashboard
+    document.getElementById('dashboard-btn')?.addEventListener('click', async () => {
+      if (typeof confirmProjectSwitchWithDrafts === 'function') {
+        const canLeave = await confirmProjectSwitchWithDrafts();
+        if (!canLeave) return;
+      }
+      window.location.href = 'dashboard.php';
+    });
+
     // Logout
     document.getElementById('logout-btn')?.addEventListener('click', async () => {
+      if (typeof confirmProjectSwitchWithDrafts === 'function') {
+        const canLeave = await confirmProjectSwitchWithDrafts();
+        if (!canLeave) return;
+      }
       const response = await fetch('../api/auth/logout.php', {
         credentials: 'include'
       });

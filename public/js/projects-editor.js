@@ -10,6 +10,11 @@ let projectNavBound = false;
 let currentOpenFileId = null;
 let currentOpenFileName = '';
 let currentOpenFileSnapshot = '';
+let projectDraftFiles = {};
+let projectSavedSnapshots = {};
+let projectFileNamesById = {};
+let projectEditorDraftListenerBound = false;
+let projectSkipNextDraftCache = false;
 let unsavedChoiceResolver = null;
 let lastOpenedProjectIdFromDb = null;
 
@@ -60,6 +65,84 @@ function isCurrentFileDirty() {
   const editor = getEditorInstance();
   if (!editor || !currentOpenFileId) return false;
   return String(editor.getValue() || '') !== String(currentOpenFileSnapshot || '');
+}
+
+function setProjectDraftContent(fileId, fileName, content) {
+  const normalizedId = Number(fileId || 0);
+  if (!normalizedId) return;
+  projectDraftFiles[normalizedId] = String(content ?? '');
+  if (fileName) {
+    projectFileNamesById[normalizedId] = String(fileName);
+  }
+}
+
+function setProjectSavedSnapshot(fileId, fileName, content) {
+  const normalizedId = Number(fileId || 0);
+  if (!normalizedId) return;
+  projectSavedSnapshots[normalizedId] = String(content ?? '');
+  if (fileName) {
+    projectFileNamesById[normalizedId] = String(fileName);
+  }
+}
+
+function getProjectDraftContent(fileId) {
+  const normalizedId = Number(fileId || 0);
+  if (!normalizedId) return null;
+  return Object.prototype.hasOwnProperty.call(projectDraftFiles, normalizedId)
+    ? projectDraftFiles[normalizedId]
+    : null;
+}
+
+function isProjectFileDirty(fileId) {
+  const normalizedId = Number(fileId || 0);
+  if (!normalizedId) return false;
+  const draft = Object.prototype.hasOwnProperty.call(projectDraftFiles, normalizedId)
+    ? projectDraftFiles[normalizedId]
+    : null;
+  const snapshot = Object.prototype.hasOwnProperty.call(projectSavedSnapshots, normalizedId)
+    ? projectSavedSnapshots[normalizedId]
+    : '';
+  if (draft === null) return false;
+  return String(draft) !== String(snapshot);
+}
+
+function hasUnsavedProjectDrafts() {
+  return Object.keys(projectDraftFiles).some((id) => isProjectFileDirty(Number(id)));
+}
+
+function cacheCurrentProjectEditorDraft() {
+  if (projectSkipNextDraftCache) {
+    projectSkipNextDraftCache = false;
+    return;
+  }
+  const editor = getEditorInstance();
+  if (!editor || !currentOpenFileId) return;
+  setProjectDraftContent(currentOpenFileId, currentOpenFileName, editor.getValue());
+  applyProjectFileDirtyMarker(currentOpenFileId);
+}
+
+function applyProjectFileDirtyMarker(fileId) {
+  const normalizedId = Number(fileId || 0);
+  if (!normalizedId) return;
+  const node = document.querySelector(`#project-file-tree .file-tree-item[data-node-id="${normalizedId}"] .file-tree-name`);
+  if (!node) return;
+
+  const baseName = projectFileNamesById[normalizedId] || String(node.textContent || '').replace(/\s\*$/, '');
+  projectFileNamesById[normalizedId] = baseName;
+  node.textContent = isProjectFileDirty(normalizedId) ? `${baseName} *` : baseName;
+}
+
+function refreshAllProjectDirtyMarkers() {
+  const nameNodes = document.querySelectorAll('#project-file-tree .file-tree-item[data-node-id] .file-tree-name');
+  nameNodes.forEach((node) => {
+    const item = node.closest('.file-tree-item');
+    const fileId = Number(item?.getAttribute('data-node-id') || 0);
+    const itemType = String(item?.getAttribute('data-type') || '');
+    if (!fileId || itemType !== 'file') return;
+    const baseName = projectFileNamesById[fileId] || String(node.textContent || '').replace(/\s\*$/, '');
+    projectFileNamesById[fileId] = baseName;
+    node.textContent = isProjectFileDirty(fileId) ? `${baseName} *` : baseName;
+  });
 }
 
 async function readProjectFileById(projectId, fileId) {
@@ -127,13 +210,30 @@ async function ensureInitPyExists(projectId, projectName, fallbackCode = '') {
 }
 
 async function openFileInEditor(fileId, fileName, content) {
+  cacheCurrentProjectEditorDraft();
+
   const editor = await waitForEditorInstance();
   if (!editor) return;
-  setEditorContent(editor, content || '');
-  window.editor = editor;
-  currentOpenFileId = Number(fileId) || null;
+
+  const normalizedId = Number(fileId || 0);
+  const draftContent = getProjectDraftContent(normalizedId);
+  const effectiveContent = draftContent !== null ? draftContent : String(content || '');
+
+  // Update current file info BEFORE setting content to prevent change listener from caching with wrong fileId
+  currentOpenFileId = normalizedId || null;
   currentOpenFileName = fileName || '';
-  currentOpenFileSnapshot = String(content || '');
+  currentOpenFileSnapshot = Object.prototype.hasOwnProperty.call(projectSavedSnapshots, normalizedId)
+    ? String(projectSavedSnapshots[normalizedId] ?? '')
+    : String(content || '');
+
+  // Skip next draft cache because we're about to set content programmatically
+  projectSkipNextDraftCache = true;
+  setEditorContent(editor, effectiveContent);
+  window.editor = editor;
+
+  setProjectSavedSnapshot(normalizedId, currentOpenFileName, currentOpenFileSnapshot);
+  setProjectDraftContent(normalizedId, currentOpenFileName, effectiveContent);
+  applyProjectFileDirtyMarker(normalizedId);
   
   markFileInTreeWithRetry(fileId);
 }
@@ -199,13 +299,20 @@ async function getProjectRunContext() {
     return null;
   }
 
+  cacheCurrentProjectEditorDraft();
+
   const editor = getEditorInstance();
   let code = String(editor?.getValue?.() || '');
   let fileName = currentOpenFileName || '';
 
   if (!isPythonFile(fileName)) {
     const initFile = await readProjectFileByName(currentProject.id, 'init.py');
-    if (initFile?.content != null) {
+    const initFileId = Number(initFile?.fileId || initFile?.id || 0);
+    const draft = getProjectDraftContent(initFileId);
+    if (draft !== null) {
+      code = String(draft || '');
+      fileName = 'init.py';
+    } else if (initFile?.content != null) {
       code = String(initFile.content || '');
       fileName = 'init.py';
     }
@@ -409,13 +516,28 @@ async function saveCurrentOpenFile() {
   }
 
   const content = String(editor.getValue() || '');
+  cacheCurrentProjectEditorDraft();
+  await persistProjectFileContent(currentOpenFileId, currentOpenFileName, content);
+
+  currentOpenFileSnapshot = content;
+  setProjectSavedSnapshot(currentOpenFileId, currentOpenFileName, content);
+  setProjectDraftContent(currentOpenFileId, currentOpenFileName, content);
+  applyProjectFileDirtyMarker(currentOpenFileId);
+  return true;
+}
+
+async function persistProjectFileContent(fileId, fileName, content) {
+  if (!currentProject || !fileId) {
+    throw new Error('Keine aktive Datei zum Speichern');
+  }
+
   const response = await fetch('../api/projects/files-v2.php?action=update', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       project_id: currentProject.id,
-      file_id: currentOpenFileId,
+      file_id: Number(fileId),
       content
     })
   });
@@ -425,19 +547,93 @@ async function saveCurrentOpenFile() {
     throw new Error(data?.error || 'Speichern fehlgeschlagen');
   }
 
-  currentOpenFileSnapshot = content;
+  setProjectSavedSnapshot(fileId, fileName, content);
+  setProjectDraftContent(fileId, fileName, content);
+}
+
+async function saveCurrentProjectFile() {
+  const editor = getEditorInstance();
+  if (!currentProject || !editor || !currentOpenFileId) return true;
+
+  cacheCurrentProjectEditorDraft();
+
+  const fileId = currentOpenFileId;
+  if (isProjectFileDirty(fileId)) {
+    const content = String(projectDraftFiles[fileId] ?? '');
+    const fileName = projectFileNamesById[fileId] || currentOpenFileName || '';
+    await persistProjectFileContent(fileId, fileName, content);
+    applyProjectFileDirtyMarker(fileId);
+    currentOpenFileSnapshot = String(projectSavedSnapshots[fileId] ?? currentOpenFileSnapshot);
+  }
+
   return true;
 }
 
-function showUnsavedChangesModal(fileName = '') {
+async function saveAllProjectFiles() {
+  const editor = getEditorInstance();
+  if (!currentProject || !editor) return false;
+
+  cacheCurrentProjectEditorDraft();
+
+  const dirtyFileIds = Object.keys(projectDraftFiles)
+    .map((id) => Number(id))
+    .filter((id) => id && isProjectFileDirty(id));
+
+  for (const fileId of dirtyFileIds) {
+    const content = String(projectDraftFiles[fileId] ?? '');
+    const fileName = projectFileNamesById[fileId] || '';
+    await persistProjectFileContent(fileId, fileName, content);
+    applyProjectFileDirtyMarker(fileId);
+  }
+
+  if (currentOpenFileId) {
+    currentOpenFileSnapshot = String(projectSavedSnapshots[currentOpenFileId] ?? currentOpenFileSnapshot);
+  }
+
+  return true;
+}
+
+function showUnsavedChangesModal(fileName = '', options = {}) {
   const modal = document.getElementById('unsaved-changes-modal');
   const fileNameEl = document.getElementById('unsaved-file-name');
+  const descriptionEl = document.getElementById('unsaved-changes-description');
+  const subtextEl = document.getElementById('unsaved-changes-subtext');
+  const saveBtn = document.getElementById('unsaved-save-btn');
+  const discardBtn = document.getElementById('unsaved-discard-btn');
+  const scope = options?.scope === 'project' ? 'project' : 'file';
+
   if (!modal) {
     return Promise.resolve('cancel');
   }
 
   if (fileNameEl) {
-    fileNameEl.textContent = fileName || 'dieser Datei';
+    fileNameEl.textContent = fileName || (scope === 'project' ? 'diesem Projekt' : 'dieser Datei');
+  }
+
+  if (descriptionEl) {
+    if (scope === 'project') {
+      descriptionEl.innerHTML = 'Du hast ungespeicherte Änderungen im Projekt <strong id="unsaved-file-name">diesem Projekt</strong>.';
+    } else {
+      descriptionEl.innerHTML = 'Du hast ungespeicherte Änderungen in <strong id="unsaved-file-name">dieser Datei</strong>.';
+    }
+    const refreshedFileNameEl = document.getElementById('unsaved-file-name');
+    if (refreshedFileNameEl) {
+      refreshedFileNameEl.textContent = fileName || (scope === 'project' ? 'diesem Projekt' : 'dieser Datei');
+    }
+  }
+
+  if (subtextEl) {
+    subtextEl.textContent = scope === 'project'
+      ? 'Alle Änderungen speichern, verwerfen oder abbrechen?'
+      : 'Was möchtest du tun?';
+  }
+
+  if (saveBtn) {
+    saveBtn.textContent = scope === 'project' ? 'Alle Änderungen speichern' : 'Änderungen speichern';
+  }
+
+  if (discardBtn) {
+    discardBtn.textContent = scope === 'project' ? 'Änderungen verwerfen' : 'Änderungen verwerfen';
   }
 
   modal.classList.add('open');
@@ -463,7 +659,7 @@ function resolveUnsavedChangesModal(choice) {
 async function confirmDiscardOrSaveCurrentFile() {
   if (!isCurrentFileDirty()) return true;
 
-  const choice = await showUnsavedChangesModal(currentOpenFileName);
+  const choice = await showUnsavedChangesModal(currentOpenFileName, { scope: 'file' });
 
   if (choice === 'save') {
     try {
@@ -476,6 +672,33 @@ async function confirmDiscardOrSaveCurrentFile() {
   }
 
   if (choice === 'discard') {
+    projectSkipNextDraftCache = true;
+    return true;
+  }
+
+  return false;
+}
+
+async function confirmProjectSwitchWithDrafts() {
+  cacheCurrentProjectEditorDraft();
+  if (!hasUnsavedProjectDrafts()) return true;
+
+  const choice = await showUnsavedChangesModal('diesem Projekt', { scope: 'project' });
+
+  if (choice === 'save') {
+    try {
+      await saveAllProjectFiles();
+      return true;
+    } catch (saveErr) {
+      alert('Speichern fehlgeschlagen: ' + (saveErr?.message || saveErr));
+      return false;
+    }
+  }
+
+  if (choice === 'discard') {
+    projectSkipNextDraftCache = true;
+    projectDraftFiles = {};
+    refreshAllProjectDirtyMarkers();
     return true;
   }
 
@@ -670,6 +893,9 @@ async function loadProject(projectId) {
     currentOpenFileId = null;
     currentOpenFileName = '';
     currentOpenFileSnapshot = '';
+    projectDraftFiles = {};
+    projectSavedSnapshots = {};
+    projectFileNamesById = {};
 
     await ensureInitPyExists(projectId, project.name, project.code || '');
     
@@ -693,6 +919,8 @@ async function loadProject(projectId) {
         currentOpenFileId = preferredFile.fileId ? Number(preferredFile.fileId) : null;
         currentOpenFileName = preferredFile.fileName || 'init.py';
         currentOpenFileSnapshot = String(preferredFile.content || '');
+        setProjectSavedSnapshot(currentOpenFileId, currentOpenFileName, currentOpenFileSnapshot);
+        setProjectDraftContent(currentOpenFileId, currentOpenFileName, currentOpenFileSnapshot);
         console.log('[projects-editor] Editor loaded, file:', currentOpenFileName, 'length:', (preferredFile.content || '').length);
       } catch (err) {
         console.warn('[projects-editor] Could not load from file tree, using project.code:', err);
@@ -730,7 +958,8 @@ async function loadProject(projectId) {
           readOnly: false,
           doubleClickAction: 'rename',
           beforeFileSelect: async () => {
-            return confirmDiscardOrSaveCurrentFile();
+            cacheCurrentProjectEditorDraft();
+            return true;
           },
           onFileSelected: async (fileId, fileName, content) => {
             await openFileInEditor(fileId, fileName, content);
@@ -743,6 +972,7 @@ async function loadProject(projectId) {
         if (typeof projectFileManager.init === 'function') {
           await projectFileManager.init();
           console.log('[projects-editor] FileTreeManager init() completed successfully');
+          setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
         } else {
           console.error('[projects-editor] FileTreeManager has no init() method!');
           throw new Error('No init method');
@@ -755,6 +985,7 @@ async function loadProject(projectId) {
     } else {
       console.log('[projects-editor] FileTreeManager not available, using manual tree');
       await renderFileTreeManually(projectId);
+      setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
     }
     
     // Show GUI container only for HTML/Mixed projects
@@ -793,6 +1024,7 @@ async function loadProject(projectId) {
           console.log('[projects-editor] Auto-opening init.py:', initFileId);
           await openFileInEditor(initFileId, 'init.py', initFile.content || '');
           markFileInTreeWithRetry(initFileId);
+          setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
         } else {
           console.warn('[projects-editor] init.py not found');
         }
@@ -941,6 +1173,11 @@ async function renderProjectHtml() {
       if (!fileId) {
         console.warn(`[projects-editor] File not found: ${fileName}`);
         return null; // File not found
+      }
+
+      const draft = getProjectDraftContent(fileId);
+      if (draft !== null) {
+        return draft;
       }
       
       // Read file content
@@ -1160,8 +1397,7 @@ async function renderFileTreeManually(projectId) {
     treeWrapper.querySelectorAll('.project-tree-file').forEach((fileEl) => {
       fileEl.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const canSwitch = await confirmDiscardOrSaveCurrentFile();
-        if (!canSwitch) return;
+        cacheCurrentProjectEditorDraft();
         const fileId = fileEl.getAttribute('data-file-id');
         if (!fileId) return;
         
@@ -1315,7 +1551,7 @@ function setupEventListeners() {
         const projectId = parseInt(item.dataset.projectId, 10);
         if (!Number.isNaN(projectId)) {
           if (currentProject?.id !== projectId) {
-            const canSwitch = await confirmDiscardOrSaveCurrentFile();
+            const canSwitch = await confirmProjectSwitchWithDrafts();
             if (!canSwitch) return;
           }
           loadProject(projectId);
@@ -1345,6 +1581,26 @@ function setupEventListeners() {
       alert('Speichern fehlgeschlagen');
     }
   });
+
+  document.getElementById('save-all-project-btn')?.addEventListener('click', async () => {
+    try {
+      await saveAllProjectFiles();
+      console.log('[projects-editor] All files saved');
+    } catch (error) {
+      console.error('[projects-editor] Save all failed:', error);
+      alert('Alle speichern fehlgeschlagen');
+    }
+  });
+
+  if (!projectEditorDraftListenerBound) {
+    waitForEditorInstance().then((editor) => {
+      if (!editor || projectEditorDraftListenerBound) return;
+      editor.onDidChangeModelContent(() => {
+        cacheCurrentProjectEditorDraft();
+      });
+      projectEditorDraftListenerBound = true;
+    });
+  }
 
   document.getElementById('web-help-btn')?.addEventListener('click', () => {
     const basePath = window.location.pathname.replace(/\/projects\.php$/i, '');
