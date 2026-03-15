@@ -14,6 +14,8 @@ $user = requireAuth();
 $conn = getDbConnection();
 
 $isAdmin = ($user['role'] ?? '') === 'admin';
+$showAll = isset($_GET['all']) && $_GET['all'] === '1';
+$canSeeAll = $isAdmin && $showAll;
 $lastOpenedProjectId = null;
 
 try {
@@ -35,7 +37,7 @@ try {
     $lastOpenedProjectId = null;
 }
 
-if ($isAdmin) {
+if ($canSeeAll) {
     $stmt = $conn->prepare('
         SELECT p.id, p.name, p.description, p.project_type, p.visibility, p.share_token, p.created_at, p.updated_at,
                p.user_id, u.email as owner_email, u.first_name as owner_first_name, u.last_name as owner_last_name
@@ -84,5 +86,5 @@ jsonResponse([
     'projects' => $projects,
     'last_opened_project_id' => $lastOpenedProjectId,
     'count' => count($projects),
-    'scope' => $isAdmin ? 'all' : 'own'
+    'scope' => $canSeeAll ? 'all' : 'own'
 ]);

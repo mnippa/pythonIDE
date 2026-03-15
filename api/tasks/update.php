@@ -121,14 +121,7 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
-$stmt = $conn->prepare('SELECT id, task_type, code_template, variable_overrides, folderstructure FROM tasks WHERE id = ?');
-$stmt->bind_param('i', $taskId);
-$stmt->execute();
-$result = $stmt->get_result();
-if ($result->num_rows === 0) {
-    jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
-}
-$existingTask = $result->fetch_assoc();
+$existingTask = requireAdminOwnedTask($conn, $taskId, $user);
 $existingTaskType = $existingTask['task_type'] ?? null;
 $existingCodeTemplate = $existingTask['code_template'] ?? '';
 $existingOverrides = $existingTask['variable_overrides'] ?? null;

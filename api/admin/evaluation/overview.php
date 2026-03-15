@@ -18,13 +18,7 @@ try {
         jsonResponse(['ok' => false, 'error' => 'assignment_id required'], 400);
     }
 
-    $stmt = $conn->prepare('SELECT id, title FROM assignments WHERE id = ?');
-    $stmt->bind_param('i', $assignmentId);
-    $stmt->execute();
-    $assignment = $stmt->get_result()->fetch_assoc();
-    if (!$assignment) {
-        jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
-    }
+    $assignment = requireAdminOwnedAssignment($conn, $assignmentId, $admin);
 
     $columnExists = function (mysqli $conn, string $table, string $column): bool {
         $safeTable = $conn->real_escape_string($table);

@@ -317,31 +317,37 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
 
       try {
         // Load assignments count and progress
-        const assignmentsResponse = await requestJson('../api/assignments/list.php');
-        if (assignmentsResponse.ok && assignmentsResponse.assignments) {
-          const assignments = assignmentsResponse.assignments;
+        const assignmentsResponse = await requestJson('../api/user_assignments/list.php');
+        if (assignmentsResponse.ok && assignmentsResponse.items) {
+          const assignments = assignmentsResponse.items;
           document.getElementById('assignments-count').textContent = assignments.length;
-          
-          // Calculate progress (assignments with completed_tasks / total_tasks)
-          let totalTasks = 0;
-          let completedTasks = 0;
-          
-          for (const assignment of assignments) {
-            const tasksResponse = await requestJson(`../api/assignments/tasks.php?assignment_id=${assignment.assignment_id}`);
-            if (tasksResponse.ok && tasksResponse.tasks) {
-              totalTasks += tasksResponse.tasks.length;
-              
-              // Count completed tasks
-              const progressResponse = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignment.assignment_id}`);
-              if (progressResponse.ok && progressResponse.tasks) {
-                completedTasks += progressResponse.tasks.filter(t => t.status === 'passed').length;
+
+          try {
+            // Calculate progress (assignments with completed_tasks / total_tasks)
+            let totalTasks = 0;
+            let completedTasks = 0;
+
+            for (const assignment of assignments) {
+              const assignmentId = assignment.assignment_id;
+              const tasksResponse = await requestJson(`../api/assignments/tasks.php?assignment_id=${assignmentId}`);
+              if (tasksResponse.ok && tasksResponse.tasks) {
+                totalTasks += tasksResponse.tasks.length;
+
+                // Count completed tasks
+                const progressResponse = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}`);
+                if (progressResponse.ok && progressResponse.tasks) {
+                  completedTasks += progressResponse.tasks.filter(t => t.status === 'passed').length;
+                }
               }
             }
-          }
-          
-          if (totalTasks > 0) {
-            document.getElementById('assignments-progress').textContent = `${completedTasks}/${totalTasks}`;
-          } else {
+
+            if (totalTasks > 0) {
+              document.getElementById('assignments-progress').textContent = `${completedTasks}/${totalTasks}`;
+            } else {
+              document.getElementById('assignments-progress').textContent = '-';
+            }
+          } catch (progressErr) {
+            console.error('Failed to load assignments progress:', progressErr);
             document.getElementById('assignments-progress').textContent = '-';
           }
         }

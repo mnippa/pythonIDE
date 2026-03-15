@@ -17,9 +17,36 @@ try {
     $conn = getDbConnection();
     
     $teamId = isset($_GET['team_id']) && $_GET['team_id'] !== '' ? (int)$_GET['team_id'] : null;
+    $semester = isset($_GET['semester']) ? trim($_GET['semester']) : '';
     $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+    $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 25;
+
+    if ($limit < 1) {
+        $limit = 25;
+    }
+
+    if ($limit > 100) {
+        $limit = 100;
+    }
+
+    $offset = ($page - 1) * $limit;
+    $semesterSql = "CASE 
+                WHEN MONTH(u.registration_date) >= 3 AND MONTH(u.registration_date) <= 9
+                THEN CONCAT('SoSe', YEAR(u.registration_date) % 100)
+                WHEN MONTH(u.registration_date) >= 10
+                THEN CONCAT('WiSe', YEAR(u.registration_date) % 100, (YEAR(u.registration_date) + 1) % 100)
+                ELSE CONCAT('WiSe', (YEAR(u.registration_date) - 1) % 100, YEAR(u.registration_date) % 100)
+            END";
     
     // Build query with team join
+    $fromSql = "
+            FROM users u
+            LEFT JOIN teams t ON t.id = u.team_id
+            WHERE 1=1";
+
+    $countSql = 'SELECT COUNT(*) as total' . $fromSql;
+
     $sql = "SELECT 
                 u.id,
                 u.email,
@@ -31,21 +58,28 @@ try {
                 t.name as team_name,
                 u.registration_date,
                 u.created_at,
-                u.last_login
-            FROM users u
-            LEFT JOIN teams t ON t.id = u.team_id
-            WHERE 1=1";
+                u.last_login,
+                {$semesterSql} as semester" . $fromSql;
     
     $params = [];
     $types = '';
     
     if ($teamId) {
+        $countSql .= " AND u.team_id = ?";
         $sql .= " AND u.team_id = ?";
         $types .= 'i';
         $params[] = $teamId;
     }
+
+    if ($semester !== '') {
+        $countSql .= " AND {$semesterSql} = ?";
+        $sql .= " AND {$semesterSql} = ?";
+        $types .= 's';
+        $params[] = $semester;
+    }
     
     if ($search !== '') {
+        $countSql .= " AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
         $sql .= " AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
         $types .= 'sss';
         $searchParam = '%' . $search . '%';
@@ -54,12 +88,28 @@ try {
         $params[] = $searchParam;
     }
     
-    $sql .= " ORDER BY u.created_at DESC";
+    $countStmt = $conn->prepare($countSql);
+    if ($types) {
+        $countStmt->bind_param($types, ...$params);
+    }
+    $countStmt->execute();
+    $total = (int)(($countStmt->get_result()->fetch_assoc()['total'] ?? 0));
+
+    $totalPages = max(1, (int)ceil($total / $limit));
+    if ($page > $totalPages) {
+        $page = $totalPages;
+        $offset = ($page - 1) * $limit;
+    }
+
+    $sql .= " ORDER BY u.created_at DESC LIMIT ? OFFSET ?";
+
+    $queryParams = $params;
+    $queryTypes = $types . 'ii';
+    $queryParams[] = $limit;
+    $queryParams[] = $offset;
     
     $stmt = $conn->prepare($sql);
-    if ($types) {
-        $stmt->bind_param($types, ...$params);
-    }
+    $stmt->bind_param($queryTypes, ...$queryParams);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -76,6 +126,7 @@ try {
     $items = [];
     while ($row = $result->fetch_assoc()) {
         $userId = (int)$row['id'];
+        $userRole = $row['role'] ?? 'user';
         $userTeamId = $row['team_id'] ? (int)$row['team_id'] : null;
         
         // Calculate assignment stats based on assignment status
@@ -98,7 +149,7 @@ try {
             }
 
             $assignQuery = "SELECT {$selectCols} FROM user_assignments WHERE ";
-            if ($hasTeamId && $userTeamId) {
+            if ($hasTeamId && $userTeamId && $userRole !== 'admin') {
                 $assignQuery .= "user_id = ? OR team_id = ?";
                 $assignStmt = $conn->prepare($assignQuery);
                 if (!$assignStmt) {
@@ -175,6 +226,7 @@ try {
             'status' => $row['status'] ?? 'aktiv',
             'team_id' => $userTeamId,
             'team_name' => $row['team_name'],
+            'semester' => $row['semester'],
             'registration_date' => $row['registration_date'],
             'created_at' => $row['created_at'],
             'last_login' => $row['last_login'],
@@ -185,7 +237,13 @@ try {
     jsonResponse([
         'ok' => true,
         'users' => $items,
-        'count' => count($items)
+        'count' => count($items),
+        'total' => $total,
+        'page' => $page,
+        'limit' => $limit,
+        'total_pages' => $totalPages,
+        'has_prev' => $page > 1,
+        'has_next' => $page < $totalPages
     ]);
     
 } catch (Exception $e) {

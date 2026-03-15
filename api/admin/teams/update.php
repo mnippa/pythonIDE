@@ -29,6 +29,15 @@ try {
     
     require_once __DIR__ . '/../../../config/database.php';
     $conn = getDbConnection();
+
+    $columnCheck = $conn->query("SHOW COLUMNS FROM teams LIKE 'invite_token'");
+    $hasInviteToken = $columnCheck && $columnCheck->num_rows > 0;
+    if (!$hasInviteToken) {
+        $conn->query("ALTER TABLE teams ADD COLUMN invite_token VARCHAR(64) NULL");
+        $conn->query("CREATE UNIQUE INDEX idx_teams_invite_token ON teams(invite_token)");
+        $columnCheck = $conn->query("SHOW COLUMNS FROM teams LIKE 'invite_token'");
+        $hasInviteToken = $columnCheck && $columnCheck->num_rows > 0;
+    }
     
     $updates = [];
     $types = '';
@@ -51,6 +60,12 @@ try {
         $types .= 'i';
         $params[] = (int)$data['is_active'];
     }
+
+    if ($hasInviteToken && !empty($data['regenerate_invite'])) {
+        $updates[] = 'invite_token = ?';
+        $types .= 's';
+        $params[] = bin2hex(random_bytes(16));
+    }
     
     if (empty($updates)) {
         http_response_code(400);
@@ -69,7 +84,20 @@ try {
         throw new Exception('Failed to update team: ' . $stmt->error);
     }
     
-    echo json_encode(['ok' => true, 'message' => 'Team updated successfully']);
+    $inviteToken = null;
+    if ($hasInviteToken) {
+        $readStmt = $conn->prepare('SELECT invite_token FROM teams WHERE id = ? LIMIT 1');
+        $readStmt->bind_param('i', $teamId);
+        $readStmt->execute();
+        $inviteRow = $readStmt->get_result()->fetch_assoc();
+        $inviteToken = $inviteRow['invite_token'] ?? null;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'message' => 'Team updated successfully',
+        'invite_token' => $inviteToken
+    ]);
     
 } catch (Exception $e) {
     http_response_code(500);

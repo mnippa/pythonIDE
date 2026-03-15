@@ -191,10 +191,10 @@
     const switchText = document.getElementById('switch-text');
     const switchLink = document.getElementById('switch-link');
     const messageContainer = document.getElementById('message-container');
+    const inviteToken = new URLSearchParams(window.location.search).get('invite') || '';
 
-    switchLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      isLoginMode = !isLoginMode;
+    function setMode(loginMode) {
+      isLoginMode = loginMode;
       
       if (isLoginMode) {
         pageTitle.textContent = 'Anmelden';
@@ -206,16 +206,27 @@
         switchLink.textContent = 'Registrieren';
       } else {
         pageTitle.textContent = 'Registrieren';
-        pageSubtitle.textContent = 'Neues Konto erstellen';
+        pageSubtitle.textContent = inviteToken
+          ? 'Einladung erkannt: Registrierung für ein Team'
+          : 'Neues Konto erstellen';
         firstNameGroup.style.display = 'block';
         lastNameGroup.style.display = 'block';
         submitBtn.textContent = 'Registrieren';
         switchText.textContent = 'Bereits registriert?';
         switchLink.textContent = 'Anmelden';
       }
-      
+
       messageContainer.innerHTML = '';
+    }
+
+    switchLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      setMode(!isLoginMode);
     });
+
+    if (inviteToken) {
+      setMode(false);
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -233,7 +244,7 @@
         const endpoint = isLoginMode ? '../api/auth/login.php' : '../api/auth/register.php';
         const body = isLoginMode 
           ? { email, password }
-          : { email, password, first_name: firstName, last_name: lastName };
+          : { email, password, first_name: firstName, last_name: lastName, invite_token: inviteToken || undefined };
         
         const response = await fetch(endpoint, {
           method: 'POST',

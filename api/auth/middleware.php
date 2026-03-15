@@ -40,6 +40,56 @@ function requireAdmin() {
 }
 
 /**
+ * Require that the current admin owns the assignment.
+ */
+function requireAdminOwnedAssignment(mysqli $conn, int $assignmentId, ?array $admin = null): array {
+    $admin = $admin ?? requireAdmin();
+
+    $stmt = $conn->prepare('SELECT * FROM assignments WHERE id = ? LIMIT 1');
+    $stmt->bind_param('i', $assignmentId);
+    $stmt->execute();
+    $assignment = $stmt->get_result()->fetch_assoc();
+
+    if (!$assignment) {
+        jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
+    }
+
+    if ((int)($assignment['created_by'] ?? 0) !== (int)$admin['id']) {
+        jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
+    }
+
+    return $assignment;
+}
+
+/**
+ * Require that the current admin owns the assignment of the given task.
+ */
+function requireAdminOwnedTask(mysqli $conn, int $taskId, ?array $admin = null): array {
+    $admin = $admin ?? requireAdmin();
+
+    $stmt = $conn->prepare('
+        SELECT t.*, a.created_by
+        FROM tasks t
+        INNER JOIN assignments a ON a.id = t.assignment_id
+        WHERE t.id = ?
+        LIMIT 1
+    ');
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $task = $stmt->get_result()->fetch_assoc();
+
+    if (!$task) {
+        jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
+    }
+
+    if ((int)($task['created_by'] ?? 0) !== (int)$admin['id']) {
+        jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
+    }
+
+    return $task;
+}
+
+/**
  * Get current user (if logged in)
  */
 function getCurrentUser() {

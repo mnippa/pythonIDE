@@ -44,37 +44,65 @@ if ($hasUserTeamId && $hasAssignmentTeamId) {
     $userCountSql = '(' . $directCountSql . ' + ' . $teamCountSql . ') AS user_count';
 }
 
-$sql = '
-    SELECT 
-        a.id,
-        a.title,
-        a.description,
-        a.created_by,
-        a.created_at,
-        a.updated_at,
-        a.is_active,
-        a.difficulty,
-        u.first_name,
-        u.last_name,
-        u.email,
-        (SELECT COUNT(*) FROM tasks t WHERE t.assignment_id = a.id) AS task_count,
-        ' . $userCountSql . ',
-        ua.status AS user_status
-    FROM assignments a
-    LEFT JOIN users u ON a.created_by = u.id
-    LEFT JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
-';
+// LOGIC:
+// - Without ?all=1 (normal dashboard): Show assignments the user is assigned to (via user_assignments)
+//   This applies to ALL users, including admins - on the dashboard, admins are participants too
+// - With ?all=1 (admin management): Show assignments the admin CREATED (WHERE created_by)
+//   This is only meaningful for admins; for regular users, it's a no-op (most won't be creators)
 
-$params = [$user['id']];
-$types = 'i';
-
-if ($user['role'] !== 'admin') {
-    $sql .= ' WHERE a.is_active = 1 OR ua.user_id IS NOT NULL';
-} elseif (!$showAll) {
-    $sql .= ' WHERE a.is_active = 1';
+if ($showAll && $user['role'] === 'admin') {
+    // Admin Management: Show all assignments created by this admin
+    $sql = '
+        SELECT 
+            a.id,
+            a.title,
+            a.description,
+            a.created_by,
+            a.created_at,
+            a.updated_at,
+            a.is_active,
+            a.difficulty,
+            u.first_name,
+            u.last_name,
+            u.email,
+            (SELECT COUNT(*) FROM tasks t WHERE t.assignment_id = a.id) AS task_count,
+            ' . $userCountSql . ',
+            NULL AS user_status
+        FROM assignments a
+        LEFT JOIN users u ON a.created_by = u.id
+        WHERE a.created_by = ?
+        ORDER BY a.created_at DESC
+    ';
+    $params = [$user['id']];
+    $types = 'i';
+} else {
+    // Participant View (normal dashboard): Show assignments the user is assigned to
+    // This is the SAME for admins and regular users
+    $sql = '
+        SELECT 
+            a.id,
+            a.title,
+            a.description,
+            a.created_by,
+            a.created_at,
+            a.updated_at,
+            a.is_active,
+            a.difficulty,
+            u.first_name,
+            u.last_name,
+            u.email,
+            (SELECT COUNT(*) FROM tasks t WHERE t.assignment_id = a.id) AS task_count,
+            ' . $userCountSql . ',
+            ua.status AS user_status
+        FROM assignments a
+        LEFT JOIN users u ON a.created_by = u.id
+        JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
+        WHERE a.is_active = 1
+        ORDER BY a.created_at DESC
+    ';
+    $params = [$user['id']];
+    $types = 'i';
 }
-
-$sql .= ' ORDER BY a.created_at DESC';
 
 try {
     $stmt = $conn->prepare($sql);

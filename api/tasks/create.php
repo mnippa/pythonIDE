@@ -176,6 +176,8 @@ if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
 }
 
+requireAdminOwnedAssignment($conn, $assignmentId, $user);
+
 if ($title === '') {
     jsonResponse(['ok' => false, 'error' => 'Title is required'], 400);
 }

@@ -18,6 +18,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
 
 try {
     require_once __DIR__ . '/../../../config/database.php';
+    require_once __DIR__ . '/../../auth/middleware.php';
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'Config load failed: ' . $e->getMessage()]);
@@ -34,7 +35,9 @@ if (!$assignmentId) {
 }
 
 try {
+    $admin = requireAdmin();
     $conn = getDbConnection();
+    requireAdminOwnedAssignment($conn, (int)$assignmentId, $admin);
     
     // Start transaction
     $conn->begin_transaction();
@@ -58,7 +61,7 @@ try {
         throw new Exception('Prepare failed: ' . $conn->error);
     }
     
-    $userId = $_SESSION['user_id'];
+    $userId = $admin['id'];
     $stmt->bind_param('sssii', $newTitle, $assignment['description'], $assignment['difficulty'], $assignment['is_active'], $userId);
     if (!$stmt->execute()) {
         throw new Exception('Insert assignment failed: ' . $stmt->error);

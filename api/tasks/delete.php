@@ -29,13 +29,7 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
-$stmt = $conn->prepare('SELECT id FROM tasks WHERE id = ?');
-$stmt->bind_param('i', $taskId);
-$stmt->execute();
-
-if ($stmt->get_result()->num_rows === 0) {
-    jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
-}
+requireAdminOwnedTask($conn, $taskId, $user);
 
 $stmt = $conn->prepare('DELETE FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);

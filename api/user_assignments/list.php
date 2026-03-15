@@ -16,13 +16,14 @@ $conn = getDbConnection();
 $filterUserId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
 $filterAssignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
 $statusFilter = isset($_GET['status']) ? $_GET['status'] : null;
+$showAll = isset($_GET['all']) && $_GET['all'] === '1';
 
 $allowedStatus = ['assigned', 'in_progress', 'submitted', 'passed', 'failed'];
 if ($statusFilter !== null && !in_array($statusFilter, $allowedStatus, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid status filter'], 400);
 }
 
-if ($user['role'] !== 'admin') {
+if ($user['role'] !== 'admin' || !$showAll) {
     $filterUserId = $user['id'];
     $filterAssignmentId = null;
 }

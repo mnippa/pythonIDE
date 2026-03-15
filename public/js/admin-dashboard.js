@@ -11,7 +11,17 @@ const state = {
   assignmentsSortDir: 'asc',
   assignmentsFilter: '',
   tasksFilterText: '',
-  tasksFilterType: 'all'
+  tasksFilterType: 'all',
+  projectsFilterText: '',
+  projectsFilterUserId: null,
+  projectsFilterUserLabel: '',
+  projectsFilterTeamId: '',
+  projectsFilterSemester: '',
+  projectsPage: 1,
+  projectsTotalPages: 1,
+  projectsTotal: 0,
+  projectsLimit: 50,
+  projectsLoaded: false
 };
 
 function $(id) {
@@ -87,18 +97,79 @@ function initTaskFormTabs(formId) {
 }
 
 async function loadProjects() {
-  const data = await requestJson('../api/admin/projects/list.php');
-  state.projects = data.projects || [];
-
+  const statusEl = $('projects-status');
   const body = $('projects-body');
+  const query = (state.projectsFilterText || '').trim();
+  const userId = state.projectsFilterUserId;
+  const teamId = state.projectsFilterTeamId;
+  const semester = state.projectsFilterSemester;
+  const limit = Math.min(Math.max(parseInt(state.projectsLimit, 10) || 50, 1), 100);
+
+  if (statusEl) {
+    if (userId && state.projectsFilterUserLabel) {
+      statusEl.textContent = `Lade Projekte von ${state.projectsFilterUserLabel}...`;
+    } else {
+      statusEl.textContent = 'Lade Projekte...';
+    }
+  }
+  if (body) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-secondary);">Lade Projekte...</td></tr>';
+  }
+
+  const params = new URLSearchParams();
+  if (query) params.set('search', query);
+  if (userId) params.set('user_id', String(userId));
+  if (teamId) params.set('team_id', String(teamId));
+  if (semester) params.set('semester', semester);
+  params.set('page', String(state.projectsPage || 1));
+  params.set('limit', String(limit));
+
+  const data = await requestJson(`../api/admin/projects/list.php?${params.toString()}`);
+  state.projects = data.projects || [];
+  state.projectsPage = data.page || 1;
+  state.projectsTotalPages = data.total_pages || 1;
+  state.projectsTotal = data.total || 0;
+  state.projectsLoaded = true;
+
   body.innerHTML = '';
+
+  if (data.requires_search) {
+    if (statusEl) {
+      statusEl.textContent = 'Bitte zuerst nach Projekten suchen oder einen Nutzer aus der Userliste auswählen.';
+    }
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-secondary);">Noch keine Suche ausgeführt.</td></tr>';
+    updateProjectsPagination();
+    return;
+  }
+
+  if (statusEl) {
+    const scopeLabel = userId && state.projectsFilterUserLabel
+      ? ` für ${state.projectsFilterUserLabel}`
+      : '';
+    const filters = [
+      query ? `Suche: "${query}"` : '',
+      teamId ? `Team ${teamId}` : '',
+      semester ? `Semester ${semester}` : ''
+    ].filter(Boolean).join(' · ');
+    statusEl.textContent = `${state.projects.length} von ${state.projectsTotal} Projekt(en) geladen${scopeLabel}${filters ? ` – ${filters}` : ''}`;
+  }
+
+  if (!state.projects.length) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-secondary);">Keine Projekte gefunden.</td></tr>';
+    updateProjectsPagination();
+    return;
+  }
 
   state.projects.forEach((p) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="mono">${p.id}</td>
       <td>${escapeHtml(p.name)}</td>
-      <td>${escapeHtml(p.user_email)}</td>
+      <td>${escapeHtml(p.description || '')}</td>
+      <td>
+        <div>${escapeHtml(p.user_email)}</div>
+        <div style="font-size:12px;color:var(--hspf-text-secondary);">${escapeHtml([p.team_name || '-', p.semester || '-'].join(' · '))}</div>
+      </td>
       <td><span class="tag">${escapeHtml(p.visibility || 'private')}</span></td>
       <td>${escapeHtml(p.updated_at || '')}</td>
       <td>
@@ -110,7 +181,87 @@ async function loadProjects() {
     `;
     body.appendChild(tr);
   });
+
+  updateProjectsPagination();
 }
+
+function updateProjectsPagination() {
+  const totalPages = Math.max(1, state.projectsTotalPages || 1);
+  if ($('projects-page-info')) {
+    $('projects-page-info').textContent = `Page ${state.projectsPage} of ${totalPages}`;
+  }
+  if ($('projects-prev')) {
+    $('projects-prev').disabled = state.projectsPage <= 1;
+  }
+  if ($('projects-next')) {
+    $('projects-next').disabled = state.projectsPage >= totalPages;
+  }
+}
+
+function resetProjectFilters() {
+  state.projectsFilterText = '';
+  state.projectsFilterUserId = null;
+  state.projectsFilterUserLabel = '';
+  state.projectsFilterTeamId = '';
+  state.projectsFilterSemester = '';
+  state.projectsPage = 1;
+  state.projectsTotalPages = 1;
+  state.projectsTotal = 0;
+  state.projectsLimit = 50;
+  state.projectsLoaded = false;
+  if ($('projects-search')) $('projects-search').value = '';
+  if ($('projects-team-filter')) $('projects-team-filter').value = '';
+  if ($('projects-semester-filter')) $('projects-semester-filter').value = '';
+  if ($('projects-limit')) $('projects-limit').value = '50';
+  if ($('projects-status')) $('projects-status').textContent = 'Noch keine Suche ausgeführt.';
+  if ($('projects-body')) {
+    $('projects-body').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-secondary);">Bitte Suche starten oder Nutzer-Projekte öffnen.</td></tr>';
+  }
+  updateProjectsPagination();
+}
+
+async function searchProjects(options = {}) {
+  if (typeof options.text === 'string') {
+    state.projectsFilterText = options.text.trim();
+    if ($('projects-search')) $('projects-search').value = state.projectsFilterText;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'userId')) {
+    state.projectsFilterUserId = options.userId || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'userLabel')) {
+    state.projectsFilterUserLabel = options.userLabel || '';
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'teamId')) {
+    state.projectsFilterTeamId = options.teamId || '';
+    if ($('projects-team-filter')) $('projects-team-filter').value = state.projectsFilterTeamId;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'semester')) {
+    state.projectsFilterSemester = options.semester || '';
+    if ($('projects-semester-filter')) $('projects-semester-filter').value = state.projectsFilterSemester;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'page')) {
+    state.projectsPage = Math.max(1, options.page || 1);
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'limit')) {
+    state.projectsLimit = options.limit || 50;
+    if ($('projects-limit')) $('projects-limit').value = String(state.projectsLimit);
+  }
+  await loadProjects();
+}
+
+window.openAdminProjectsForUser = async function openAdminProjectsForUser(userId, userLabel = '') {
+  state.projectsFilterUserId = userId;
+  state.projectsFilterUserLabel = userLabel;
+  state.projectsFilterText = '';
+  state.projectsFilterTeamId = '';
+  state.projectsFilterSemester = '';
+  state.projectsPage = 1;
+  if ($('projects-search')) $('projects-search').value = '';
+  if ($('projects-team-filter')) $('projects-team-filter').value = '';
+  if ($('projects-semester-filter')) $('projects-semester-filter').value = '';
+  setActiveTab('projects');
+  await loadProjects();
+};
 
 async function loadAssignments() {
   const data = await requestJson('../api/assignments/list.php?all=1');
@@ -154,6 +305,10 @@ function renderAssignments() {
     tr.innerHTML = `
       <td class="mono">${a.id}</td>
       <td>${escapeHtml(a.title)}</td>
+      <td>
+        <div>${escapeHtml(a.created_by_name || a.created_by_email || '-')}</div>
+        <div style="font-size:12px;color:var(--hspf-text-secondary);">${escapeHtml(a.created_by_email || '')}</div>
+      </td>
       <td>${escapeHtml(a.difficulty)}</td>
       <td>${a.is_active ? '✓' : '✗'}</td>
       <td>
@@ -330,6 +485,7 @@ async function loadUsers() {
       <td>
         <div class="row-actions">
           <button class="btn" data-action="toggle-user" data-id="${u.id}" data-status="${nextStatus}">${label}</button>
+          <button class="btn" data-action="open-user-projects" data-id="${u.id}" data-name="${escapeHtml(u.email)}">Meine Projekte</button>
         </div>
       </td>
     `;
@@ -348,6 +504,10 @@ function resetAssignmentForm() {
 }
 
 function resetTaskForm() {
+  // Re-enable fields first
+  if ($('new-task-type')) $('new-task-type').disabled = false;
+  if ($('task-title')) $('task-title').disabled = false;
+  
   $('task-title').value = '';
   if ($('task-text')) $('task-text').value = '';
   if ($('task-description')) {
@@ -429,29 +589,78 @@ function openNewTaskModal() {
     alert('Select an assignment first');
     return;
   }
+  // Open pre-task dialog instead of directly opening task form
+  $('pre-task-modal').classList.add('active');
+}
+
+function openPreTaskDialog() {
+  $('pre-task-modal').classList.add('active');
+  $('pre-task-error').style.display = 'none';
+  $('pre-task-type').value = 'code'; // Default
+  $('pre-task-title').value = '';
+  // Focus on title input for quick entry
+  setTimeout(() => $('pre-task-title').focus(), 100);
+}
+
+function closePreTaskDialog() {
+  $('pre-task-modal').classList.remove('active');
+}
+
+function continueFromPreTaskDialog() {
+  const taskType = $('pre-task-type').value.trim();
+  const taskTitle = $('pre-task-title').value.trim();
+  const errorEl = $('pre-task-error');
+  
+  if (!taskType) {
+    errorEl.textContent = 'Bitte wählen Sie einen Task-Typ aus';
+    errorEl.style.display = 'block';
+    return;
+  }
+  
+  if (!taskTitle) {
+    errorEl.textContent = 'Bitte geben Sie einen Task-Titel ein';
+    errorEl.style.display = 'block';
+    return;
+  }
+  
+  // Close pre-dialog and open full form
+  closePreTaskDialog();
+  
+  // Reset and prepare task form
   resetTaskForm();
   
-  // Only set active tab if tabs exist in the form
+  // Set values from pre-dialog (these will be disabled after)
+  $('new-task-type').value = taskType;
+  $('task-title').value = taskTitle;
+  
+  // Disable type and title fields
+  $('new-task-type').disabled = true;
+  $('task-title').disabled = true;
+  
+  // Update form field visibility based on type
   const taskForm = $('task-form');
   if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
     setActiveTaskTab(taskForm, 'base');
   }
   
-  $('task-create-modal').classList.add('active');
-  
-  // Update field visibility based on current task type
-  const taskType = $('new-task-type').value;
+  // Update field visibility based on selected task type
   if (window.TaskTypeManager && taskForm) {
     window.TaskTypeManager.updateFieldVisibility(taskForm, taskType);
   }
-  updateTestTypeVisibility(); // Update test type selector visibility for free_text
+  updateTestTypeVisibility();
   updateMaxIterationsFromBuilder('task');
-  updateRandomButtonVisibility(); // Update randomizer field visibility
-  updateTestTypeVisibility(); // Update test type selector visibility for free_text
+  updateRandomButtonVisibility();
+  updateTestTypeVisibility();
+  
+  // Show task form
+  $('task-create-modal').classList.add('active');
 }
 
 function closeNewTaskModal() {
   $('task-create-modal').classList.remove('active');
+  // Re-enable type and title fields when closing (for next task)
+  $('new-task-type').disabled = false;
+  $('task-title').disabled = false;
 }
 
 function confirmCloseNewTaskModal() {
@@ -1514,6 +1723,32 @@ function bindEvents() {
     openTaskBtn.addEventListener('click', openNewTaskModal);
   }
 
+  // Pre-Task Dialog Handlers
+  const preTaskContinueBtn = $('pre-task-continue-btn');
+  if (preTaskContinueBtn) {
+    preTaskContinueBtn.addEventListener('click', continueFromPreTaskDialog);
+  }
+
+  const preTaskCancelBtn = $('pre-task-cancel-btn');
+  if (preTaskCancelBtn) {
+    preTaskCancelBtn.addEventListener('click', closePreTaskDialog);
+  }
+
+  const preTaskCloseBtn = $('pre-task-close-btn');
+  if (preTaskCloseBtn) {
+    preTaskCloseBtn.addEventListener('click', closePreTaskDialog);
+  }
+
+  const preTaskTitleInput = $('pre-task-title');
+  if (preTaskTitleInput) {
+    preTaskTitleInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        continueFromPreTaskDialog();
+      }
+    });
+  }
+
   // Import task button (only visible when tasks are loaded)
   const importTaskBtn = $('import-task-btn');
   const importTaskFileInput = $('import-task-file-input');
@@ -1719,6 +1954,65 @@ function bindEvents() {
     window.location.href = 'login.php';
   });
 
+  const projectsSearchBtn = $('projects-search-btn');
+  if (projectsSearchBtn) {
+    projectsSearchBtn.addEventListener('click', async () => {
+      state.projectsFilterText = $('projects-search')?.value?.trim() || '';
+      state.projectsFilterUserId = state.projectsFilterUserId || null;
+      state.projectsFilterTeamId = $('projects-team-filter')?.value || '';
+      state.projectsFilterSemester = $('projects-semester-filter')?.value || '';
+      state.projectsPage = 1;
+      state.projectsLimit = parseInt($('projects-limit')?.value, 10) || 50;
+      await loadProjects();
+    });
+  }
+
+  const projectsClearBtn = $('projects-clear-btn');
+  if (projectsClearBtn) {
+    projectsClearBtn.addEventListener('click', () => {
+      resetProjectFilters();
+    });
+  }
+
+  const projectsSearchInput = $('projects-search');
+  if (projectsSearchInput) {
+    projectsSearchInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        state.projectsFilterText = projectsSearchInput.value.trim();
+        state.projectsFilterTeamId = $('projects-team-filter')?.value || '';
+        state.projectsFilterSemester = $('projects-semester-filter')?.value || '';
+        state.projectsPage = 1;
+        state.projectsLimit = parseInt($('projects-limit')?.value, 10) || 50;
+        await loadProjects();
+      }
+    });
+  }
+
+  $('projects-team-filter')?.addEventListener('change', async () => {
+    state.projectsFilterTeamId = $('projects-team-filter')?.value || '';
+    state.projectsPage = 1;
+    await loadProjects();
+  });
+
+  $('projects-semester-filter')?.addEventListener('change', async () => {
+    state.projectsFilterSemester = $('projects-semester-filter')?.value || '';
+    state.projectsPage = 1;
+    await loadProjects();
+  });
+
+  $('projects-prev')?.addEventListener('click', async () => {
+    if (state.projectsPage <= 1) return;
+    state.projectsPage -= 1;
+    await loadProjects();
+  });
+
+  $('projects-next')?.addEventListener('click', async () => {
+    if (state.projectsPage >= state.projectsTotalPages) return;
+    state.projectsPage += 1;
+    await loadProjects();
+  });
+
   document.body.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
@@ -1728,6 +2022,11 @@ function bindEvents() {
 
     if (action === 'open-project') {
       window.location.href = `editor.php?project_id=${id}`;
+    }
+
+    if (action === 'open-user-projects') {
+      const userLabel = btn.dataset.name || `User #${id}`;
+      await window.openAdminProjectsForUser(id, userLabel);
     }
 
     if (action === 'delete-project') {
@@ -1870,7 +2169,8 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
-  await Promise.all([loadProjects(), loadAssignments(), loadUsers()]);
+  resetProjectFilters();
+  await Promise.all([loadAssignments()]);
 }
 
 init().catch((err) => {

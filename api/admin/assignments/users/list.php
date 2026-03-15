@@ -18,6 +18,8 @@ try {
         jsonResponse(['ok' => false, 'error' => 'assignment_id required'], 400);
     }
 
+    requireAdminOwnedAssignment($conn, $assignmentId, $admin);
+
     $columnExists = function (mysqli $conn, string $table, string $column): bool {
         $safeTable = $conn->real_escape_string($table);
         $safeColumn = $conn->real_escape_string($column);

@@ -29,13 +29,7 @@ if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
 }
 
-$stmt = $conn->prepare('SELECT id FROM assignments WHERE id = ?');
-$stmt->bind_param('i', $assignmentId);
-$stmt->execute();
-
-if ($stmt->get_result()->num_rows === 0) {
-    jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
-}
+requireAdminOwnedAssignment($conn, $assignmentId, $user);
 
 $stmt = $conn->prepare('DELETE FROM assignments WHERE id = ?');
 $stmt->bind_param('i', $assignmentId);

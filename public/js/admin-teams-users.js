@@ -33,6 +33,14 @@ async function requestJson(url, options = {}) {
 // ========== TEAMS ==========
 
 let teamsData = [];
+let semestersData = [];
+
+function getInviteLink(token) {
+  if (!token) return '';
+  const origin = window.location.origin;
+  const basePath = window.location.pathname.replace(/\/admin\.php.*/, '');
+  return `${origin}${basePath}/login.php?invite=${encodeURIComponent(token)}`;
+}
 
 async function loadTeams() {
   try {
@@ -55,14 +63,22 @@ function renderTeams() {
   
   teamsData.forEach(team => {
     const tr = document.createElement('tr');
+    const inviteLink = getInviteLink(team.invite_token);
+    const linkHtml = inviteLink
+      ? `<a href="${inviteLink}" target="_blank" rel="noopener" class="mono" style="font-size:12px;">${escapeHtml(inviteLink)}</a>`
+      : '<span style="color:var(--hspf-text-secondary);">-</span>';
+
     tr.innerHTML = `
       <td class="mono">${team.id}</td>
       <td>${escapeHtml(team.name)}</td>
       <td>${escapeHtml(team.description || '')}</td>
       <td>${team.user_count}</td>
+      <td>${linkHtml}</td>
       <td>${team.is_active ? '✓' : '✗'}</td>
       <td>
         <div class="row-actions">
+          <button class="icon-btn" data-action="copy-team-invite" data-id="${team.id}" title="Copy invite link">🔗</button>
+          <button class="icon-btn" data-action="regen-team-invite" data-id="${team.id}" title="Regenerate invite link">♻️</button>
           <button class="icon-btn" data-action="edit-team" data-id="${team.id}" title="Edit">✏️</button>
           <button class="icon-btn danger" data-action="delete-team" data-id="${team.id}" title="Delete">🗑️</button>
         </div>
@@ -73,20 +89,53 @@ function renderTeams() {
 }
 
 function updateTeamFilters() {
-  const filter = $('users-team-filter');
-  if (!filter) return;
-  
-  const currentValue = filter.value;
-  filter.innerHTML = '<option value="">All Teams</option>';
-  
-  teamsData.forEach(team => {
-    const option = document.createElement('option');
-    option.value = team.id;
-    option.textContent = team.name;
-    filter.appendChild(option);
+  ['users-team-filter', 'projects-team-filter'].forEach((id) => {
+    const filter = $(id);
+    if (!filter) return;
+
+    const currentValue = filter.value;
+    filter.innerHTML = '<option value="">All Teams</option>';
+
+    teamsData.forEach(team => {
+      const option = document.createElement('option');
+      option.value = team.id;
+      option.textContent = team.name;
+      filter.appendChild(option);
+    });
+
+    filter.value = currentValue;
   });
-  
-  filter.value = currentValue;
+}
+
+async function loadSemesters() {
+  try {
+    const response = await requestJson('../api/system/semester.php?action=list');
+    if (response.ok) {
+      semestersData = response.semesters || [];
+      updateSemesterFilters();
+    }
+  } catch (err) {
+    console.error('Load semesters failed:', err);
+  }
+}
+
+function updateSemesterFilters() {
+  ['users-semester-filter', 'projects-semester-filter'].forEach((id) => {
+    const filter = $(id);
+    if (!filter) return;
+
+    const currentValue = filter.value;
+    filter.innerHTML = '<option value="">All Semesters</option>';
+
+    semestersData.forEach((entry) => {
+      const option = document.createElement('option');
+      option.value = entry.semester;
+      option.textContent = `${entry.semester} (${entry.count})`;
+      filter.appendChild(option);
+    });
+
+    filter.value = currentValue;
+  });
 }
 
 async function createTeam(data) {
@@ -149,21 +198,42 @@ async function deleteTeam(id) {
 
 let usersData = [];
 let selectedUserIds = new Set();
+let selectedUsersCache = new Map();
+let usersPagination = {
+  page: 1,
+  limit: 25,
+  totalPages: 1,
+  total: 0
+};
 
 async function loadUsers() {
   try {
     const teamFilter = $('users-team-filter')?.value || '';
+    const semesterFilter = $('users-semester-filter')?.value || '';
     const search = $('users-search')?.value || '';
+    const limit = parseInt($('users-limit')?.value, 10) || usersPagination.limit || 25;
     
     const params = new URLSearchParams();
     if (teamFilter) params.append('team_id', teamFilter);
+    if (semesterFilter) params.append('semester', semesterFilter);
     if (search) params.append('search', search);
+    params.append('page', String(usersPagination.page));
+    params.append('limit', String(limit));
     
     const url = '../api/admin/users/list.php' + (params.toString() ? '?' + params.toString() : '');
     const response = await requestJson(url);
     
     if (response.ok) {
       usersData = response.users;
+      usersPagination.page = response.page || 1;
+      usersPagination.limit = response.limit || limit;
+      usersPagination.totalPages = response.total_pages || 1;
+      usersPagination.total = response.total || response.count || 0;
+      usersData.forEach((user) => {
+        if (selectedUserIds.has(user.id)) {
+          selectedUsersCache.set(user.id, user);
+        }
+      });
       renderUsers();
     }
   } catch (err) {
@@ -177,6 +247,12 @@ function renderUsers() {
   
   tbody.innerHTML = '';
   // Don't clear selectedUserIds - keep selections across re-renders
+
+  if (!usersData.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Benutzer gefunden.</td></tr>';
+    updateUsersPagination();
+    return;
+  }
   
   usersData.forEach(user => {
     const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || '-';
@@ -194,12 +270,15 @@ function renderUsers() {
       <td>${escapeHtml(user.email)}</td>
       <td>${escapeHtml(fullName)}</td>
       <td>${escapeHtml(user.team_name || '-')}</td>
+      <td>${escapeHtml(user.semester || '-')}</td>
       <td>${statsText}</td>
       <td>${user.role === 'admin' ? '🔑 Admin' : 'User'}</td>
       <td>${user.status || 'aktiv'}</td>
       <td>
         <div class="row-actions">
+          <button class="icon-btn danger" data-action="delete-user" data-id="${user.id}" title="Delete User">🗑️</button>
           <button class="icon-btn" data-action="edit-user" data-id="${user.id}" title="Edit">✏️</button>
+          <button class="icon-btn" data-action="show-user-projects" data-id="${user.id}" data-user-label="${escapeHtml(user.email)}" title="Projekte anzeigen">📁</button>
         </div>
       </td>
     `;
@@ -209,7 +288,80 @@ function renderUsers() {
   // Update select-all checkbox
   const selectAll = $('select-all-users');
   if (selectAll) {
-    selectAll.checked = usersData.length > 0 && selectedUserIds.size === usersData.length;
+    selectAll.checked = usersData.length > 0 && usersData.every(user => selectedUserIds.has(user.id));
+  }
+
+  updateUsersPagination();
+}
+
+function updateUsersPagination() {
+  const totalPages = Math.max(1, usersPagination.totalPages || 1);
+  if ($('users-page-info')) {
+    $('users-page-info').textContent = `Page ${usersPagination.page} of ${totalPages} · ${usersPagination.total} users`;
+  }
+  if ($('users-prev')) {
+    $('users-prev').disabled = usersPagination.page <= 1;
+  }
+  if ($('users-next')) {
+    $('users-next').disabled = usersPagination.page >= totalPages;
+  }
+}
+
+async function deleteUser(userId) {
+  const user = usersData.find(u => u.id === userId) || selectedUsersCache.get(userId);
+  const label = user ? `${user.email} (#${userId})` : `User #${userId}`;
+  if (!confirm(`Benutzer löschen: ${label}?`)) return;
+
+  try {
+    await requestJson(`../api/admin/users/delete.php?id=${userId}`, {
+      method: 'POST'
+    });
+
+    selectedUserIds.delete(userId);
+    selectedUsersCache.delete(userId);
+    await loadUsers();
+    alert('Benutzer gelöscht');
+  } catch (err) {
+    alert('Löschen fehlgeschlagen: ' + err.message);
+  }
+}
+
+async function bulkDeleteUsers() {
+  if (selectedUserIds.size === 0) {
+    alert('Bitte mindestens einen Benutzer auswählen');
+    return;
+  }
+
+  const ids = Array.from(selectedUserIds);
+  if (!confirm(`${ids.length} ausgewählte Benutzer löschen?`)) return;
+
+  try {
+    const response = await requestJson('../api/admin/users/bulk-delete.php', {
+      method: 'POST',
+      body: JSON.stringify({ user_ids: ids })
+    });
+
+    if (response.ok) {
+      const deletedIds = Array.isArray(response.deleted_ids) ? response.deleted_ids : [];
+      deletedIds.forEach((id) => {
+        selectedUserIds.delete(id);
+        selectedUsersCache.delete(id);
+      });
+
+      const blockedCount = Array.isArray(response.blocked) ? response.blocked.length : 0;
+      const missingCount = Array.isArray(response.missing_ids) ? response.missing_ids.length : 0;
+      const deletedCount = response.deleted_count || deletedIds.length;
+
+      await loadUsers();
+
+      if (blockedCount || missingCount) {
+        alert(`Gelöscht: ${deletedCount} · Blockiert: ${blockedCount} · Nicht gefunden: ${missingCount}`);
+      } else {
+        alert(`${deletedCount} Benutzer gelöscht`);
+      }
+    }
+  } catch (err) {
+    alert('Bulk-Löschen fehlgeschlagen: ' + err.message);
   }
 }
 
@@ -220,18 +372,24 @@ document.addEventListener('click', (e) => {
     checkboxes.forEach(cb => {
       cb.checked = e.target.checked;
       const userId = parseInt(cb.dataset.userId);
+      const user = usersData.find(u => u.id === userId);
       if (e.target.checked) {
         selectedUserIds.add(userId);
+        if (user) selectedUsersCache.set(userId, user);
       } else {
         selectedUserIds.delete(userId);
+        selectedUsersCache.delete(userId);
       }
     });
   } else if (e.target.classList.contains('user-checkbox')) {
     const userId = parseInt(e.target.dataset.userId);
     if (e.target.checked) {
       selectedUserIds.add(userId);
+      const user = usersData.find(u => u.id === userId);
+      if (user) selectedUsersCache.set(userId, user);
     } else {
       selectedUserIds.delete(userId);
+      selectedUsersCache.delete(userId);
     }
   }
 });
@@ -250,7 +408,7 @@ async function openBulkAssignModal() {
   
   usersList.innerHTML = '';
   selectedUserIds.forEach(userId => {
-    const user = usersData.find(u => u.id === userId);
+    const user = selectedUsersCache.get(userId) || usersData.find(u => u.id === userId);
     if (user) {
       const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || '-';
       const div = document.createElement('div');
@@ -329,6 +487,7 @@ async function submitBulkAssign(e) {
       setTimeout(() => {
         document.getElementById('bulk-assign-modal').style.display = 'none';
         selectedUserIds.clear();
+        selectedUsersCache.clear();
         renderUsers();
       }, 1500);
     } else {
@@ -364,6 +523,12 @@ async function updateUser(userId, data) {
 
 // Team filter change
 $('users-team-filter')?.addEventListener('change', () => {
+  usersPagination.page = 1;
+  loadUsers();
+});
+
+$('users-semester-filter')?.addEventListener('change', () => {
+  usersPagination.page = 1;
   loadUsers();
 });
 
@@ -371,12 +536,36 @@ $('users-team-filter')?.addEventListener('change', () => {
 let searchTimeout;
 $('users-search')?.addEventListener('input', () => {
   clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => loadUsers(), 300);
+  searchTimeout = setTimeout(() => {
+    usersPagination.page = 1;
+    loadUsers();
+  }, 300);
+});
+
+$('users-limit')?.addEventListener('change', () => {
+  usersPagination.page = 1;
+  loadUsers();
+});
+
+$('users-prev')?.addEventListener('click', () => {
+  if (usersPagination.page <= 1) return;
+  usersPagination.page -= 1;
+  loadUsers();
+});
+
+$('users-next')?.addEventListener('click', () => {
+  if (usersPagination.page >= usersPagination.totalPages) return;
+  usersPagination.page += 1;
+  loadUsers();
 });
 
 // Bulk assign button
 $('bulk-assign-btn')?.addEventListener('click', () => {
   openBulkAssignModal();
+});
+
+$('bulk-delete-users-btn')?.addEventListener('click', () => {
+  bulkDeleteUsers();
 });
 
 // Bulk assign modal form
@@ -412,6 +601,22 @@ document.addEventListener('click', async (e) => {
     await updateTeam(id, { name, description, is_active: isActive ? 1 : 0 });
   } else if (action === 'delete-team') {
     await deleteTeam(id);
+  } else if (action === 'copy-team-invite') {
+    const team = teamsData.find(t => t.id === id);
+    if (!team || !team.invite_token) {
+      alert('Kein Einladungslink vorhanden');
+      return;
+    }
+    const inviteLink = getInviteLink(team.invite_token);
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      alert('Einladungslink kopiert');
+    } catch (_) {
+      prompt('Einladungslink kopieren:', inviteLink);
+    }
+  } else if (action === 'regen-team-invite') {
+    if (!confirm('Einladungslink neu erzeugen? Der alte Link wird ungültig.')) return;
+    await updateTeam(id, { regenerate_invite: true });
   }
   // Users
   else if (action === 'edit-user') {
@@ -425,6 +630,13 @@ document.addEventListener('click', async (e) => {
     await updateUser(id, { 
       team_id: teamId ? parseInt(teamId) : null 
     });
+  } else if (action === 'show-user-projects') {
+    const userLabel = e.target.dataset.userLabel || `User #${id}`;
+    if (typeof window.openAdminProjectsForUser === 'function') {
+      await window.openAdminProjectsForUser(id, userLabel);
+    }
+  } else if (action === 'delete-user') {
+    await deleteUser(id);
   }
 });
 
@@ -443,6 +655,7 @@ $('open-team-modal')?.addEventListener('click', () => {
 if (window.location.pathname.includes('admin.php')) {
   document.addEventListener('DOMContentLoaded', () => {
     loadTeams();
+    loadSemesters();
     loadUsers();
   });
 }

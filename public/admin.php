@@ -453,7 +453,7 @@ if ($displayName === '') {
   <div class="admin-container">
 
     <div class="tabs" role="tablist">
-      <button class="tab active" data-tab="projects">Projects</button>
+      <button class="tab active" data-tab="projects">Meine Projekte</button>
       <button class="tab" data-tab="assignments">Assignments</button>
       <button class="tab" data-tab="teams">Teams</button>
       <button class="tab" data-tab="users">Users</button>
@@ -461,14 +461,28 @@ if ($displayName === '') {
 
     <section class="panel active" id="tab-projects">
       <div class="admin-card">
-        <h2>Projects</h2>
-        <div class="admin-card-subtitle">Alle Projekte mit Besitzer. Löschen ist Admin-only.</div>
+        <h2>Meine Projekte</h2>
+        <div class="admin-card-subtitle">Projektzugriff für Admins per Suche oder direkt aus der Userliste. Lazy Load ist bei vielen Nutzern bewusst aktiviert.</div>
+        <div class="search-filter" style="margin-bottom: var(--hspf-spacing-md);">
+          <input type="text" id="projects-search" placeholder="Projektname, Beschreibung, Owner-Mail oder Name suchen..." />
+          <select id="projects-team-filter" style="min-width: 180px;">
+            <option value="">Alle Teams</option>
+          </select>
+          <select id="projects-semester-filter" style="min-width: 160px;">
+            <option value="">Alle Semester</option>
+          </select>
+          <input type="number" id="projects-limit" min="1" max="100" value="50" style="max-width: 120px;" />
+          <button class="hspf-btn hspf-btn-primary" type="button" id="projects-search-btn">Suchen</button>
+          <button class="hspf-btn" type="button" id="projects-clear-btn">Zurücksetzen</button>
+        </div>
+        <div class="admin-card-subtitle" id="projects-status">Noch keine Suche ausgeführt.</div>
         <div style="overflow:auto;">
           <table>
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Name</th>
+                <th>Beschreibung</th>
                 <th>Owner</th>
                 <th>Visibility</th>
                 <th>Updated</th>
@@ -477,6 +491,11 @@ if ($displayName === '') {
             </thead>
             <tbody id="projects-body"></tbody>
           </table>
+        </div>
+        <div class="pagination" id="projects-pagination">
+          <button id="projects-prev">Previous</button>
+          <span class="page-info" id="projects-page-info">Page 1 of 1</span>
+          <button id="projects-next">Next</button>
         </div>
       </div>
     </section>
@@ -498,6 +517,7 @@ if ($displayName === '') {
               <tr>
                 <th class="sortable" data-sort="id">ID</th>
                 <th class="sortable" data-sort="title">Title</th>
+                <th class="sortable" data-sort="created_by_name">Owner</th>
                 <th class="sortable" data-sort="difficulty">Difficulty</th>
                 <th class="sortable" data-sort="is_active">Active</th>
                 <th class="sortable" data-sort="task_count">Tasks</th>
@@ -577,6 +597,7 @@ if ($displayName === '') {
                 <th>Name</th>
                 <th>Description</th>
                 <th>Users</th>
+                <th>Einladungslink</th>
                 <th>Active</th>
                 <th>Actions</th>
               </tr>
@@ -592,6 +613,7 @@ if ($displayName === '') {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
           <h2 style="margin: 0;">👤 Users</h2>
           <div style="display: flex; gap: var(--hspf-spacing-sm);">
+            <button class="hspf-btn" type="button" id="bulk-delete-users-btn">🗑️ Bulk Delete</button>
             <button class="hspf-btn hspf-btn-primary" type="button" id="bulk-assign-btn">📋 Bulk Assign</button>
           </div>
         </div>
@@ -600,7 +622,16 @@ if ($displayName === '') {
           <select id="users-team-filter" style="min-width: 200px;">
             <option value="">All Teams</option>
           </select>
+          <select id="users-semester-filter" style="min-width: 160px;">
+            <option value="">All Semesters</option>
+          </select>
           <input type="text" id="users-search" placeholder="Search users..." />
+          <select id="users-limit" style="min-width: 120px;">
+            <option value="10">10 / page</option>
+            <option value="25" selected>25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+          </select>
         </div>
         
         <div style="overflow:auto;">
@@ -612,6 +643,7 @@ if ($displayName === '') {
                 <th>Email</th>
                 <th>Name</th>
                 <th>Team</th>
+                <th>Semester</th>
                 <th>Assignments</th>
                 <th>Role</th>
                 <th>Status</th>
@@ -620,6 +652,11 @@ if ($displayName === '') {
             </thead>
             <tbody id="users-body"></tbody>
           </table>
+        </div>
+        <div class="pagination" id="users-pagination">
+          <button id="users-prev">Previous</button>
+          <span class="page-info" id="users-page-info">Page 1 of 1</span>
+          <button id="users-next">Next</button>
         </div>
       </div>
     </section>
@@ -719,6 +756,44 @@ if ($displayName === '') {
         <div style="margin-top: var(--hspf-spacing-lg); display: flex; gap: var(--hspf-spacing-sm);">
           <button class="hspf-btn hspf-btn-primary" id="import-json-text-confirm-btn" style="flex: 1;">✓ Importieren</button>
           <button class="hspf-btn" id="import-json-text-cancel-btn" style="flex: 1;">Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pre-Task Dialog: Select Type and Title -->
+  <div id="pre-task-modal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>📝 Create New Task</h3>
+        <button id="pre-task-close-btn" class="modal-close">✕</button>
+      </div>
+      <div style="padding: var(--hspf-spacing-md);">
+        <p style="color: var(--hspf-text-secondary); margin-bottom: var(--hspf-spacing-md);">Wählen Sie zuerst den Aufgabentyp und Titel aus. Diese können später nicht mehr geändert werden.</p>
+        
+        <div class="field">
+          <label for="pre-task-type">Task Type</label>
+          <select id="pre-task-type">
+            <option value="code">Code (Python)</option>
+            <option value="code_ui">Code + UI</option>
+            <option value="single_choice">Single-Choice</option>
+            <option value="multiple_choice">Multiple-Choice</option>
+            <option value="free_text">Freitext</option>
+            <option value="code_reading">Code Reading</option>
+            <option value="code_random_complex">Random Complex</option>
+          </select>
+        </div>
+        
+        <div class="field">
+          <label for="pre-task-title">Task Title</label>
+          <input type="text" id="pre-task-title" placeholder="z.B. 'Fibonacci Funktion'" required />
+        </div>
+        
+        <div id="pre-task-error" style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); background: #fee; border: 1px solid #f99; border-radius: var(--hspf-radius-sm); color: #c33; font-size: 12px; display: none;"></div>
+        
+        <div style="margin-top: var(--hspf-spacing-lg); display: flex; gap: var(--hspf-spacing-sm);">
+          <button type="button" class="hspf-btn hspf-btn-primary" id="pre-task-continue-btn" style="flex: 1;">→ Weiter</button>
+          <button type="button" class="hspf-btn" id="pre-task-cancel-btn" style="flex: 1;">Abbrechen</button>
         </div>
       </div>
     </div>
@@ -1385,6 +1460,17 @@ if ($displayName === '') {
     
     .task-tab-panel.active {
       display: block;
+    }
+
+    /* Disabled field styles */
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+      background-color: var(--hspf-bg-secondary);
+      color: var(--hspf-text-secondary);
+      cursor: not-allowed;
+      opacity: 0.7;
+      border-color: var(--hspf-border);
     }
     
   </style>

@@ -25,6 +25,7 @@ $email = trim($input['email'] ?? '');
 $password = $input['password'] ?? '';
 $firstName = trim($input['first_name'] ?? '');
 $lastName = trim($input['last_name'] ?? '');
+$inviteToken = trim($input['invite_token'] ?? '');
 
 if (empty($email) || empty($password) || empty($firstName) || empty($lastName)) {
     jsonResponse(['ok' => false, 'error' => 'Email, first name, last name and password are required'], 400);
@@ -59,32 +60,50 @@ if ($stmt->get_result()->num_rows > 0) {
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 $role = 'user'; // Default role
 
-// Auto-assign team based on current date
-// WiSe: 01.10 - 28.02 → WiSe 25/26 (id=1)
-// SoSe: 01.03 - 30.09 → SoSe 26/27/28 based on year
-$teamId = 1; // Default: WiSe 25/26
-$currentMonth = (int)date('n');
-$currentYear = (int)date('Y');
+// Team assignment:
+// 1) If invite token is provided, assign user to that active team
+// 2) Fallback to date-based default mapping
+$teamId = 1;
 
-if ($currentMonth >= 3 && $currentMonth <= 9) {
-    // Sommersemester (März - September)
-    // Map year to team: 2026→id=2, 2027→id=3, 2028→id=4
-    switch ($currentYear) {
-        case 2026:
-            $teamId = 2; // SoSe 26
-            break;
-        case 2027:
-            $teamId = 3; // SoSe 27
-            break;
-        case 2028:
-            $teamId = 4; // SoSe 28
-            break;
-        default:
-            $teamId = 1; // Fallback to WiSe
+if ($inviteToken !== '') {
+    $columnCheck = $conn->query("SHOW COLUMNS FROM teams LIKE 'invite_token'");
+    $hasInviteToken = $columnCheck && $columnCheck->num_rows > 0;
+
+    if ($hasInviteToken) {
+        $inviteStmt = $conn->prepare('SELECT id FROM teams WHERE invite_token = ? AND is_active = 1 LIMIT 1');
+        $inviteStmt->bind_param('s', $inviteToken);
+        $inviteStmt->execute();
+        $inviteResult = $inviteStmt->get_result();
+        if ($inviteRow = $inviteResult->fetch_assoc()) {
+            $teamId = (int)$inviteRow['id'];
+        } else {
+            jsonResponse(['ok' => false, 'error' => 'Ungültiger oder inaktiver Einladungslink'], 400);
+        }
     }
 } else {
-    // Wintersemester (Oktober - Februar)
-    $teamId = 1; // WiSe 25/26
+    // Auto-assign team based on current date
+    // WiSe: 01.10 - 28.02 → WiSe 25/26 (id=1)
+    // SoSe: 01.03 - 30.09 → SoSe 26/27/28 based on year
+    $currentMonth = (int)date('n');
+    $currentYear = (int)date('Y');
+
+    if ($currentMonth >= 3 && $currentMonth <= 9) {
+        switch ($currentYear) {
+            case 2026:
+                $teamId = 2;
+                break;
+            case 2027:
+                $teamId = 3;
+                break;
+            case 2028:
+                $teamId = 4;
+                break;
+            default:
+                $teamId = 1;
+        }
+    } else {
+        $teamId = 1;
+    }
 }
 
 $stmt = $conn->prepare('INSERT INTO users (email, first_name, last_name, password_hash, role, team_id) VALUES (?, ?, ?, ?, ?, ?)');

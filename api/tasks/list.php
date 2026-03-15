@@ -18,7 +18,7 @@ if (!$assignmentId) {
 
 // Check assignment access
 $stmt = $conn->prepare(
-    'SELECT a.is_active, ua.user_id AS assigned_user
+    'SELECT a.is_active, a.created_by, ua.user_id AS assigned_user
      FROM assignments a
      LEFT JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
      WHERE a.id = ?'
@@ -31,7 +31,8 @@ if (!$assignment) {
     jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
 }
 
-$canAccess = $user['role'] === 'admin' || (bool)$assignment['is_active'] || $assignment['assigned_user'] !== null;
+$isOwnerAdmin = $user['role'] === 'admin' && (int)($assignment['created_by'] ?? 0) === (int)$user['id'];
+$canAccess = $isOwnerAdmin || ($user['role'] !== 'admin' && ((bool)$assignment['is_active'] || $assignment['assigned_user'] !== null));
 if (!$canAccess) {
     jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
 }

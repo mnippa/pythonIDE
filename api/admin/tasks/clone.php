@@ -18,6 +18,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
 
 try {
     require_once __DIR__ . '/../../../config/database.php';
+    require_once __DIR__ . '/../../auth/middleware.php';
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'Config load failed: ' . $e->getMessage()]);
@@ -36,7 +37,13 @@ if (!$taskId || !$assignmentId) {
 }
 
 try {
+    $admin = requireAdmin();
     $conn = getDbConnection();
+    $ownedTask = requireAdminOwnedTask($conn, (int)$taskId, $admin);
+    requireAdminOwnedAssignment($conn, (int)$assignmentId, $admin);
+    if ((int)$ownedTask['assignment_id'] !== (int)$assignmentId) {
+        throw new Exception('Task does not belong to this assignment');
+    }
     
     // Start transaction
     $conn->begin_transaction();
