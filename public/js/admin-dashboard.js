@@ -886,16 +886,9 @@ function validateChoiceOptions(taskType, options) {
   }
 
   const correctCount = options.filter(opt => opt.is_correct).length;
-  if (correctCount === 0) {
-    return 'Bitte mindestens eine richtige Antwort markieren';
-  }
 
   if (taskType === 'single_choice' && correctCount !== 1) {
     return 'Single-Choice: Bitte genau eine richtige Antwort markieren';
-  }
-
-  if (taskType === 'multiple_choice' && correctCount < 2) {
-    return 'Multiple-Choice: Bitte mindestens zwei richtige Antworten markieren';
   }
 
   return null;
