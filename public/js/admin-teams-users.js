@@ -34,6 +34,7 @@ async function requestJson(url, options = {}) {
 
 let teamsData = [];
 let semestersData = [];
+let teamMembersData = [];
 
 function getInviteLink(token) {
   if (!token) return '';
@@ -77,6 +78,7 @@ function renderTeams() {
       <td>${team.is_active ? '✓' : '✗'}</td>
       <td>
         <div class="row-actions">
+          <button class="icon-btn" data-action="show-team-members" data-id="${team.id}" title="Teilnehmer anzeigen">👥</button>
           <button class="icon-btn" data-action="copy-team-invite" data-id="${team.id}" title="Copy invite link">🔗</button>
           <button class="icon-btn" data-action="regen-team-invite" data-id="${team.id}" title="Regenerate invite link">♻️</button>
           <button class="icon-btn" data-action="edit-team" data-id="${team.id}" title="Edit">✏️</button>
@@ -89,12 +91,18 @@ function renderTeams() {
 }
 
 function updateTeamFilters() {
-  ['users-team-filter', 'projects-team-filter'].forEach((id) => {
+  ['users-team-filter', 'projects-team-filter', 'teams-members-team-filter', 'user-edit-team'].forEach((id) => {
     const filter = $(id);
     if (!filter) return;
 
     const currentValue = filter.value;
-    filter.innerHTML = '<option value="">All Teams</option>';
+    if (id === 'teams-members-team-filter') {
+      filter.innerHTML = '<option value="">Team auswählen</option>';
+    } else if (id === 'user-edit-team') {
+      filter.innerHTML = '<option value="">Kein Team</option>';
+    } else {
+      filter.innerHTML = '<option value="">All Teams</option>';
+    }
 
     teamsData.forEach(team => {
       const option = document.createElement('option');
@@ -105,6 +113,124 @@ function updateTeamFilters() {
 
     filter.value = currentValue;
   });
+}
+
+async function loadTeamMembers(teamId) {
+  if (!teamId) {
+    teamMembersData = [];
+    renderTeamMembers();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.set('team_id', String(teamId));
+    params.set('limit', '100');
+    params.set('page', '1');
+    const response = await requestJson(`../api/admin/users/list.php?${params.toString()}`);
+    teamMembersData = Array.isArray(response.users) ? response.users : [];
+    renderTeamMembers();
+  } catch (err) {
+    console.error('Load team members failed:', err);
+    teamMembersData = [];
+    renderTeamMembers();
+  }
+}
+
+function renderTeamMembers() {
+  const tbody = $('teams-members-body');
+  if (!tbody) return;
+
+  const teamId = $('teams-members-team-filter')?.value || '';
+  const search = ($('teams-members-search')?.value || '').trim().toLowerCase();
+
+  if (!teamId) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte Team auswählen.</td></tr>';
+    return;
+  }
+
+  const filtered = teamMembersData.filter((u) => {
+    if (!search) return true;
+    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ').toLowerCase();
+    return String(u.email || '').toLowerCase().includes(search)
+      || fullName.includes(search)
+      || String(u.first_name || '').toLowerCase().includes(search)
+      || String(u.last_name || '').toLowerCase().includes(search);
+  });
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Teilnehmer gefunden.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((u) => {
+    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '-';
+    const stats = u.assignment_stats || { total: 0, unstarted: 0, in_progress: 0, passed: 0, failed: 0 };
+    const statsText = `${stats.total} (⚪:${stats.unstarted} 🟡:${stats.in_progress} 🟢:${stats.passed} ⚫:${stats.failed})`;
+    return `
+      <tr>
+        <td class="mono">${u.id}</td>
+        <td>${escapeHtml(u.email)}</td>
+        <td>${escapeHtml(fullName)}</td>
+        <td>${escapeHtml(u.team_name || '-')}</td>
+        <td>${escapeHtml(u.semester || '-')}</td>
+        <td>${statsText}</td>
+        <td>${u.role === 'admin' ? '🔑 Admin' : 'User'}</td>
+        <td>${escapeHtml(u.status || 'aktiv')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openUserEditModal(user) {
+  if (!user) return;
+  $('user-edit-id').value = String(user.id);
+  $('user-edit-email').value = user.email || '';
+  $('user-edit-first-name').value = user.first_name || '';
+  $('user-edit-last-name').value = user.last_name || '';
+  $('user-edit-team').value = user.team_id ? String(user.team_id) : '';
+  $('user-edit-role').value = user.role || 'user';
+  $('user-edit-status').value = user.status || 'aktiv';
+  $('user-edit-modal')?.classList.add('active');
+}
+
+function closeUserEditModal() {
+  $('user-edit-modal')?.classList.remove('active');
+}
+
+async function submitUserEdit(e) {
+  e.preventDefault();
+  const userId = parseInt($('user-edit-id')?.value || '0', 10);
+  if (!userId) return;
+
+  const email = ($('user-edit-email')?.value || '').trim();
+  if (!email) {
+    alert('E-Mail ist erforderlich.');
+    return;
+  }
+
+  const payload = {
+    email,
+    first_name: ($('user-edit-first-name')?.value || '').trim(),
+    last_name: ($('user-edit-last-name')?.value || '').trim(),
+    team_id: $('user-edit-team')?.value ? parseInt($('user-edit-team').value, 10) : null,
+    role: $('user-edit-role')?.value || 'user',
+    status: $('user-edit-status')?.value || 'aktiv'
+  };
+
+  try {
+    await updateUser(userId, payload);
+    alert('User updated');
+    closeUserEditModal();
+    await loadUsers();
+
+    const selectedTeamId = $('teams-members-team-filter')?.value || '';
+    if (selectedTeamId) {
+      await loadTeamMembers(parseInt(selectedTeamId, 10));
+    }
+  } catch (err) {
+    alert('Update failed: ' + err.message);
+  }
 }
 
 async function loadSemesters() {
@@ -502,21 +628,16 @@ async function submitBulkAssign(e) {
 
 // Update user (change team, role, status)
 async function updateUser(userId, data) {
-  try {
-    const response = await requestJson(`../api/admin/users/update.php?id=${userId}`, {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    
-    if (response.ok) {
-      alert('User updated');
-      loadUsers();
-    } else {
-      alert('Error: ' + response.error);
-    }
-  } catch (err) {
-    alert('Update failed: ' + err.message);
+  const response = await requestJson(`../api/admin/users/update.php?id=${userId}`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    throw new Error(response.error || 'Update failed');
   }
+
+  return response;
 }
 
 // ========== EVENT HANDLERS ==========
@@ -566,6 +687,24 @@ $('bulk-assign-btn')?.addEventListener('click', () => {
 
 $('bulk-delete-users-btn')?.addEventListener('click', () => {
   bulkDeleteUsers();
+});
+
+$('teams-members-team-filter')?.addEventListener('change', async () => {
+  const teamId = $('teams-members-team-filter')?.value || '';
+  await loadTeamMembers(teamId ? parseInt(teamId, 10) : null);
+});
+
+$('teams-members-search')?.addEventListener('input', () => {
+  renderTeamMembers();
+});
+
+document.getElementById('user-edit-form')?.addEventListener('submit', submitUserEdit);
+document.getElementById('user-edit-close-btn')?.addEventListener('click', closeUserEditModal);
+document.getElementById('user-edit-cancel-btn')?.addEventListener('click', closeUserEditModal);
+document.getElementById('user-edit-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'user-edit-modal') {
+    closeUserEditModal();
+  }
 });
 
 // Bulk assign modal form
@@ -622,14 +761,7 @@ document.addEventListener('click', async (e) => {
   else if (action === 'edit-user') {
     const user = usersData.find(u => u.id === id);
     if (!user) return;
-    
-    // Simple prompt-based edit (can be replaced with modal later)
-    const teamId = prompt(`Team ID for ${user.email} (current: ${user.team_id || 'none'}):`, user.team_id || '');
-    if (teamId === null) return;
-    
-    await updateUser(id, { 
-      team_id: teamId ? parseInt(teamId) : null 
-    });
+    openUserEditModal(user);
   } else if (action === 'show-user-projects') {
     const userLabel = e.target.dataset.userLabel || `User #${id}`;
     if (typeof window.openAdminProjectsForUser === 'function') {
@@ -637,6 +769,9 @@ document.addEventListener('click', async (e) => {
     }
   } else if (action === 'delete-user') {
     await deleteUser(id);
+  } else if (action === 'show-team-members') {
+    $('teams-members-team-filter').value = String(id);
+    await loadTeamMembers(id);
   }
 });
 

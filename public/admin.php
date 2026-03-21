@@ -606,6 +606,36 @@ if ($displayName === '') {
           </table>
         </div>
       </div>
+
+      <div class="admin-card">
+        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Teilnehmer</h3>
+        <div class="admin-card-subtitle">Liste der Teilnehmer pro Team, analog zur User-Filteransicht.</div>
+        <div class="search-filter" style="margin-bottom: var(--hspf-spacing-md);">
+          <select id="teams-members-team-filter" style="min-width: 220px;">
+            <option value="">Team auswählen</option>
+          </select>
+          <input type="text" id="teams-members-search" placeholder="Teilnehmer suchen (Mail, Vorname, Nachname)" />
+        </div>
+        <div style="overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Team</th>
+                <th>Semester</th>
+                <th>Assignments</th>
+                <th>Role</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="teams-members-body">
+              <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte Team auswählen.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="tab-users">
@@ -695,6 +725,54 @@ if ($displayName === '') {
           <div id="bulk-assign-status" style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); border-radius: var(--hspf-radius-sm); display: none;"></div>
         </form>
       </div>
+    </div>
+  </div>
+
+  <div id="user-edit-modal" class="modal">
+    <div class="modal-content" style="max-width: 560px;">
+      <div class="modal-header">
+        <h3>User bearbeiten</h3>
+        <button id="user-edit-close-btn" class="modal-close" type="button">✕</button>
+      </div>
+      <form id="user-edit-form">
+        <input type="hidden" id="user-edit-id" />
+        <div class="field">
+          <label for="user-edit-email">E-Mail</label>
+          <input id="user-edit-email" type="email" required />
+        </div>
+        <div class="field">
+          <label for="user-edit-first-name">Vorname</label>
+          <input id="user-edit-first-name" type="text" />
+        </div>
+        <div class="field">
+          <label for="user-edit-last-name">Nachname</label>
+          <input id="user-edit-last-name" type="text" />
+        </div>
+        <div class="field">
+          <label for="user-edit-team">Team</label>
+          <select id="user-edit-team">
+            <option value="">Kein Team</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="user-edit-role">Rolle</label>
+          <select id="user-edit-role" required>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="user-edit-status">Status</label>
+          <select id="user-edit-status" required>
+            <option value="aktiv">aktiv</option>
+            <option value="archiviert">archiviert</option>
+          </select>
+        </div>
+        <div class="row-actions" style="margin-top: var(--hspf-spacing-md);">
+          <button type="submit" class="hspf-btn hspf-btn-primary">Speichern</button>
+          <button type="button" id="user-edit-cancel-btn" class="hspf-btn">Abbrechen</button>
+        </div>
+      </form>
     </div>
   </div>
 
