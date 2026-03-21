@@ -404,6 +404,7 @@ function renderUsers() {
         <div class="row-actions">
           <button class="icon-btn danger" data-action="delete-user" data-id="${user.id}" title="Delete User">🗑️</button>
           <button class="icon-btn" data-action="edit-user" data-id="${user.id}" title="Edit">✏️</button>
+          <button class="icon-btn warn" data-action="create-reset-link" data-id="${user.id}" title="Passwort-Reset-Link erzeugen">🔐</button>
           <button class="icon-btn" data-action="show-user-projects" data-id="${user.id}" data-user-label="${escapeHtml(user.email)}" title="Projekte anzeigen">📁</button>
         </div>
       </td>
@@ -640,6 +641,30 @@ async function updateUser(userId, data) {
   return response;
 }
 
+async function createResetLinkForUser(userId) {
+  const user = usersData.find((u) => u.id === userId) || selectedUsersCache.get(userId);
+  const label = user ? `${user.email} (#${userId})` : `User #${userId}`;
+
+  if (!confirm(`Reset-Link für ${label} erzeugen?`)) return;
+
+  const response = await requestJson('../api/admin/users/create-reset-link.php', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId })
+  });
+
+  const link = response.reset_link;
+  if (!link) {
+    throw new Error('Kein Reset-Link zurückgegeben');
+  }
+
+  try {
+    await navigator.clipboard.writeText(link);
+    alert(`Reset-Link erstellt und kopiert:\n${link}`);
+  } catch (_) {
+    prompt('Reset-Link (kopieren):', link);
+  }
+}
+
 // ========== EVENT HANDLERS ==========
 
 // Team filter change
@@ -769,6 +794,12 @@ document.addEventListener('click', async (e) => {
     }
   } else if (action === 'delete-user') {
     await deleteUser(id);
+  } else if (action === 'create-reset-link') {
+    try {
+      await createResetLinkForUser(id);
+    } catch (err) {
+      alert('Reset-Link konnte nicht erzeugt werden: ' + err.message);
+    }
   } else if (action === 'show-team-members') {
     $('teams-members-team-filter').value = String(id);
     await loadTeamMembers(id);

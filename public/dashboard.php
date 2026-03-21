@@ -183,7 +183,10 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
     'name' => $displayName,
     'role' => $user['role'] ?? 'user'
   ];
-  $headerActions = '<button class="hspf-btn hspf-btn-secondary" onclick="logout()">Abmelden</button>';
+  $headerActions = '
+    <a class="hspf-btn hspf-btn-ghost" href="change-password.php">Passwort ändern</a>
+    <button class="hspf-btn hspf-btn-secondary" onclick="logout()">Abmelden</button>
+  ';
   
   include(__DIR__ . '/../components/header.php');
   ?>

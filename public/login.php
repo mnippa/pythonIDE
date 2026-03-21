@@ -98,6 +98,16 @@
       padding-top: var(--hspf-spacing-md);
     }
 
+    .password-help {
+      margin-top: var(--hspf-spacing-md);
+      padding-top: var(--hspf-spacing-md);
+      border-top: 1px solid var(--hspf-border);
+      font-size: 13px;
+      color: var(--hspf-text-secondary);
+      text-align: center;
+      line-height: 1.5;
+    }
+
     .free-editor-link a {
       color: var(--hspf-text-muted);
       text-decoration: none;
@@ -176,6 +186,11 @@
       
       <div class='free-editor-link'>
         <a href='free.php'>→ Zum Free Editor (ohne Anmeldung)</a>
+      </div>
+
+      <div class='password-help'>
+        Passwort vergessen? Bitte das Tutorenteam kontaktieren.<br>
+        Ein Admin kann einen sicheren Reset-Link erstellen.
       </div>
     </div>
   </div>

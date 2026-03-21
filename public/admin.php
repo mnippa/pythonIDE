@@ -444,6 +444,7 @@ if ($displayName === '') {
     'role' => 'admin'
   ];
   $headerActions = '
+    <a class="hspf-btn hspf-btn-ghost" href="change-password.php">Passwort ändern</a>
     <a class="hspf-btn hspf-btn-ghost" href="dashboard.php">← Dashboard</a>
     <button class="hspf-btn hspf-btn-ghost" id="logout-btn">Logout</button>
   ';
