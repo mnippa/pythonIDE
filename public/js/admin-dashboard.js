@@ -561,6 +561,7 @@ function resetTaskForm() {
   testCasesData = [];
   renderTestCases(testCasesData, 'tests-container');
   updateSolutionCodeVisibility(); // Update solution code visibility
+  updateCodeOnlyOptionsVisibility();
   
   // Reset field visibility
   const taskForm = document.getElementById('task-form');
@@ -655,6 +656,7 @@ function continueFromPreTaskDialog() {
   updateTestTypeVisibility();
   updateMaxIterationsFromBuilder('task');
   updateRandomButtonVisibility();
+  updateCodeOnlyOptionsVisibility();
   updateTestTypeVisibility();
   
   // Show task form
@@ -798,16 +800,27 @@ async function handleTaskSubmit(e) {
   }
 
   if (taskType === 'code_random_complex') {
-    if ($('task-var-overrides') && $('task-var-overrides').value.trim() !== '') {
-      alert('code_random_complex erlaubt keine festen Wertepaare. Bitte Generator-Code verwenden.');
+    const overridesPayload = getOverridesPayload('task');
+    if (overridesPayload === null && $('task-var-overrides')?.value.trim() !== '') {
+      return;
+    }
+    if (!hasRandomMarkerInOverrides(overridesPayload)) {
+      alert('code_random_complex benoetigt variable_overrides mit mindestens einem <random>-Marker in inputs.');
       return;
     }
     const randomizerValue = ($('task-randomizer-code')?.value || '').trim();
-    if (!randomizerValue || !randomizerValue.includes('values')) {
-      alert('code_random_complex benoetigt Randomizer-Code, der ein values-Dict befuellt.');
+    if (!randomizerValue) {
+      alert('code_random_complex benoetigt Randomizer-Code.');
       return;
     }
-    payload.variable_overrides = null;
+    const templateValue = ($('task-template')?.value || '').trim();
+    const hasValuesDict = /\bvalues\b/.test(templateValue);
+    const hasPlaceholders = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(templateValue);
+    if (!templateValue || (!hasValuesDict && !hasPlaceholders)) {
+      alert('code_random_complex benoetigt Code-Template mit values-Dict oder {placeholder}-Syntax.');
+      return;
+    }
+    payload.variable_overrides = overridesPayload;
   }
 
   if (taskType === 'code_reading') {
@@ -979,6 +992,16 @@ function getOverridesPayload(prefix) {
     alert('Variable Overrides: Ungültiges JSON-Format');
     return null;
   }
+}
+
+function hasRandomMarkerInOverrides(overridesPayload) {
+  if (!Array.isArray(overridesPayload) || overridesPayload.length === 0) return false;
+  return overridesPayload.some(entry => {
+    if (!entry || typeof entry !== 'object' || !entry.inputs || typeof entry.inputs !== 'object') {
+      return false;
+    }
+    return Object.values(entry.inputs).some(v => v === '<random>');
+  });
 }
 
 function setOverridesFromJson(prefix, rawJson) {
@@ -1609,16 +1632,27 @@ async function handleEditTaskSubmit(e) {
   }
 
   if (taskType === 'code_random_complex') {
-    if ($('edit-task-var-overrides') && $('edit-task-var-overrides').value.trim() !== '') {
-      alert('code_random_complex erlaubt keine festen Wertepaare. Bitte Generator-Code verwenden.');
+    const overridesPayload = getOverridesPayload('edit-task');
+    if (overridesPayload === null && $('edit-task-var-overrides')?.value.trim() !== '') {
+      return;
+    }
+    if (!hasRandomMarkerInOverrides(overridesPayload)) {
+      alert('code_random_complex benoetigt variable_overrides mit mindestens einem <random>-Marker in inputs.');
+      return;
+    }
+    const randomizerValue = ($('edit-task-randomizer-code')?.value || '').trim();
+    if (!randomizerValue) {
+      alert('code_random_complex benoetigt Randomizer-Code.');
       return;
     }
     const templateValue = ($('edit-task-template')?.value || '').trim();
-    if (!templateValue || !templateValue.includes('values')) {
-      alert('code_random_complex benoetigt Generator-Code, der ein values-Dict befuellt.');
+    const hasValuesDict = /\bvalues\b/.test(templateValue);
+    const hasPlaceholders = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(templateValue);
+    if (!templateValue || (!hasValuesDict && !hasPlaceholders)) {
+      alert('code_random_complex benoetigt Code-Template mit values-Dict oder {placeholder}-Syntax.');
       return;
     }
-    payload.variable_overrides = null;
+    payload.variable_overrides = overridesPayload;
   }
 
   if (taskType === 'code_reading') {
@@ -2225,6 +2259,34 @@ function updateSolutionCodeVisibility() {
   }
 }
 
+function setCodeOnlyOptionVisibility(inputId, isVisible) {
+  const input = $(inputId);
+  if (!input) return;
+
+  const field = input.closest('.field');
+  if (field) {
+    field.style.display = isVisible ? '' : 'none';
+  }
+
+  input.disabled = !isVisible;
+  if (!isVisible) {
+    input.checked = false;
+  }
+}
+
+function updateCodeOnlyOptionsVisibility() {
+  const isNewTaskCode = ($('new-task-type')?.value || 'code') === 'code';
+  const isEditTaskCode = ($('edit-task-type')?.value || 'code') === 'code';
+
+  setCodeOnlyOptionVisibility('task-folderstructure', isNewTaskCode);
+  setCodeOnlyOptionVisibility('task-allowDownload', isNewTaskCode);
+  setCodeOnlyOptionVisibility('task-allowCodeUiWebEdit', isNewTaskCode);
+
+  setCodeOnlyOptionVisibility('edit-task-folderstructure', isEditTaskCode);
+  setCodeOnlyOptionVisibility('edit-task-allowDownload', isEditTaskCode);
+  setCodeOnlyOptionVisibility('edit-task-allowCodeUiWebEdit', isEditTaskCode);
+}
+
 // ===================================================================
 // RANDOMIZER & FIELD VISIBILITY HELPERS
 // ===================================================================
@@ -2248,35 +2310,30 @@ function updateRandomButtonVisibility() {
   // Only show when it's actually needed:
   // 1. For code_random_complex tasks (always)
   // 2. For code tasks with intelligent tests
-  
   const newTaskForm = $('task-form');
   if (newTaskForm) {
     let showRandomizer = false;
     if (newTaskType === 'code_random_complex') {
       showRandomizer = true;
     } else if (newTaskType === 'code' || newTaskType === 'code_ui') {
-      // Check if there are any intelligent tests defined
-      if (Array.isArray(testCasesData) && testCasesData.length > 0) {
-        showRandomizer = testCasesData.some(tc => tc.type === 'intelligent');
-      }
+      showRandomizer = testCasesData.some(tc => tc.type === 'intelligent');
     }
+
     const newTaskRandomizerField = newTaskForm.querySelector('[data-field="randomizer-code"]');
     if (newTaskRandomizerField) {
       newTaskRandomizerField.style.display = showRandomizer ? 'block' : 'none';
     }
   }
-  
+
   const editTaskForm = $('task-edit-form');
   if (editTaskForm) {
     let showRandomizer = false;
     if (editTaskType === 'code_random_complex') {
       showRandomizer = true;
     } else if (editTaskType === 'code' || editTaskType === 'code_ui') {
-      // Check if there are any intelligent tests defined
-      if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
-        showRandomizer = editTestCasesData.some(tc => tc.type === 'intelligent');
-      }
+      showRandomizer = editTestCasesData.some(tc => tc.type === 'intelligent');
     }
+
     const editTaskRandomizerField = editTaskForm.querySelector('[data-field="randomizer-code"]');
     if (editTaskRandomizerField) {
       editTaskRandomizerField.style.display = showRandomizer ? 'block' : 'none';
@@ -2286,6 +2343,7 @@ function updateRandomButtonVisibility() {
   // Update Solution Code field visibility
   // Show only for code_random_complex OR for code tasks with intelligent tests
   updateSolutionCodeVisibility();
+  updateCodeOnlyOptionsVisibility();
 }
 
 // ===================================================================
@@ -3699,12 +3757,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update legacy problem_type for compatibility
       $('task-type').value = (taskType === 'code' || taskType === 'code_ui') ? 'code_completion' : taskType;
-      if (taskType === 'code_ui') {
-        const folderCheckbox = $('task-folderstructure');
-        if (folderCheckbox) {
-          folderCheckbox.checked = true;
-        }
-      }
       if (taskType === 'code_reading' || taskType === 'code_random_complex') {
         const attemptsInput = $('task-max-attempts');
         if (attemptsInput && (!attemptsInput.value || attemptsInput.value === '1')) {
@@ -3712,6 +3764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       updateMaxIterationsFromBuilder('task');
+      updateCodeOnlyOptionsVisibility();
     });
   }
   
@@ -3954,13 +4007,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.editOptionsBuilder) {
         window.editOptionsBuilder.setTaskType(taskType);
       }
-      if (taskType === 'code_ui') {
-        const folderCheckbox = $('edit-task-folderstructure');
-        if (folderCheckbox) {
-          folderCheckbox.checked = true;
-        }
-      }
       updateMaxIterationsFromBuilder('edit-task');
+      updateCodeOnlyOptionsVisibility();
     });
   }
 

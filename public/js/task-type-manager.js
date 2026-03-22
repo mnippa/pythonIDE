@@ -31,7 +31,7 @@
     },
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
-      fields: ['code_template', 'randomizer_code', 'variable_overrides', 'solution', 'hints', 'show-solution-code']
+      fields: ['code_template', 'randomizer_code', 'variable_overrides', 'solution', 'hints', 'max_iterations', 'show-solution-code']
     }
   };
 

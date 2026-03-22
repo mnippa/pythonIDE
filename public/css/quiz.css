@@ -106,16 +106,25 @@
 
 .question-image {
   max-width: 100%;
+  width: auto;
+  max-height: min(30vh, 240px);
   height: auto;
+  object-fit: contain;
   border-radius: 8px;
   margin: 16px 0;
   border: 1px solid #ddd;
+  cursor: zoom-in;
 }
 
 .quiz-options {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
   margin-bottom: 12px;
 }
 
@@ -153,9 +162,20 @@
 
 .quiz-option .option-image {
   max-width: 200px;
-  max-height: 150px;
+  max-height: 120px;
   border-radius: 4px;
   border: 1px solid #ddd;
+  cursor: zoom-in;
+}
+
+@media (max-width: 900px) {
+  .question-image {
+    max-height: min(24vh, 180px);
+  }
+
+  .quiz-options {
+    max-height: 36vh;
+  }
 }
 
 .quiz-freetext textarea {
@@ -180,6 +200,51 @@
   display: flex;
   gap: 12px;
   margin-top: 12px;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: var(--hspf-surface, #fff);
+  border-top: 1px solid var(--hspf-border, #e5e5e5);
+  padding-top: 10px;
+  padding-bottom: 6px;
+}
+
+.quiz-image-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.quiz-image-lightbox.open {
+  display: flex;
+}
+
+.quiz-image-lightbox img {
+  max-width: min(96vw, 1400px);
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.quiz-image-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 28px;
+  line-height: 1;
+  color: #fff;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
 }
 
 .quiz-feedback {

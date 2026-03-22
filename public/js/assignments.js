@@ -1074,14 +1074,10 @@ async function generateRandomComplexValues(task) {
     }
   }
   
-  // CASE 1: Use variable_overrides if available
-  if (task.task_type === 'code_random_complex' && task.variable_overrides) {
-    throw new Error('code_random_complex erlaubt keine festen Wertepaare (variable_overrides)');
-  }
-
+  // CASE 1: Use variable_overrides if available (unified schema with inputs/expected)
   if (task.variable_overrides) {
-    const overrides = typeof task.variable_overrides === 'string' 
-      ? JSON.parse(task.variable_overrides) 
+    const overrides = typeof task.variable_overrides === 'string'
+      ? JSON.parse(task.variable_overrides)
       : task.variable_overrides;
 
     let values = {};
@@ -1089,10 +1085,61 @@ async function generateRandomComplexValues(task) {
     if (Array.isArray(overrides) && overrides.length > 0) {
       const idx = Math.floor(Math.random() * overrides.length);
       const selectedSet = overrides[idx];
+
       if (selectedSet && typeof selectedSet === 'object' && !Array.isArray(selectedSet)) {
-        values = selectedSet;
+        // New schema: { inputs: {...}, expected: {...} }
+        if (selectedSet.inputs && typeof selectedSet.inputs === 'object') {
+          const inputs = selectedSet.inputs;
+          const hasRandomMarkers = Object.values(inputs).some(v => v === '<random>');
+
+          if (hasRandomMarkers) {
+            const code = (task.randomizer_code || '').trim();
+            if (!code) {
+              throw new Error('Randomizer-Code fehlt fuer <random>-Marker');
+            }
+
+            const requestedRandomKeys = Object.entries(inputs)
+              .filter(([, v]) => v === '<random>')
+              .map(([k]) => k);
+
+            const python = `
+__randomizer_namespace = {}
+exec("""${code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
+__randomizer_namespace
+`;
+            const resultObj = await window.pyodide.runPythonAsync(python);
+            const allVariables = resultObj.toJs();
+
+            Object.entries(allVariables).forEach(([rawKey, val]) => {
+              const key = String(rawKey ?? '');
+              if (!key || !requestedRandomKeys.includes(key)) {
+                return;
+              }
+
+              try {
+                const serialized = JSON.stringify(val);
+                if (serialized === undefined) return;
+              } catch (e) {
+                return;
+              }
+
+              values[key] = val;
+            });
+          } else {
+            // Fixed input set (code_reading style)
+            Object.entries(inputs).forEach(([key, val]) => {
+              if (val !== '<random>') {
+                values[key] = val;
+              }
+            });
+          }
+        } else {
+          // Legacy object format
+          values = selectedSet;
+        }
       }
     } else if (overrides && typeof overrides === 'object') {
+      // Legacy dict format
       for (const varName in overrides) {
         const possibleValues = overrides[varName];
         if (Array.isArray(possibleValues) && possibleValues.length > 0) {
@@ -1102,7 +1149,7 @@ async function generateRandomComplexValues(task) {
         }
       }
     }
-    
+
     if (Object.keys(values).length > 0) {
       if (!window.assignmentState.taskUserAnswers[task.id]) {
         window.assignmentState.taskUserAnswers[task.id] = {};
@@ -1319,37 +1366,39 @@ async function loadSingleAssignment(assignmentId) {
       });
     }
     
-    // Load user_tasks progress for this assignment (also in test mode with test_user_id)
-    try {
-      const testUserParam = getTestUserQueryParam();
-      const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
-      const userTasks = userTasksRes.tasks || [];
-      
-      // Populate status and attempts from user_tasks
-      userTasks.forEach(ut => {
-        assignmentState.taskStatuses[ut.task_id] = ut.status;
-        assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-        if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-          assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-        }
-        // Store user answers
-        assignmentState.taskUserAnswers[ut.task_id] = {
-          selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-          text_answer: ut.text_answer || '',
-          variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-        };
-        if (ut.run_count !== undefined && ut.run_count !== null) {
-          assignmentState.taskRuns[ut.task_id] = ut.run_count;
-        }
-        if (ut.completed_at) {
-          assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-        }
-        if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-          assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-        }
-      });
-    } catch (err) {
-      console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
+    // In admin test mode, do not load persisted user_tasks progress from DB.
+    if (window.testMode !== true) {
+      try {
+        const testUserParam = getTestUserQueryParam();
+        const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
+        const userTasks = userTasksRes.tasks || [];
+        
+        // Populate status and attempts from user_tasks
+        userTasks.forEach(ut => {
+          assignmentState.taskStatuses[ut.task_id] = ut.status;
+          assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+          if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+            assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+          }
+          // Store user answers
+          assignmentState.taskUserAnswers[ut.task_id] = {
+            selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+            text_answer: ut.text_answer || '',
+            variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+          };
+          if (ut.run_count !== undefined && ut.run_count !== null) {
+            assignmentState.taskRuns[ut.task_id] = ut.run_count;
+          }
+          if (ut.completed_at) {
+            assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+          }
+          if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+            assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+          }
+        });
+      } catch (err) {
+        console.warn(`Failed to load user_tasks for assignment ${assignmentId}:`, err);
+      }
     }
     
     return true;
@@ -1380,37 +1429,39 @@ async function loadAssignments() {
         assignmentState.assignmentDetails[item.assignment_id] = assignmentRes.assignment;
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
-        // Load user_tasks progress for this assignment (also in test mode with test_user_id)
-        try {
-          const testUserParam = getTestUserQueryParam();
-          const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
-          const userTasks = userTasksRes.tasks || [];
-          
-          // Populate status and attempts from user_tasks
-          userTasks.forEach(ut => {
-            assignmentState.taskStatuses[ut.task_id] = ut.status;
-            assignmentState.taskAttempts[ut.task_id] = ut.attempts;
-            if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
-              assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
-            }
-            // Store user answers
-            assignmentState.taskUserAnswers[ut.task_id] = {
-              selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
-              text_answer: ut.text_answer || '',
-              variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
-            };
-            if (ut.run_count !== undefined && ut.run_count !== null) {
-              assignmentState.taskRuns[ut.task_id] = ut.run_count;
-            }
-            if (ut.completed_at) {
-              assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
-            }
-            if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
-              assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
-            }
-          });
-        } catch (err) {
-          console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
+        // In admin test mode, do not load persisted user_tasks progress from DB.
+        if (window.testMode !== true) {
+          try {
+            const testUserParam = getTestUserQueryParam();
+            const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
+            const userTasks = userTasksRes.tasks || [];
+            
+            // Populate status and attempts from user_tasks
+            userTasks.forEach(ut => {
+              assignmentState.taskStatuses[ut.task_id] = ut.status;
+              assignmentState.taskAttempts[ut.task_id] = ut.attempts;
+              if (ut.current_iteration !== undefined && ut.current_iteration !== null) {
+                assignmentState.taskIterations[ut.task_id] = parseInt(ut.current_iteration, 10) || 1;
+              }
+              // Store user answers
+              assignmentState.taskUserAnswers[ut.task_id] = {
+                selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
+                text_answer: ut.text_answer || '',
+                variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+              };
+              if (ut.run_count !== undefined && ut.run_count !== null) {
+                assignmentState.taskRuns[ut.task_id] = ut.run_count;
+              }
+              if (ut.completed_at) {
+                assignmentState.taskCompletedAt[ut.task_id] = ut.completed_at;
+              }
+              if (ut.hints_revealed && Array.isArray(ut.hints_revealed)) {
+                assignmentState.hintsRevealed[ut.task_id] = ut.hints_revealed;
+              }
+            });
+          } catch (err) {
+            console.warn(`Failed to load user_tasks for assignment ${item.assignment_id}:`, err);
+          }
         }
       } catch (err) {
         console.error(`Failed to load tasks for assignment ${item.assignment_id}:`, err);

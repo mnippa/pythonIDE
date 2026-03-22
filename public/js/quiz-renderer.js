@@ -3,6 +3,61 @@
  */
 
 window.QuizRenderer = {
+  _lightboxInitialized: false,
+
+  ensureImageLightbox() {
+    if (this._lightboxInitialized) return;
+
+    let lightbox = document.getElementById('quiz-image-lightbox');
+    if (!lightbox) {
+      lightbox = document.createElement('div');
+      lightbox.id = 'quiz-image-lightbox';
+      lightbox.className = 'quiz-image-lightbox';
+      lightbox.innerHTML = `
+        <button type="button" class="quiz-image-lightbox-close" aria-label="Schließen">&times;</button>
+        <img alt="Quiz Bild" />
+      `;
+      document.body.appendChild(lightbox);
+    }
+
+    const imgEl = lightbox.querySelector('img');
+    const closeBtn = lightbox.querySelector('.quiz-image-lightbox-close');
+
+    const closeLightbox = () => {
+      lightbox.classList.remove('open');
+      if (imgEl) {
+        imgEl.src = '';
+      }
+    };
+
+    closeBtn?.addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) {
+        closeLightbox();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && lightbox.classList.contains('open')) {
+        closeLightbox();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      const imageEl = e.target.closest('.question-image, .option-image');
+      if (!imageEl) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!imgEl) return;
+      imgEl.src = imageEl.getAttribute('src') || '';
+      lightbox.classList.add('open');
+    });
+
+    this._lightboxInitialized = true;
+  },
+
   getTaskDetailsAndHints(task) {
     let html = '';
     
@@ -55,6 +110,8 @@ window.QuizRenderer = {
   },
 
   render(task, container) {
+    this.ensureImageLightbox();
+
     const taskType = task.task_type;
     
     if (taskType === 'single_choice' || taskType === 'multiple_choice') {
@@ -1037,11 +1094,12 @@ window.QuizRenderer = {
 
       // NEW SCHEMA: Array of {inputs: {...}, expected: {...}} 
       if (Array.isArray(overrides) && overrides.length > 0) {
-        const firstEntry = overrides[0];
-        
+        const idx = Math.max(0, currentIteration - 1) % overrides.length;
+        const selectedSet = overrides[idx];
+
         // Check if inputs have <random> markers (CODE_RANDOM_COMPLEX)
-        const hasRandomMarkers = firstEntry && firstEntry.inputs && 
-          Object.values(firstEntry.inputs).some(v => v === '<random>');
+        const hasRandomMarkers = selectedSet && selectedSet.inputs &&
+          Object.values(selectedSet.inputs).some(v => v === '<random>');
         
         if (hasRandomMarkers && task.randomizer_code) {
           // CODE_RANDOM_COMPLEX: Execute randomizer_code to generate values DIRECTLY (no values dict)
@@ -1060,16 +1118,21 @@ __randomizer_namespace
           const resultObj = await pyodide.runPythonAsync(python);
           const allVariables = resultObj.toJs();
           
-          // Extract only user-created variables (filter out builtins and special Python vars)
-          const builtinKeys = new Set(['__builtins__', '__name__', '__doc__', '__package__', '__loader__', '__spec__', '__annotations__', '__cached__', '__file__', 'sys', 'random']);
+          const requestedRandomKeys = Object.entries(selectedSet?.inputs || {})
+            .filter(([, val]) => val === '<random>')
+            .map(([key]) => key);
+
+          // Extract only variables explicitly requested via <random> markers
           Object.entries(allVariables).forEach(([rawKey, val]) => {
             const key = String(rawKey ?? '');
-            if (!key || builtinKeys.has(key) || key.startsWith('_')) {
+            if (!key || !requestedRandomKeys.includes(key)) {
               return;
             }
-            // Only add serializable types (strings, numbers, booleans, lists, dicts)
+
+            // Only add JSON-serializable values.
             try {
-              JSON.stringify(val);  // Test if serializable
+              const serialized = JSON.stringify(val);
+              if (serialized === undefined) return;
               values[key] = val;
             } catch (e) {
               // Skip non-serializable types
@@ -1081,8 +1144,6 @@ __randomizer_namespace
           }
         } else {
           // CODE_READING or fixed CODE_RANDOM_COMPLEX: Use feste values from variable_overrides
-          const idx = Math.max(0, currentIteration - 1) % overrides.length;
-          const selectedSet = overrides[idx];
           if (selectedSet && typeof selectedSet === 'object') {
             // NEW SCHEMA: extract inputs from {inputs: {...}, expected: {...}}
             if (selectedSet.inputs && typeof selectedSet.inputs === 'object') {
@@ -1116,6 +1177,11 @@ __randomizer_namespace
         }
         window.assignmentState.taskUserAnswers[task.id].variable_values = values;
         window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+
+        const isTestMode = window.testMode === true || window.TEST_MODE_NO_PERSIST === true;
+        if (isTestMode) {
+          return values;
+        }
 
         const payload = {
           task_id: task.id,
@@ -1179,6 +1245,11 @@ __randomizer_namespace
     }
     window.assignmentState.taskUserAnswers[task.id].variable_values = values;
     window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+
+    const isTestMode = window.testMode === true || window.TEST_MODE_NO_PERSIST === true;
+    if (isTestMode) {
+      return values;
+    }
 
     const payload = {
       task_id: task.id,

@@ -946,7 +946,7 @@ if ($displayName === '') {
           <div class="field" data-field="max-iterations">
             <label for="task-max-iterations">Iterationen</label>
             <input id="task-max-iterations" type="number" min="1" value="3" />
-            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
           </div>
           
           <div class="field checkbox-field">
@@ -1205,7 +1205,7 @@ if ($displayName === '') {
           <div class="field" data-field="max-iterations">
             <label for="edit-task-max-iterations">Iterationen</label>
             <input id="edit-task-max-iterations" type="number" min="1" value="3" />
-            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt.</div>
+            <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
           </div>
           
           <div class="field checkbox-field">

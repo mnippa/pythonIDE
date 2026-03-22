@@ -343,14 +343,19 @@ $hasOverrides = $overridesTrimmed !== null
 
 if ($effectiveTaskType === 'code_random_complex') {
     if ($hasOverrides) {
-        jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex'], 400);
+        $overridesStr = is_string($overridesTrimmed) ? $overridesTrimmed : json_encode($overridesTrimmed);
+        if (strpos($overridesStr, '<random>') === false) {
+            jsonResponse(['ok' => false, 'error' => 'variable_overrides not allowed for code_random_complex (use <random> markers in inputs)'], 400);
+        }
     }
     $templateString = is_string($templateValue) ? $templateValue : '';
     if (trim($templateString) === '') {
         jsonResponse(['ok' => false, 'error' => 'code_template required for code_random_complex'], 400);
     }
-    if (!preg_match('/\bvalues\b/', $templateString)) {
-        jsonResponse(['ok' => false, 'error' => 'code_template must set values dict for code_random_complex'], 400);
+    $hasValuesDict = preg_match('/\bvalues\b/', $templateString);
+    $hasPlaceholders = preg_match('/\{[a-zA-Z_][a-zA-Z0-9_]*\}/', $templateString);
+    if (!$hasValuesDict && !$hasPlaceholders) {
+        jsonResponse(['ok' => false, 'error' => 'code_template must use either values dict or {placeholder} syntax for code_random_complex'], 400);
     }
 }
 
