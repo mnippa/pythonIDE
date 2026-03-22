@@ -632,6 +632,11 @@ function continueFromPreTaskDialog() {
   // Set values from pre-dialog (these will be disabled after)
   $('new-task-type').value = taskType;
   $('task-title').value = taskTitle;
+
+  // Keep options builder in sync even when value is set programmatically.
+  if (window.currentOptionsBuilder) {
+    window.currentOptionsBuilder.setTaskType(taskType);
+  }
   
   // Disable type and title fields
   $('new-task-type').disabled = true;
@@ -729,6 +734,7 @@ async function handleTaskSubmit(e) {
     allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
+    image_url: $('task-image-url') ? ($('task-image-url').value.trim() || null) : null,
     code_template: $('task-template').value,
     randomizer_code: $('task-randomizer-code').value.trim() || null,
     hint1: $('task-hint1').value,
@@ -1555,6 +1561,7 @@ async function handleEditTaskSubmit(e) {
     allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
     problem_type: taskType,  // Keep for backwards compatibility
+    image_url: $('edit-task-image-url') ? ($('edit-task-image-url').value.trim() || null) : null,
     code_template: $('edit-task-template').value,
     randomizer_code: $('edit-task-randomizer-code').value.trim() || null,
     hint1: $('edit-task-hint1').value,

@@ -3,11 +3,15 @@
  */
 
 (function() {
+  window.__optionsBuilders = window.__optionsBuilders || {};
+
   window.OptionsBuilder = class {
     constructor(containerId) {
       this.container = document.getElementById(containerId);
       this.options = [];
       this.taskType = 'single_choice';
+      this.instanceKey = containerId;
+      window.__optionsBuilders[this.instanceKey] = this;
       this.render();
     }
 
@@ -98,10 +102,11 @@
 
       const isSingleChoice = this.taskType === 'single_choice';
       const inputType = isSingleChoice ? 'radio' : 'checkbox';
+      const builderRef = `window.__optionsBuilders['${this.instanceKey}']`;
 
       this.container.innerHTML = `
         <div style="margin-bottom: 10px;">
-          <button type="button" class="hspf-btn hspf-btn-sm" onclick="window.currentOptionsBuilder.addOption()">
+          <button type="button" class="hspf-btn hspf-btn-sm" onclick="${builderRef}.addOption()">
             + Antwort hinzufügen
           </button>
         </div>
@@ -113,7 +118,7 @@
                   type="${inputType}" 
                   name="correct-option-${this.taskType}" 
                   ${opt.is_correct ? 'checked' : ''}
-                  onchange="window.currentOptionsBuilder.updateOption(${opt.id}, 'is_correct', this.checked)"
+                  onchange="${builderRef}.updateOption(${opt.id}, 'is_correct', this.checked)"
                   style="margin-top: 8px;"
                   title="Richtige Antwort"
                 />
@@ -121,25 +126,25 @@
                   <textarea 
                     placeholder="Antworttext..." 
                     style="width: 100%; min-height: 50px; padding: 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 14px;"
-                    onchange="window.currentOptionsBuilder.updateOption(${opt.id}, 'text', this.value)"
+                    onchange="${builderRef}.updateOption(${opt.id}, 'text', this.value)"
                   >${opt.text}</textarea>
                   
                   ${opt.image_url ? `
                     <div style="margin-top: 8px;">
                       <img src="${opt.image_url}" style="max-width: 200px; max-height: 150px; border: 1px solid #ddd; border-radius: 3px;" />
-                      <button type="button" onclick="window.currentOptionsBuilder.updateOption(${opt.id}, 'image_url', '')" 
+                      <button type="button" onclick="${builderRef}.updateOption(${opt.id}, 'image_url', '')" 
                         style="display: block; margin-top: 4px; font-size: 12px; color: red; background: none; border: none; cursor: pointer;">
                         ✕ Bild entfernen
                       </button>
                     </div>
                   ` : `
                     <div style="margin-top: 8px;">
-                      <input type="file" accept="image/*" onchange="window.currentOptionsBuilder.uploadImage(${opt.id}, this.files[0]); this.value='';"
+                      <input type="file" accept="image/*" onchange="${builderRef}.uploadImage(${opt.id}, this.files[0]); this.value='';"
                         style="font-size: 12px;" />
                     </div>
                   `}
                 </div>
-                <button type="button" onclick="window.currentOptionsBuilder.removeOption(${opt.id})"
+                <button type="button" onclick="${builderRef}.removeOption(${opt.id})"
                   style="background: none; border: none; font-size: 20px; color: #dc3545; cursor: pointer; padding: 0 8px;" 
                   title="Löschen">✕</button>
               </div>
