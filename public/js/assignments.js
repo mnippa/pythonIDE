@@ -608,8 +608,12 @@ function showTaskDetails(task, activeTab = 'details') {
 
     revealedHints.forEach((hint) => {
       const displayIndex = availableHints.findIndex(item => item.id === hint.id) + 1;
+      // Support line breaks (\n) and non-breaking spaces (two spaces → &nbsp;&nbsp;)
+      const hintHtml = escapeHtml(hint.text)
+        .replace(/\n/g, '<br>')
+        .replace(/  /g, '&nbsp;&nbsp;');
       hintsHtml += `<div class="hint-item revealed">
-        <span class="hint-number">Hinweis ${displayIndex}:</span> ${escapeHtml(hint.text)}
+        <span class="hint-number">Hinweis ${displayIndex}:</span> ${hintHtml}
       </div>`;
     });
 
