@@ -108,7 +108,9 @@ try {
     if (!$stmt) {
         throw new Exception('Prepare failed: ' . $conn->error);
     }
-    $stmt->bind_param($types, ...$params);
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
     $stmt->execute();
     $result = $stmt->get_result();
 } catch (Exception $e) {
