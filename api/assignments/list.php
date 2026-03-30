@@ -47,11 +47,11 @@ if ($hasUserTeamId && $hasAssignmentTeamId) {
 // LOGIC:
 // - Without ?all=1 (normal dashboard): Show assignments the user is assigned to (via user_assignments)
 //   This applies to ALL users, including admins - on the dashboard, admins are participants too
-// - With ?all=1 (admin management): Show assignments the admin CREATED (WHERE created_by)
-//   This is only meaningful for admins; for regular users, it's a no-op (most won't be creators)
+// - With ?all=1 (admin management): Show ALL assignments for admins
+//   This enables global admin management across all creators
 
 if ($showAll && $user['role'] === 'admin') {
-    // Admin Management: Show all assignments created by this admin
+    // Admin Management: Show all assignments
     $sql = '
         SELECT 
             a.id,
@@ -70,11 +70,10 @@ if ($showAll && $user['role'] === 'admin') {
             NULL AS user_status
         FROM assignments a
         LEFT JOIN users u ON a.created_by = u.id
-        WHERE a.created_by = ?
         ORDER BY a.created_at DESC
     ';
-    $params = [$user['id']];
-    $types = 'i';
+    $params = [];
+    $types = '';
 } else {
     // Participant View (normal dashboard): Show assignments the user is assigned to
     // This is the SAME for admins and regular users

@@ -31,8 +31,7 @@ if (!$assignment) {
     jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
 }
 
-$isOwnerAdmin = $user['role'] === 'admin' && (int)($assignment['created_by'] ?? 0) === (int)$user['id'];
-$canAccess = $isOwnerAdmin || ($user['role'] !== 'admin' && ((bool)$assignment['is_active'] || $assignment['assigned_user'] !== null));
+$canAccess = $user['role'] === 'admin' || ((bool)$assignment['is_active'] || $assignment['assigned_user'] !== null);
 if (!$canAccess) {
     jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
 }

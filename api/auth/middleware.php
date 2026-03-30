@@ -54,10 +54,6 @@ function requireAdminOwnedAssignment(mysqli $conn, int $assignmentId, ?array $ad
         jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
     }
 
-    if ((int)($assignment['created_by'] ?? 0) !== (int)$admin['id']) {
-        jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
-    }
-
     return $assignment;
 }
 
@@ -80,10 +76,6 @@ function requireAdminOwnedTask(mysqli $conn, int $taskId, ?array $admin = null):
 
     if (!$task) {
         jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
-    }
-
-    if ((int)($task['created_by'] ?? 0) !== (int)$admin['id']) {
-        jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
     }
 
     return $task;
