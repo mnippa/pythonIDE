@@ -19,25 +19,43 @@ if (!isset($_SESSION['user_id'])) {
 $userId = $_SESSION['user_id'];
 $conn = getDbConnection();
 
+function normalizeAnswerText($value, bool $caseSensitive = false) {
+    if (is_array($value) || is_object($value)) {
+        $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    $value = str_replace(["\r\n", "\r"], "\n", (string)$value);
+    $value = str_replace(['"', "'", '“', '”', '„', '‚', '‘', '’', '`', '´'], '', $value);
+    $value = preg_replace('/\s*,\s*/u', ', ', $value);
+    $value = preg_replace('/\s+/u', ' ', $value);
+    $value = trim($value);
+
+    if (!$caseSensitive) {
+        $value = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    }
+
+    return $value;
+}
+
 function compareAnswers($userAnswer, $expected) {
-    $userAnswer = trim((string)$userAnswer);
+    $userAnswerRaw = trim((string)$userAnswer);
 
     if (is_array($expected) || is_object($expected)) {
-        $expected = json_encode($expected);
+        $expected = json_encode($expected, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
-    $expected = trim((string)$expected);
+    $expectedRaw = trim((string)$expected);
 
-    if ($userAnswer === '' || $expected === '') {
+    if ($userAnswerRaw === '' || $expectedRaw === '') {
         return false;
     }
 
-    if (is_numeric($userAnswer) && is_numeric($expected)) {
-        $ua = (float)$userAnswer;
-        $ex = (float)$expected;
+    if (is_numeric($userAnswerRaw) && is_numeric($expectedRaw)) {
+        $ua = (float)$userAnswerRaw;
+        $ex = (float)$expectedRaw;
         return abs($ua - $ex) < 1e-9;
     }
 
-    return strtolower($userAnswer) === strtolower($expected);
+    return normalizeAnswerText($userAnswerRaw) === normalizeAnswerText($expectedRaw);
 }
 
 // Check if array is associative (has string keys) vs indexed
@@ -235,28 +253,19 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
                     $answer = $textAnswer;
                     $patternToMatch = $pattern;
                     
-                    // Apply case sensitivity
-                    if (!$caseSensitive) {
-                        $answer = strtolower($answer);
-                        $patternToMatch = strtolower($patternToMatch);
-                    }
+                    $answer = normalizeAnswerText($answer, $caseSensitive);
+                    $patternToMatch = normalizeAnswerText($patternToMatch, $caseSensitive);
                     
                     switch ($validationMode) {
-                        case 'strict':
-                            // Exact match (but whitespace inside can differ based on loose concept)
-                            $matched = (trim($answer) === trim($patternToMatch));
-                            break;
                         case 'contains':
                             // Substring match
                             $matched = (strpos($answer, $patternToMatch) !== false);
                             break;
+                        case 'strict':
                         case 'loose':
                         default:
-                            // Normalize whitespace and then compare
-                            $normalizeWs = function($str) {
-                                return trim(preg_replace('/\s+/', ' ', (string)$str));
-                            };
-                            $matched = ($normalizeWs($answer) === $normalizeWs($patternToMatch));
+                            // Compare with normalized casing, commas and whitespace
+                            $matched = ($answer === $patternToMatch);
                             break;
                     }
                     
