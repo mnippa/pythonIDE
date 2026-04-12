@@ -35,6 +35,62 @@ async function requestJson(url, options = {}) {
 let teamsData = [];
 let semestersData = [];
 let teamMembersData = [];
+let teamAssignmentsData = [];
+
+function toMysqlDateTime(localValue) {
+  if (!localValue) return null;
+  const d = new Date(localValue);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function toDatetimeLocalValue(dateTimeStr) {
+  if (!dateTimeStr) return '';
+  const d = new Date(String(dateTimeStr).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function formatShortDate(dateTimeStr) {
+  if (!dateTimeStr) return '-';
+  const d = new Date(String(dateTimeStr).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '-';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+async function populateAssignmentSelect(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  select.innerHTML = '<option value="">-- Assignment auswählen --</option>';
+  const response = await requestJson('../api/assignments/list.php?all=1');
+
+  if (response.ok && Array.isArray(response.assignments)) {
+    response.assignments
+      .filter(a => a.is_active)
+      .sort((a, b) => a.id - b.id)
+      .forEach((assignment) => {
+        const option = document.createElement('option');
+        option.value = assignment.id;
+        option.textContent = `[${assignment.id}] ${assignment.title}`;
+        select.appendChild(option);
+      });
+  }
+}
 
 function getInviteLink(token) {
   if (!token) return '';
@@ -78,7 +134,8 @@ function renderTeams() {
       <td>${team.is_active ? '✓' : '✗'}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn" data-action="show-team-members" data-id="${team.id}" title="Teilnehmer anzeigen">👥</button>
+          <button class="icon-btn" data-action="show-team-members" data-id="${team.id}" title="Teilnehmer anzeigen">👥 Teilnehmer</button>
+          <button class="icon-btn" data-action="assign-team-assignment" data-id="${team.id}" title="Assignments zuordnen">📚 Assignments</button>
           <button class="icon-btn" data-action="copy-team-invite" data-id="${team.id}" title="Copy invite link">🔗</button>
           <button class="icon-btn" data-action="regen-team-invite" data-id="${team.id}" title="Regenerate invite link">♻️</button>
           <button class="icon-btn" data-action="edit-team" data-id="${team.id}" title="Edit">✏️</button>
@@ -118,7 +175,9 @@ function updateTeamFilters() {
 async function loadTeamMembers(teamId) {
   if (!teamId) {
     teamMembersData = [];
+    teamAssignmentsData = [];
     renderTeamMembers();
+    renderTeamAssignments();
     return;
   }
 
@@ -127,13 +186,38 @@ async function loadTeamMembers(teamId) {
     params.set('team_id', String(teamId));
     params.set('limit', '100');
     params.set('page', '1');
-    const response = await requestJson(`../api/admin/users/list.php?${params.toString()}`);
-    teamMembersData = Array.isArray(response.users) ? response.users : [];
+    const [usersResponse, assignmentsResponse] = await Promise.all([
+      requestJson(`../api/admin/users/list.php?${params.toString()}`),
+      requestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`)
+    ]);
+    teamMembersData = Array.isArray(usersResponse.users) ? usersResponse.users : [];
+    teamAssignmentsData = Array.isArray(assignmentsResponse.items) ? assignmentsResponse.items : [];
     renderTeamMembers();
+    renderTeamAssignments();
   } catch (err) {
     console.error('Load team members failed:', err);
     teamMembersData = [];
+    teamAssignmentsData = [];
     renderTeamMembers();
+    renderTeamAssignments(err.message);
+  }
+}
+
+async function loadTeamAssignments(teamId) {
+  if (!teamId) {
+    teamAssignmentsData = [];
+    renderTeamAssignments();
+    return;
+  }
+
+  try {
+    const response = await requestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`);
+    teamAssignmentsData = Array.isArray(response.items) ? response.items : [];
+    renderTeamAssignments();
+  } catch (err) {
+    console.error('Load team assignments failed:', err);
+    teamAssignmentsData = [];
+    renderTeamAssignments(err.message);
   }
 }
 
@@ -145,7 +229,7 @@ function renderTeamMembers() {
   const search = ($('teams-members-search')?.value || '').trim().toLowerCase();
 
   if (!teamId) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte Team auswählen.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf 👥 Teilnehmer oder 📚 Assignments klicken.</td></tr>';
     return;
   }
 
@@ -177,6 +261,55 @@ function renderTeamMembers() {
         <td>${statsText}</td>
         <td>${u.role === 'admin' ? '🔑 Admin' : 'User'}</td>
         <td>${escapeHtml(u.status || 'aktiv')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderTeamAssignments(errorMessage = '') {
+  const tbody = $('team-assignments-body');
+  if (!tbody) return;
+
+  const teamId = $('teams-members-team-filter')?.value || '';
+  if (!teamId) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf 📚 Assignments klicken.</td></tr>';
+    return;
+  }
+
+  if (errorMessage) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:16px;color:#b91c1c;">${escapeHtml(errorMessage)}</td></tr>`;
+    return;
+  }
+
+  if (!teamAssignmentsData.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Standard-Assignments für dieses Team.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = teamAssignmentsData.map((item) => {
+    const deadlineText = item.effective_due_date ? formatShortDate(item.effective_due_date) : '-';
+    const deadlineHint = item.team_due_date ? 'Team' : 'Assignment';
+    return `
+      <tr>
+        <td class="mono">${item.assignment_id}</td>
+        <td>
+          <div>${escapeHtml(item.title)}</div>
+          <div style="font-size:12px;color:var(--hspf-text-secondary);">${escapeHtml(item.difficulty || '')} · ${item.task_count || 0} Tasks</div>
+        </td>
+        <td>${formatShortDate(item.available_from)}</td>
+        <td>
+          <div>${deadlineText}</div>
+          <div style="font-size:12px;color:var(--hspf-text-secondary);">${escapeHtml(deadlineHint)}</div>
+        </td>
+        <td>${formatShortDate(item.hard_deadline)}</td>
+        <td>${item.allow_late_submission ? 'ja' : 'nein'}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="edit-team-assignment" data-team-id="${item.team_id}" data-id="${item.assignment_id}" title="Team-Deadline bearbeiten">✏️</button>
+            <button class="icon-btn" data-action="edit-assignment-settings" data-id="${item.assignment_id}" title="Assignment-Zeiten bearbeiten">⏰</button>
+            <button class="icon-btn danger" data-action="delete-team-assignment" data-team-id="${item.team_id}" data-id="${item.assignment_id}" title="Standardzuordnung entfernen">🗑️</button>
+          </div>
+        </td>
       </tr>
     `;
   }).join('');
@@ -528,7 +661,6 @@ async function openBulkAssignModal() {
     return;
   }
   
-  // Show selected users
   const modal = document.getElementById('bulk-assign-modal');
   const usersList = document.getElementById('bulk-assign-users-list');
   const countDiv = document.getElementById('bulk-assign-count');
@@ -548,29 +680,147 @@ async function openBulkAssignModal() {
     }
   });
   countDiv.textContent = `${selectedUserIds.size} Benutzer ausgewählt`;
-  
-  // Load assignments
+
   try {
-    const response = await requestJson('../api/assignments/list.php?all=1');
-    if (response.ok && response.assignments) {
-      const select = document.getElementById('bulk-assign-assignment');
-      select.innerHTML = '<option value="">-- Assignment auswählen --</option>';
-      
-      response.assignments
-        .sort((a, b) => a.id - b.id)
-        .forEach(assignment => {
-          const option = document.createElement('option');
-          option.value = assignment.id;
-          option.textContent = `[${assignment.id}] ${assignment.title}`;
-          select.appendChild(option);
-        });
-    }
+    await populateAssignmentSelect('bulk-assign-assignment');
   } catch (err) {
     console.error('Load assignments failed:', err);
   }
   
-  // Show modal
   modal.style.display = 'flex';
+}
+
+async function openTeamAssignModal(teamId, existingItem = null) {
+  const team = teamsData.find(t => t.id === teamId);
+  if (!team) {
+    alert('Team nicht gefunden');
+    return;
+  }
+
+  const modal = document.getElementById('team-assign-modal');
+  const statusDiv = document.getElementById('team-assign-status');
+  const teamIdInput = document.getElementById('team-assign-team-id');
+  const teamNameEl = document.getElementById('team-assign-team-name');
+  const dueDateInput = document.getElementById('team-assign-due-date');
+  const assignmentSelect = document.getElementById('team-assign-assignment');
+
+  teamIdInput.value = String(team.id);
+  teamNameEl.textContent = `${team.name} (#${team.id})`;
+  dueDateInput.value = existingItem ? toDatetimeLocalValue(existingItem.team_due_date || existingItem.effective_due_date) : '';
+  statusDiv.style.display = 'none';
+  statusDiv.textContent = '';
+
+  try {
+    await populateAssignmentSelect('team-assign-assignment');
+    if (existingItem && assignmentSelect) {
+      assignmentSelect.value = String(existingItem.assignment_id);
+    }
+  } catch (err) {
+    console.error('Load assignments failed:', err);
+    statusDiv.style.display = 'block';
+    statusDiv.textContent = 'Assignments konnten nicht geladen werden: ' + err.message;
+  }
+
+  modal.style.display = 'flex';
+}
+
+async function openAssignmentSettingsModal(assignmentId) {
+  try {
+    const response = await requestJson(`../api/assignments/get.php?id=${assignmentId}`);
+    const a = response.assignment;
+    if (!a) throw new Error('Assignment not found');
+
+    $('assignment-id').value = a.id;
+    $('assignment-title').value = a.title || '';
+    $('assignment-description').value = a.description || '';
+    $('assignment-difficulty').value = a.difficulty || 'beginner';
+    $('assignment-active').value = a.is_active ? 'true' : 'false';
+    if ($('assignment-available-from')) $('assignment-available-from').value = toDatetimeLocalValue(a.available_from);
+    if ($('assignment-due-date')) $('assignment-due-date').value = toDatetimeLocalValue(a.due_date);
+    if ($('assignment-hard-deadline')) $('assignment-hard-deadline').value = toDatetimeLocalValue(a.hard_deadline);
+    if ($('assignment-allow-late')) $('assignment-allow-late').value = a.allow_late_submission === false ? 'false' : 'true';
+    if ($('assignment-modal-title')) $('assignment-modal-title').textContent = `Edit Assignment #${a.id}`;
+    $('assignment-modal')?.classList.add('active');
+  } catch (err) {
+    alert('Assignment konnte nicht geladen werden: ' + err.message);
+  }
+}
+
+async function deleteTeamAssignmentDefault(teamId, assignmentId) {
+  const item = teamAssignmentsData.find(x => x.team_id === teamId && x.assignment_id === assignmentId);
+  const title = item?.title || `Assignment #${assignmentId}`;
+
+  if (!confirm(`Standardzuordnung für ${title} aus diesem Team entfernen?\n\nBestehende User-Assignments bleiben erhalten.`)) {
+    return;
+  }
+
+  await requestJson('../api/admin/teams/assignment-defaults/delete.php', {
+    method: 'POST',
+    body: JSON.stringify({ team_id: teamId, assignment_id: assignmentId })
+  });
+
+  await loadTeamMembers(teamId);
+}
+
+function closeTeamAssignModal() {
+  const modal = document.getElementById('team-assign-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitTeamAssign(e) {
+  e.preventDefault();
+
+  const teamId = parseInt(document.getElementById('team-assign-team-id')?.value || '0', 10);
+  const assignmentId = document.getElementById('team-assign-assignment')?.value || '';
+  const dueDate = document.getElementById('team-assign-due-date')?.value || '';
+  const statusDiv = document.getElementById('team-assign-status');
+
+  if (!teamId || !assignmentId) {
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'error';
+    statusDiv.textContent = 'Bitte Team und Assignment auswählen';
+    return;
+  }
+
+  statusDiv.style.display = 'block';
+  statusDiv.className = 'info';
+  statusDiv.textContent = 'Speichere Team-Zuordnung...';
+
+  try {
+    const body = {
+      assignment_id: parseInt(assignmentId, 10),
+      team_id: teamId
+    };
+
+    if (dueDate) {
+      body.due_date = toMysqlDateTime(dueDate);
+    }
+
+    const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+
+    const defaultsSaved = response.assigned_count || 0;
+    const materialized = response.materialized_count || 0;
+    statusDiv.className = 'success';
+    statusDiv.textContent = `✓ Team-Zuordnung gespeichert | Defaults: ${defaultsSaved} | Aktuelle Mitglieder: ${materialized}`;
+
+    const selectedTeamId = $('teams-members-team-filter')?.value || '';
+    if (selectedTeamId && parseInt(selectedTeamId, 10) === teamId) {
+      await loadTeamMembers(teamId);
+    } else {
+      await loadTeamAssignments(teamId);
+    }
+    await loadUsers();
+
+    setTimeout(() => {
+      closeTeamAssignModal();
+    }, 1200);
+  } catch (err) {
+    statusDiv.className = 'error';
+    statusDiv.textContent = 'Fehler: ' + err.message;
+  }
 }
 
 async function submitBulkAssign(e) {
@@ -597,9 +847,7 @@ async function submitBulkAssign(e) {
       user_ids: Array.from(selectedUserIds)
     };
     if (dueDate) {
-      // Convert to MySQL datetime format
-      const d = new Date(dueDate);
-      body.due_date = d.toISOString().slice(0, 19).replace('T', ' ');
+      body.due_date = toMysqlDateTime(dueDate);
     }
     
     const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
@@ -609,7 +857,10 @@ async function submitBulkAssign(e) {
     
     if (response.ok) {
       statusDiv.className = 'success';
-      statusDiv.textContent = `✓ ${response.assigned_count || selectedUserIds.size} Benutzer zugewiesen`;
+      const assigned = response.assigned_count || 0;
+      const skipped = response.skipped_count || 0;
+      const materialized = response.materialized_count || 0;
+      statusDiv.textContent = `✓ Zugewiesen: ${assigned} | Neu materialisiert: ${materialized} | Uebersprungen: ${skipped}`;
       
       setTimeout(() => {
         document.getElementById('bulk-assign-modal').style.display = 'none';
@@ -734,6 +985,7 @@ document.getElementById('user-edit-modal')?.addEventListener('click', (e) => {
 
 // Bulk assign modal form
 document.getElementById('bulk-assign-form')?.addEventListener('submit', submitBulkAssign);
+document.getElementById('team-assign-form')?.addEventListener('submit', submitTeamAssign);
 
 // Close bulk assign modal
 document.getElementById('bulk-assign-close-btn')?.addEventListener('click', () => {
@@ -742,6 +994,14 @@ document.getElementById('bulk-assign-close-btn')?.addEventListener('click', () =
 
 document.getElementById('bulk-assign-cancel-btn')?.addEventListener('click', () => {
   document.getElementById('bulk-assign-modal').style.display = 'none';
+});
+
+document.getElementById('team-assign-close-btn')?.addEventListener('click', closeTeamAssignModal);
+document.getElementById('team-assign-cancel-btn')?.addEventListener('click', closeTeamAssignModal);
+document.getElementById('team-assign-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'team-assign-modal') {
+    closeTeamAssignModal();
+  }
 });
 
 // Table click delegation
@@ -763,6 +1023,21 @@ document.addEventListener('click', async (e) => {
     const isActive = confirm('Is Active?');
     
     await updateTeam(id, { name, description, is_active: isActive ? 1 : 0 });
+  } else if (action === 'assign-team-assignment') {
+    if ($('teams-members-team-filter')) {
+      $('teams-members-team-filter').value = String(id);
+    }
+    await loadTeamMembers(id);
+    await openTeamAssignModal(id);
+  } else if (action === 'edit-team-assignment') {
+    const teamId = parseInt(e.target.dataset.teamId || '0', 10);
+    const item = teamAssignmentsData.find(x => x.team_id === teamId && x.assignment_id === id);
+    await openTeamAssignModal(teamId, item || null);
+  } else if (action === 'edit-assignment-settings') {
+    await openAssignmentSettingsModal(id);
+  } else if (action === 'delete-team-assignment') {
+    const teamId = parseInt(e.target.dataset.teamId || '0', 10);
+    await deleteTeamAssignmentDefault(teamId, id);
   } else if (action === 'delete-team') {
     await deleteTeam(id);
   } else if (action === 'copy-team-invite') {

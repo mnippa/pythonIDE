@@ -92,6 +92,58 @@ if (!$task) {
     exit;
 }
 
+$assignmentScheduleStmt = $conn->prepare(
+    'SELECT
+        t.assignment_id,
+        a.is_active,
+        a.available_from,
+        a.due_date AS assignment_due_date,
+        a.hard_deadline,
+        a.allow_late_submission,
+        ua.due_date AS user_due_date
+     FROM tasks t
+     INNER JOIN assignments a ON a.id = t.assignment_id
+     LEFT JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
+     WHERE t.id = ?
+     LIMIT 1'
+);
+$assignmentScheduleStmt->bind_param('ii', $userId, $taskId);
+$assignmentScheduleStmt->execute();
+$schedule = $assignmentScheduleStmt->get_result()->fetch_assoc();
+
+if (!$schedule) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'Assignment context not found']);
+    exit;
+}
+
+$nowTs = time();
+$availableTs = !empty($schedule['available_from']) ? strtotime($schedule['available_from']) : null;
+$dueTs = !empty($schedule['user_due_date'])
+    ? strtotime($schedule['user_due_date'])
+    : (!empty($schedule['assignment_due_date']) ? strtotime($schedule['assignment_due_date']) : null);
+$hardTs = !empty($schedule['hard_deadline']) ? strtotime($schedule['hard_deadline']) : null;
+
+if ((int)$schedule['is_active'] !== 1) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Assignment is inactive']);
+    exit;
+}
+
+if ($availableTs !== null && $nowTs < $availableTs) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Assignment not yet available']);
+    exit;
+}
+
+if ($hardTs !== null && $nowTs > $hardTs) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Hard deadline passed']);
+    exit;
+}
+
+$isLateSubmission = ($dueTs !== null && $nowTs > $dueTs);
+
 $taskType = $task['task_type'];
 $maxAttempts = isset($task['max_attempts']) && (int)$task['max_attempts'] > 0 ? (int)$task['max_attempts'] : 1;
 $isIterative = in_array($taskType, ['code_reading', 'code_random_complex'], true);
@@ -498,6 +550,24 @@ $stmt->bind_param(
 );
 
 if ($stmt->execute()) {
+    $assignmentStatus = $status === 'passed' ? 'submitted' : 'in_progress';
+    $assignmentId = (int)$schedule['assignment_id'];
+    $assignedByForProgress = (int)$userId;
+
+    $assignmentUpsert = $conn->prepare(
+        'INSERT INTO user_assignments (assignment_id, user_id, status, submitted_at, is_late, assigned_by)
+         VALUES (?, ?, ?, NOW(), ?, ?)
+         ON DUPLICATE KEY UPDATE
+            status = VALUES(status),
+            submitted_at = NOW(),
+            is_late = VALUES(is_late)'
+    );
+    if ($assignmentUpsert) {
+        $lateInt = $isLateSubmission ? 1 : 0;
+        $assignmentUpsert->bind_param('iisii', $assignmentId, $userId, $assignmentStatus, $lateInt, $assignedByForProgress);
+        $assignmentUpsert->execute();
+    }
+
     $response = [
         'ok' => true,
         'is_correct' => $isCorrect,
@@ -505,6 +575,7 @@ if ($stmt->execute()) {
         'attempts' => $newAttempts,
         'max_attempts' => $maxAttempts,
         'message' => $message,
+        'is_late' => $isLateSubmission,
         'current_iteration' => $isIterative ? $nextIteration : null,
         'max_iterations' => $isIterative ? $maxIterations : null,
         'reset_values' => $resetValues

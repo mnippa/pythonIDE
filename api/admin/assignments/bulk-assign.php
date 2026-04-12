@@ -4,7 +4,7 @@
  * POST api/admin/assignments/bulk-assign.php
  * Body: {
  *   "assignment_id": 1,
- *   "team_id": 2,           // ODER
+ *   "team_id": 2,           // ODER: schreibt Team-Default + materialisiert aktuelle Team-Mitglieder
  *   "user_ids": [1,2,3],    // Array von User IDs
  *   "due_date": "2025-12-31 23:59:59" // Optional
  * }
@@ -25,6 +25,12 @@ if (!isset($_SESSION['user_id'])) {
 try {
     require_once __DIR__ . '/../../../config/database.php';
     $conn = getDbConnection();
+
+    $tableExists = function (mysqli $conn, string $table): bool {
+        $safeTable = $conn->real_escape_string($table);
+        $res = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
+        return $res && $res->num_rows > 0;
+    };
 
     $sessionRole = $_SESSION['role'] ?? null;
     $assignedBy = (int)$_SESSION['user_id'];
@@ -57,38 +63,79 @@ try {
     
     $assignmentId = (int)$data['assignment_id'];
     $dueDate = $data['due_date'] ?? null;
+
+    $assignmentStmt = $conn->prepare('SELECT id, is_active, due_date FROM assignments WHERE id = ?');
+    $assignmentStmt->bind_param('i', $assignmentId);
+    $assignmentStmt->execute();
+    $assignment = $assignmentStmt->get_result()->fetch_assoc();
+    if (!$assignment) {
+        throw new Exception('Assignment not found');
+    }
+    if ((int)$assignment['is_active'] !== 1) {
+        throw new Exception('Assignment is inactive and cannot be assigned in bulk');
+    }
     
     $conn->begin_transaction();
     
     $assignedCount = 0;
+    $materializedCount = 0;
+    $skippedCount = 0;
     
     // Option 1: Assign to entire team
     if (isset($data['team_id']) && $data['team_id']) {
         $teamId = (int)$data['team_id'];
-        
-        // Check if already assigned
-        $check = $conn->prepare('SELECT id FROM user_assignments WHERE assignment_id = ? AND team_id = ?');
-        $check->bind_param('ii', $assignmentId, $teamId);
-        $check->execute();
-        $exists = $check->get_result()->fetch_assoc();
-        
-        if (!$exists) {
-            $stmt = $conn->prepare('INSERT INTO user_assignments (assignment_id, team_id, assigned_by, due_date) VALUES (?, ?, ?, ?)');
-            $stmt->bind_param('iiis', $assignmentId, $teamId, $assignedBy, $dueDate);
-            $stmt->execute();
+        $effectiveDueDate = $dueDate ?: ($assignment['due_date'] ?? null);
+
+        if ($tableExists($conn, 'team_assignment_defaults')) {
+            $defaultsStmt = $conn->prepare(
+                'INSERT INTO team_assignment_defaults (team_id, assignment_id, assigned_by, due_date, is_active)
+                 VALUES (?, ?, ?, ?, 1)
+                 ON DUPLICATE KEY UPDATE assigned_by = VALUES(assigned_by), due_date = VALUES(due_date), is_active = VALUES(is_active)'
+            );
+            $defaultsStmt->bind_param('iiis', $teamId, $assignmentId, $assignedBy, $effectiveDueDate);
+            $defaultsStmt->execute();
             $assignedCount = 1;
+
+            $materializeStmt = $conn->prepare(
+                'INSERT IGNORE INTO user_assignments (assignment_id, user_id, assigned_by, due_date, status)
+                 SELECT ?, u.id, ?, ?, "assigned"
+                 FROM users u
+                 WHERE u.team_id = ?'
+            );
+            $materializeStmt->bind_param('iisi', $assignmentId, $assignedBy, $effectiveDueDate, $teamId);
+            $materializeStmt->execute();
+            $materializedCount = (int)$materializeStmt->affected_rows;
+
+            $updateExistingStmt = $conn->prepare(
+                'UPDATE user_assignments ua
+                 INNER JOIN users u ON u.id = ua.user_id
+                 SET ua.due_date = ?
+                 WHERE ua.assignment_id = ? AND u.team_id = ?'
+            );
+            $updateExistingStmt->bind_param('sii', $effectiveDueDate, $assignmentId, $teamId);
+            $updateExistingStmt->execute();
+        } else {
+            throw new Exception('team_assignment_defaults table missing. Run migration 026 first.');
         }
     }
     // Option 2: Assign to individual users
     elseif (isset($data['user_ids']) && is_array($data['user_ids'])) {
+        $effectiveDueDate = $dueDate ?: ($assignment['due_date'] ?? null);
         $stmt = $conn->prepare('INSERT IGNORE INTO user_assignments (assignment_id, user_id, assigned_by, due_date) VALUES (?, ?, ?, ?)');
-        
-        foreach ($data['user_ids'] as $userId) {
+
+        $normalizedUserIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
+        foreach ($normalizedUserIds as $userId) {
             $userId = (int)$userId;
-            $stmt->bind_param('iiis', $assignmentId, $userId, $assignedBy, $dueDate);
+            if ($userId <= 0) {
+                $skippedCount++;
+                continue;
+            }
+            $stmt->bind_param('iiis', $assignmentId, $userId, $assignedBy, $effectiveDueDate);
             $stmt->execute();
             if ($stmt->affected_rows > 0) {
                 $assignedCount++;
+            } else {
+                $skippedCount++;
             }
         }
     } else {
@@ -100,7 +147,9 @@ try {
     echo json_encode([
         'ok' => true,
         'message' => 'Assignment assigned successfully',
-        'assigned_count' => $assignedCount
+        'assigned_count' => $assignedCount,
+        'materialized_count' => $materializedCount,
+        'skipped_count' => $skippedCount
     ]);
     
 } catch (Exception $e) {

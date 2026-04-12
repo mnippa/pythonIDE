@@ -56,13 +56,17 @@ try {
     
     // Create new assignment with "(Copy)" suffix
     $newTitle = $assignment['title'] . ' (Copy)';
-    $stmt = $conn->prepare('INSERT INTO assignments (title, description, difficulty, is_active, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())');
+    $stmt = $conn->prepare('INSERT INTO assignments (title, description, difficulty, is_active, created_by, available_from, due_date, hard_deadline, allow_late_submission, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
     if (!$stmt) {
         throw new Exception('Prepare failed: ' . $conn->error);
     }
     
     $userId = $admin['id'];
-    $stmt->bind_param('sssii', $newTitle, $assignment['description'], $assignment['difficulty'], $assignment['is_active'], $userId);
+    $availableFrom = $assignment['available_from'] ?? null;
+    $dueDate = $assignment['due_date'] ?? null;
+    $hardDeadline = $assignment['hard_deadline'] ?? null;
+    $allowLate = isset($assignment['allow_late_submission']) ? (int)$assignment['allow_late_submission'] : 1;
+    $stmt->bind_param('sssiisssi', $newTitle, $assignment['description'], $assignment['difficulty'], $assignment['is_active'], $userId, $availableFrom, $dueDate, $hardDeadline, $allowLate);
     if (!$stmt->execute()) {
         throw new Exception('Insert assignment failed: ' . $stmt->error);
     }

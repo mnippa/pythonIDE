@@ -13,6 +13,36 @@ header('Content-Type: application/json');
 $user = requireAuth();
 $conn = getDbConnection();
 
+function calcAssignmentTiming(array $row): array {
+    $now = new DateTimeImmutable('now');
+    $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
+    $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
+    $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+
+    $phase = 'open';
+    if (!empty($row['assignment_active']) && (int)$row['assignment_active'] === 0) {
+        $phase = 'hidden';
+    } elseif ($availableFrom !== null && $now < $availableFrom) {
+        $phase = 'upcoming';
+    } elseif ($hardDeadline !== null && $now > $hardDeadline) {
+        $phase = 'closed';
+    } elseif ($dueDate !== null && $now > $dueDate) {
+        $phase = 'late';
+    }
+
+    $daysRemaining = null;
+    if ($hardDeadline !== null && $phase !== 'closed') {
+        $daysRemaining = (int)$now->diff($hardDeadline)->format('%r%a');
+    } elseif ($dueDate !== null && !in_array($phase, ['late', 'closed'], true)) {
+        $daysRemaining = (int)$now->diff($dueDate)->format('%r%a');
+    }
+
+    return [
+        'phase' => $phase,
+        'days_remaining' => $daysRemaining,
+    ];
+}
+
 $filterUserId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
 $filterAssignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
 $statusFilter = isset($_GET['status']) ? $_GET['status'] : null;
@@ -37,6 +67,14 @@ $sql = '
         ua.attempts,
         ua.assigned_at,
         ua.submitted_at,
+        ua.due_date AS user_due_date,
+        ua.is_late,
+        a.is_active AS assignment_active,
+        a.available_from,
+        a.due_date AS assignment_due_date,
+        a.hard_deadline,
+        a.allow_late_submission,
+        COALESCE(ua.due_date, a.due_date) AS effective_due_date,
         a.title AS assignment_title,
         a.difficulty AS assignment_difficulty,
         u.email AS user_email,
@@ -80,6 +118,7 @@ $result = $stmt->get_result();
 
 $items = [];
 while ($row = $result->fetch_assoc()) {
+    $timing = calcAssignmentTiming($row);
     $items[] = [
         'id' => (int)$row['id'],
         'user_id' => (int)$row['user_id'],
@@ -88,6 +127,14 @@ while ($row = $result->fetch_assoc()) {
         'attempts' => (int)$row['attempts'],
         'assigned_at' => $row['assigned_at'],
         'submitted_at' => $row['submitted_at'],
+        'user_due_date' => $row['user_due_date'],
+        'available_from' => $row['available_from'],
+        'due_date' => $row['effective_due_date'],
+        'hard_deadline' => $row['hard_deadline'],
+        'allow_late_submission' => isset($row['allow_late_submission']) ? (bool)$row['allow_late_submission'] : true,
+        'is_late' => isset($row['is_late']) ? (bool)$row['is_late'] : false,
+        'timing_phase' => $timing['phase'],
+        'days_remaining' => $timing['days_remaining'],
         'assignment_title' => $row['assignment_title'],
         'assignment_difficulty' => $row['assignment_difficulty'],
         'user_email' => $row['user_email'],

@@ -51,6 +51,43 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
+function toDatetimeLocalValue(dateTimeStr) {
+  if (!dateTimeStr) return '';
+  const d = dateTimeStr instanceof Date
+    ? dateTimeStr
+    : new Date(String(dateTimeStr).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function fromDatetimeLocalValue(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function formatCompactDate(dateTimeStr) {
+  if (!dateTimeStr) return '-';
+  const d = new Date(dateTimeStr.replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '-';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = d.getFullYear();
+  return `${dd}.${mm}.${yy}`;
+}
+
 function setActiveTab(tab) {
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
@@ -311,6 +348,9 @@ function renderAssignments() {
       </td>
       <td>${escapeHtml(a.difficulty)}</td>
       <td>${a.is_active ? '✓' : '✗'}</td>
+      <td>${formatCompactDate(a.available_from)}</td>
+      <td>${formatCompactDate(a.due_date)}</td>
+      <td>${formatCompactDate(a.hard_deadline)}</td>
       <td>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span>${a.task_count}</span>
@@ -499,6 +539,13 @@ function resetAssignmentForm() {
   $('assignment-description').value = '';
   $('assignment-difficulty').value = 'beginner';
   $('assignment-active').value = 'true';
+  const now = new Date();
+  const due = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const hard = new Date(now.getTime() + 17 * 24 * 60 * 60 * 1000);
+  $('assignment-available-from').value = toDatetimeLocalValue(now);
+  $('assignment-due-date').value = toDatetimeLocalValue(due);
+  $('assignment-hard-deadline').value = toDatetimeLocalValue(hard);
+  $('assignment-allow-late').value = 'true';
   const titleEl = $('assignment-modal-title');
   if (titleEl) titleEl.textContent = 'New Assignment';
 }
@@ -684,7 +731,11 @@ async function handleAssignmentSubmit(e) {
     title: $('assignment-title').value.trim(),
     description: $('assignment-description').value.trim(),
     difficulty: $('assignment-difficulty').value,
-    is_active: $('assignment-active').value === 'true'
+    is_active: $('assignment-active').value === 'true',
+    available_from: fromDatetimeLocalValue($('assignment-available-from').value),
+    due_date: fromDatetimeLocalValue($('assignment-due-date').value),
+    hard_deadline: fromDatetimeLocalValue($('assignment-hard-deadline').value),
+    allow_late_submission: $('assignment-allow-late').value === 'true'
   };
 
   if (!payload.title) {
@@ -2080,6 +2131,10 @@ function bindEvents() {
       $('assignment-description').value = a.description || '';
       $('assignment-difficulty').value = a.difficulty || 'beginner';
       $('assignment-active').value = a.is_active ? 'true' : 'false';
+      $('assignment-available-from').value = toDatetimeLocalValue(a.available_from);
+      $('assignment-due-date').value = toDatetimeLocalValue(a.due_date);
+      $('assignment-hard-deadline').value = toDatetimeLocalValue(a.hard_deadline);
+      $('assignment-allow-late').value = a.allow_late_submission === false ? 'false' : 'true';
       $('assignment-modal-title').textContent = `Edit Assignment #${a.id}`;
       $('assignment-modal').classList.add('active');
     }

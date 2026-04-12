@@ -1495,11 +1495,39 @@ function renderAssignmentList() {
       const status = assignmentState.taskStatuses[t.id];
       return status === 'passed';
     }).length;
+
+    const phase = item.timing_phase || 'open';
+    let phaseLabel = 'Verfuegbar';
+    let phaseColor = '#166534';
+    if (phase === 'upcoming') {
+      phaseLabel = 'Noch nicht offen';
+      phaseColor = '#1d4ed8';
+    } else if (phase === 'late') {
+      phaseLabel = 'Verspaetete Phase';
+      phaseColor = '#b45309';
+    } else if (phase === 'closed') {
+      phaseLabel = 'Abgelaufen';
+      phaseColor = '#991b1b';
+    } else if (phase === 'hidden') {
+      phaseLabel = 'Inaktiv';
+      phaseColor = '#374151';
+    }
+
+    let remainingLabel = '';
+    if (item.days_remaining !== null && item.days_remaining !== undefined) {
+      remainingLabel = item.days_remaining >= 0
+        ? `${item.days_remaining} Tage verbleibend`
+        : `${Math.abs(item.days_remaining)} Tage ueberzogen`;
+    }
     
     return `
       <div class="assignment-card" data-assignment-id="${item.assignment_id}">
         <div class="assignment-card-title">${escapeHtml(item.assignment_title)}</div>
         <div class="assignment-card-description">${escapeHtml(assignment?.description || 'Keine Beschreibung')}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin:6px 0 8px;">
+          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:${phaseColor};border:1px solid #d1d5db;">${phaseLabel}</span>
+          ${remainingLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(remainingLabel)}</span>` : ''}
+        </div>
         <div class="assignment-card-meta">
           <div class="assignment-card-stat">
             <span>📝</span>

@@ -521,6 +521,9 @@ if ($displayName === '') {
                 <th class="sortable" data-sort="created_by_name">Owner</th>
                 <th class="sortable" data-sort="difficulty">Difficulty</th>
                 <th class="sortable" data-sort="is_active">Active</th>
+                <th class="sortable" data-sort="available_from">Start</th>
+                <th class="sortable" data-sort="due_date">Due</th>
+                <th class="sortable" data-sort="hard_deadline">Hard</th>
                 <th class="sortable" data-sort="task_count">Tasks</th>
                 <th class="sortable" data-sort="user_count">Users</th>
                 <th>Actions</th>
@@ -588,7 +591,7 @@ if ($displayName === '') {
           <h2 style="margin: 0;">👥 Teams</h2>
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-team-modal">+ New Team</button>
         </div>
-        <div class="admin-card-subtitle">Teams für Gruppen-Zuweisung. User können einem Team zugeordnet werden.</div>
+        <div class="admin-card-subtitle">Teams für Gruppen-Zuweisung. Über <strong>👥 Teilnehmer</strong> und <strong>📚 Assignments</strong> in der Team-Zeile können Sie Mitglieder und Standard-Assignments direkt verwalten.</div>
         
         <div style="overflow:auto;">
           <table id="teams-table">
@@ -632,7 +635,30 @@ if ($displayName === '') {
               </tr>
             </thead>
             <tbody id="teams-members-body">
-              <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte Team auswählen.</td></tr>
+              <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf <strong>👥 Teilnehmer</strong> oder <strong>📚 Assignments</strong> klicken – oder links ein Team auswählen.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Standard-Assignments</h3>
+        <div class="admin-card-subtitle">Verwaltet die Default-Zuordnungen pro Team. Entfernen betrifft nur zukünftige bzw. neue Team-Zuweisungen; bestehende User-Assignments bleiben erhalten.</div>
+        <div style="overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Assignment</th>
+                <th>Start</th>
+                <th>Deadline</th>
+                <th>Hard Deadline</th>
+                <th>Late</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="team-assignments-body">
+              <tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf <strong>📚 Assignments</strong> klicken – oder links ein Team auswählen.</td></tr>
             </tbody>
           </table>
         </div>
@@ -729,6 +755,40 @@ if ($displayName === '') {
     </div>
   </div>
 
+  <div id="team-assign-modal" class="modal">
+    <div class="modal-content" style="max-width: 640px;">
+      <div class="modal-header">
+        <h3>📚 Assignment einem Team zuordnen</h3>
+        <button id="team-assign-close-btn" class="modal-close">✕</button>
+      </div>
+      <div class="modal-body" style="padding: var(--hspf-spacing-lg);">
+        <form id="team-assign-form">
+          <input type="hidden" id="team-assign-team-id" />
+          <div class="field">
+            <label>Team</label>
+            <div id="team-assign-team-name" style="padding: 10px 12px; background: var(--hspf-bg-secondary); border: 1px solid var(--hspf-border); border-radius: var(--hspf-radius-sm);">-</div>
+          </div>
+          <div class="field">
+            <label for="team-assign-assignment">Assignment wählen</label>
+            <select id="team-assign-assignment" required style="width: 100%; padding: 8px;">
+              <option value="">-- Assignment auswählen --</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="team-assign-due-date">Fälligkeitsdatum (optional)</label>
+            <input type="datetime-local" id="team-assign-due-date" style="width: 100%; padding: 8px;" />
+            <div class="hint">Speichert die Team-Standardzuordnung und weist das Assignment zugleich den aktuellen Teammitgliedern zu.</div>
+          </div>
+          <div class="row-actions">
+            <button type="submit" class="hspf-btn hspf-btn-primary">✓ Team zuordnen</button>
+            <button type="button" id="team-assign-cancel-btn" class="hspf-btn">Abbrechen</button>
+          </div>
+          <div id="team-assign-status" style="margin-top: var(--hspf-spacing-md); padding: var(--hspf-spacing-sm); border-radius: var(--hspf-radius-sm); display: none;"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div id="user-edit-modal" class="modal">
     <div class="modal-content" style="max-width: 560px;">
       <div class="modal-header">
@@ -804,6 +864,25 @@ if ($displayName === '') {
         <div class="field">
           <label for="assignment-active">Active</label>
           <select id="assignment-active" class="hspf-select">
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="assignment-available-from">Verfuegbar ab</label>
+          <input id="assignment-available-from" type="datetime-local" class="hspf-input" />
+        </div>
+        <div class="field">
+          <label for="assignment-due-date">Regulaere Deadline</label>
+          <input id="assignment-due-date" type="datetime-local" class="hspf-input" />
+        </div>
+        <div class="field">
+          <label for="assignment-hard-deadline">Spaeteste Abgabe (Hard Deadline)</label>
+          <input id="assignment-hard-deadline" type="datetime-local" class="hspf-input" />
+        </div>
+        <div class="field">
+          <label for="assignment-allow-late">Verspaetete Abgabe erlauben</label>
+          <select id="assignment-allow-late" class="hspf-select">
             <option value="true">true</option>
             <option value="false">false</option>
           </select>

@@ -11,6 +11,21 @@ header('Content-Type: application/json');
 $user = requireAdmin();
 $conn = getDbConnection();
 
+function normalizeDateTimeInput($value): ?string {
+    if ($value === null) {
+        return null;
+    }
+    $value = trim((string)$value);
+    if ($value === '') {
+        return null;
+    }
+    $ts = strtotime($value);
+    if ($ts === false) {
+        return null;
+    }
+    return date('Y-m-d H:i:s', $ts);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -84,6 +99,70 @@ if (array_key_exists('time_limit_minutes', $input)) {
     $updates[] = 'time_limit_minutes = ?';
     $params[] = $timeLimit;
     $types .= 'i';
+}
+
+if (array_key_exists('available_from', $input)) {
+    $value = normalizeDateTimeInput($input['available_from']);
+    if ($input['available_from'] !== null && trim((string)$input['available_from']) !== '' && $value === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid available_from datetime'], 400);
+    }
+    $updates[] = 'available_from = ?';
+    $params[] = $value;
+    $types .= 's';
+}
+
+if (array_key_exists('due_date', $input)) {
+    $value = normalizeDateTimeInput($input['due_date']);
+    if ($input['due_date'] !== null && trim((string)$input['due_date']) !== '' && $value === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid due_date datetime'], 400);
+    }
+    $updates[] = 'due_date = ?';
+    $params[] = $value;
+    $types .= 's';
+}
+
+if (array_key_exists('hard_deadline', $input)) {
+    $value = normalizeDateTimeInput($input['hard_deadline']);
+    if ($input['hard_deadline'] !== null && trim((string)$input['hard_deadline']) !== '' && $value === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid hard_deadline datetime'], 400);
+    }
+    $updates[] = 'hard_deadline = ?';
+    $params[] = $value;
+    $types .= 's';
+}
+
+if (array_key_exists('allow_late_submission', $input)) {
+    $allowLate = filter_var($input['allow_late_submission'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($allowLate === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid allow_late_submission value'], 400);
+    }
+    $updates[] = 'allow_late_submission = ?';
+    $params[] = (int)$allowLate;
+    $types .= 'i';
+}
+
+if (array_key_exists('available_from', $input) || array_key_exists('due_date', $input) || array_key_exists('hard_deadline', $input)) {
+    $dateStmt = $conn->prepare('SELECT available_from, due_date, hard_deadline FROM assignments WHERE id = ?');
+    $dateStmt->bind_param('i', $assignmentId);
+    $dateStmt->execute();
+    $dateRow = $dateStmt->get_result()->fetch_assoc() ?: [];
+
+    $effectiveAvailable = array_key_exists('available_from', $input)
+        ? normalizeDateTimeInput($input['available_from'])
+        : ($dateRow['available_from'] ?? null);
+    $effectiveDue = array_key_exists('due_date', $input)
+        ? normalizeDateTimeInput($input['due_date'])
+        : ($dateRow['due_date'] ?? null);
+    $effectiveHard = array_key_exists('hard_deadline', $input)
+        ? normalizeDateTimeInput($input['hard_deadline'])
+        : ($dateRow['hard_deadline'] ?? null);
+
+    if ($effectiveAvailable !== null && $effectiveDue !== null && strtotime($effectiveDue) < strtotime($effectiveAvailable)) {
+        jsonResponse(['ok' => false, 'error' => 'due_date must be on/after available_from'], 400);
+    }
+    if ($effectiveDue !== null && $effectiveHard !== null && strtotime($effectiveHard) < strtotime($effectiveDue)) {
+        jsonResponse(['ok' => false, 'error' => 'hard_deadline must be on/after due_date'], 400);
+    }
 }
 
 if (empty($updates)) {

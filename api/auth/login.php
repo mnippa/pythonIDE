@@ -31,7 +31,7 @@ if (empty($email) || empty($password)) {
 $conn = getDbConnection();
 
 // Get user by email
-$stmt = $conn->prepare('SELECT id, email, first_name, last_name, password_hash, role FROM users WHERE email = ?');
+$stmt = $conn->prepare('SELECT id, email, first_name, last_name, password_hash, role, team_id FROM users WHERE email = ?');
 $stmt->bind_param('s', $email);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -46,6 +46,9 @@ $user = $result->fetch_assoc();
 if (!password_verify($password, $user['password_hash'])) {
     jsonResponse(['ok' => false, 'error' => 'Invalid email or password'], 401);
 }
+
+// Ensure team defaults are materialized for existing users as soon as they log in.
+materializeTeamAssignmentsForUser($conn, (int)$user['id'], isset($user['team_id']) ? (int)$user['team_id'] : null, (int)$user['id']);
 
 // Update last login
 $stmt = $conn->prepare('UPDATE users SET last_login = NOW() WHERE id = ?');

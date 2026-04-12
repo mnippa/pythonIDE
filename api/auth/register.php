@@ -111,6 +111,9 @@ $stmt->bind_param('sssssi', $email, $firstName, $lastName, $passwordHash, $role,
 
 if ($stmt->execute()) {
     $userId = $conn->insert_id;
+
+    // New team users should immediately receive all active team default assignments.
+    materializeTeamAssignmentsForUser($conn, (int)$userId, (int)$teamId, (int)$userId);
     
     // Auto-login after registration
     $_SESSION['user_id'] = $userId;
@@ -126,7 +129,8 @@ if ($stmt->execute()) {
             'email' => $email,
             'first_name' => $firstName,
             'last_name' => $lastName,
-            'role' => $role
+            'role' => $role,
+            'team_id' => $teamId
         ]
     ], 201);
 } else {

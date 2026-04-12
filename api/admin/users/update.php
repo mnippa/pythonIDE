@@ -11,6 +11,12 @@ header('Content-Type: application/json');
 $user = requireAdmin();
 $conn = getDbConnection();
 
+function tableExists(mysqli $conn, string $table): bool {
+    $safeTable = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
+    return $res && $res->num_rows > 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -29,7 +35,7 @@ if ($userId <= 0) {
     jsonResponse(['ok' => false, 'error' => 'User ID required'], 400);
 }
 
-$stmt = $conn->prepare('SELECT id, role, email, first_name, last_name FROM users WHERE id = ?');
+$stmt = $conn->prepare('SELECT id, role, email, first_name, last_name, team_id FROM users WHERE id = ?');
 $stmt->bind_param('i', $userId);
 $stmt->execute();
 $existing = $stmt->get_result()->fetch_assoc();
@@ -147,6 +153,40 @@ $stmt->bind_param($types, ...$params);
 
 if (!$stmt->execute()) {
     jsonResponse(['ok' => false, 'error' => 'Failed to update user'], 500);
+}
+
+$newTeamId = null;
+if (array_key_exists('team_id', $input)) {
+    $newTeamId = ($input['team_id'] === '' || $input['team_id'] === null) ? null : (int)$input['team_id'];
+} else {
+    $newTeamId = $existing['team_id'] !== null ? (int)$existing['team_id'] : null;
+}
+
+$oldTeamId = $existing['team_id'] !== null ? (int)$existing['team_id'] : null;
+
+if ($newTeamId !== null && $newTeamId > 0 && $newTeamId !== $oldTeamId && tableExists($conn, 'team_assignment_defaults')) {
+    $materializeSql = '
+        INSERT INTO user_assignments (assignment_id, user_id, assigned_by, status, due_date)
+        SELECT tad.assignment_id, ?, ?, "assigned", COALESCE(tad.due_date, a.due_date)
+        FROM team_assignment_defaults tad
+        INNER JOIN assignments a ON a.id = tad.assignment_id
+        WHERE tad.team_id = ?
+          AND tad.is_active = 1
+          AND a.is_active = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM user_assignments ua
+              WHERE ua.assignment_id = tad.assignment_id
+                AND ua.user_id = ?
+          )
+    ';
+
+    $materializeStmt = $conn->prepare($materializeSql);
+    if ($materializeStmt) {
+        $adminId = (int)$user['id'];
+        $materializeStmt->bind_param('iiii', $userId, $adminId, $newTeamId, $userId);
+        $materializeStmt->execute();
+    }
 }
 
 $resultStmt = $conn->prepare('SELECT id, email, first_name, last_name, role, status, team_id FROM users WHERE id = ?');
