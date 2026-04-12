@@ -564,6 +564,7 @@ if ($displayName === '') {
                 <th>Pos</th>
                 <th>Title</th>
                 <th>Task Type</th>
+                <th>Difficulty</th>
                 <th>Tests</th>
                 <th>Solution</th>
                 <th>Mode</th>
@@ -998,6 +999,15 @@ if ($displayName === '') {
               <option value="code_random_complex">Random Complex</option>
             </select>
           </div>
+
+          <div class="field">
+            <label for="task-difficulty">Schwierigkeit</label>
+            <select id="task-difficulty">
+              <option value="basic">Basic</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
           
           <!-- Legacy problem_type (hidden, for compatibility) -->
           <input type="hidden" id="task-type" value="code_completion" />
@@ -1258,6 +1268,15 @@ if ($displayName === '') {
               <option value="free_text">Freitext</option>
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="edit-task-difficulty">Schwierigkeit</label>
+            <select id="edit-task-difficulty">
+              <option value="basic">Basic</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
             </select>
           </div>
           

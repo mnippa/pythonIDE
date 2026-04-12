@@ -89,19 +89,18 @@ try {
         problem_type, code_template, 
         hint1, hint2, hint3, stoff, 
         expected_output, test_cases, solution_code, 
-        task_type, task_text, question_text, 
+        task_type, task_difficulty, task_text, question_text, 
         image_url, correct_answer, variable_overrides, randomizer_code, 
         created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
     
     if (!$stmt) {
         throw new Exception('Prepare failed: ' . $conn->error);
     }
     
-    // Type string: i ss i iii ii s s sss s s s s s s s s s s s
-    // Total: 25 parameters
+    // Total: 26 parameters
     $stmt->bind_param(
-        'issiiiiisssssssssssssssss',
+        'issiiiiissssssssssssssssss',
         $assignmentId,                  // i
         $newTitle,                      // s
         $task['description'],           // s
@@ -121,6 +120,7 @@ try {
         $task['test_cases'],            // s
         $task['solution_code'],         // s
         $taskType,                      // s
+        $task['task_difficulty'],       // s
         $task['task_text'],             // s
         $task['question_text'],         // s
         $task['image_url'],             // s

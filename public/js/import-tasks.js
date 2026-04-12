@@ -40,6 +40,12 @@ class TaskImporter {
       throw new Error(`Invalid task_type: ${task.task_type}`);
     }
 
+    const taskDifficulty = (task.task_difficulty ?? 'medium').toString().toLowerCase();
+    const allowedTaskDifficulties = ['basic', 'medium', 'hard'];
+    if (!allowedTaskDifficulties.includes(taskDifficulty)) {
+      throw new Error(`Invalid task_difficulty: ${task.task_difficulty}`);
+    }
+
     if (!task.title || String(task.title).trim() === '') {
       throw new Error('Missing title');
     }
@@ -325,6 +331,8 @@ class TaskImporter {
           : (typeof variableOverridesValue === 'string' ? variableOverridesValue : JSON.stringify(variableOverridesValue));
 
         const taskType = taskWithImages.task_type;
+        const taskDifficultyRaw = (taskWithImages.task_difficulty ?? 'medium').toString().toLowerCase();
+        const taskDifficulty = ['basic', 'medium', 'hard'].includes(taskDifficultyRaw) ? taskDifficultyRaw : 'medium';
 
         // Ensure max_iterations is a proper number for code_random_complex and code_reading
         // to prevent losing iteration counts during import and ensure consistency with originals
@@ -349,6 +357,7 @@ class TaskImporter {
           show_solution_code: taskWithImages.show_solution_code !== undefined ? parseInt(taskWithImages.show_solution_code, 10) : 0,
           min_keywords_required: taskWithImages.min_keywords_required ? parseInt(taskWithImages.min_keywords_required, 10) : null,
           task_type: taskType,
+          task_difficulty: taskDifficulty,
           problem_type: this.getProblemType(taskType),
           task_text: taskWithImages.task_text || '',
           code_template: taskWithImages.code_template || '',

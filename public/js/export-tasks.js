@@ -16,6 +16,8 @@ class TaskExporter {
    */
   buildTaskExport(task) {
     const taskType = task.task_type;
+    const rawDifficulty = (task.task_difficulty || 'medium').toString().toLowerCase();
+    const taskDifficulty = ['basic', 'medium', 'hard'].includes(rawDifficulty) ? rawDifficulty : 'medium';
     const options = Array.isArray(task.options)
       ? task.options.map((opt) => ({
           text: opt.text || '',
@@ -37,6 +39,7 @@ class TaskExporter {
     return {
       version: '3.0',
       task_type: taskType,
+      task_difficulty: taskDifficulty,
       title: task.title,
       task_text: task.task_text || '',
       description: task.description || '',

@@ -424,6 +424,17 @@ if (array_key_exists('randomizer_code', $input)) {
     $types .= 's';
 }
 
+if (array_key_exists('task_difficulty', $input)) {
+    $taskDifficulty = strtolower(trim((string)$input['task_difficulty']));
+    $allowedTaskDifficulties = ['basic', 'medium', 'hard'];
+    if (!in_array($taskDifficulty, $allowedTaskDifficulties, true)) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid task_difficulty'], 400);
+    }
+    $updates[] = 'task_difficulty = ?';
+    $params[] = $taskDifficulty;
+    $types .= 's';
+}
+
 if (empty($updates)) {
     jsonResponse(['ok' => false, 'error' => 'No fields to update'], 400);
 }

@@ -1255,6 +1255,23 @@ function getStatusEmoji(status) {
   return emojis[status] || '⚪';
 }
 
+function getTaskDifficultyMeta(levelRaw) {
+  const level = (levelRaw || 'medium').toString().toLowerCase();
+  const validLevel = ['basic', 'medium', 'hard'].includes(level) ? level : 'medium';
+  const filled = validLevel === 'basic' ? 1 : (validLevel === 'hard' ? 3 : 2);
+  return {
+    level: validLevel,
+    filled
+  };
+}
+
+function renderDifficultyStars(meta, withLabel = false) {
+  const filled = Math.max(0, Math.min(3, Number(meta?.filled || 0)));
+  const empty = 3 - filled;
+  const label = withLabel ? ` ${escapeHtml(meta?.level || 'medium')}` : '';
+  return `<span style="font-weight:800; letter-spacing:0.5px;"><span style="color:#ffb300; text-shadow:0 0 1px #d45100;">${'★'.repeat(filled)}</span><span style="color:#9ca3af;">${'★'.repeat(empty)}</span>${label}</span>`;
+}
+
 // Export showTaskDetails for access from quiz-renderer
 window.showTaskDetails = showTaskDetails;
 
@@ -1316,10 +1333,11 @@ function renderTaskNavigation() {
     const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
     const isActive = task.id === assignmentState.currentTaskId;
     const taskIcon = taskTypeIcons[task.task_type] || '<i class="fas fa-question-circle"></i>';
+    const taskDifficulty = getTaskDifficultyMeta(task.task_difficulty);
     
     return `
       <div class="task-nav-item ${isActive ? 'active' : ''}" data-task-id="${task.id}">
-        <span class="task-nav-position">${idx + 1}. (#${task.id})</span>
+        <span class="task-nav-position">${idx + 1}. ${renderDifficultyStars(taskDifficulty, false)}</span>
         <span class="task-nav-status status-${status}"></span>
         <span class="task-nav-title">${escapeHtml(task.title)}</span>
         <span class="task-nav-icon">${taskIcon}</span>
@@ -1574,8 +1592,8 @@ function openAssignmentEditor(assignmentId) {
   const isTestMode = window.TEST_MODE_NO_PERSIST === true || window.testMode === true;
   if (!isTestMode) {
     if (dashboardBtn) dashboardBtn.style.display = 'none';
-    if (backToListBtn) backToListBtn.style.display = 'inline-block';
   }
+  if (backToListBtn) backToListBtn.style.display = 'inline-block';
   if (runBtn) runBtn.style.display = 'inline-block';
   
   // Set current assignment
@@ -1682,11 +1700,13 @@ function renderAssignmentDetail(assignmentId, assignment, tasks) {
     <div style="font-weight:600; margin-bottom:6px;">Aufgaben</div>
     ${tasks.length ? tasks.map((task) => {
       const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
+      const difficulty = getTaskDifficultyMeta(task.task_difficulty);
       return `
         <div class="task-item">
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
             <span class="status-light status-${status}"></span>
             <div class="task-title" style="flex:1;">${escapeHtml(task.position)}. ${escapeHtml(task.title)}</div>
+            <div style="font-size:12px; color:var(--text-secondary);" title="Schwierigkeit: ${escapeHtml(difficulty.level)}">${renderDifficultyStars(difficulty, true)}</div>
           </div>
           ${task.description ? `<div style="font-size:12px; color:var(--text-secondary); margin-left:24px;">${escapeHtml(task.description.substring(0, 80)) || ''}${task.description.length > 80 ? '...' : ''}</div>` : ''}
           <div class="task-actions">

@@ -422,6 +422,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
     const isFirst = fullIndex === 0;
     const isLast = fullIndex === state.tasks.length - 1;
     const taskTypeLabel = t.task_type || 'code';
+    const difficulty = getTaskDifficultyMeta(t.task_difficulty);
     const isQuizType = !['code', 'code_ui'].includes(taskTypeLabel);
 
     // Testtypen-Icons
@@ -463,6 +464,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
       </td>
       <td>${escapeHtml(t.title)}</td>
       <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
+      <td><span class="tag" title="${difficulty.level}">${difficulty.stars} ${difficulty.level}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
       <td><span class="tag">${testTypeIconHtml}</span></td>
@@ -586,6 +588,7 @@ function resetTaskForm() {
   
   // NEW: Reset quiz fields
   if ($('new-task-type')) $('new-task-type').value = 'code';
+  if ($('task-difficulty')) $('task-difficulty').value = 'medium';
   if ($('task-image-url')) $('task-image-url').value = '';
   if ($('task-image-preview')) $('task-image-preview').innerHTML = '';
   if ($('task-image-upload')) $('task-image-upload').value = '';
@@ -620,6 +623,17 @@ function resetTaskForm() {
   if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
     setActiveTaskTab(taskForm, 'base');
   }
+}
+
+function getTaskDifficultyMeta(levelRaw) {
+  const level = (levelRaw || 'medium').toString().toLowerCase();
+  const validLevel = ['basic', 'medium', 'hard'].includes(level) ? level : 'medium';
+  const filled = validLevel === 'basic' ? 1 : (validLevel === 'hard' ? 3 : 2);
+  return {
+    level: validLevel,
+    filled,
+    stars: '★'.repeat(filled) + '☆'.repeat(3 - filled)
+  };
 }
 
 function openAssignmentModal() {
@@ -787,6 +801,7 @@ async function handleTaskSubmit(e) {
     allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
+    task_difficulty: ($('task-difficulty')?.value || 'medium'),
     image_url: $('task-image-url') ? ($('task-image-url').value.trim() || null) : null,
     code_template: $('task-template').value,
     randomizer_code: $('task-randomizer-code').value.trim() || null,
@@ -1205,6 +1220,12 @@ function updateMaxIterationsFromBuilder(prefix) {
   const maxIterInput = $(`${prefix}-max-iterations`);
   if (!maxIterInput) return;
 
+  // Only code_reading derives iteration count from override sets.
+  // For code_random_complex and all other types, keep the manually set value.
+  if (taskType !== 'code_reading') {
+    return;
+  }
+
   const iterationsCount = overridesBuilders[prefix]?.iterations?.length || 0;
   // Always allow manual editing - don't set readOnly
   // Users can manually enter iterations count even for CODE_READING
@@ -1496,6 +1517,9 @@ function openEditTaskModal(taskId) {
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
+  if ($('edit-task-difficulty')) {
+    $('edit-task-difficulty').value = task.task_difficulty || 'medium';
+  }
   
   // Unified task_text and description fields (same for all task types)
   $('edit-task-text').value = task.task_text || '';
@@ -1634,6 +1658,7 @@ async function handleEditTaskSubmit(e) {
     allowDownload: $('edit-task-allowDownload').checked ? 1 : 0,
     allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
+    task_difficulty: ($('edit-task-difficulty')?.value || 'medium'),
     problem_type: taskType,  // Keep for backwards compatibility
     image_url: $('edit-task-image-url') ? ($('edit-task-image-url').value.trim() || null) : null,
     code_template: $('edit-task-template').value,

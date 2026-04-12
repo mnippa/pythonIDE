@@ -157,6 +157,7 @@ $options = $input['options'] ?? [];
 $folderstructure = isset($input['folderstructure']) ? (int)(bool)$input['folderstructure'] : 0;
 $allowDownload = isset($input['allowDownload']) ? (int)(bool)$input['allowDownload'] : 0;
 $allowCodeUiWebEdit = isset($input['allowCodeUiWebEdit']) ? (int)(bool)$input['allowCodeUiWebEdit'] : 1;
+$taskDifficulty = strtolower(trim((string)($input['task_difficulty'] ?? 'medium')));
 
 $problemTypeMap = [
     'code' => 'code_completion',
@@ -196,6 +197,11 @@ if (!in_array($problemType, $allowedTypes, true)) {
 $allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
 if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
+}
+
+$allowedTaskDifficulties = ['basic', 'medium', 'hard'];
+if (!in_array($taskDifficulty, $allowedTaskDifficulties, true)) {
+    jsonResponse(['ok' => false, 'error' => 'Invalid task_difficulty'], 400);
 }
 
 if ($taskType === 'code_ui') {
@@ -314,8 +320,8 @@ $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -349,6 +355,7 @@ $types .= 's';     // randomizer_code
 $types .= 'i';     // folderstructure
 $types .= 'i';     // allowDownload
 $types .= 'i';     // allow_code_ui_web_edit
+$types .= 's';     // task_difficulty
 
 error_log('Type string: ' . $types . ' (length: ' . strlen($types) . ')');
 
@@ -381,7 +388,8 @@ $bindResult = @$stmt->bind_param(
     $randomizerCode,
     $folderstructure,
     $allowDownload,
-    $allowCodeUiWebEdit
+    $allowCodeUiWebEdit,
+    $taskDifficulty
 );
 
 if (!$bindResult) {
@@ -443,6 +451,7 @@ if ($stmt->execute()) {
             'expected_output' => $expectedOutput,
             'test_cases' => $testCases,
             'solution_code' => $solutionCode,
+            'task_difficulty' => $taskDifficulty,
             'created_at' => date('Y-m-d H:i:s')
         ]
     ], 201);
