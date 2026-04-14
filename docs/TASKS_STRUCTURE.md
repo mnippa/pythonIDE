@@ -20,6 +20,37 @@ Assignment (Sammlung)
    └─ ...
 ```
 
+## � Pflichtschema: Titel / Aufgabentext / Details
+
+Jede Aufgabe hat drei Inhaltsfelder. **Alle drei müssen bewusst befüllt werden.**
+
+| Feld (DB) | Wo sichtbar | Zweck | Regel |
+|-----------|-------------|-------|-------|
+| `title` | Aufgabenliste + Header | Thema, prägnant | Max. ~60 Zeichen, kein ganzer Satz |
+| `task_text` | **Über dem Editor** (groß) | Präzise Aufgabenstellung | Sagt genau, was der Student tun soll |
+| `description` | Details-Tab (Seitenleiste) | Erläuterung / Zusatzkontext | Kann `task_text` vertiefen, ist optional |
+| `stoff` | Details-Tab (Seitenleiste) | Lerninhalt / Theoriebezug | Optional, z.B. Kapitelangabe |
+
+### Beispiele (richtig vs. falsch)
+
+```
+❌ FALSCH:
+  title:      "Der Student gibt das dritte Element einer Liste mit 4 Fächern aus"
+  task_text:  "Liste"
+  description: (leer)
+
+✅ RICHTIG:
+  title:      "Fächerliste: drittes Element"
+  task_text:  "Definiere eine Liste mit genau 4 Fächernamen. Gib das dritte Fach (Index 2) aus."
+  description: "Verwende den Index 2, da Python-Listen bei 0 beginnen. Das dritte Element hat also den Index 2."
+```
+
+### Regel in einem Satz
+
+> `title` = Thema für die Liste · `task_text` = Was ist zu tun? (präzise, kurz) · `description` = Warum / Wie (wenn nötig)
+
+---
+
 ## 📊 Tabellen-Schema
 
 ### tasks Tabelle
@@ -28,13 +59,15 @@ Assignment (Sammlung)
 |------|-----|-------------|
 | `id` | INT UNSIGNED | Eindeutige Task-ID |
 | `assignment_id` | INT UNSIGNED | Bezug zur Assignment |
-| `title` | VARCHAR(255) | Task-Titel (z.B. "Hallo-Welt Programm") |
-| `description` | TEXT | Detaillierte Aufgabenbeschreibung |
+| `title` | VARCHAR(255) | Thema, prägnant für die Aufgabenliste |
+| `task_text` | TEXT | Aufgabenstellung über dem Editor – präzise, kurz |
+| `description` | TEXT | Details-Tab: Erläuterung, wenn `task_text` nicht reicht |
+| `stoff` | TEXT | Details-Tab: Lerninhalt / Theoriebezug |
 | `position` | INT | Reihenfolge innerhalb Assignment (1, 2, 3, ...) |
 | `problem_type` | ENUM | Art der Aufgabe (siehe unten) |
 | `code_template` | MEDIUMTEXT | Starter-Code für Schüler |
-| `hint` | TEXT | Hinweis/Hilfetext |
-| `expected_output` | TEXT | Erwartete Ausgabe zum Testen |
+| `hint1/2/3` | TEXT | Hinweise (werden einzeln aufgedeckt) |
+| `expected_output` | TEXT | Erwartete Ausgabe (legacy, besser test_cases nutzen) |
 | `created_at` | TIMESTAMP | Erstellungsdatum |
 | `updated_at` | TIMESTAMP | Letztes Änderungsdatum |
 

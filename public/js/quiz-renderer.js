@@ -5,6 +5,22 @@
 window.QuizRenderer = {
   _lightboxInitialized: false,
 
+  async getPyodideOrThrow(timeoutMs = 15000) {
+    if (window.pyodide) {
+      return window.pyodide;
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (window.pyodide) {
+        return window.pyodide;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    throw new Error('Pyodide ist noch nicht bereit');
+  },
+
   ensureImageLightbox() {
     if (this._lightboxInitialized) return;
 
@@ -714,8 +730,10 @@ window.QuizRenderer = {
         return;
       }
 
-      const pyodide = window.pyodide;
-      if (!pyodide) {
+      let pyodide = null;
+      try {
+        pyodide = await this.getPyodideOrThrow();
+      } catch (_err) {
         feedbackEl.innerHTML = '<div class="error">Pyodide ist noch nicht bereit</div>';
         return;
       }
@@ -775,8 +793,10 @@ window.QuizRenderer = {
         return;
       }
 
-      const pyodide = window.pyodide;
-      if (!pyodide) {
+      let pyodide = null;
+      try {
+        pyodide = await this.getPyodideOrThrow();
+      } catch (_err) {
         feedbackEl.innerHTML = '<div class="error">Pyodide ist noch nicht bereit</div>';
         return;
       }
@@ -1103,10 +1123,7 @@ window.QuizRenderer = {
         
         if (hasRandomMarkers && task.randomizer_code) {
           // CODE_RANDOM_COMPLEX: Execute randomizer_code to generate values DIRECTLY (no values dict)
-          const pyodide = window.pyodide;
-          if (!pyodide) {
-            throw new Error('Pyodide ist noch nicht bereit');
-          }
+          const pyodide = await this.getPyodideOrThrow();
 
           // Create an isolated namespace for the randomizer
           const python = `
@@ -1204,10 +1221,7 @@ __randomizer_namespace
     }
 
     // Fallback: Use randomizer_code (NEW SCHEMA for code_random_complex)
-    const pyodide = window.pyodide;
-    if (!pyodide) {
-      throw new Error('Pyodide ist noch nicht bereit');
-    }
+    const pyodide = await this.getPyodideOrThrow();
 
     const code = (task.randomizer_code || '').trim();
     if (!code) {

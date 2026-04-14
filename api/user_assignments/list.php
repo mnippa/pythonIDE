@@ -13,6 +13,36 @@ header('Content-Type: application/json');
 $user = requireAuth();
 $conn = getDbConnection();
 
+function formatRemainingTime(?DateTimeImmutable $deadline): ?string {
+    if ($deadline === null) {
+        return null;
+    }
+    
+    $now = new DateTimeImmutable('now');
+    if ($now >= $deadline) {
+        return null; // Zeit ist vorbei
+    }
+    
+    $diff = $now->diff($deadline);
+    
+    // Tage extrahieren
+    $days = (int)$diff->format('%a');
+    $hours = (int)$diff->format('%h');
+    $minutes = (int)$diff->format('%i');
+    
+    if ($days >= 1) {
+        // Format: "X Tage, Y Stunden"
+        $dayLabel = $days === 1 ? 'Tag' : 'Tage';
+        $hourLabel = $hours === 1 ? 'Stunde' : 'Stunden';
+        return "{$days} {$dayLabel}, {$hours} {$hourLabel}";
+    } else {
+        // Format: "HH:MM"
+        $hoursFormatted = str_pad($hours, 2, '0', STR_PAD_LEFT);
+        $minutesFormatted = str_pad($minutes, 2, '0', STR_PAD_LEFT);
+        return "{$hoursFormatted}:{$minutesFormatted}";
+    }
+}
+
 function calcAssignmentTiming(array $row): array {
     $now = new DateTimeImmutable('now');
     $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
@@ -37,9 +67,16 @@ function calcAssignmentTiming(array $row): array {
         $daysRemaining = (int)$now->diff($dueDate)->format('%r%a');
     }
 
+    // Format remaining time for display
+    $formattedTime = null;
+    if ($dueDate !== null) {
+        $formattedTime = formatRemainingTime($dueDate);
+    }
+
     return [
         'phase' => $phase,
         'days_remaining' => $daysRemaining,
+        'formatted_time_remaining' => $formattedTime,
     ];
 }
 
@@ -135,6 +172,7 @@ while ($row = $result->fetch_assoc()) {
         'is_late' => isset($row['is_late']) ? (bool)$row['is_late'] : false,
         'timing_phase' => $timing['phase'],
         'days_remaining' => $timing['days_remaining'],
+        'formatted_time_remaining' => $timing['formatted_time_remaining'],
         'assignment_title' => $row['assignment_title'],
         'assignment_difficulty' => $row['assignment_difficulty'],
         'user_email' => $row['user_email'],

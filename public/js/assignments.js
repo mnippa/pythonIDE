@@ -1531,11 +1531,13 @@ function renderAssignmentList() {
       phaseColor = '#374151';
     }
 
-    let remainingLabel = '';
-    if (item.days_remaining !== null && item.days_remaining !== undefined) {
-      remainingLabel = item.days_remaining >= 0
-        ? `${item.days_remaining} Tage verbleibend`
-        : `${Math.abs(item.days_remaining)} Tage ueberzogen`;
+    let timeLabel = '';
+    if (item.formatted_time_remaining) {
+      timeLabel = `Verbleibende Zeit: <strong>${item.formatted_time_remaining}</strong>`;
+    } else if (item.due_date === null && item.hard_deadline === null) {
+      timeLabel = 'Ohne Zeitlimit';
+    } else {
+      timeLabel = '';
     }
     
     return `
@@ -1544,7 +1546,7 @@ function renderAssignmentList() {
         <div class="assignment-card-description">${escapeHtml(assignment?.description || 'Keine Beschreibung')}</div>
         <div style="display:flex;gap:8px;align-items:center;margin:6px 0 8px;">
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:${phaseColor};border:1px solid #d1d5db;">${phaseLabel}</span>
-          ${remainingLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(remainingLabel)}</span>` : ''}
+          ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
         </div>
         <div class="assignment-card-meta">
           <div class="assignment-card-stat">

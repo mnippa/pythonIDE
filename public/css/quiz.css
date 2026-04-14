@@ -125,6 +125,7 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding-right: 4px;
+  padding-bottom: 16px;
   margin-bottom: 12px;
 }
 
@@ -175,6 +176,7 @@
 
   .quiz-options {
     max-height: 36vh;
+    padding-bottom: 20px;
   }
 }
 

@@ -266,6 +266,69 @@ gerade = [x for x in zahlen if x % 2 == 0]
 
 ---
 
+## 4. INTELLIGENT (mode: vars)
+
+**Wann verwenden:** Randomisierte Aufgaben, bei denen Inputs pro Testlauf variieren sollen.
+
+### Format:
+```json
+{
+  "mode": "vars",
+  "tests": 4,
+  "inputs": ["a", "b"],
+  "outputs": ["summe", "produkt"]
+}
+```
+
+### Ablauf (wichtig)
+1. `randomizer_code` erzeugt pro Testlauf ein `values`-Dictionary.
+2. Code wird **einmal initial komplett ausgeführt**.
+3. Danach werden die randomisierten Werte injiziert (`namespace.update(values)`).
+4. Danach wird der Code **ab `#INIT END` erneut** ausgeführt.
+5. Die in `outputs` genannten Variablen werden verglichen.
+
+### Warum gibt es die initiale Ausführung?
+- Um Syntax-/Runtime-Fehler früh und konsistent zu erkennen.
+- Um den Namespace aufzubauen (Imports, Hilfsfunktionen, vorbereitete Strukturen).
+- Um danach mit identischer Umgebung nur den Rechenblock ab `#INIT END` neu zu berechnen.
+
+### Praktische Regel für Aufgabenautoren
+- Der Block zwischen `#INIT START` und `#INIT END` muss **index-safe** und robust sein.
+- Keine Platzhalter verwenden, die schon bei der ersten Ausführung crashen (z. B. `liste=[]` und direkt `liste[2]`).
+- Stattdessen gültige Defaultwerte im INIT-Block setzen.
+
+### Beispiel (Fächerliste)
+```python
+#INIT START
+faecher = ["Mathe", "Deutsch", "Englisch", "Informatik"]
+#INIT END
+
+anzahl_faecher = len(faecher)
+drittes_fach = faecher[2]
+```
+
+Mit `outputs: ["anzahl_faecher", "drittes_fach"]` wird gleichzeitig geprüft:
+- Liste hat 4 Elemente (`anzahl_faecher == 4`)
+- Drittes Element wird korrekt adressiert (`faecher[2]`)
+
+### Checkliste für Intelligent-Vars-Aufgaben (5 Regeln)
+
+| # | Regel | Beispiel |
+|---|-------|----------|
+| 1 | `#INIT`-Block muss **lauffähig** sein, ohne Randomizer | `faecher = ["A","B","C","D"]` (nicht `faecher = []`) |
+| 2 | Jede Variable aus `inputs` muss im `#INIT`-Block deklariert sein | `inputs: ["a","b"]` → `a = 0` und `b = 0` im Block |
+| 3 | Jede Variable aus `outputs` muss im Code nach `#INIT END` berechnet werden | `outputs: ["drittes_fach"]` → `drittes_fach = faecher[2]` |
+| 4 | `outputs` nicht als Print prüfen – nur Variablenwerte werden verglichen | `drittes_fach = faecher[2]` ✅ · `print(faecher[2])` ❌ |
+| 5 | Randomizer muss `values`-Dictionary zurückgeben | `values = {"a": random.randint(1,10)}` |
+
+> **Warum müssen beide Codes (Student + Musterlösung) initial laufen?**
+> Die Engine nutzt einen gemeinsamen Pfad für User- und Solution-Code.
+> Erster Lauf → Namespace aufbauen (Imports, Syntax-Check).
+> Danach → Randomizer-Werte injizieren → nur den Teil nach `#INIT END` erneut ausführen → Outputs vergleichen.
+> Deshalb: Der `#INIT`-Block muss immer eigenständig lauffähig sein.
+
+---
+
 ## Migration von Legacy zu neuen Typen
 
 ### Alt (implizit):
