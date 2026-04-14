@@ -15,12 +15,15 @@ $pageTitle = $pageTitle ?? 'Python IDE';
 $showUser = $showUser ?? false;
 $userInfo = $userInfo ?? [];
 $headerActions = $headerActions ?? '';
+
+$isLoggedIn = (session_status() === PHP_SESSION_ACTIVE) && !empty($_SESSION['user_id']);
+$brandHref = $isLoggedIn ? '/pythonIDE/public/dashboard.php' : '/pythonIDE/public/';
 ?>
 
 <header class="hspf-header">
   <div class="hspf-header-content">
     <div class="hspf-header-left">
-      <a href="/" class="hspf-brand">
+      <a href="<?= htmlspecialchars($brandHref, ENT_QUOTES, 'UTF-8') ?>" class="hspf-brand">
         <span class="hspf-brand-text">HS PF</span>
       </a>
       <?php if ($pageTitle): ?>

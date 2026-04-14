@@ -2342,32 +2342,12 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     outputEl.textContent = `Task geladen: ${task.title}`;
   }
 
-  // Show check button if test cases exist (code tasks only)
-  if (!isQuizTask) {
-    const checkBtn = document.getElementById('check-btn');
-    const submitBtn = document.getElementById('submit-btn');
-    if (checkBtn) {
-      // Show button if test cases exist
-      if (task.test_cases) {
-        const attempts = assignmentState.taskAttempts[task.id] || 0;
-        const maxAttempts = task.max_attempts || 10;
-        const reachedMaxAttempts = attempts >= maxAttempts;
-        checkBtn.style.display = 'inline-block';
-        if (submitBtn) submitBtn.style.display = 'inline-block';
-        checkBtn.disabled = reachedMaxAttempts;
-        checkBtn.style.opacity = reachedMaxAttempts ? '0.6' : '1';
-        checkBtn.style.cursor = reachedMaxAttempts ? 'not-allowed' : 'pointer';
-      } else {
-        checkBtn.style.display = 'none';
-        if (submitBtn) submitBtn.style.display = 'none';
-      }
-    }
-  }
-
   // Lock editor and hide check/submit if task already finalized (passed or failed)
   // (currentStatus and isFinalized already computed above)
   
   // Get elements
+  const checkBtn = document.getElementById('check-btn');
+  const submitBtn = document.getElementById('submit-btn');
   const saveTaskBtn = document.getElementById('save-task-btn');
   const downloadBtn = document.getElementById('download-btn');
   const undoBtn = document.getElementById('undo-btn');
@@ -2379,8 +2359,6 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   
   if (isFinalized) {
     // Task finalized - hide buttons (but keep download), lock editor, show submitted info
-    const checkBtn = document.getElementById('check-btn');
-    const submitBtn = document.getElementById('submit-btn');
     if (checkBtn) checkBtn.style.display = 'none';
     if (submitBtn) submitBtn.style.display = 'none';
     if (saveTaskBtn) saveTaskBtn.style.display = 'none';
@@ -2427,7 +2405,27 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     // Show save and download buttons for tasks
     if (saveTaskBtn) {
       saveTaskBtn.style.display = 'inline-block';
-      // Override the onclick handler to save task code
+    }
+
+    // Show check button if test cases exist (code tasks only)
+    if (!isQuizTask && checkBtn) {
+      if (task.test_cases) {
+        const attempts = assignmentState.taskAttempts[task.id] || 0;
+        const maxAttempts = task.max_attempts || 10;
+        const reachedMaxAttempts = attempts >= maxAttempts;
+        checkBtn.style.display = 'inline-block';
+        checkBtn.disabled = reachedMaxAttempts;
+        checkBtn.style.opacity = reachedMaxAttempts ? '0.6' : '1';
+        checkBtn.style.cursor = reachedMaxAttempts ? 'not-allowed' : 'pointer';
+        if (submitBtn) submitBtn.style.display = 'inline-block';
+      } else {
+        checkBtn.style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'none';
+      }
+    }
+    
+    // Set up save button handler
+    if (saveTaskBtn) {
       saveTaskBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
