@@ -659,7 +659,7 @@ window.QuizRenderer = {
         </div>
         
         ${iterationInfo ? this.getIterationHtml(iterationInfo) : ''}
-        <div class="quiz-values">
+        <div class="quiz-values quiz-values--rc">
           <strong>Gegebene Werte:</strong>
           <ul>
             ${valuesHtml}

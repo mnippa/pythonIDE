@@ -313,6 +313,35 @@
   border: 1px solid #ddd;
 }
 
+/* Scoped hardening for long random-complex values (e.g. lists) */
+.quiz-values--rc ul {
+  min-width: 0;
+}
+
+.quiz-values--rc li {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.quiz-values--rc li code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 600px) {
+  .quiz-values--rc ul {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .quiz-values--rc li {
+    width: 100%;
+  }
+}
+
 .quiz-values.loading {
   color: var(--hspf-text-secondary, #666);
   font-style: italic;
