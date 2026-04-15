@@ -1501,6 +1501,8 @@ function renderAssignmentList() {
   const containerEl = $('assignment-list-container');
   if (!containerEl) return;
 
+  const isAssignmentPhaseOpenable = (phase) => phase === 'open' || phase === 'late';
+
   if (!assignmentState.assignments.length) {
     containerEl.innerHTML = '<div style="color:var(--text-secondary); padding:20px; text-align:center;">Keine Assignments verfügbar.</div>';
     return;
@@ -1531,6 +1533,8 @@ function renderAssignmentList() {
       phaseColor = '#374151';
     }
 
+    const isLocked = !isAssignmentPhaseOpenable(phase);
+
     let timeLabel = '';
     if (item.formatted_time_remaining) {
       timeLabel = `Verbleibende Zeit: <strong>${item.formatted_time_remaining}</strong>`;
@@ -1541,7 +1545,12 @@ function renderAssignmentList() {
     }
     
     return `
-      <div class="assignment-card" data-assignment-id="${item.assignment_id}">
+      <div
+        class="assignment-card${isLocked ? ' assignment-card--locked' : ''}"
+        data-assignment-id="${item.assignment_id}"
+        data-assignment-locked="${isLocked ? '1' : '0'}"
+        style="${isLocked ? 'opacity:0.75;cursor:not-allowed;' : ''}"
+      >
         <div class="assignment-card-title">${escapeHtml(item.assignment_title)}</div>
         <div class="assignment-card-description">${escapeHtml(assignment?.description || 'Keine Beschreibung')}</div>
         <div style="display:flex;gap:8px;align-items:center;margin:6px 0 8px;">
@@ -1565,6 +1574,11 @@ function renderAssignmentList() {
   // Add click handlers
   containerEl.querySelectorAll('.assignment-card').forEach(card => {
     card.addEventListener('click', () => {
+      if (card.dataset.assignmentLocked === '1') {
+        alert('Dieses Assignment ist noch nicht verfuegbar.');
+        return;
+      }
+
       const assignmentId = parseInt(card.dataset.assignmentId);
       openAssignmentEditor(assignmentId);
     });
@@ -1573,6 +1587,15 @@ function renderAssignmentList() {
 
 // Open assignment editor view (hide list, show editor with tasks)
 function openAssignmentEditor(assignmentId) {
+  const assignmentEntry = assignmentState.assignments.find((a) => a.assignment_id === assignmentId);
+  const phase = assignmentEntry?.timing_phase || 'open';
+  const isOpenable = phase === 'open' || phase === 'late';
+
+  if (!isOpenable) {
+    alert('Dieses Assignment ist derzeit nicht verfuegbar.');
+    return;
+  }
+
   // If not in editor mode, redirect to assignment_editor.php
   if (!window.EDITOR_MODE) {
     window.location.href = `assignment_editor.php?assignment_id=${assignmentId}`;
