@@ -646,7 +646,7 @@ window.QuizRenderer = {
     }
     
     const solutionCodeHtml = showGenerator && rawCode ? `
-      <div class="code-reading-code">
+      <div class="code-random-complex-code">
         <pre><code>${codeDisplay}</code></pre>
       </div>
     ` : '';

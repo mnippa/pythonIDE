@@ -1279,11 +1279,8 @@ rechnung = []
 gesamt_summe = 0.0
 pos = 1
 
-while True:
     name = input("Name der Position (leer = Ende): ")
-    if name == "":
-        break
-
+    while name != "":
     art = input("Art (Getraenk/Speise): ")
     anzahl = int(input("Anzahl: "))
     einzelpreis = float(input("Einzelpreis: "))
@@ -1301,6 +1298,7 @@ while True:
 
     gesamt_summe = gesamt_summe + positionssumme
     pos = pos + 1
+    name = input("Name der Position (leer = Ende): ")
 
 print(rechnung)
 print(gesamt_summe)
@@ -1377,6 +1375,214 @@ PY;
 
         $taskId = (int)$conn->insert_id;
         $stmt->close();
+
+        echo "✓ Created task #{$taskId}: {$taskTitle}\n";
+    }
+
+    $taskTitle = '#13 Schachbrettfelder';
+    if (taskExistsByTitle043($conn, $assignmentId, $taskTitle)) {
+        echo "⚠ Skipped (already exists): {$taskTitle}\n";
+    } else {
+        $position = getNextPosition043($conn, $assignmentId);
+
+        $taskText = 'Stelle alle Felder eines Schachbretts von A8 bis H1 dar. In der obersten Zeile muessen A8 bis H8 stehen.';
+        $description = 'Loese die Aufgabe mit zwei verschachtelten Schleifen ueber zwei Listen. Gib jede Reihe in einer neuen Zeile aus.';
+        $stoff = "Verschachtelte Schleifen mit Listen:\n"
+            . "- Lege eine Liste fuer Spalten (A bis H) und eine Liste fuer Reihen (8 bis 1) an.\n"
+            . "- Aussen ueber Reihen, innen ueber Spalten iterieren und Felder zusammensetzen.\n"
+            . "- Optional (Alternative): Spaltenzeichen mit ASCII erzeugen, z. B. chr(65) bis chr(72).";
+        $taskType = 'code';
+        $problemType = 'code_completion';
+
+        $codeTemplate = <<<'PY'
+# TODO: Gib die Schachbrettfelder aus
+# Erwartete erste Zeile: A8 B8 C8 D8 E8 F8 G8 H8
+
+spalten = ["A", "B", "C", "D", "E", "F", "G", "H"]
+reihen = [8, 7, 6, 5, 4, 3, 2, 1]
+
+# Nutze zwei verschachtelte for-Schleifen
+PY;
+
+        $solutionCode = <<<'PY'
+spalten = ["A", "B", "C", "D", "E", "F", "G", "H"]
+reihen = [8, 7, 6, 5, 4, 3, 2, 1]
+
+for reihe in reihen:
+    zeile_text = ""
+    for spalte in spalten:
+        feld = spalte + str(reihe)
+        if spalte != "H":
+            zeile_text = zeile_text + feld + " "
+        else:
+            zeile_text = zeile_text + feld
+    print(zeile_text)
+PY;
+
+        $testCases = json_encode([
+            [
+                'type' => 'code_check',
+                'keywords' => [
+                    'for\\s+',
+                ],
+                'operator' => 'AND',
+                'feedback' => 'Verwende mindestens eine for-Schleife (hier sollen es zwei verschachtelte sein).',
+            ],
+            [
+                'type' => 'output',
+                'expected_type' => 'exact',
+                'value' => "A8 B8 C8 D8 E8 F8 G8 H8\nA7 B7 C7 D7 E7 F7 G7 H7\nA6 B6 C6 D6 E6 F6 G6 H6\nA5 B5 C5 D5 E5 F5 G5 H5\nA4 B4 C4 D4 E4 F4 G4 H4\nA3 B3 C3 D3 E3 F3 G3 H3\nA2 B2 C2 D2 E2 F2 G2 H2\nA1 B1 C1 D1 E1 F1 G1 H1",
+                'feedback' => 'Die Ausgabe muss exakt die Felder von A8 bis H1 zeilenweise enthalten.',
+            ],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $randomizerCode = null;
+        $hint1 = 'Nutze zwei Listen: Spalten A-H und Reihen 8-1.';
+        $hint2 = 'Aussen ueber Reihen, innen ueber Spalten laufen.';
+        $hint3 = 'Feldname entsteht aus Spalte + Reihenzahl, dann pro Reihe ausgeben.';
+        $maxAttempts = 10;
+
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            throw new Exception('Prepare failed (task insert): ' . $conn->error);
+        }
+
+        $stmt->bind_param(
+            'issssisssssssssi',
+            $assignmentId,
+            $taskTitle,
+            $taskText,
+            $description,
+            $stoff,
+            $position,
+            $taskType,
+            $problemType,
+            $codeTemplate,
+            $solutionCode,
+            $testCases,
+            $randomizerCode,
+            $hint1,
+            $hint2,
+            $hint3,
+            $maxAttempts
+        );
+
+        if (!$stmt->execute()) {
+            throw new Exception('Execute failed (task insert): ' . $stmt->error);
+        }
+
+        $taskId = (int)$conn->insert_id;
+        $stmt->close();
+
+        $diffStmt = $conn->prepare('UPDATE tasks SET task_difficulty = ? WHERE id = ?');
+        if (!$diffStmt) {
+            throw new Exception('Prepare failed (difficulty update): ' . $conn->error);
+        }
+        $taskDifficulty = 'hard';
+        $diffStmt->bind_param('si', $taskDifficulty, $taskId);
+        if (!$diffStmt->execute()) {
+            throw new Exception('Execute failed (difficulty update): ' . $diffStmt->error);
+        }
+        $diffStmt->close();
+
+        echo "✓ Created task #{$taskId}: {$taskTitle}\n";
+    }
+
+    $taskTitle = '#14 Code Reading verschachtelte Schleife 3x2';
+    if (taskExistsByTitle043($conn, $assignmentId, $taskTitle)) {
+        echo "⚠ Skipped (already exists): {$taskTitle}\n";
+    } else {
+        $position = getNextPosition043($conn, $assignmentId);
+
+        $inputKeys = ['a', 'b', 'c', 'd', 'e', 'f', 'grenze'];
+        $inputs = [];
+        foreach ($inputKeys as $k) {
+            $inputs[$k] = '<random>';
+        }
+
+        $task = [
+            'assignment_id' => $assignmentId,
+            'title' => $taskTitle,
+            'task_text' => 'Was ist der Endwert von antwort? Achte auf die verschachtelte Schleife und die Gewichtung.',
+            'description' => 'Nicht nur zaehlen: Fuer Werte unter der Grenze wird positionsabhaengig addiert. Code ist sichtbar.',
+            'stoff' => '<p>Vorgehen auf Papier (pro Schritt eine Zeile ausfuellen):</p>'
+                . '<table class="stoff-trace-table" border="1" cellpadding="6" cellspacing="0">'
+                . '<thead><tr><th>Schritt</th><th>i</th><th>j</th><th>v</th><th>counter</th><th>s</th></tr></thead>'
+                . '<tbody>'
+                . '<tr><td>1</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '<tr><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '<tr><td>3</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '<tr><td>4</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '<tr><td>5</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '<tr><td>6</td><td></td><td></td><td></td><td></td><td></td></tr>'
+                . '</tbody></table>'
+                . '<p>Hinweis: counter steigt bei jedem v-Wert. s steigt nur, wenn v &lt; grenze.</p>',
+            'position' => $position,
+            'code_template' => <<<'PY'
+m = [[{a}, {b}], [{c}, {d}], [{e}, {f}]]
+grenze = {grenze}
+
+s = 0
+counter = 0
+for i in range(3):
+    for j in range(2):
+        v = m[i][j]
+        counter = counter + 1
+        if v < grenze:
+            s = s + (i + 1) * (j + 2)
+
+antwort = s
+PY,
+            'solution_code' => <<<'PY'
+m = [[{a}, {b}], [{c}, {d}], [{e}, {f}]]
+grenze = {grenze}
+
+s = 0
+counter = 0
+for i in range(3):
+    for j in range(2):
+        v = m[i][j]
+        counter = counter + 1
+        if v < grenze:
+            s = s + (i + 1) * (j + 2)
+
+antwort = s
+PY,
+            'randomizer_code' => <<<'PY'
+import random
+a = random.randint(1, 20)
+b = random.randint(1, 20)
+c = random.randint(1, 20)
+d = random.randint(1, 20)
+e = random.randint(1, 20)
+f = random.randint(1, 20)
+grenze = random.randint(8, 15)
+PY,
+            'variable_overrides' => json_encode([
+                [
+                    'inputs' => $inputs,
+                    'expected' => ['variable' => 'antwort']
+                ]
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'iterations_count' => 6,
+            'hint1' => 'counter laeuft immer 1..6, unabhaengig von der Bedingung.',
+            'hint2' => 'Nur wenn v < grenze gilt, wird s veraendert.',
+            'hint3' => 'Die Addition nutzt die Position: (i + 1) * (j + 2).',
+            'max_attempts' => 10,
+        ];
+
+        $taskId = insertCodeRandomComplexTask043($conn, $task);
+
+        $diffStmt = $conn->prepare('UPDATE tasks SET task_difficulty = ? WHERE id = ?');
+        if (!$diffStmt) {
+            throw new Exception('Prepare failed (difficulty update): ' . $conn->error);
+        }
+        $taskDifficulty = 'hard';
+        $diffStmt->bind_param('si', $taskDifficulty, $taskId);
+        if (!$diffStmt->execute()) {
+            throw new Exception('Execute failed (difficulty update): ' . $diffStmt->error);
+        }
+        $diffStmt->close();
 
         echo "✓ Created task #{$taskId}: {$taskTitle}\n";
     }
