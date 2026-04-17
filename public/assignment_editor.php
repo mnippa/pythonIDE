@@ -20,6 +20,69 @@ if (!$assignmentId) {
 }
 
 $user = getCurrentUser();
+
+function calcAssignmentPhaseForEditor(array $row): string {
+  $now = new DateTimeImmutable('now');
+  $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
+  $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
+  $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+
+  if (isset($row['is_active']) && (int)$row['is_active'] === 0) {
+    return 'hidden';
+  }
+  if ($availableFrom !== null && $now < $availableFrom) {
+    return 'upcoming';
+  }
+  if ($hardDeadline !== null && $now > $hardDeadline) {
+    return 'closed';
+  }
+  if ($dueDate !== null && $now > $dueDate) {
+    return 'late';
+  }
+
+  return 'open';
+}
+
+$conn = getDbConnection();
+$guardStmt = $conn->prepare(
+  'SELECT
+    a.is_active,
+    a.available_from,
+    a.hard_deadline,
+    a.due_date AS assignment_due_date,
+    ua.user_id AS assigned_user,
+    ua.due_date AS user_due_date,
+    COALESCE(ua.due_date, a.due_date) AS effective_due_date
+   FROM assignments a
+   LEFT JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
+   WHERE a.id = ?
+   LIMIT 1'
+);
+
+if (!$guardStmt) {
+  header('Location: assignments.php');
+  exit;
+}
+
+$guardStmt->bind_param('ii', $user['id'], $assignmentId);
+$guardStmt->execute();
+$guardRow = $guardStmt->get_result()->fetch_assoc();
+$guardStmt->close();
+
+if (!$guardRow) {
+  header('Location: assignments.php');
+  exit;
+}
+
+$isAssignedToUser = $guardRow['assigned_user'] !== null;
+$phase = calcAssignmentPhaseForEditor($guardRow);
+$isOpenable = in_array($phase, ['open', 'late'], true);
+
+if (!$isAssignedToUser || !$isOpenable) {
+  header('Location: assignments.php');
+  exit;
+}
+
 $displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
 if ($displayName === '') {
   $displayName = $user['email'] ?? 'Benutzer';
@@ -1276,6 +1339,7 @@ HTML;
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;
+    window.STUDENT_ASSIGNMENTS_CONTEXT = true;
     window.ASSIGNMENT_ID = <?= $assignmentId ?>;
     window.userId = <?= (int)$user['id'] ?>;
   </script>

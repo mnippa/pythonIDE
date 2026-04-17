@@ -11,10 +11,34 @@ header('Content-Type: application/json');
 $user = requireAuth();
 $conn = getDbConnection();
 
+function calcTimingPhaseForAccess(array $row): string {
+    $now = new DateTimeImmutable('now');
+    $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
+    $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
+    $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+
+    if (isset($row['is_active']) && (int)$row['is_active'] === 0) {
+        return 'hidden';
+    }
+    if ($availableFrom !== null && $now < $availableFrom) {
+        return 'upcoming';
+    }
+    if ($hardDeadline !== null && $now > $hardDeadline) {
+        return 'closed';
+    }
+    if ($dueDate !== null && $now > $dueDate) {
+        return 'late';
+    }
+
+    return 'open';
+}
+
 $assignmentId = isset($_GET['id']) ? (int)$_GET['id'] : null;
 if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
 }
+
+$isStudentView = isset($_GET['student_view']) && $_GET['student_view'] === '1';
 
 $sql = '
     SELECT 
@@ -30,6 +54,9 @@ $sql = '
         a.due_date,
         a.hard_deadline,
         a.allow_late_submission,
+        ua.user_id AS assigned_user,
+        ua.due_date AS user_due_date,
+        COALESCE(ua.due_date, a.due_date) AS effective_due_date,
         a.difficulty,
         a.time_limit_minutes,
         u.first_name,
@@ -56,6 +83,16 @@ $assignment = $result->fetch_assoc();
 $canAccess = $user['role'] === 'admin' || (bool)$assignment['is_active'] || $assignment['user_status'] !== null;
 if (!$canAccess) {
     jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
+}
+
+if ($isStudentView) {
+    $isAssignedToUser = $assignment['assigned_user'] !== null;
+    $phase = calcTimingPhaseForAccess($assignment);
+    $isOpenable = in_array($phase, ['open', 'late'], true);
+
+    if (!$isAssignedToUser || !$isOpenable) {
+        jsonResponse(['ok' => false, 'error' => 'Assignment not available yet'], 403);
+    }
 }
 
 jsonResponse([

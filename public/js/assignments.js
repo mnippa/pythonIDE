@@ -54,6 +54,10 @@ function getTestUserQueryParam() {
   return window.TEST_USER_ID ? `&test_user_id=${encodeURIComponent(window.TEST_USER_ID)}` : '';
 }
 
+function getStudentViewQueryParam() {
+  return window.STUDENT_ASSIGNMENTS_CONTEXT ? '&student_view=1' : '';
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -1361,9 +1365,10 @@ async function loadSingleAssignment(assignmentId) {
   try {
     const cachebust = `&t=${Date.now()}`;
     const testModeParam = window.testMode ? '&test_mode=1' : '';
+    const studentViewParam = getStudentViewQueryParam();
     const [assignmentRes, tasksRes] = await Promise.all([
-      requestJson(`../api/assignments/get.php?id=${assignmentId}${cachebust}`),
-      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}${testModeParam}${cachebust}`)
+      requestJson(`../api/assignments/get.php?id=${assignmentId}${studentViewParam}${testModeParam}${cachebust}`),
+      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}${studentViewParam}${testModeParam}${cachebust}`)
     ]);
     
     assignmentState.assignmentDetails[assignmentId] = assignmentRes.assignment;
@@ -1438,14 +1443,15 @@ async function loadAssignments() {
 
   try {
     const data = await requestJson('../api/user_assignments/list.php');
+    const studentViewParam = getStudentViewQueryParam();
     assignmentState.assignments = data.items || [];
     
     // Load all tasks for all assignments
     for (const item of assignmentState.assignments) {
       try {
         const [assignmentRes, tasksRes] = await Promise.all([
-          requestJson(`../api/assignments/get.php?id=${item.assignment_id}`),
-          requestJson(`../api/tasks/list.php?assignment_id=${item.assignment_id}`)
+          requestJson(`../api/assignments/get.php?id=${item.assignment_id}${studentViewParam}`),
+          requestJson(`../api/tasks/list.php?assignment_id=${item.assignment_id}${studentViewParam}`)
         ]);
         
         assignmentState.assignmentDetails[item.assignment_id] = assignmentRes.assignment;
@@ -1694,9 +1700,10 @@ async function loadAssignmentDetails(assignmentId) {
   detailEl.innerHTML = 'Loading tasks...';
 
   try {
+    const studentViewParam = getStudentViewQueryParam();
     const [assignmentRes, tasksRes] = await Promise.all([
-      requestJson(`../api/assignments/get.php?id=${assignmentId}`),
-      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}`)
+      requestJson(`../api/assignments/get.php?id=${assignmentId}${studentViewParam}`),
+      requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}${studentViewParam}`)
     ]);
 
     const assignment = assignmentRes.assignment;
@@ -1800,7 +1807,7 @@ async function refreshCurrentTaskFromAPI() {
 
   try {
     console.log('[Task Refresh] Fetching latest task data for task', assignmentState.currentTaskId);
-    const response = await requestJson('/api/tasks/list.php?assignment_id=' + assignmentState.currentAssignmentId);
+    const response = await requestJson('/api/tasks/list.php?assignment_id=' + assignmentState.currentAssignmentId + getStudentViewQueryParam());
     
     if (response && response.tasks && response.tasks.length > 0) {
       const updatedTask = response.tasks[0];

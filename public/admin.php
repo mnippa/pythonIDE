@@ -765,6 +765,7 @@ if ($displayName === '') {
       <div class="modal-body" style="padding: var(--hspf-spacing-lg);">
         <form id="team-assign-form">
           <input type="hidden" id="team-assign-team-id" />
+          <input type="hidden" id="team-assign-is-edit" value="0" />
           <div class="field">
             <label>Team</label>
             <div id="team-assign-team-name" style="padding: 10px 12px; background: var(--hspf-bg-secondary); border: 1px solid var(--hspf-border); border-radius: var(--hspf-radius-sm);">-</div>
@@ -779,6 +780,27 @@ if ($displayName === '') {
             <label for="team-assign-due-date">Fälligkeitsdatum (optional)</label>
             <input type="datetime-local" id="team-assign-due-date" style="width: 100%; padding: 8px;" />
             <div class="hint">Speichert die Team-Standardzuordnung und weist das Assignment zugleich den aktuellen Teammitgliedern zu.</div>
+          </div>
+          <div class="field">
+            <label for="team-assign-available-from">Verfügbar ab (Assignment)</label>
+            <input type="datetime-local" id="team-assign-available-from" style="width: 100%; padding: 8px;" />
+          </div>
+          <div class="field">
+            <label for="team-assign-assignment-due-date">Fälligkeitsdatum (Assignment)</label>
+            <input type="datetime-local" id="team-assign-assignment-due-date" style="width: 100%; padding: 8px;" />
+          </div>
+          <div class="field">
+            <label for="team-assign-hard-deadline">Hard Deadline (Assignment)</label>
+            <input type="datetime-local" id="team-assign-hard-deadline" style="width: 100%; padding: 8px;" />
+          </div>
+          <div class="field">
+            <label for="team-assign-allow-late">Late Submission erlauben (Assignment)</label>
+            <select id="team-assign-allow-late" style="width: 100%; padding: 8px;">
+              <option value="">Unverändert</option>
+              <option value="true">Ja</option>
+              <option value="false">Nein</option>
+            </select>
+            <div class="hint">Diese Felder aktualisieren die Assignment-Zeitangaben global für dieses Assignment.</div>
           </div>
           <div class="row-actions">
             <button type="submit" class="hspf-btn hspf-btn-primary">✓ Team zuordnen</button>

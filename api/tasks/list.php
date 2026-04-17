@@ -11,14 +11,41 @@ header('Content-Type: application/json');
 $user = requireAuth();
 $conn = getDbConnection();
 
+function calcTimingPhaseForAccess(array $row): string {
+    $now = new DateTimeImmutable('now');
+    $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
+    $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
+    $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+
+    if (isset($row['is_active']) && (int)$row['is_active'] === 0) {
+        return 'hidden';
+    }
+    if ($availableFrom !== null && $now < $availableFrom) {
+        return 'upcoming';
+    }
+    if ($hardDeadline !== null && $now > $hardDeadline) {
+        return 'closed';
+    }
+    if ($dueDate !== null && $now > $dueDate) {
+        return 'late';
+    }
+
+    return 'open';
+}
+
 $assignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
 if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
 }
 
+$isStudentView = isset($_GET['student_view']) && $_GET['student_view'] === '1';
+
 // Check assignment access
 $stmt = $conn->prepare(
-    'SELECT a.is_active, a.created_by, ua.user_id AS assigned_user
+    'SELECT a.is_active, a.created_by, ua.user_id AS assigned_user,
+            a.available_from, a.hard_deadline, a.due_date AS assignment_due_date,
+            ua.due_date AS user_due_date,
+            COALESCE(ua.due_date, a.due_date) AS effective_due_date
      FROM assignments a
      LEFT JOIN user_assignments ua ON ua.assignment_id = a.id AND ua.user_id = ?
      WHERE a.id = ?'
@@ -34,6 +61,16 @@ if (!$assignment) {
 $canAccess = $user['role'] === 'admin' || ((bool)$assignment['is_active'] || $assignment['assigned_user'] !== null);
 if (!$canAccess) {
     jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
+}
+
+if ($isStudentView) {
+    $isAssignedToUser = $assignment['assigned_user'] !== null;
+    $phase = calcTimingPhaseForAccess($assignment);
+    $isOpenable = in_array($phase, ['open', 'late'], true);
+
+    if (!$isAssignedToUser || !$isOpenable) {
+        jsonResponse(['ok' => false, 'error' => 'Assignment not available yet'], 403);
+    }
 }
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';

@@ -42,17 +42,6 @@ if ($displayName === '') {
     *{ box-sizing:border-box; }
     body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text-primary); transition:background 0.2s, color 0.2s; }
 
-    .toolbar{
-      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-      padding:6px 10px;
-      background:transparent;
-    }
-    .toolbar button{ padding:8px 12px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; }
-    .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
-    #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
-    #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
-    html.dark-mode #theme-toggle::after{ content:'☀️'; }
-
     /* Assignment List Styles */
     .assignment-list-view {
       max-width: 1200px;
@@ -126,28 +115,17 @@ if ($displayName === '') {
 </head>
 <body>
   <?php
-  $pageTitle = 'Assignments';
-  $showUser = false;
-  $userInfo = [];
-  
-  $displayNameEscaped = htmlspecialchars($displayName);
-  $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
-  $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
+  $pageTitle = 'Aufgaben';
+  $showUser = true;
+  $userInfo = [
+    'name' => $displayName,
+    'role' => $user['role'] ?? 'user'
+  ];
   
   $headerActions = <<<HTML
-    <div class="toolbar">
-      <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
-      <div style="flex:1"></div>
-      <div class="user-bar">
-        <div class="user-info">
-          <span>{$displayNameEscaped}</span>
-          {$adminBadge}
-        </div>
-        {$adminLink}
-        <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-        <button id="logout-btn" title="Abmelden">🚪</button>
-      </div>
-    </div>
+    <a id="dashboard-btn" class="hspf-btn hspf-btn-ghost" href="dashboard.php" title="Zurück zum Dashboard">Zurück</a>
+    <a class="hspf-btn hspf-btn-ghost" href="change-password.php">Passwort ändern</a>
+    <button id="logout-btn" class="hspf-btn hspf-btn-secondary" title="Abmelden">Abmelden</button>
 HTML;
   include(__DIR__ . '/../components/header.php');
   ?>
@@ -164,23 +142,6 @@ HTML;
   </div>
 
   <script>
-    // Theme Toggle
-    (function() {
-      const html = document.documentElement;
-      const themeBtn = document.getElementById('theme-toggle');
-      
-      const savedTheme = localStorage.getItem('theme') || 'light';
-      if (savedTheme === 'dark') {
-        html.classList.add('dark-mode');
-      }
-      
-      themeBtn?.addEventListener('click', () => {
-        html.classList.toggle('dark-mode');
-        const isDark = html.classList.contains('dark-mode');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-      });
-    })();
-
     // Logout
     document.getElementById('logout-btn')?.addEventListener('click', async () => {
       const response = await fetch('../api/auth/logout.php', {

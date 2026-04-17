@@ -1236,6 +1236,7 @@ HTML;
     
     // Auto-load assignment and optionally specific task from URL parameters
     window.EDITOR_MODE = true;
+    window.STUDENT_ASSIGNMENTS_CONTEXT = false;
     window.ASSIGNMENT_ID = <?php echo (int)$assignmentId; ?>;
     window.TASK_ID = <?php echo $taskId ? (int)$taskId : 'null'; ?>;
     <?php if ($testUserId && $testUserInfo): ?>
