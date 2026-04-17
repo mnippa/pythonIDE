@@ -26,26 +26,6 @@ try {
     require_once __DIR__ . '/../../../config/database.php';
     $conn = getDbConnection();
 
-    $normalizeDateTimeInput = static function ($value): ?string {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_string($value)) {
-            $value = trim($value);
-            if ($value === '') {
-                return null;
-            }
-        }
-
-        $ts = strtotime((string)$value);
-        if ($ts === false) {
-            return null;
-        }
-
-        return date('Y-m-d H:i:s', $ts);
-    };
-
     $tableExists = function (mysqli $conn, string $table): bool {
         $safeTable = $conn->real_escape_string($table);
         $res = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
@@ -84,7 +64,7 @@ try {
     $assignmentId = (int)$data['assignment_id'];
     $dueDate = $data['due_date'] ?? null;
 
-    $assignmentStmt = $conn->prepare('SELECT id, is_active, available_from, due_date, hard_deadline, allow_late_submission FROM assignments WHERE id = ?');
+    $assignmentStmt = $conn->prepare('SELECT id, is_active, due_date FROM assignments WHERE id = ?');
     $assignmentStmt->bind_param('i', $assignmentId);
     $assignmentStmt->execute();
     $assignment = $assignmentStmt->get_result()->fetch_assoc();
@@ -95,25 +75,6 @@ try {
         throw new Exception('Assignment is inactive and cannot be assigned in bulk');
     }
 
-    $assignmentAvailableFrom = array_key_exists('assignment_available_from', $data)
-        ? $normalizeDateTimeInput($data['assignment_available_from'])
-        : ($assignment['available_from'] ?? null);
-    $assignmentDueDate = array_key_exists('assignment_due_date', $data)
-        ? $normalizeDateTimeInput($data['assignment_due_date'])
-        : ($assignment['due_date'] ?? null);
-    $assignmentHardDeadline = array_key_exists('assignment_hard_deadline', $data)
-        ? $normalizeDateTimeInput($data['assignment_hard_deadline'])
-        : ($assignment['hard_deadline'] ?? null);
-    $assignmentAllowLate = array_key_exists('assignment_allow_late_submission', $data)
-        ? ((int)!empty($data['assignment_allow_late_submission']))
-        : (int)($assignment['allow_late_submission'] ?? 1);
-
-    if ($assignmentAvailableFrom !== null && $assignmentDueDate !== null && strtotime($assignmentDueDate) < strtotime($assignmentAvailableFrom)) {
-        throw new Exception('assignment_due_date must be on/after assignment_available_from');
-    }
-    if ($assignmentDueDate !== null && $assignmentHardDeadline !== null && strtotime($assignmentHardDeadline) < strtotime($assignmentDueDate)) {
-        throw new Exception('assignment_hard_deadline must be on/after assignment_due_date');
-    }
     
     $conn->begin_transaction();
     
@@ -124,30 +85,7 @@ try {
     // Option 1: Assign to entire team
     if (isset($data['team_id']) && $data['team_id']) {
         $teamId = (int)$data['team_id'];
-
-        if (
-            array_key_exists('assignment_available_from', $data)
-            || array_key_exists('assignment_due_date', $data)
-            || array_key_exists('assignment_hard_deadline', $data)
-            || array_key_exists('assignment_allow_late_submission', $data)
-        ) {
-            $updateAssignmentStmt = $conn->prepare(
-                'UPDATE assignments
-                 SET available_from = ?, due_date = ?, hard_deadline = ?, allow_late_submission = ?, updated_at = NOW()
-                 WHERE id = ?'
-            );
-            $updateAssignmentStmt->bind_param(
-                'sssii',
-                $assignmentAvailableFrom,
-                $assignmentDueDate,
-                $assignmentHardDeadline,
-                $assignmentAllowLate,
-                $assignmentId
-            );
-            $updateAssignmentStmt->execute();
-        }
-
-        $effectiveDueDate = $dueDate ?: $assignmentDueDate;
+        $effectiveDueDate = $dueDate ?: ($assignment['due_date'] ?? null);
 
         if ($tableExists($conn, 'team_assignment_defaults')) {
             $defaultsStmt = $conn->prepare(

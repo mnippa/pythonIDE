@@ -700,23 +700,15 @@ async function openTeamAssignModal(teamId, existingItem = null) {
   const modal = document.getElementById('team-assign-modal');
   const statusDiv = document.getElementById('team-assign-status');
   const teamIdInput = document.getElementById('team-assign-team-id');
-  const isEditInput = document.getElementById('team-assign-is-edit');
   const teamNameEl = document.getElementById('team-assign-team-name');
   const dueDateInput = document.getElementById('team-assign-due-date');
-  const availableFromInput = document.getElementById('team-assign-available-from');
-  const assignmentDueDateInput = document.getElementById('team-assign-assignment-due-date');
-  const hardDeadlineInput = document.getElementById('team-assign-hard-deadline');
-  const allowLateInput = document.getElementById('team-assign-allow-late');
+  const assignmentDueDateDisplay = document.getElementById('team-assign-assignment-due-date-display');
   const assignmentSelect = document.getElementById('team-assign-assignment');
 
   teamIdInput.value = String(team.id);
-  if (isEditInput) isEditInput.value = existingItem ? '1' : '0';
   teamNameEl.textContent = `${team.name} (#${team.id})`;
   dueDateInput.value = existingItem ? toDatetimeLocalValue(existingItem.team_due_date || existingItem.effective_due_date) : '';
-  if (availableFromInput) availableFromInput.value = existingItem ? toDatetimeLocalValue(existingItem.available_from) : '';
-  if (assignmentDueDateInput) assignmentDueDateInput.value = existingItem ? toDatetimeLocalValue(existingItem.assignment_due_date) : '';
-  if (hardDeadlineInput) hardDeadlineInput.value = existingItem ? toDatetimeLocalValue(existingItem.hard_deadline) : '';
-  if (allowLateInput) allowLateInput.value = existingItem ? (existingItem.allow_late_submission ? 'true' : 'false') : '';
+  if (assignmentDueDateDisplay) assignmentDueDateDisplay.value = existingItem ? toDatetimeLocalValue(existingItem.assignment_due_date) : '';
   statusDiv.style.display = 'none';
   statusDiv.textContent = '';
 
@@ -781,13 +773,8 @@ async function submitTeamAssign(e) {
   e.preventDefault();
 
   const teamId = parseInt(document.getElementById('team-assign-team-id')?.value || '0', 10);
-  const isEdit = document.getElementById('team-assign-is-edit')?.value === '1';
   const assignmentId = document.getElementById('team-assign-assignment')?.value || '';
   const dueDate = document.getElementById('team-assign-due-date')?.value || '';
-  const availableFrom = document.getElementById('team-assign-available-from')?.value || '';
-  const assignmentDueDate = document.getElementById('team-assign-assignment-due-date')?.value || '';
-  const hardDeadline = document.getElementById('team-assign-hard-deadline')?.value || '';
-  const allowLateValue = document.getElementById('team-assign-allow-late')?.value || '';
   const statusDiv = document.getElementById('team-assign-status');
 
   if (!teamId || !assignmentId) {
@@ -809,32 +796,8 @@ async function submitTeamAssign(e) {
 
     if (dueDate) {
       body.due_date = toMysqlDateTime(dueDate);
-    } else if (isEdit) {
+    } else {
       body.due_date = null;
-    }
-
-    if (availableFrom) {
-      body.assignment_available_from = toMysqlDateTime(availableFrom);
-    } else if (isEdit) {
-      body.assignment_available_from = null;
-    }
-
-    if (assignmentDueDate) {
-      body.assignment_due_date = toMysqlDateTime(assignmentDueDate);
-    } else if (isEdit) {
-      body.assignment_due_date = null;
-    }
-
-    if (hardDeadline) {
-      body.assignment_hard_deadline = toMysqlDateTime(hardDeadline);
-    } else if (isEdit) {
-      body.assignment_hard_deadline = null;
-    }
-
-    if (allowLateValue === 'true') {
-      body.assignment_allow_late_submission = true;
-    } else if (allowLateValue === 'false') {
-      body.assignment_allow_late_submission = false;
     }
 
     const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
