@@ -5,34 +5,63 @@
 
 export function initOutputPlotTabs() {
   const tabs = document.querySelectorAll('.output-plot-tab');
+  const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
   const outputPanel = document.getElementById('output-container');
   const plotPanel = document.getElementById('plot-container');
-  
+
   if (!tabs.length || !outputPanel || !plotPanel) {
     console.log('[OutputPlotTabs] Components not found, skipping init');
     return;
   }
-  
+
+  function setActiveTab(targetTab) {
+    tabs.forEach((tab) => {
+      tab.classList.toggle('active', tab.getAttribute('data-tab') === targetTab);
+    });
+
+    if (targetTab === 'plot') {
+      outputPanel.classList.remove('active');
+      plotPanel.classList.add('active');
+    } else {
+      outputPanel.classList.add('active');
+      plotPanel.classList.remove('active');
+    }
+  }
+
+  function hasPlotContent() {
+    return !!plotPanel.querySelector('.plot-card, img, canvas, svg');
+  }
+
+  function syncPlotTabVisibility() {
+    if (!plotTab) return;
+    const showPlotTab = hasPlotContent();
+    plotTab.style.display = showPlotTab ? '' : 'none';
+
+    if (!showPlotTab && plotPanel.classList.contains('active')) {
+      setActiveTab('output');
+    }
+  }
+
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       const targetTab = tab.getAttribute('data-tab');
-      
-      // Update button states
-      tabs.forEach(t => {
-        t.classList.toggle('active', t.getAttribute('data-tab') === targetTab);
-      });
-      
-      // Update panel visibility
-      if (targetTab === 'output') {
-        outputPanel.classList.add('active');
-        plotPanel.classList.remove('active');
-      } else if (targetTab === 'plot') {
-        outputPanel.classList.remove('active');
-        plotPanel.classList.add('active');
+
+      if (targetTab === 'plot' && plotTab && plotTab.style.display === 'none') {
+        return;
       }
+
+      setActiveTab(targetTab === 'plot' ? 'plot' : 'output');
     });
   });
-  
+
+  const observer = new MutationObserver(() => {
+    syncPlotTabVisibility();
+  });
+  observer.observe(plotPanel, { childList: true, subtree: true });
+
+  setActiveTab('output');
+  syncPlotTabVisibility();
+
   console.log('[OutputPlotTabs] Initialized');
 }
 
@@ -49,5 +78,5 @@ export function switchToOutput() {
  */
 export function switchToPlot() {
   const tab = document.querySelector('.output-plot-tab[data-tab="plot"]');
-  if (tab) tab.click();
+  if (tab && tab.style.display !== 'none') tab.click();
 }

@@ -61,6 +61,140 @@ try {
         $tree = buildFileTree($conn, $projectId);
         jsonResponse(['ok' => true, 'tree' => $tree]);
     }
+
+    // ============================================
+    // IMPORT ZIP ARCHIVE
+    // ============================================
+    elseif ($action === 'import_zip' && $method === 'POST') {
+        if (!class_exists('ZipArchive')) {
+            jsonResponse(['ok' => false, 'error' => 'ZipArchive is not available on server'], 500);
+        }
+
+        if (!isset($_FILES['zip_file']) || !is_array($_FILES['zip_file'])) {
+            jsonResponse(['ok' => false, 'error' => 'ZIP file required'], 400);
+        }
+
+        $zipFile = $_FILES['zip_file'];
+        if (($zipFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            jsonResponse(['ok' => false, 'error' => 'ZIP upload failed'], 400);
+        }
+
+        $uploadName = (string)($zipFile['name'] ?? '');
+        if (strtolower(pathinfo($uploadName, PATHINFO_EXTENSION)) !== 'zip') {
+            jsonResponse(['ok' => false, 'error' => 'Only .zip files are supported'], 400);
+        }
+
+        $baseFolderId = null;
+        if (isset($_POST['folder_id']) && $_POST['folder_id'] !== '' && $_POST['folder_id'] !== 'null') {
+            $baseFolderId = (int)$_POST['folder_id'];
+            if ($baseFolderId > 0) {
+                $checkFolderStmt = $conn->prepare('SELECT id FROM project_folders WHERE id = ? AND project_id = ?');
+                $checkFolderStmt->bind_param('ii', $baseFolderId, $projectId);
+                $checkFolderStmt->execute();
+                if ($checkFolderStmt->get_result()->num_rows === 0) {
+                    jsonResponse(['ok' => false, 'error' => 'Target folder not found'], 404);
+                }
+            } else {
+                $baseFolderId = null;
+            }
+        }
+
+        $zip = new ZipArchive();
+        $opened = $zip->open($zipFile['tmp_name']);
+        if ($opened !== true) {
+            jsonResponse(['ok' => false, 'error' => 'Unable to open ZIP archive'], 400);
+        }
+
+        $importedCount = 0;
+        $renamedCount = 0;
+        $skippedCount = 0;
+        $failed = [];
+        $renamed = [];
+
+        $folderCache = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $stat = $zip->statIndex($i);
+            if (!$stat || !isset($stat['name'])) {
+                continue;
+            }
+
+            $entryName = (string)$stat['name'];
+            if ($entryName === '' || substr($entryName, -1) === '/') {
+                continue;
+            }
+
+            $normalizedPath = normalizeZipEntryPath($entryName);
+            if ($normalizedPath === '' || strpos($normalizedPath, '__MACOSX/') === 0) {
+                continue;
+            }
+
+            try {
+                $parts = explode('/', $normalizedPath);
+                if (count($parts) === 0) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                foreach ($parts as $segment) {
+                    if (!isValidNodeName($segment)) {
+                        throw new Exception('Invalid path segment');
+                    }
+                }
+
+                $fileName = array_pop($parts);
+                if ($fileName === '' || !isValidNodeName($fileName)) {
+                    throw new Exception('Invalid filename');
+                }
+
+                $targetFolderId = ensureFolderPathInProject($conn, $projectId, $parts, $baseFolderId, $folderCache);
+
+                $raw = $zip->getFromIndex($i);
+                if ($raw === false) {
+                    throw new Exception('Could not read ZIP entry');
+                }
+
+                $mimeType = getMimeType($fileName);
+                $storeContent = $raw;
+
+                if (isBinaryByFileName($fileName)) {
+                    if (isImageByFileName($fileName)) {
+                        $storeContent = 'data:' . $mimeType . ';base64,' . base64_encode($raw);
+                    } else {
+                        $storeContent = 'data:application/octet-stream;base64,' . base64_encode($raw);
+                    }
+                }
+
+                $uniqueFileName = resolveUniqueFileName($conn, $projectId, $targetFolderId, $fileName);
+                $fileSize = strlen($storeContent);
+                $insertStmt = $conn->prepare('INSERT INTO project_files (project_id, folder_id, name, content, mime_type, file_size) VALUES (?, ?, ?, ?, ?, ?)');
+                $insertStmt->bind_param('iisssi', $projectId, $targetFolderId, $uniqueFileName, $storeContent, $mimeType, $fileSize);
+
+                if (!$insertStmt->execute()) {
+                    throw new Exception('DB insert failed');
+                }
+
+                $importedCount++;
+                if ($uniqueFileName !== $fileName) {
+                    $renamedCount++;
+                    $renamed[] = $normalizedPath . ' -> ' . $uniqueFileName;
+                }
+            } catch (Exception $entryErr) {
+                $failed[] = $normalizedPath . ': ' . $entryErr->getMessage();
+            }
+        }
+
+        $zip->close();
+
+        jsonResponse([
+            'ok' => true,
+            'imported' => $importedCount,
+            'renamed' => $renamedCount,
+            'skipped' => $skippedCount,
+            'failed' => $failed,
+            'renamed_files' => $renamed
+        ]);
+    }
     
     // ============================================
     // CREATE FILE
@@ -355,6 +489,121 @@ function getMimeType($filename) {
     ];
     
     return $mimeTypes[$ext] ?? 'text/plain';
+}
+
+function normalizeZipEntryPath($path) {
+    $path = str_replace('\\', '/', trim((string)$path));
+    $path = preg_replace('#/+#', '/', $path);
+    $path = trim($path, '/');
+    return $path;
+}
+
+function isValidNodeName($name) {
+    $name = (string)$name;
+    if ($name === '' || $name === '.' || $name === '..') {
+        return false;
+    }
+    return preg_match('/^[\w\-. ]+$/', $name) === 1;
+}
+
+function isImageByFileName($filename) {
+    $ext = strtolower(pathinfo((string)$filename, PATHINFO_EXTENSION));
+    return in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'], true);
+}
+
+function isBinaryByFileName($filename) {
+    $ext = strtolower(pathinfo((string)$filename, PATHINFO_EXTENSION));
+    $textExt = ['py', 'txt', 'md', 'json', 'html', 'htm', 'css', 'js', 'csv', 'xml', 'yml', 'yaml', 'ini', 'cfg', 'sql', 'php'];
+    return !in_array($ext, $textExt, true);
+}
+
+function ensureFolderPathInProject($conn, $projectId, $segments, $baseFolderId, &$folderCache) {
+    $parentId = $baseFolderId === null ? null : (int)$baseFolderId;
+
+    foreach ($segments as $segment) {
+        $segment = trim((string)$segment);
+        if ($segment === '') {
+            continue;
+        }
+
+        $cacheKey = ($parentId === null ? 'root' : (string)$parentId) . '|' . $segment;
+        if (isset($folderCache[$cacheKey])) {
+            $parentId = $folderCache[$cacheKey];
+            continue;
+        }
+
+        if ($parentId === null) {
+            $findStmt = $conn->prepare('SELECT id FROM project_folders WHERE project_id = ? AND parent_folder_id IS NULL AND name = ? LIMIT 1');
+            $findStmt->bind_param('is', $projectId, $segment);
+        } else {
+            $findStmt = $conn->prepare('SELECT id FROM project_folders WHERE project_id = ? AND parent_folder_id = ? AND name = ? LIMIT 1');
+            $findStmt->bind_param('iis', $projectId, $parentId, $segment);
+        }
+
+        $findStmt->execute();
+        $row = $findStmt->get_result()->fetch_assoc();
+
+        if ($row && isset($row['id'])) {
+            $parentId = (int)$row['id'];
+            $folderCache[$cacheKey] = $parentId;
+            continue;
+        }
+
+        $insertStmt = $conn->prepare('INSERT INTO project_folders (project_id, parent_folder_id, name) VALUES (?, ?, ?)');
+        $insertStmt->bind_param('iis', $projectId, $parentId, $segment);
+        if (!$insertStmt->execute()) {
+            throw new Exception('Could not create folder: ' . $segment);
+        }
+
+        $parentId = (int)$conn->insert_id;
+        $folderCache[$cacheKey] = $parentId;
+    }
+
+    return $parentId;
+}
+
+function resolveUniqueFileName($conn, $projectId, $folderId, $originalName) {
+    $name = (string)$originalName;
+    if (!fileNameExistsInFolder($conn, $projectId, $folderId, $name)) {
+        return $name;
+    }
+
+    $dotPos = strrpos($name, '.');
+    if ($dotPos === false || $dotPos === 0) {
+        $base = $name;
+        $ext = '';
+    } else {
+        $base = substr($name, 0, $dotPos);
+        $ext = substr($name, $dotPos);
+    }
+
+    for ($i = 1; $i < 1000; $i++) {
+        $suffix = $i === 1 ? '=1' : '=' . str_pad((string)$i, 2, '0', STR_PAD_LEFT);
+        $maxBaseLen = 255 - strlen($ext) - strlen($suffix);
+        if ($maxBaseLen < 1) {
+            $maxBaseLen = 1;
+        }
+        $candidate = substr($base, 0, $maxBaseLen) . $suffix . $ext;
+        if (!fileNameExistsInFolder($conn, $projectId, $folderId, $candidate)) {
+            return $candidate;
+        }
+    }
+
+    throw new Exception('No free name available for file: ' . $originalName);
+}
+
+function fileNameExistsInFolder($conn, $projectId, $folderId, $name) {
+    if ($folderId === null) {
+        $checkStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id IS NULL AND name = ? LIMIT 1');
+        $checkStmt->bind_param('is', $projectId, $name);
+    } else {
+        $checkStmt = $conn->prepare('SELECT id FROM project_files WHERE project_id = ? AND folder_id = ? AND name = ? LIMIT 1');
+        $folderIdInt = (int)$folderId;
+        $checkStmt->bind_param('iis', $projectId, $folderIdInt, $name);
+    }
+
+    $checkStmt->execute();
+    return $checkStmt->get_result()->num_rows > 0;
 }
 
 /**

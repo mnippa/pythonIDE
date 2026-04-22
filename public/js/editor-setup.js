@@ -4,6 +4,109 @@
 import { initOutputPlotTabs } from './output-plot-tabs.js';
 import { guiBridge } from './gui-bridge.js';
 
+function ensureInputModalStyles() {
+  if (document.getElementById('pyide-input-modal-styles')) {
+    return;
+  }
+
+  const style = document.createElement('style');
+  style.id = 'pyide-input-modal-styles';
+  style.textContent = `
+    #help-container.pyide-input-host,
+    #editor-container.pyide-input-host,
+    .editor-area.pyide-input-host,
+    .editor-quiz-wrapper.pyide-input-host {
+      position: relative;
+    }
+
+    .pyide-editor-inactive {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.42;
+      filter: grayscale(0.15);
+      transition: opacity 0.18s ease, filter 0.18s ease;
+    }
+
+    .pyide-editor-inactive::after {
+      content: 'Eingabe aktiv';
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.78);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .pyide-input-help-modal {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: stretch;
+      justify-content: stretch;
+      z-index: 1002;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.16));
+      padding: 10px;
+      animation: fadeIn 0.2s;
+    }
+
+    .pyide-input-help-modal .pyide-input-dialog {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      border-radius: 10px;
+      border: 1px solid var(--border, #e5e7eb);
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+      background: var(--bg, #fff);
+      color: var(--text-primary, #000);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .pyide-input-help-modal .pyide-input-dialog-body {
+      flex: 1 1 auto;
+      overflow: auto;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function getInputModalHost() {
+  ensureInputModalStyles();
+  const host = document.getElementById('help-container')
+    || document.getElementById('editor-container')
+    || document.querySelector('.editor-area')
+    || document.querySelector('.editor-quiz-wrapper')
+    || document.body;
+  if (host && host !== document.body) {
+    host.classList.add('pyide-input-host');
+  }
+  return host;
+}
+
+function getInputModalPositionStyle(host) {
+  if (host === document.body) {
+    return 'position: fixed; top: 0; left: 0; right: 0; bottom: 0;';
+  }
+  return 'position: absolute; inset: 0;';
+}
+
+function setInputUiState(active) {
+  const editorShell = document.querySelector('.editor-quiz-wrapper')
+    || document.getElementById('editor-container')
+    || document.querySelector('.editor-area');
+  if (!editorShell) {
+    return;
+  }
+  editorShell.classList.toggle('pyide-editor-inactive', !!active);
+}
+
 /* ================ INPUT MODAL ================ */
 /**
  * Show input modal and wait for user input
@@ -12,20 +115,23 @@ import { guiBridge } from './gui-bridge.js';
  */
 window.pythonInput = function(prompt) {
   return new Promise((resolve) => {
+    const host = getInputModalHost();
     // Create modal if it doesn't exist
     let modal = document.getElementById('python-input-modal');
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'python-input-modal';
-      modal.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0, 0, 0, 0.5); display: none;
+      modal.className = host !== document.body ? 'pyide-input-help-modal' : '';
+      modal.style.cssText = host === document.body ? `
+        ${getInputModalPositionStyle(host)}
+        background: rgba(0, 0, 0, 0.38); display: none;
         align-items: center; justify-content: center; z-index: 1001;
         animation: fadeIn 0.2s;
-      `;
+        padding: 16px;
+      ` : '';
       
       modal.innerHTML = `
-        <div style="
+        <div class="pyide-input-dialog" style="
           background: var(--bg, #fff); color: var(--text-primary, #000);
           border-radius: 12px; max-width: 400px; width: 90%;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -34,7 +140,7 @@ window.pythonInput = function(prompt) {
           <div style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
             <h3 style="margin: 0; font-size: 18px;" id="python-input-prompt">Eingabe</h3>
           </div>
-          <div style="padding: 20px;">
+          <div class="pyide-input-dialog-body" style="padding: 20px;">
             <input type="text" id="python-input-field" style="
               width: 100%; padding: 10px; font-size: 14px;
               border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
@@ -56,7 +162,23 @@ window.pythonInput = function(prompt) {
         </div>
       `;
       
-      document.body.appendChild(modal);
+    }
+
+    if (modal.parentElement !== host) {
+      host.appendChild(modal);
+    }
+    if (host === document.body) {
+      modal.className = '';
+      modal.style.cssText = `
+        ${getInputModalPositionStyle(host)}
+        background: rgba(0, 0, 0, 0.38); display: none;
+        align-items: center; justify-content: center; z-index: 1001;
+        animation: fadeIn 0.2s;
+        padding: 16px;
+      `;
+    } else {
+      modal.className = 'pyide-input-help-modal';
+      modal.style.cssText = '';
     }
     
     // Set prompt and show modal
@@ -68,6 +190,7 @@ window.pythonInput = function(prompt) {
     promptEl.textContent = prompt || 'Eingabe:';
     inputField.value = '';
     modal.style.display = 'flex';
+    setInputUiState(true);
     
     // Focus input field
     setTimeout(() => inputField.focus(), 100);
@@ -76,12 +199,14 @@ window.pythonInput = function(prompt) {
     const handleSubmit = () => {
       const value = inputField.value;
       modal.style.display = 'none';
+      setInputUiState(false);
       resolve(value);
     };
     
     // Handle cancel
     const handleCancel = () => {
       modal.style.display = 'none';
+      setInputUiState(false);
       resolve(''); // Return empty string on cancel
     };
     
@@ -107,7 +232,124 @@ window.pythonInput = function(prompt) {
   });
 };
 
+/**
+ * Show textarea modal to collect multiple input() values at once (one line per value)
+ * @param {string} prompt - The prompt message to display
+ * @param {string} hint - Optional hint text shown above textarea
+ * @returns {Promise<string>} The raw textarea content
+ */
+window.pythonInputBatch = function(prompt, hint) {
+  return new Promise((resolve) => {
+    const host = getInputModalHost();
+    let modal = document.getElementById('python-input-batch-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'python-input-batch-modal';
+      modal.className = host !== document.body ? 'pyide-input-help-modal' : '';
+      modal.style.cssText = host === document.body ? `
+        ${getInputModalPositionStyle(host)}
+        background: rgba(0, 0, 0, 0.38); display: none;
+        align-items: center; justify-content: center; z-index: 1002;
+        animation: fadeIn 0.2s;
+        padding: 16px;
+      ` : '';
+
+      modal.innerHTML = `
+        <div class="pyide-input-dialog" style="
+          background: var(--bg, #fff); color: var(--text-primary, #000);
+          border-radius: 12px; max-width: 560px; width: 92%;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: slideUp 0.3s;
+        ">
+          <div style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
+            <h3 style="margin: 0; font-size: 18px;" id="python-input-batch-prompt">Mehrfacheingabe</h3>
+          </div>
+          <div class="pyide-input-dialog-body" style="padding: 20px;">
+            <p id="python-input-batch-hint" style="margin: 0 0 10px; color: var(--text-secondary, #4b5563); font-size: 13px;">Eine Zeile pro input()-Aufruf.</p>
+            <textarea id="python-input-batch-field" style="
+              width: 100%; min-height: 160px; padding: 10px; font-size: 14px;
+              border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
+              background: var(--bg, #fff); color: var(--text-primary, #000);
+              font-family: monospace; resize: vertical;
+            " spellcheck="false"></textarea>
+          </div>
+          <div style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button id="python-input-batch-cancel" style="
+              padding: 8px 16px; border: 1px solid var(--border, #e5e7eb);
+              border-radius: 6px; background: var(--panel, #f5f5f5);
+              color: var(--text-primary, #000); cursor: pointer;
+            ">Abbrechen</button>
+            <button id="python-input-batch-submit" style="
+              padding: 8px 16px; border: none; border-radius: 6px;
+              background: #667eea; color: #fff; cursor: pointer; font-weight: 500;
+            ">Uebernehmen</button>
+          </div>
+        </div>
+      `;
+
+    }
+
+    if (modal.parentElement !== host) {
+      host.appendChild(modal);
+    }
+    if (host === document.body) {
+      modal.className = '';
+      modal.style.cssText = `
+        ${getInputModalPositionStyle(host)}
+        background: rgba(0, 0, 0, 0.38); display: none;
+        align-items: center; justify-content: center; z-index: 1002;
+        animation: fadeIn 0.2s;
+        padding: 16px;
+      `;
+    } else {
+      modal.className = 'pyide-input-help-modal';
+      modal.style.cssText = '';
+    }
+
+    const promptEl = document.getElementById('python-input-batch-prompt');
+    const hintEl = document.getElementById('python-input-batch-hint');
+    const fieldEl = document.getElementById('python-input-batch-field');
+    const submitBtn = document.getElementById('python-input-batch-submit');
+    const cancelBtn = document.getElementById('python-input-batch-cancel');
+
+    promptEl.textContent = prompt || 'Mehrfacheingabe';
+    hintEl.textContent = hint || 'Eine Zeile pro input()-Aufruf.';
+    fieldEl.value = '';
+    modal.style.display = 'flex';
+    setInputUiState(true);
+
+    setTimeout(() => fieldEl.focus(), 50);
+
+    const handleSubmit = () => {
+      const value = fieldEl.value;
+      modal.style.display = 'none';
+      setInputUiState(false);
+      resolve(value);
+    };
+
+    const handleCancel = () => {
+      modal.style.display = 'none';
+      setInputUiState(false);
+      resolve('');
+    };
+
+    submitBtn.onclick = handleSubmit;
+    cancelBtn.onclick = handleCancel;
+    fieldEl.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+  });
+};
+
 async function initPyodideAndEditor() {
+  if (window.__pyideEditorSetupInitStarted) {
+    return;
+  }
+  window.__pyideEditorSetupInitStarted = true;
+
   // Initialize Output/Plot tab navigation
   initOutputPlotTabs();
   
@@ -119,6 +361,10 @@ async function initPyodideAndEditor() {
   window.pyodide = pyodide; // Make globally available for assignments.js
   window.pyodideReady = true; // Set flag for solution computation
   console.log("Pyodide ready");
+
+  const workerRunnerEnabled =
+    window.PYIDE_WORKER_RUNNER === true
+    || new URLSearchParams(window.location.search).get('worker_runner') === '1';
 
     async function ensureIdeGuiModule() {
     await pyodide.runPythonAsync(`
@@ -881,6 +1127,429 @@ if "idegui" not in sys.modules:
     const outputEl = document.getElementById("output-container");
     const lintEl = document.getElementById("lint-container");
     const plotEl = document.getElementById("plot-container");
+    const runButton = document.getElementById("run-btn");
+
+    let preparedInputQueue = [];
+    let outputBuffer = '';
+
+    function clearPreparedInputQueue() {
+      preparedInputQueue = [];
+    }
+
+    function setPreparedInputQueue(values) {
+      if (Array.isArray(values)) {
+        preparedInputQueue = values.map((value) => String(value ?? ''));
+      } else {
+        preparedInputQueue = [];
+      }
+      return preparedInputQueue.length;
+    }
+
+    function requestOverlayInput(promptText = '') {
+      const overlayEnabled = window.PYIDE_INPUT_OVERLAY !== false;
+      const overlayInput = window.pythonInput;
+      if (!overlayEnabled || typeof overlayInput !== 'function') {
+        return '';
+      }
+
+      const promptLabel = String(promptText || 'Eingabe:');
+      const finalize = (rawValue) => {
+        const value = String(rawValue ?? '');
+        window.__pyideLastConsumedInput = {
+          source: 'overlay-live',
+          prompt: promptLabel,
+          value,
+          remaining: preparedInputQueue.length,
+          ts: Date.now(),
+        };
+        return value;
+      };
+
+      try {
+        const maybePromise = overlayInput(promptLabel);
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          return maybePromise
+            .then((value) => finalize(value))
+            .catch(() => finalize(''));
+        }
+        return finalize(maybePromise);
+      } catch (err) {
+        console.warn('[Run] live input overlay failed; returning empty input', err);
+        return '';
+      }
+    }
+
+    function consumePreparedInput(promptText = '') {
+      if (preparedInputQueue.length > 0) {
+        const value = String(preparedInputQueue.shift() ?? '');
+        window.__pyideLastConsumedInput = {
+          source: 'queue',
+          prompt: String(promptText || ''),
+          value,
+          remaining: preparedInputQueue.length,
+          ts: Date.now(),
+        };
+        return value;
+      }
+
+      return requestOverlayInput(promptText);
+    }
+
+    async function collectOverlayInputsForCode(codeText) {
+      const source = String(codeText || '');
+      const inputMatches = source.match(/\binput\s*\(/g);
+      const totalInputCalls = inputMatches ? inputMatches.length : 0;
+      if (!totalInputCalls) return;
+
+      const overlayEnabled = window.PYIDE_INPUT_OVERLAY !== false;
+      const overlayInput = window.pythonInput;
+      const overlayBatchInput = window.pythonInputBatch;
+      const hasOverlay = overlayEnabled && typeof overlayInput === 'function';
+      if (!hasOverlay) return;
+
+      const maxPrefillConfig = Number(window.PYIDE_INPUT_PREFILL_MAX);
+      const maxPrefill = Number.isFinite(maxPrefillConfig) && maxPrefillConfig > 0
+        ? Math.floor(maxPrefillConfig)
+        : 3;
+      const prefillCount = Math.min(totalInputCalls, maxPrefill);
+
+      for (let index = 0; index < prefillCount; index += 1) {
+        const label = `Input ${index + 1}/${totalInputCalls}`;
+        const value = await overlayInput(label);
+        preparedInputQueue.push(String(value ?? ''));
+      }
+
+      if (totalInputCalls > prefillCount) {
+        const remainingCount = totalInputCalls - prefillCount;
+        if (typeof overlayBatchInput === 'function') {
+          const batchRaw = await overlayBatchInput(
+            `Weitere ${remainingCount} Eingaben erwartet`,
+            `Bitte ${remainingCount} Zeilen eingeben (eine Zeile pro input()).`
+          );
+          const lines = String(batchRaw ?? '').split(/\r?\n/);
+          for (let i = 0; i < remainingCount; i += 1) {
+            preparedInputQueue.push(String(lines[i] ?? ''));
+          }
+        }
+
+        if (preparedInputQueue.length < totalInputCalls) {
+          console.warn('[Run] input queue shorter than detected input() calls; remaining input() returns empty string', {
+            queued: preparedInputQueue.length,
+            total: totalInputCalls,
+          });
+        }
+      }
+    }
+
+    function outputClear() {
+      outputBuffer = '';
+      if (outputEl) {
+        outputEl.innerText = '';
+      }
+    }
+
+    function outputWrite(text) {
+      const chunk = String(text ?? '');
+      if (!chunk) return;
+      outputBuffer += chunk;
+
+      let newlineIndex = outputBuffer.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const completeLine = outputBuffer.slice(0, newlineIndex + 1);
+        if (outputEl) {
+          outputEl.innerText += completeLine;
+        }
+        outputBuffer = outputBuffer.slice(newlineIndex + 1);
+        newlineIndex = outputBuffer.indexOf('\n');
+      }
+    }
+
+    function outputFlush() {
+      if (!outputBuffer) return;
+      if (outputEl) {
+        outputEl.innerText += outputBuffer;
+      }
+      outputBuffer = '';
+    }
+
+    function outputCheckpoint() {
+      outputFlush();
+      // Force style/layout work before the next frame where possible.
+      if (outputEl) {
+        outputEl.getBoundingClientRect();
+      }
+      if (typeof window.requestAnimationFrame === 'function') {
+        return new Promise((resolve) => {
+          window.requestAnimationFrame(() => resolve(true));
+        });
+      }
+      return Promise.resolve(true);
+    }
+
+    window.setPreparedInputQueue = setPreparedInputQueue;
+    window.clearPreparedInputQueue = clearPreparedInputQueue;
+    window.getPreparedInputQueue = () => preparedInputQueue.slice();
+    window.__pyideConsumeInput = consumePreparedInput;
+    window.__pyideOutputClear = outputClear;
+    window.__pyideOutputWrite = outputWrite;
+    window.__pyideOutputFlush = outputFlush;
+    window.__pyideOutputCheckpoint = outputCheckpoint;
+
+    let workerRunner = null;
+    let workerRunToken = 0;
+    let activeWorkerRun = null;
+    let workerPrewarmStarted = false;
+    let workerPrewarmDone = false;
+    let workerPrewarmStartTs = 0;
+    let workerPrewarmDurationMs = 0;
+        let workerFailureStreak = 0;
+        let workerBlockedUntilTs = 0;
+    let workerFallbackCount = 0;
+    let workerTimeoutCount = 0;
+    let workerErrorCount = 0;
+    let workerLastErrorType = '';
+    let workerLastErrorMessage = '';
+    let workerLastErrorTs = 0;
+    let workerLastSuccessTs = 0;
+    const workerRunTimeoutMs = Number(window.PYIDE_WORKER_RUN_TIMEOUT_MS || 25000);
+
+        function nowMs() {
+          return Date.now();
+        }
+
+        function isWorkerCircuitOpen() {
+          return workerBlockedUntilTs > nowMs();
+        }
+
+        function recordWorkerRunSuccess() {
+          workerFailureStreak = 0;
+          workerBlockedUntilTs = 0;
+          workerLastSuccessTs = nowMs();
+        }
+
+        function recordWorkerRunFailure(kind = 'error', message = '') {
+          if (kind === 'timeout') {
+            workerTimeoutCount += 1;
+          } else {
+            workerErrorCount += 1;
+          }
+          workerLastErrorType = kind;
+          workerLastErrorMessage = String(message || '');
+          workerLastErrorTs = nowMs();
+
+          workerFailureStreak += 1;
+          if (workerFailureStreak >= 2) {
+            workerBlockedUntilTs = nowMs() + 30000;
+            workerFailureStreak = 0;
+            console.warn('[Run] worker circuit opened for 30s due to repeated errors');
+          }
+        }
+
+    function setRunButtonState(running, mode = 'main') {
+      if (!runButton) return;
+      runButton.disabled = false;
+      if (running && mode === 'worker') {
+        runButton.textContent = 'Stop';
+        runButton.dataset.mode = 'stop';
+      } else {
+        runButton.textContent = 'Run';
+        runButton.dataset.mode = 'run';
+      }
+    }
+
+    function resetOutputPanels() {
+      outputClear();
+      plotEl.innerHTML = '';
+    }
+
+    function appendPlotCard(dataUrl, title = 'Figure') {
+      if (!plotEl || !dataUrl) return;
+      const card = document.createElement('div');
+      card.className = 'plot-card';
+
+      const header = document.createElement('div');
+      header.className = 'plot-card-header';
+      header.innerHTML = `<strong>${title}</strong>`;
+
+      const img = document.createElement('img');
+      img.className = 'plot-img';
+      img.src = dataUrl;
+
+      card.appendChild(header);
+      card.appendChild(img);
+      plotEl.appendChild(card);
+    }
+
+        function appendWorkerStreamLine(targetEl, rawText) {
+          if (!targetEl) return;
+          const text = String(rawText ?? '');
+          if (!text.trim()) return;
+          // Keep parity with main-thread output path.
+          outputWrite(text + '\n');
+        }
+
+    function ensureWorkerRunner() {
+      if (!workerRunner) {
+        const workerUrl = new URL('./python-runner.worker.js', import.meta.url);
+        workerRunner = new Worker(workerUrl, { type: 'module' });
+      }
+      return workerRunner;
+    }
+
+        function resetWorkerRunnerAndState({ rewarm = false } = {}) {
+          if (workerRunner) {
+            try {
+              workerRunner.terminate();
+            } catch (_terminateError) {
+              // Ignore terminate errors during recovery.
+            }
+            workerRunner = null;
+          }
+
+          workerPrewarmStarted = false;
+          workerPrewarmDone = false;
+          workerPrewarmStartTs = 0;
+              workerPrewarmDurationMs = 0;
+
+          if (rewarm && workerRunnerEnabled) {
+            setTimeout(() => prewarmWorkerRunner(), 0);
+          }
+        }
+
+        function prewarmWorkerRunner() {
+          if (!workerRunnerEnabled || workerPrewarmStarted || workerPrewarmDone) return;
+          workerPrewarmStarted = true;
+          workerPrewarmStartTs = (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+
+          const worker = ensureWorkerRunner();
+          const onMessage = (event) => {
+            const message = event.data || {};
+            if (message.type === 'prewarmed') {
+              workerPrewarmDone = true;
+              worker.removeEventListener('message', onMessage);
+                  const msgMs = Number(message.ms);
+                  if (Number.isFinite(msgMs) && msgMs >= 0) {
+                    workerPrewarmDurationMs = msgMs;
+                  } else {
+                    const endTs = (window.performance && typeof window.performance.now === 'function')
+                      ? window.performance.now()
+                      : Date.now();
+                    workerPrewarmDurationMs = Math.max(0, Math.round((endTs - workerPrewarmStartTs) * 10) / 10);
+                  }
+                  console.info('[Run] worker prewarmed', { ms: workerPrewarmDurationMs });
+              return;
+            }
+
+            if (message.type === 'prewarm-error') {
+              worker.removeEventListener('message', onMessage);
+              workerPrewarmStarted = false;
+              console.warn('[Run] worker prewarm failed:', message.error || 'unknown');
+            }
+          };
+
+          worker.addEventListener('message', onMessage);
+          worker.postMessage({ type: 'prewarm' });
+        }
+
+    function stopWorkerRun() {
+      if (activeWorkerRun) {
+            const { worker, onMessage, resolve, token } = activeWorkerRun;
+            try {
+              worker?.postMessage({ type: 'stop', token });
+            } catch (_stopSignalError) {
+              // Worker may already be terminating; local stop handling below is authoritative.
+            }
+        if (worker && onMessage) {
+          worker.removeEventListener('message', onMessage);
+        }
+            resolve({ type: 'stopped', token });
+        activeWorkerRun = null;
+      }
+
+          resetWorkerRunnerAndState();
+    }
+
+    async function runCodeWithWorker(payload) {
+      const worker = ensureWorkerRunner();
+      const token = ++workerRunToken;
+
+      return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+              worker.removeEventListener('message', onMessage);
+              activeWorkerRun = null;
+                  resetWorkerRunnerAndState({ rewarm: true });
+              const timeoutError = new Error(`Worker run timeout after ${workerRunTimeoutMs}ms`);
+              timeoutError.code = 'WORKER_TIMEOUT';
+              reject(timeoutError);
+            }, workerRunTimeoutMs);
+
+        const onMessage = async (event) => {
+          const message = event.data || {};
+          if (message.token !== token) return;
+
+          switch (message.type) {
+            case 'input-request': {
+              const promptText = String(message.prompt || 'Eingabe:');
+              const requestId = Number(message.requestId || 0);
+              let value = '';
+              try {
+                value = await Promise.resolve(requestOverlayInput(promptText));
+              } catch (_inputError) {
+                value = '';
+              }
+              try {
+                worker.postMessage({
+                  type: 'input-response',
+                  token,
+                  requestId,
+                  value: String(value ?? ''),
+                });
+              } catch (_postInputResponseError) {
+                // Worker may already be stopped/terminated.
+              }
+              break;
+            }
+            case 'stdout':
+                  appendWorkerStreamLine(outputEl, message.text || '');
+              break;
+            case 'stderr':
+                  appendWorkerStreamLine(lintEl, message.text || '');
+              break;
+            case 'plot':
+              appendPlotCard(message.dataUrl, message.title || 'Figure');
+              break;
+            case 'done':
+                  clearTimeout(timeoutId);
+              worker.removeEventListener('message', onMessage);
+              activeWorkerRun = null;
+              resolve(message);
+              break;
+            case 'stopped':
+                  clearTimeout(timeoutId);
+              worker.removeEventListener('message', onMessage);
+              activeWorkerRun = null;
+              resolve(message);
+              break;
+            case 'error':
+                  clearTimeout(timeoutId);
+              worker.removeEventListener('message', onMessage);
+              activeWorkerRun = null;
+                  const workerError = new Error(message.error || 'Worker run failed');
+                  workerError.code = 'WORKER_ERROR';
+                  reject(workerError);
+              break;
+            default:
+              break;
+          }
+        };
+
+        activeWorkerRun = { token, worker, onMessage, resolve, reject };
+        worker.addEventListener('message', onMessage);
+        worker.postMessage({ type: 'run', token, payload });
+      });
+    }
 
     /* ============================================================
        ✅ Autocomplete / Snippets ausgelagert
@@ -1065,10 +1734,150 @@ compile(code, "<usercode>", "exec")
     scheduleLiveSyntaxCheck();
 
     /* ---------------- Run ---------------- */
-    document.getElementById("run-btn").addEventListener("click", async () => {
-      if (window.incrementTaskRunCount && window.assignmentState?.currentTask?.id) {
-        await window.incrementTaskRunCount(window.assignmentState.currentTask.id);
+    let runInProgress = false;
+    let activeRunMode = 'main';
+    let runPerfCounter = 0;
+        const runTimingOverlayEnabled =
+          window.PYIDE_RUN_TIMING_OVERLAY === true
+          || new URLSearchParams(window.location.search).get('run_timing_overlay') === '1';
+
+        function ensureRunTimingOverlay() {
+          if (!runTimingOverlayEnabled) return null;
+          let panel = document.getElementById('run-timing-overlay');
+          if (panel) return panel;
+
+          panel = document.createElement('div');
+          panel.id = 'run-timing-overlay';
+          panel.style.position = 'fixed';
+          panel.style.right = '12px';
+          panel.style.bottom = '12px';
+          panel.style.zIndex = '9999';
+          panel.style.maxWidth = '300px';
+          panel.style.padding = '8px 10px';
+          panel.style.borderRadius = '8px';
+          panel.style.fontSize = '12px';
+          panel.style.lineHeight = '1.35';
+          panel.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+          panel.style.background = 'rgba(17, 24, 39, 0.9)';
+          panel.style.color = '#e5e7eb';
+          panel.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+          panel.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.35)';
+          panel.style.pointerEvents = 'none';
+          panel.textContent = 'RunTiming: waiting for first run';
+          document.body.appendChild(panel);
+          return panel;
+        }
+
+        if (workerRunnerEnabled) {
+          setTimeout(() => prewarmWorkerRunner(), 0);
+        }
+
+        function updateRunTimingOverlay(payload) {
+          const panel = ensureRunTimingOverlay();
+          if (!panel || !payload) return;
+
+          const totals = payload.totals || {};
+          const avgMain = totals.avgMainMs ?? '-';
+          const avgWorker = totals.avgWorkerMs ?? '-';
+          const runs = totals.runs ?? 0;
+
+          panel.textContent = [
+            `Run #${payload.id} ${payload.mode}/${payload.outcome}`,
+            `reason=${payload.reason} ms=${payload.ms}`,
+            `runs=${runs} avgMain=${avgMain} avgWorker=${avgWorker}`,
+          ].join(' | ');
+        }
+
+        window.getRunTimingStats = function () {
+          const stats = window.__pyideRunTimingStats;
+          if (!stats) return null;
+          return JSON.parse(JSON.stringify(stats));
+        };
+
+            window.getWorkerRunnerHealth = function () {
+              return {
+                enabled: workerRunnerEnabled,
+                runTimeoutMs: workerRunTimeoutMs,
+                prewarmStarted: workerPrewarmStarted,
+                prewarmDone: workerPrewarmDone,
+                failureStreak: workerFailureStreak,
+                blockedUntilTs: workerBlockedUntilTs,
+                blockedMsRemaining: Math.max(0, workerBlockedUntilTs - nowMs()),
+                circuitOpen: isWorkerCircuitOpen(),
+                fallbackCount: workerFallbackCount,
+                timeoutCount: workerTimeoutCount,
+                errorCount: workerErrorCount,
+                lastErrorType: workerLastErrorType,
+                lastErrorMessage: workerLastErrorMessage,
+                lastErrorTs: workerLastErrorTs,
+                lastSuccessTs: workerLastSuccessTs,
+                    prewarmDurationMs: workerPrewarmDurationMs,
+              };
+            };
+
+            window.resetWorkerRunner = function () {
+              resetWorkerRunnerAndState({ rewarm: true });
+              return window.getWorkerRunnerHealth();
+            };
+
+            window.clearWorkerCircuit = function () {
+              workerFailureStreak = 0;
+              workerBlockedUntilTs = 0;
+              if (workerRunnerEnabled) {
+                prewarmWorkerRunner();
+              }
+              return window.getWorkerRunnerHealth();
+            };
+
+        window.resetRunTimingStats = function () {
+          window.__pyideRunTimingStats = {
+            totalRuns: 0,
+            totalMs: 0,
+            byMode: {
+              main: { runs: 0, ms: 0 },
+              worker: { runs: 0, ms: 0 },
+            },
+            byOutcome: {},
+                byReason: {},
+                fallbackCount: 0,
+                byFallbackType: {},
+          };
+
+          const panel = document.getElementById('run-timing-overlay');
+          if (panel) {
+            panel.textContent = 'RunTiming: reset';
+          }
+        };
+
+    runButton?.addEventListener("click", async () => {
+      if (runInProgress) {
+        if (activeRunMode === 'worker') {
+          stopWorkerRun();
+        }
+        return;
       }
+
+      runInProgress = true;
+      activeRunMode = 'main';
+      setRunButtonState(true, 'main');
+
+          const runPerfId = ++runPerfCounter;
+          const runPerfStart = (window.performance && typeof window.performance.now === 'function')
+            ? window.performance.now()
+            : Date.now();
+          let runPerfMode = 'main';
+          let runPerfOutcome = 'ok';
+          let runPerfReason = 'main-default';
+            let runPerfWorkerTimings = null;
+
+      let code = '';
+
+      try {
+          if (window.incrementTaskRunCount && window.assignmentState?.currentTask?.id) {
+            Promise.resolve(window.incrementTaskRunCount(window.assignmentState.currentTask.id)).catch((runCountError) => {
+              console.warn('[Run] incrementTaskRunCount failed:', runCountError);
+            });
+          }
 
       if (typeof window.beforeRunExecution === 'function') {
         try {
@@ -1078,8 +1887,8 @@ compile(code, "<usercode>", "exec")
         }
       }
 
-      outputEl.innerText = "";
-      plotEl.innerHTML = "";
+      resetOutputPanels();
+      clearPreparedInputQueue();
       setLintChecking();
 
       liveSeq++;
@@ -1100,7 +1909,7 @@ compile(code, "<usercode>", "exec")
       const hasProjectRunCode = !!projectRunContext && typeof projectRunContext.code === 'string';
       const runWithProvidedCode = runInitOnly || hasProjectRunCode;
 
-      let code = editor.getValue();
+          code = editor.getValue();
       const activePath = String(window.currentFile?.path || '');
       const activeIsPython = activePath.toLowerCase().endsWith('.py');
 
@@ -1162,24 +1971,123 @@ compile(code, "<usercode>", "exec")
         code = editor.getValue();
       }
 
+      const projectType = String(currentProject?.project_type || '').toLowerCase();
+      const isCodeUiTask = currentTask?.task_type === 'code_ui';
+      const isProjectCodeUiMode = projectType === 'html' || projectType === 'mixed';
+      const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
+          const wantsIdeGui = /(^|\n)\s*(import\s+idegui\b|from\s+idegui\s+import\b)/m.test(code);
+          const usesBlockingInput = /(^|\n)\s*[^#\n]*\binput\s*\(/m.test(code);
+          const usesJsDomInterop = /(^|\n)\s*from\s+js\s+import\b[^#\n]*(document|window|navigator|localStorage|sessionStorage)\b/m.test(code);
+          const usesGeneralJsInterop = /(^|\n)\s*(from\s+js\s+import\b|import\s+js\b)/m.test(code);
+          const workerRiskReason = usesJsDomInterop
+            ? 'js-dom-interop-detected'
+            : (usesGeneralJsInterop ? 'js-interop-detected' : '');
+              const workerCircuitOpen = isWorkerCircuitOpen();
+              const canUseWorkerRunner = workerRunnerEnabled && !workerCircuitOpen && !isCodeUiMode && !wantsIdeGui && !workerRiskReason;
+
+          if (!canUseWorkerRunner) {
+            if (!workerRunnerEnabled) {
+              runPerfReason = 'worker-disabled';
+                } else if (workerCircuitOpen) {
+                  runPerfReason = 'worker-circuit-open';
+            } else if (isCodeUiMode) {
+              runPerfReason = 'code-ui-mode';
+            } else if (wantsIdeGui) {
+              runPerfReason = 'idegui-detected';
+            } else if (workerRiskReason) {
+              runPerfReason = workerRiskReason;
+            }
+          }
+
+          if (workerRunnerEnabled && !isCodeUiMode) {
+            if (usesBlockingInput) {
+              console.info('[Run] input() detected - worker input bridge active');
+            }
+            if (wantsIdeGui) {
+              console.info('[Run] idegui import detected - using main-thread runner for compatibility');
+                } else if (workerCircuitOpen) {
+                  console.info('[Run] worker circuit open - temporarily using main-thread runner');
+            } else if (workerRiskReason) {
+              console.info(`[Run] ${workerRiskReason} - using main-thread runner for compatibility`);
+            }
+          }
+
+      const precollectInputsBeforeRun = window.PYIDE_INPUT_COLLECT_BEFORE_RUN === true;
+      if (usesBlockingInput && !canUseWorkerRunner && precollectInputsBeforeRun) {
+        await collectOverlayInputsForCode(code);
+      }
+
+      let projectRuntimePayload = null;
+      if (currentProject && typeof window.getProjectPythonRuntimePayload === 'function') {
+        try {
+          projectRuntimePayload = await window.getProjectPythonRuntimePayload();
+        } catch (projectRuntimeError) {
+          console.warn('[Run] project runtime payload fallback to null:', projectRuntimeError);
+        }
+      }
+
       const selectedPackages = getSelectedPackages();
-      await ensurePackages(selectedPackages);
       const enableMatplotlib = selectedPackages.includes("matplotlib");
 
-      try {
-        const wantsIdeGui = /(^|\n)\s*(import\s+idegui\b|from\s+idegui\s+import\b)/m.test(code);
-        const currentTask = window.assignmentState?.currentTask || null;
-        const isCodeUiTask = currentTask?.task_type === 'code_ui';
-        const currentProject = window.currentProject || null;
-        const projectType = String(currentProject?.project_type || '').toLowerCase();
-        const isProjectCodeUiMode = projectType === 'html' || projectType === 'mixed';
+      if (canUseWorkerRunner) {
+            try {
+              runPerfMode = 'worker';
+              runPerfReason = workerPrewarmDone
+                ? 'worker-prewarmed'
+                : (workerPrewarmStarted ? 'worker-warming' : 'worker-coldstart');
+              activeRunMode = 'worker';
+              setRunButtonState(true, 'worker');
+
+              const result = await runCodeWithWorker({
+                code,
+                packages: selectedPackages,
+                enableMatplotlib,
+                projectRuntime: projectRuntimePayload,
+              });
+                  runPerfWorkerTimings = result?.timings || null;
+
+              clearQuickFixState();
+              if (result?.type === 'stopped') {
+                runPerfOutcome = 'stopped';
+                lintEl.innerHTML = '<span class="lint-checking">Ausfuehrung gestoppt.</span>';
+              } else {
+                    recordWorkerRunSuccess();
+                setLintOk();
+              }
+
+              const currentPath = String(window.currentFile?.path || '');
+              if (currentTask?.id && currentPath && typeof window.setTaskSavedSnapshot === 'function') {
+                window.setTaskSavedSnapshot(currentTask.id, currentPath, code);
+              }
+              return;
+            } catch (workerRunError) {
+                  const workerErrorCode = String(workerRunError?.code || 'WORKER_ERROR');
+                  const workerErrorMessage = String(workerRunError?.message || workerRunError || '');
+                  if (workerErrorCode === 'WORKER_TIMEOUT') {
+                    recordWorkerRunFailure('timeout', workerErrorMessage);
+                  } else {
+                    recordWorkerRunFailure('error', workerErrorMessage);
+                  }
+                  workerFallbackCount += 1;
+              console.warn('[Run] worker execution failed, fallback to main-thread:', workerRunError);
+              resetOutputPanels();
+              clearQuickFixState();
+              activeRunMode = 'main';
+              setRunButtonState(true, 'main');
+              runPerfMode = 'main';
+                  const workerErrorText = String(workerRunError?.message || workerRunError || '').toLowerCase();
+                  runPerfReason = workerErrorText.includes('timeout')
+                    ? 'worker-timeout-fallback-main'
+                    : 'worker-error-fallback-main';
+            }
+      }
+
+      await ensurePackages(selectedPackages);
 
         // Only ensure idegui module for code_ui tasks or html/mixed projects (not for regular code tasks)
         if ((isCodeUiTask || isProjectCodeUiMode) && wantsIdeGui) {
           await ensureIdeGuiModule();
         }
-
-        const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
 
         // Preserve globals between RUN and trigger calls for code_ui tasks and HTML/mixed projects
         const usePreservedGlobals = isCodeUiMode;
@@ -1189,18 +2097,76 @@ from js import document, window as js_window
 import sys, warnings
 import builtins
 import re
+import os
+import json
+import types
 
 warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
 
 _original_input = builtins.input
 def _custom_input(prompt=''):
     prompt_str = str(prompt) if prompt else ''
-    result = js_window.prompt(prompt_str)
-    if result is None:
-        return ''
-    return str(result)
+    result = js_window.__pyideConsumeInput(prompt_str)
+    try:
+        if result is not None and hasattr(result, "then"):
+            import asyncio
+            result = asyncio.get_event_loop().run_until_complete(result)
+    except Exception:
+        # Keep input() robust if promise bridging is unavailable.
+        pass
+    return '' if result is None else str(result)
 
 builtins.input = _custom_input
+
+def outputClear():
+    js_window.__pyideOutputClear()
+
+def outputWrite(value=''):
+    text = '' if value is None else str(value)
+    js_window.__pyideOutputWrite(text)
+
+def outputFlush():
+    js_window.__pyideOutputFlush()
+    try:
+        import asyncio
+        checkpoint = js_window.__pyideOutputCheckpoint
+        promise = checkpoint()
+        if promise is not None and hasattr(promise, "then"):
+            asyncio.get_event_loop().run_until_complete(promise)
+    except Exception:
+        # Keep outputFlush robust even when no loop/frame integration is available.
+        pass
+
+def clear_output():
+    outputClear()
+
+def redraw(value=''):
+    outputClear()
+    outputWrite(value)
+
+pyide_module = sys.modules.get('pyide')
+if pyide_module is None:
+  pyide_module = types.ModuleType('pyide')
+
+pyide_module.outputClear = outputClear
+pyide_module.outputWrite = outputWrite
+pyide_module.outputFlush = outputFlush
+pyide_module.clear_output = clear_output
+pyide_module.redraw = redraw
+pyide_module.output_clear = outputClear
+pyide_module.output_write = outputWrite
+pyide_module.output_flush = outputFlush
+pyide_module.__all__ = [
+  'outputClear',
+  'outputWrite',
+  'outputFlush',
+  'clear_output',
+  'redraw',
+  'output_clear',
+  'output_write',
+  'output_flush',
+]
+sys.modules['pyide'] = pyide_module
 
 enable_matplotlib = ${enableMatplotlib ? "True" : "False"}
 if enable_matplotlib:
@@ -1212,16 +2178,58 @@ from io import BytesIO
 import base64
 
 code = ${JSON.stringify(code)}
+project_runtime = json.loads(${JSON.stringify(JSON.stringify(projectRuntimePayload ?? null))})
+
+if isinstance(project_runtime, dict):
+  runtime_root = str(project_runtime.get('root') or '/project')
+  runtime_files = project_runtime.get('files') or []
+
+  if runtime_files:
+    try:
+      os.makedirs(runtime_root, exist_ok=True)
+    except Exception:
+      pass
+
+    for entry in runtime_files:
+      if not isinstance(entry, dict):
+        continue
+      rel_path = str(entry.get('path') or '').replace('\\\\', '/').strip('/')
+      if not rel_path:
+        continue
+
+      abs_path = runtime_root.rstrip('/') + '/' + rel_path
+      parent_dir = os.path.dirname(abs_path)
+      if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+      with open(abs_path, 'w', encoding='utf-8') as fh:
+        fh.write(str(entry.get('content') or ''))
+
+    main_rel = str(project_runtime.get('mainPath') or '').replace('\\\\', '/').strip('/')
+    if main_rel:
+      project_main_path = runtime_root.rstrip('/') + '/' + main_rel
+      project_main_dir = os.path.dirname(project_main_path)
+      if project_main_dir and project_main_dir not in sys.path:
+        sys.path.insert(0, project_main_dir)
+
+    if runtime_root not in sys.path:
+      sys.path.insert(0, runtime_root)
+
+_js_output_write = js_window.__pyideOutputWrite
+_js_output_flush = js_window.__pyideOutputFlush
 
 class JSOut:
     def __init__(self, el):
         self.el = document.getElementById(el)
     def write(self, s):
-        s = str(s)
-        if s.strip():
-            self.el.innerText += s + "\\n"
+        text = str(s)
+        if self.el is not None and getattr(self.el, "id", "") == "output-container":
+            outputWrite(text)
+        elif self.el is not None and text.strip():
+            self.el.innerText += text + "\\n"
     def flush(self):
-        pass
+        if self.el is not None and getattr(self.el, "id", "") == "output-container":
+            outputFlush()
 
 old_out, old_err = sys.stdout, sys.stderr
 sys.stdout = JSOut("output-container")
@@ -1243,11 +2251,30 @@ try:
         # Try to restore from window.__codeUiGlobals if it exists
         if hasattr(js_window, '__codeUiGlobals'):
             g = js_window.__codeUiGlobals
+            g.setdefault('outputClear', outputClear)
+            g.setdefault('outputWrite', outputWrite)
+            g.setdefault('outputFlush', outputFlush)
+            g.setdefault('clear_output', clear_output)
+            g.setdefault('redraw', redraw)
         else:
-            g = {"__name__": "__main__"}
+            g = {
+                "__name__": "__main__",
+                "outputClear": outputClear,
+                "outputWrite": outputWrite,
+                "outputFlush": outputFlush,
+                "clear_output": clear_output,
+                "redraw": redraw,
+            }
             js_window.__codeUiGlobals = g
     else:
-        g = {"__name__": "__main__"}
+        g = {
+            "__name__": "__main__",
+            "outputClear": outputClear,
+            "outputWrite": outputWrite,
+            "outputFlush": outputFlush,
+            "clear_output": clear_output,
+            "redraw": redraw,
+        }
     
     # Execute user code (user code imports idegui itself if needed)
     exec(compile(code, "<usercode>", "exec"), g, g)
@@ -1323,6 +2350,7 @@ try:
 
 finally:
     sys.stdout, sys.stderr = old_out, old_err
+    js_window.__pyideOutputFlush()
 `);
         clearQuickFixState();
         setLintOk();
@@ -1334,11 +2362,83 @@ finally:
           window.setTaskSavedSnapshot(currentTask.id, currentPath, code);
         }
       } catch (e) {
+            runPerfOutcome = 'error';
         const parsed = resolveErrorLine(e.message || String(e), code);
 
         setQuickFixState(parsed.line, parsed.token, parsed.suggestion);
         setLintError(parsed.line, parsed.error, parsed.hint, parsed.token, parsed.suggestion);
         setErrorMarker(parsed.line, parsed.error);
+      } finally {
+            const runPerfEnd = (window.performance && typeof window.performance.now === 'function')
+              ? window.performance.now()
+              : Date.now();
+            const runPerfMs = Math.round((runPerfEnd - runPerfStart) * 10) / 10;
+                const timingStats = window.__pyideRunTimingStats || {
+                  totalRuns: 0,
+                  totalMs: 0,
+                  byMode: {
+                    main: { runs: 0, ms: 0 },
+                    worker: { runs: 0, ms: 0 },
+                  },
+                  byOutcome: {},
+                      byReason: {},
+                  fallbackCount: 0,
+                  byFallbackType: {},
+                };
+                timingStats.totalRuns += 1;
+                timingStats.totalMs += runPerfMs;
+                if (!timingStats.byMode[runPerfMode]) {
+                  timingStats.byMode[runPerfMode] = { runs: 0, ms: 0 };
+                }
+                timingStats.byMode[runPerfMode].runs += 1;
+                timingStats.byMode[runPerfMode].ms += runPerfMs;
+                timingStats.byOutcome[runPerfOutcome] = (timingStats.byOutcome[runPerfOutcome] || 0) + 1;
+                    timingStats.byReason[runPerfReason] = (timingStats.byReason[runPerfReason] || 0) + 1;
+                const fallbackType = runPerfReason.startsWith('worker-') && runPerfReason.includes('-fallback-main')
+                  ? runPerfReason
+                  : '';
+                if (fallbackType) {
+                  timingStats.fallbackCount += 1;
+                  timingStats.byFallbackType[fallbackType] = (timingStats.byFallbackType[fallbackType] || 0) + 1;
+                }
+                window.__pyideRunTimingStats = timingStats;
+
+                    const reasonEntries = Object.entries(timingStats.byReason || {});
+                    const topReasonEntry = reasonEntries.sort((a, b) => (b[1] || 0) - (a[1] || 0))[0] || null;
+                    const topReason = topReasonEntry ? `${topReasonEntry[0]}:${topReasonEntry[1]}` : null;
+
+                const avgMainMs = timingStats.byMode.main.runs > 0
+                  ? Math.round((timingStats.byMode.main.ms / timingStats.byMode.main.runs) * 10) / 10
+                  : null;
+                const avgWorkerMs = timingStats.byMode.worker.runs > 0
+                  ? Math.round((timingStats.byMode.worker.ms / timingStats.byMode.worker.runs) * 10) / 10
+                  : null;
+
+            if (window.PYIDE_RUN_TIMING !== false) {
+                  const runTimingPayload = {
+                id: runPerfId,
+                mode: runPerfMode,
+                outcome: runPerfOutcome,
+                reason: runPerfReason,
+                ms: runPerfMs,
+                codeLength: String(code || '').length,
+                    totals: {
+                      runs: timingStats.totalRuns,
+                      avgMainMs,
+                      avgWorkerMs,
+                          currentReasonCount: timingStats.byReason[runPerfReason] || 0,
+                          topReason,
+                      fallbackCount: timingStats.fallbackCount || 0,
+                    },
+                        workerTimings: runPerfWorkerTimings,
+                  };
+                  console.info('[RunTiming]', runTimingPayload);
+                  updateRunTimingOverlay(runTimingPayload);
+            }
+
+        runInProgress = false;
+        activeRunMode = 'main';
+        setRunButtonState(false, 'main');
       }
     });
   });

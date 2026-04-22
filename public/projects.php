@@ -428,8 +428,8 @@ if ($displayName === '') {
 
     /* RIGHT PANEL: Output/GUI */
     .right{
-      display:grid;
-      grid-template-rows: 1fr 1fr;
+      display:flex;
+      flex-direction: column;
       min-width:0; min-height:0;
       background: var(--bg);
       overflow: hidden;
@@ -447,11 +447,15 @@ if ($displayName === '') {
     }
     #gui-container.active{
       display: block;
+      min-height: 120px;
+      max-height: 45vh;
+      flex: 0 0 auto;
     }
 
     #output-plot-section {
       display: flex;
       flex-direction: column;
+      flex: 1 1 auto;
       min-height: 0;
       min-width: 0;
     }
@@ -490,7 +494,8 @@ if ($displayName === '') {
       white-space:pre-wrap;
     }
     .output-plot-panel.active{
-      display:block;
+      display:flex;
+      flex-direction: column;
     }
     #output-container {
       background: var(--bg);
@@ -827,7 +832,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260302"></script>
+  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
 
   <script>
     // Theme Toggle

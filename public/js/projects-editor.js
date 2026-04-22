@@ -271,6 +271,285 @@ function updateWebHelpButton(project) {
   helpBtn.disabled = !shouldShow;
 }
 
+function setProjectsRightPanelMode(guiActive) {
+  const guiContainer = document.getElementById('gui-container');
+  const rightPanel = guiContainer?.closest('.right') || document.querySelector('.right');
+  if (!rightPanel) return;
+
+  rightPanel.classList.toggle('gui-active', Boolean(guiActive));
+}
+
+function buildExportFileName(projectName) {
+  const base = String(projectName || 'project')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^[_\.\-]+|[_\.\-]+$/g, '') || 'project';
+  return `${base}.pyideproj`;
+}
+
+function normalizeProjectNameInput(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim();
+}
+
+function buildImportNameSuggestion(baseName, existingNames) {
+  const normalizedBase = normalizeProjectNameInput(baseName) || 'Importiertes Projekt';
+  const nameSet = new Set((existingNames || []).map((n) => normalizeProjectNameInput(n).toLowerCase()));
+
+  if (!nameSet.has(normalizedBase.toLowerCase())) {
+    return normalizedBase;
+  }
+
+  const firstCandidate = `${normalizedBase}=1`;
+  if (!nameSet.has(firstCandidate.toLowerCase())) {
+    return firstCandidate;
+  }
+
+  for (let i = 2; i < 1000; i++) {
+    const suffix = i < 100 ? String(i).padStart(2, '0') : String(i);
+    const candidate = `${normalizedBase}=${suffix}`;
+    if (!nameSet.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  return `${normalizedBase}=${Date.now()}`;
+}
+
+function resolveUniqueImportName(chosenName, existingNames) {
+  const desired = normalizeProjectNameInput(chosenName);
+  if (!desired) return '';
+  return buildImportNameSuggestion(desired, existingNames);
+}
+
+function isZipImportFile(file) {
+  if (!file) return false;
+  const name = String(file.name || '').toLowerCase();
+  const type = String(file.type || '').toLowerCase();
+  return name.endsWith('.zip') || type === 'application/zip' || type === 'application/x-zip-compressed';
+}
+
+function normalizeZipEntryPath(path) {
+  return String(path || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\/+/g, '/');
+}
+
+function enforceMaxOneFolderLevel(paths) {
+  for (const p of paths) {
+    const segments = normalizeZipEntryPath(p).split('/').filter(Boolean);
+    if (segments.length > 2) {
+      throw new Error(`ZIP unterstützt maximal eine Ordnerebene. Problematische Datei: ${p}`);
+    }
+  }
+}
+
+async function parseZipProjectArchive(file) {
+  if (typeof JSZip === 'undefined') {
+    throw new Error('JSZip ist nicht geladen. Bitte Seite neu laden.');
+  }
+
+  const zip = await JSZip.loadAsync(file);
+  let fileEntries = Object.values(zip.files)
+    .filter((entry) => !entry.dir)
+    .map((entry) => ({
+      zipPath: String(entry.name || ''),
+      normalizedPath: normalizeZipEntryPath(entry.name || '')
+    }))
+    .filter((entry) => entry.normalizedPath !== '' && !entry.normalizedPath.startsWith('__MACOSX/'));
+
+  if (fileEntries.length === 0) {
+    throw new Error('ZIP enthält keine importierbaren Dateien.');
+  }
+
+  // Auto-strip one common top-level folder (typical OS zip behavior).
+  const topLevel = Array.from(new Set(fileEntries.map((entry) => entry.normalizedPath.split('/')[0])));
+  const canStripRoot = topLevel.length === 1 && fileEntries.every((entry) => entry.normalizedPath.includes('/'));
+  if (canStripRoot) {
+    fileEntries = fileEntries
+      .map((entry) => {
+        const stripped = normalizeZipEntryPath(entry.normalizedPath.split('/').slice(1).join('/'));
+        return {
+          ...entry,
+          normalizedPath: stripped
+        };
+      })
+      .filter((entry) => entry.normalizedPath !== '');
+  }
+
+  const normalizedPaths = fileEntries.map((entry) => entry.normalizedPath);
+  enforceMaxOneFolderLevel(normalizedPaths);
+
+  const files = [];
+  for (const entry of fileEntries) {
+    const zipFile = zip.files[entry.zipPath];
+    if (!zipFile) continue;
+    let content = '';
+    try {
+      content = await zipFile.async('text');
+    } catch (_err) {
+      throw new Error(`Datei konnte nicht als Text entpackt werden: ${entry.normalizedPath}`);
+    }
+
+    files.push({
+      path: entry.normalizedPath,
+      content
+    });
+  }
+
+  if (files.length === 0) {
+    throw new Error('ZIP enthält keine lesbaren Textdateien.');
+  }
+
+  const folders = Array.from(new Set(files
+    .map((f) => {
+      const parts = normalizeZipEntryPath(f.path).split('/').filter(Boolean);
+      return parts.length === 2 ? parts[0] : '';
+    })
+    .filter(Boolean)));
+
+  return {
+    archive: {
+      format: 'pythonide-project-v1',
+      project: {
+        name: normalizeProjectNameInput(file.name.replace(/\.[^.]+$/, '')) || 'Importiertes ZIP-Projekt'
+      },
+      folders,
+      files
+    },
+    sourceType: 'zip'
+  };
+}
+
+async function parseImportArchiveFile(file) {
+  if (isZipImportFile(file)) {
+    return parseZipProjectArchive(file);
+  }
+
+  const raw = await file.text();
+  let archive;
+  try {
+    archive = JSON.parse(raw);
+  } catch (_err) {
+    throw new Error('Die Datei ist kein gültiges JSON-Archiv.');
+  }
+
+  if (!archive || typeof archive !== 'object') {
+    throw new Error('Ungültiges Archivformat.');
+  }
+
+  return {
+    archive,
+    sourceType: 'json'
+  };
+}
+
+function triggerFileDownload(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function exportCurrentProjectToFile() {
+  if (!currentProject?.id) {
+    alert('Bitte zuerst ein Projekt öffnen.');
+    return;
+  }
+
+  try {
+    const canSwitch = await confirmProjectSwitchWithDrafts();
+    if (!canSwitch) return;
+
+    const response = await fetch(`../api/projects/export.php?project_id=${currentProject.id}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      let message = 'Export fehlgeschlagen';
+      try {
+        const data = await response.json();
+        if (data?.error) message = data.error;
+      } catch (_err) {
+        // Ignore parse failure and keep generic message.
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    triggerFileDownload(blob, buildExportFileName(currentProject.name));
+  } catch (error) {
+    console.error('Project export failed:', error);
+    alert('Fehler beim Export: ' + (error?.message || error));
+  }
+}
+
+async function importProjectFromArchiveFile(file) {
+  if (!file) return;
+
+  try {
+    const parsed = await parseImportArchiveFile(file);
+    const archive = parsed.archive;
+    const sourceType = parsed.sourceType;
+
+    const importedName = normalizeProjectNameInput(String(
+      archive?.project?.name
+      || file.name.replace(/\.[^.]+$/, '')
+      || 'Importiertes Projekt'
+    ));
+
+    const existingNames = Array.isArray(projects) ? projects.map((p) => String(p?.name || '')) : [];
+    const suggestedName = buildImportNameSuggestion(importedName, existingNames);
+
+    const userInput = window.prompt('Name für das neue importierte Projekt:', suggestedName);
+    if (userInput === null) {
+      return;
+    }
+
+    const uniqueChosenName = resolveUniqueImportName(userInput, existingNames);
+    if (!uniqueChosenName) {
+      alert('Bitte einen gültigen Projektnamen eingeben.');
+      return;
+    }
+
+    if (normalizeProjectNameInput(userInput).toLowerCase() !== uniqueChosenName.toLowerCase()) {
+      alert(`Projektname bereits vorhanden. Import erfolgt als: ${uniqueChosenName}`);
+    }
+
+    const response = await fetch('../api/projects/import.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: uniqueChosenName,
+        archive,
+        source_type: sourceType
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || 'Import fehlgeschlagen');
+    }
+
+    const newProjectId = Number(data?.project?.id || 0);
+    if (!newProjectId) {
+      throw new Error('Importantwort enthält keine Projekt-ID');
+    }
+
+    await loadProjects();
+    await loadProject(newProjectId);
+  } catch (error) {
+    console.error('Project import failed:', error);
+    alert('Fehler beim Import: ' + (error?.message || error));
+  }
+}
+
 async function beforeRunExecution() {
   if (!currentProject || !isHtmlLikeProject(currentProject)) {
     return;
@@ -323,6 +602,188 @@ async function getProjectRunContext() {
     fileName,
     projectType: String(currentProject.project_type || 'python').toLowerCase(),
     isCodeUiMode: isHtmlLikeProject(currentProject)
+  };
+}
+
+function collectProjectPythonFiles(nodes, parentPath = '') {
+  if (!Array.isArray(nodes)) return [];
+
+  const result = [];
+  for (const node of nodes) {
+    if (!node || typeof node.name !== 'string') continue;
+
+    if (node.type === 'folder') {
+      const folderPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+      result.push(...collectProjectPythonFiles(node.children || [], folderPath));
+      continue;
+    }
+
+    if (node.type === 'file' && node.name.toLowerCase().endsWith('.py')) {
+      const path = parentPath ? `${parentPath}/${node.name}` : node.name;
+      result.push({
+        id: Number(node.id || 0),
+        name: node.name,
+        path
+      });
+    }
+  }
+
+  return result;
+}
+
+function parseLocalImportSpecifiers(code) {
+  const imports = new Set();
+  const text = String(code || '');
+
+  const importMatches = text.matchAll(/^\s*import\s+([^#\n]+)/gm);
+  for (const match of importMatches) {
+    const parts = String(match[1] || '').split(',');
+    for (const part of parts) {
+      const token = part.trim().split(/\s+as\s+/i)[0]?.trim();
+      if (token && /^[A-Za-z_][A-Za-z0-9_\.]*$/.test(token)) {
+        imports.add(token);
+      }
+    }
+  }
+
+  const fromMatches = text.matchAll(/^\s*from\s+([^\s]+)\s+import\s+([^#\n]+)/gm);
+  for (const match of fromMatches) {
+    const base = String(match[1] || '').trim();
+    if (!base || base.startsWith('.')) {
+      continue;
+    }
+
+    if (/^[A-Za-z_][A-Za-z0-9_\.]*$/.test(base)) {
+      imports.add(base);
+    }
+  }
+
+  return Array.from(imports);
+}
+
+function resolveLocalModulePath(moduleName, currentPath, pathToMeta) {
+  const rel = String(moduleName || '').replace(/\./g, '/');
+  if (!rel) return null;
+
+  const currentDir = currentPath && currentPath.includes('/')
+    ? currentPath.slice(0, currentPath.lastIndexOf('/'))
+    : '';
+
+  const candidates = [];
+  if (currentDir) {
+    candidates.push(`${currentDir}/${rel}.py`);
+    candidates.push(`${currentDir}/${rel}/__init__.py`);
+  }
+  candidates.push(`${rel}.py`);
+  candidates.push(`${rel}/__init__.py`);
+
+  for (const candidate of candidates) {
+    if (pathToMeta.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function readProjectPythonFileContent(meta) {
+  if (!meta || !meta.id) return '';
+
+  let content = getProjectDraftContent(meta.id);
+
+  if (content === null && currentOpenFileId && Number(currentOpenFileId) === Number(meta.id)) {
+    const editor = getEditorInstance();
+    if (editor && typeof editor.getValue === 'function') {
+      content = String(editor.getValue() || '');
+    }
+  }
+
+  if (content === null) {
+    const fileData = await readProjectFileById(currentProject.id, meta.id);
+    content = fileData?.content ?? '';
+  }
+
+  return String(content ?? '');
+}
+
+async function getProjectPythonRuntimePayload() {
+  if (!currentProject?.id) return null;
+
+  cacheCurrentProjectEditorDraft();
+
+  const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+
+  if (!treeResponse.ok) return null;
+
+  const treeData = await treeResponse.json();
+  const treeNodes = Array.isArray(treeData?.tree)
+    ? treeData.tree
+    : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+  const pyFiles = collectProjectPythonFiles(treeNodes);
+  if (!pyFiles.length) return null;
+
+  const pathToMeta = new Map(pyFiles.map((f) => [f.path, f]));
+
+  let mainPath = '';
+  if (currentOpenFileId) {
+    const openFile = pyFiles.find((f) => Number(f.id) === Number(currentOpenFileId));
+    if (openFile) {
+      mainPath = openFile.path;
+    }
+  }
+
+  if (!mainPath) {
+    const initFile = pyFiles.find((f) => f.path === 'init.py' || f.name === 'init.py');
+    if (initFile) {
+      mainPath = initFile.path;
+    }
+  }
+
+  if (!mainPath && pyFiles.length > 0) {
+    mainPath = pyFiles[0].path;
+  }
+
+  const includedPaths = new Set();
+  const pathToContent = new Map();
+  const stack = [mainPath];
+
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    if (!currentPath || includedPaths.has(currentPath)) {
+      continue;
+    }
+
+    const meta = pathToMeta.get(currentPath);
+    if (!meta) {
+      continue;
+    }
+
+    const content = await readProjectPythonFileContent(meta);
+    includedPaths.add(currentPath);
+    pathToContent.set(currentPath, content);
+
+    const importSpecs = parseLocalImportSpecifiers(content);
+    for (const spec of importSpecs) {
+      const targetPath = resolveLocalModulePath(spec, currentPath, pathToMeta);
+      if (targetPath && !includedPaths.has(targetPath)) {
+        stack.push(targetPath);
+      }
+    }
+  }
+
+  const files = Array.from(includedPaths).map((path) => ({
+    path,
+    content: pathToContent.get(path) ?? ''
+  }));
+
+  return {
+    root: '/project',
+    mainPath,
+    files
   };
 }
 
@@ -868,6 +1329,7 @@ async function loadProject(projectId) {
   try {
     window.currentProject = null;
     updateWebHelpButton(null);
+    setProjectsRightPanelMode(false);
     
     const response = await fetch(`../api/projects/load.php?id=${projectId}`, {
       credentials: 'include'
@@ -956,7 +1418,7 @@ async function loadProject(projectId) {
           projectId,
           projectName: project.name,
           readOnly: false,
-          doubleClickAction: 'rename',
+          doubleClickAction: 'open-folder',
           beforeFileSelect: async () => {
             cacheCurrentProjectEditorDraft();
             return true;
@@ -995,6 +1457,7 @@ async function loadProject(projectId) {
     if (project.project_type === 'html' || project.project_type === 'mixed') {
       // Always show GUI container for HTML/Mixed, even if empty (will render on first RUN)
       guiContainer.classList.add('active');
+      setProjectsRightPanelMode(true);
       guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
       guiContainer.dataset.projectHtmlRendered = '0';
       guiContainer.dataset.projectId = String(project.id);
@@ -1002,6 +1465,7 @@ async function loadProject(projectId) {
     } else {
       // For python-only projects: hide GUI container completely
       guiContainer.classList.remove('active');
+      setProjectsRightPanelMode(false);
       guiContainer.innerHTML = '';
       delete guiContainer.dataset.projectHtmlRendered;
       delete guiContainer.dataset.projectId;
@@ -1268,6 +1732,7 @@ async function renderProjectHtml() {
     }
     
     guiContainer.classList.add('active');
+    setProjectsRightPanelMode(true);
     guiContainer.dataset.projectHtmlRendered = '1';
     guiContainer.dataset.projectId = String(currentProject.id);
     console.log('[projects-editor] GUI container marked active');
@@ -1278,6 +1743,7 @@ async function renderProjectHtml() {
     const guiContainer = document.getElementById('gui-container');
     guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Fehler beim Laden der GUI</p>';
     guiContainer.classList.add('active');
+    setProjectsRightPanelMode(true);
   }
 }
 
@@ -1466,6 +1932,7 @@ async function confirmDeleteProject() {
     if (currentProject?.id === projectId) {
       currentProject = null;
       window.currentProject = null;
+      setProjectsRightPanelMode(false);
       if (window.editor) {
         window.editor.setValue('');
       }
@@ -1592,6 +2059,33 @@ function setupEventListeners() {
     }
   });
 
+  document.getElementById('project-export-btn')?.addEventListener('click', async () => {
+    await exportCurrentProjectToFile();
+  });
+
+  document.getElementById('project-import-btn')?.addEventListener('click', async () => {
+    const canSwitch = await confirmProjectSwitchWithDrafts();
+    if (!canSwitch) return;
+
+    const input = document.getElementById('project-import-file-input');
+    if (!input) {
+      alert('Import-Eingabe nicht gefunden.');
+      return;
+    }
+
+    input.value = '';
+    input.click();
+  });
+
+  document.getElementById('project-import-file-input')?.addEventListener('change', async (event) => {
+    const input = event.target;
+    const file = input?.files?.[0] || null;
+    await importProjectFromArchiveFile(file);
+    if (input) {
+      input.value = '';
+    }
+  });
+
   if (!projectEditorDraftListenerBound) {
     waitForEditorInstance().then((editor) => {
       if (!editor || projectEditorDraftListenerBound) return;
@@ -1689,3 +2183,4 @@ window.createProjectFromDialog = createProjectFromDialog;
 window.toggleProjectVisibility = toggleProjectVisibility;
 window.beforeRunExecution = beforeRunExecution;
 window.getProjectRunContext = getProjectRunContext;
+window.getProjectPythonRuntimePayload = getProjectPythonRuntimePayload;

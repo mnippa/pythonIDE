@@ -29,7 +29,7 @@ class FileTreeManager {
     this.onFileSaved = options.onFileSaved || (() => {});
     this.doubleClickAction = options.doubleClickAction || 'open-folder';
     
-    this.uploadExtensions = options.uploadExtensions || ['.py', '.txt', '.md', '.json', '.html', '.htm', '.jpg', '.jpeg', '.webp', '.gif'];
+    this.uploadExtensions = options.uploadExtensions || ['.py', '.txt', '.md', '.json', '.html', '.htm', '.jpg', '.jpeg', '.webp', '.gif', '.zip'];
     this.uploadInput = null;
     
     this.currentProjectTree = null;
@@ -125,7 +125,7 @@ class FileTreeManager {
     if (!this.readOnly) {
       breadcrumb += `<button class="breadcrumb-action" data-action="new-file" title="Neue Datei">📄➕</button>`;
       breadcrumb += `<button class="breadcrumb-action" data-action="new-folder" title="Neuer Ordner">📂➕</button>`;
-      breadcrumb += `<button class="breadcrumb-action" data-action="upload" title="Datei hochladen">⬆</button>`;
+      breadcrumb += `<button class="breadcrumb-action" data-action="upload" title="Datei/ZIP hochladen">⬆</button>`;
       breadcrumb += `<button class="breadcrumb-action" data-action="download" title="Datei herunterladen">⬇</button>`;
     }
     breadcrumb += `</div>`;
@@ -312,6 +312,11 @@ class FileTreeManager {
 
         const type = item.dataset.type;
         const id = parseInt(item.dataset.nodeId);
+
+        if (type === 'folder') {
+          this.navigateIntoFolder(id, item);
+          return;
+        }
 
         if (type === 'file') {
           this.selectFile(id, item);
@@ -557,6 +562,11 @@ class FileTreeManager {
       return;
     }
 
+    if (ext === '.zip') {
+      await this.uploadZipArchive(file);
+      return;
+    }
+
     const parentFolderId = this.currentFolderId;
     const isImage = file.type && file.type.startsWith('image/');
 
@@ -595,6 +605,345 @@ class FileTreeManager {
     } catch (err) {
       console.error('[FileTreeManager] Error uploading file:', err);
       alert('Error uploading file');
+    }
+  }
+
+  normalizeZipPath(path) {
+    return String(path || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\/+/g, '/');
+  }
+
+  getMimeTypeByFileName(fileName) {
+    const ext = String(fileName || '').toLowerCase().split('.').pop() || '';
+    const map = {
+      py: 'text/x-python',
+      txt: 'text/plain',
+      md: 'text/markdown',
+      json: 'application/json',
+      html: 'text/html',
+      htm: 'text/html',
+      css: 'text/css',
+      js: 'text/javascript',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      svg: 'image/svg+xml'
+    };
+    return map[ext] || 'text/plain';
+  }
+
+  isImageFileName(fileName) {
+    const ext = String(fileName || '').toLowerCase().split('.').pop() || '';
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext);
+  }
+
+  isTextFileName(fileName) {
+    const ext = String(fileName || '').toLowerCase().split('.').pop() || '';
+    return ['py', 'txt', 'md', 'json', 'html', 'htm', 'css', 'js', 'csv', 'xml', 'yml', 'yaml', 'ini', 'cfg'].includes(ext);
+  }
+
+  findFolderById(node, folderId) {
+    if (!node) return null;
+    if (node.type === 'folder' && Number(node.id) === Number(folderId)) return node;
+    if (!Array.isArray(node.children)) return null;
+    for (const child of node.children) {
+      const found = this.findFolderById(child, folderId);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  async ensureFolderInParent(folderName, parentFolderId) {
+    const normalizedName = String(folderName || '').trim();
+    if (!normalizedName.match(/^[\w\-. ]+$/)) {
+      throw new Error('Invalid folder name in ZIP: ' + normalizedName);
+    }
+
+    const createRes = await fetch('/pythonIDE/api/projects/folders-v2.php?action=create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: this.projectId,
+        parent_folder_id: parentFolderId,
+        name: normalizedName
+      })
+    });
+
+    const createData = await createRes.json();
+    if (createData.ok && createData.folder_id) {
+      return Number(createData.folder_id);
+    }
+
+    // Folder might already exist.
+    if (createRes.status === 409 || /already exists/i.test(String(createData.error || ''))) {
+      await this.loadTree();
+      const parentNode = parentFolderId === null
+        ? this.currentProjectTree
+        : this.findFolderById(this.currentProjectTree, parentFolderId);
+      const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+      const existing = children.find((c) => c?.type === 'folder' && String(c?.name || '') === normalizedName);
+      if (existing?.id) {
+        return Number(existing.id);
+      }
+    }
+
+    throw new Error(createData?.error || ('Could not create folder: ' + normalizedName));
+  }
+
+  async ensureFolderPath(folderSegments, baseFolderId) {
+    let parentId = (baseFolderId === null || baseFolderId === undefined) ? null : Number(baseFolderId);
+    for (const segment of folderSegments) {
+      parentId = await this.ensureFolderInParent(segment, parentId);
+    }
+    return parentId;
+  }
+
+  splitFileName(fileName) {
+    const name = String(fileName || '');
+    const idx = name.lastIndexOf('.');
+    if (idx <= 0) {
+      return { base: name, ext: '' };
+    }
+    return {
+      base: name.slice(0, idx),
+      ext: name.slice(idx)
+    };
+  }
+
+  buildConflictFileName(base, ext, index) {
+    const suffix = index === 1 ? '=1' : `=${String(index).padStart(2, '0')}`;
+    const maxLen = 255;
+    const allowedBaseLen = Math.max(1, maxLen - ext.length - suffix.length);
+    const clippedBase = String(base || 'datei').slice(0, allowedBaseLen);
+    return `${clippedBase}${suffix}${ext}`;
+  }
+
+  isDuplicateNameCreateError(status, errorMessage) {
+    if (Number(status) === 409) return true;
+    const msg = String(errorMessage || '').toLowerCase();
+    return msg.includes('bereits vorhanden')
+      || msg.includes('already exists')
+      || msg.includes('duplicate')
+      || msg.includes('exists');
+  }
+
+  async createFileWithAutoRename(payload) {
+    const originalName = String(payload?.name || 'datei.txt');
+    const { base, ext } = this.splitFileName(originalName);
+    const basePayload = {
+      project_id: payload.project_id,
+      folder_id: payload.folder_id,
+      content: payload.content
+    };
+
+    for (let i = 0; i < 1000; i++) {
+      const candidateName = i === 0
+        ? originalName
+        : this.buildConflictFileName(base || 'datei', ext, i);
+
+      const response = await fetch('/pythonIDE/api/projects/files-v2.php?action=create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...basePayload,
+          name: candidateName
+        })
+      });
+
+      let result = null;
+      try {
+        result = await response.json();
+      } catch (_err) {
+        result = { ok: false, error: 'Ungültige API-Antwort' };
+      }
+
+      if (result?.ok) {
+        return {
+          ok: true,
+          name: candidateName,
+          renamed: candidateName !== originalName
+        };
+      }
+
+      if (!this.isDuplicateNameCreateError(response.status, result?.error)) {
+        return {
+          ok: false,
+          error: result?.error || 'Import fehlgeschlagen'
+        };
+      }
+    }
+
+    return {
+      ok: false,
+      error: `Konnte keinen freien Dateinamen für ${originalName} finden`
+    };
+  }
+
+  async uploadZipArchive(file) {
+    if (typeof JSZip === 'undefined') {
+      await this.uploadZipArchiveServer(file);
+      return;
+    }
+
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const baseFolderId = (this.currentFolderId === null || this.currentFolderId === undefined)
+        ? null
+        : Number(this.currentFolderId);
+
+      const entries = Object.values(zip.files)
+        .filter((entry) => !entry.dir)
+        .map((entry) => ({
+          entryName: String(entry.name || ''),
+          normalizedPath: this.normalizeZipPath(entry.name)
+        }))
+        .filter((item) => item.normalizedPath !== '' && !item.normalizedPath.startsWith('__MACOSX/'));
+
+      if (entries.length === 0) {
+        alert('ZIP enthält keine importierbaren Dateien.');
+        return;
+      }
+
+      let importedCount = 0;
+      let skippedCount = 0;
+      let renamedCount = 0;
+      const renamedFiles = [];
+      const failed = [];
+
+      for (const item of entries) {
+        const rawPath = item.normalizedPath;
+        const pathParts = rawPath.split('/').filter(Boolean);
+        if (pathParts.length === 0) continue;
+
+        if (pathParts.some((part) => part === '.' || part === '..' || !part.match(/^[\w\-. ]+$/))) {
+          failed.push(`${rawPath}: Ungültiger Pfad`);
+          continue;
+        }
+
+        const fileName = pathParts[pathParts.length - 1];
+        if (!fileName.match(/^[\w\-. ]+$/)) {
+          failed.push(`${rawPath}: Ungültiger Dateiname`);
+          continue;
+        }
+
+        const folderSegments = pathParts.slice(0, -1);
+
+        const isImage = this.isImageFileName(fileName);
+        const isText = this.isTextFileName(fileName);
+
+        try {
+          const targetFolderId = await this.ensureFolderPath(folderSegments, baseFolderId);
+          const zipEntry = zip.files[item.entryName];
+          if (!zipEntry) {
+            failed.push(`${rawPath}: ZIP-Eintrag nicht gefunden`);
+            continue;
+          }
+
+          let content = '';
+          if (isImage) {
+            const base64 = await zipEntry.async('base64');
+            const mime = this.getMimeTypeByFileName(fileName);
+            content = `data:${mime};base64,${base64}`;
+          } else if (isText) {
+            content = await zipEntry.async('text');
+          } else {
+            const base64 = await zipEntry.async('base64');
+            content = `data:application/octet-stream;base64,${base64}`;
+          }
+
+          const payload = {
+            project_id: this.projectId,
+            folder_id: targetFolderId,
+            name: fileName,
+            content
+          };
+
+          const created = await this.createFileWithAutoRename(payload);
+          if (created.ok) {
+            importedCount += 1;
+            if (created.renamed) {
+              renamedCount += 1;
+              renamedFiles.push(`${rawPath} -> ${created.name}`);
+            }
+          } else {
+            failed.push(`${rawPath}: ${created.error || 'Import fehlgeschlagen'}`);
+          }
+        } catch (entryErr) {
+          failed.push(`${rawPath}: ${entryErr.message || entryErr}`);
+        }
+      }
+
+      await this.loadTree();
+
+      const summary = [
+        `ZIP-Import abgeschlossen.`,
+        `Importiert: ${importedCount}`,
+        `Umbenannt: ${renamedCount}`,
+        `Übersprungen: ${skippedCount}`,
+        `Fehler: ${failed.length}`
+      ];
+      if (renamedFiles.length > 0) {
+        summary.push('', 'Umbenannte Dateien (max 10):', ...renamedFiles.slice(0, 10));
+      }
+      if (failed.length > 0) {
+        summary.push('', 'Details (max 10):', ...failed.slice(0, 10));
+      }
+      alert(summary.join('\n'));
+    } catch (err) {
+      console.error('[FileTreeManager] ZIP upload failed:', err);
+      alert('ZIP-Import fehlgeschlagen: ' + (err?.message || err));
+    }
+  }
+
+  async uploadZipArchiveServer(file) {
+    try {
+      const formData = new FormData();
+      formData.append('project_id', String(this.projectId));
+      formData.append('folder_id', this.currentFolderId === null || this.currentFolderId === undefined ? '' : String(this.currentFolderId));
+      formData.append('zip_file', file, file.name || 'upload.zip');
+
+      const response = await fetch('/pythonIDE/api/projects/files-v2.php?action=import_zip', {
+        method: 'POST',
+        body: formData
+      });
+
+      let result = null;
+      try {
+        result = await response.json();
+      } catch (_err) {
+        result = { ok: false, error: 'Ungültige API-Antwort' };
+      }
+
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'ZIP-Import fehlgeschlagen');
+      }
+
+      await this.loadTree();
+
+      const summary = [
+        'ZIP-Import abgeschlossen.',
+        `Importiert: ${Number(result.imported || 0)}`,
+        `Umbenannt: ${Number(result.renamed || 0)}`,
+        `Übersprungen: ${Number(result.skipped || 0)}`,
+        `Fehler: ${Array.isArray(result.failed) ? result.failed.length : 0}`
+      ];
+
+      if (Array.isArray(result.renamed_files) && result.renamed_files.length > 0) {
+        summary.push('', 'Umbenannte Dateien (max 10):', ...result.renamed_files.slice(0, 10));
+      }
+
+      if (Array.isArray(result.failed) && result.failed.length > 0) {
+        summary.push('', 'Details (max 10):', ...result.failed.slice(0, 10));
+      }
+
+      alert(summary.join('\n'));
+    } catch (err) {
+      console.error('[FileTreeManager] ZIP upload (server) failed:', err);
+      alert('ZIP-Import fehlgeschlagen: ' + (err?.message || err));
     }
   }
 

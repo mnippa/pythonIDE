@@ -416,6 +416,90 @@ if ($displayName === '') {
       box-shadow: var(--hspf-shadow-md);
       border-color: var(--hspf-accent);
     }
+
+    .deploy-sync-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: var(--hspf-spacing-md);
+      align-items: end;
+    }
+
+    .deploy-sync-flags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--hspf-spacing-md);
+      margin-top: var(--hspf-spacing-md);
+    }
+
+    .deploy-sync-flag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--hspf-text-primary);
+      user-select: none;
+    }
+
+    .deploy-sync-flag input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--hspf-accent);
+    }
+
+    .deploy-sync-warning {
+      margin-top: var(--hspf-spacing-md);
+      padding: var(--hspf-spacing-sm) var(--hspf-spacing-md);
+      border: 1px solid #f59e0b;
+      background: #fffbeb;
+      border-radius: var(--hspf-radius-sm);
+      color: #92400e;
+      font-size: 13px;
+    }
+
+    .deploy-sync-actions {
+      display: flex;
+      gap: var(--hspf-spacing-sm);
+      margin-top: var(--hspf-spacing-md);
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .deploy-sync-status {
+      margin-top: var(--hspf-spacing-md);
+      font-size: 13px;
+      color: var(--hspf-text-secondary);
+      min-height: 1.2em;
+    }
+
+    .deploy-sync-status.error {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+
+    .deploy-sync-status.ok {
+      color: #166534;
+      font-weight: 600;
+    }
+
+    .deploy-sync-output {
+      margin-top: var(--hspf-spacing-md);
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: var(--hspf-radius-sm);
+      border: 1px solid #1e293b;
+      font-family: var(--hspf-font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: var(--hspf-spacing-md);
+      min-height: 140px;
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+
+    #deploy-sync-confirm-modal .modal-content {
+      max-width: 620px;
+    }
     
     @keyframes fadeIn {
       from { opacity: 0; }
@@ -498,6 +582,52 @@ if ($displayName === '') {
           <span class="page-info" id="projects-page-info">Page 1 of 1</span>
           <button id="projects-next">Next</button>
         </div>
+      </div>
+
+      <div class="admin-card">
+        <h3>Deploy Sync (Live/Beta)</h3>
+        <div class="admin-card-subtitle">Admin-Tool fuer Live/Beta-Synchronisation. Kritischer Modus <strong>Beta -> Live</strong> hat eine zusaetzliche Sicherheitsabfrage.</div>
+
+        <div class="deploy-sync-grid">
+          <div class="field" style="margin-bottom: 0;">
+            <label for="deploy-sync-mode">Modus</label>
+            <select id="deploy-sync-mode">
+              <option value="hydrate-beta">Live -> Beta (hydrate beta)</option>
+              <option value="promote-live">Beta -> Live (promote live)</option>
+            </select>
+          </div>
+
+          <div class="field" style="margin-bottom: 0;">
+            <label for="deploy-sync-trigger">Aktion</label>
+            <div class="deploy-sync-actions" style="margin-top: 0;">
+              <button class="hspf-btn hspf-btn-primary" type="button" id="deploy-sync-trigger">Ausfuehren</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="deploy-sync-flags">
+          <label class="deploy-sync-flag" for="deploy-sync-dry-run">
+            <input type="checkbox" id="deploy-sync-dry-run" checked>
+            <span>Dry-Run (keine Aenderungen schreiben)</span>
+          </label>
+
+          <label class="deploy-sync-flag" for="deploy-sync-db">
+            <input type="checkbox" id="deploy-sync-db">
+            <span>DB-Snapshot mitziehen (nur Live -> Beta)</span>
+          </label>
+
+          <label class="deploy-sync-flag" for="deploy-sync-delete">
+            <input type="checkbox" id="deploy-sync-delete">
+            <span>Delete aktivieren (nur Beta -> Live)</span>
+          </label>
+        </div>
+
+        <div class="deploy-sync-warning" id="deploy-sync-warning">
+          Hinweis: Fuer produktive Deployments zuerst Dry-Run pruefen. Der Beta -> Live Modus verlangt eine explizite Sicherheitsbestaetigung.
+        </div>
+
+        <div class="deploy-sync-status" id="deploy-sync-status">Bereit.</div>
+        <pre class="deploy-sync-output" id="deploy-sync-output">Noch keine Ausfuehrung.</pre>
       </div>
     </section>
 
@@ -1766,6 +1896,27 @@ if ($displayName === '') {
 
         <div style="margin-top: var(--hspf-spacing-lg); text-align: right; padding-top: var(--hspf-spacing-md); border-top: 1px solid var(--hspf-border);">
           <button class="hspf-btn" id="task-ai-cancel-btn">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="deploy-sync-confirm-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Sicherheitsabfrage: Beta -> Live</h3>
+        <button id="deploy-sync-confirm-close" class="modal-close" type="button">✕</button>
+      </div>
+      <div class="modal-body" style="padding: var(--hspf-spacing-lg);">
+        <p style="margin-top: 0;">Sie sind dabei, den Modus <strong>Beta -> Live</strong> auszufuehren.</p>
+        <p>Bitte geben Sie zur Bestaetigung exakt <strong>PROMOTE LIVE</strong> ein.</p>
+        <div class="field" style="margin-bottom: var(--hspf-spacing-md);">
+          <label for="deploy-sync-confirm-input">Sicherheitscode</label>
+          <input type="text" id="deploy-sync-confirm-input" placeholder="PROMOTE LIVE" autocomplete="off">
+        </div>
+        <div class="row-actions">
+          <button type="button" class="hspf-btn" id="deploy-sync-confirm-cancel">Abbrechen</button>
+          <button type="button" class="hspf-btn hspf-btn-primary" id="deploy-sync-confirm-run" disabled>Deploy starten</button>
         </div>
       </div>
     </div>

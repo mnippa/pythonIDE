@@ -387,6 +387,7 @@ HTML;
           <option value="empty_python_html">Leeres Python-HTML Projekt</option>
           <option value="python_logic">Python-HTML mit Python-Logik</option>
           <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
+          <option value="grid_redraw_demo">Demo: Grid Redraw (Normal Mode)</option>
           <option value="kniffel_demo">🎲 Demo: Kniffel (Yahtzee)</option>
           <option value="blackjack_demo">🎰 Demo: Blackjack</option>
         </select>
@@ -400,7 +401,7 @@ HTML;
 
 <?php
 require_once __DIR__ . '/../api/projects/templates.php';
-$freeTemplateKeys = ['empty_python', 'empty_python_html', 'python_logic', 'event_logic', 'kniffel_demo', 'blackjack_demo'];
+$freeTemplateKeys = ['empty_python', 'empty_python_html', 'python_logic', 'event_logic', 'grid_redraw_demo', 'kniffel_demo', 'blackjack_demo'];
 $freeTemplates = [];
 foreach ($freeTemplateKeys as $key) {
   $freeTemplates[$key] = ProjectTemplates::getTemplate($key);

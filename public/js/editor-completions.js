@@ -18,6 +18,8 @@ let IDEGUI_TRIGGER_HOVER_DOCS = {};
 let STRING_HOVER_DOCS = {};
 let LIST_HOVER_DOCS = {};
 let DICT_HOVER_DOCS = {};
+let PYIDE_COMPLETIONS = [];
+let PYIDE_SNIPPETS = [];
 
 export async function registerPythonCompletions(monaco, editor) {
   // Load help.json to extract numpy and matplotlib functions
@@ -83,6 +85,8 @@ export async function registerPythonCompletions(monaco, editor) {
   IDEGUI_HOVER_DOCS   = C.IDEGUI_HOVER_DOCS && typeof C.IDEGUI_HOVER_DOCS === "object" ? C.IDEGUI_HOVER_DOCS : {};
   IDEGUI_TRIGGER_COMPLETIONS = Array.isArray(C.IDEGUI_TRIGGER_COMPLETIONS) ? C.IDEGUI_TRIGGER_COMPLETIONS : [];
   IDEGUI_TRIGGER_HOVER_DOCS = C.IDEGUI_TRIGGER_HOVER_DOCS && typeof C.IDEGUI_TRIGGER_HOVER_DOCS === "object" ? C.IDEGUI_TRIGGER_HOVER_DOCS : {};
+  PYIDE_COMPLETIONS = Array.isArray(C.PYIDE_COMPLETIONS) ? C.PYIDE_COMPLETIONS : [];
+  PYIDE_SNIPPETS = Array.isArray(C.PYIDE_SNIPPETS) ? C.PYIDE_SNIPPETS : [];
 
   STRING_HOVER_DOCS   = C.STRING_HOVER_DOCS && typeof C.STRING_HOVER_DOCS === "object" ? C.STRING_HOVER_DOCS : {};
   LIST_HOVER_DOCS     = C.LIST_HOVER_DOCS && typeof C.LIST_HOVER_DOCS === "object" ? C.LIST_HOVER_DOCS : {};
@@ -205,6 +209,14 @@ export async function registerPythonCompletions(monaco, editor) {
       // import idegui as ui
       m = s.match(/^import\s+idegui\s+as\s+([A-Za-z_]\w*)\b/);
       if (m) { map.set(m[1], "idegui"); continue; }
+
+      // import pyide / import pyide as p
+      m = s.match(/^import\s+pyide(?:\s+as\s+([A-Za-z_]\w*))?\b/);
+      if (m) { map.set(m[1] || "pyide", "pyide"); continue; }
+
+      // from pyide import ...
+      m = s.match(/^from\s+pyide\s+import\b/);
+      if (m) { map.set("pyide", "pyide"); continue; }
     }
     return map;
   }
@@ -307,6 +319,26 @@ export async function registerPythonCompletions(monaco, editor) {
         return { suggestions: sugs };
       }
 
+      // pyide module completions (pyide.<member> or alias.<member>)
+      const pyideMemberMatch = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
+      if (pyideMemberMatch) {
+        const left = pyideMemberMatch[1];
+        const canon = aliases.get(left) || left;
+        if (canon === 'pyide' || left === 'pyide') {
+          const match = prefix.match(/\b([A-Za-z_]\w*)\.\w*$/);
+          const matchStartIndex = match ? (prefix.length - match[0].length) : 0;
+          const matchStartColumn = matchStartIndex + 1;
+          const moduleName = match ? match[1] : 'pyide';
+
+          let sugs = PYIDE_COMPLETIONS.map((n) => mkPrefixedFunctionSuggestion(moduleName, n, 'PyIDE API'));
+          try {
+            const range = new monaco.Range(position.lineNumber, matchStartColumn, position.lineNumber, position.column);
+            sugs = sugs.map(s => ({ ...s, range }));
+          } catch (e) {}
+          return { suggestions: sugs };
+        }
+      }
+
       // AX completions
       if (/\bax\.\w*$/.test(prefix)) {
         return {
@@ -353,6 +385,8 @@ export async function registerPythonCompletions(monaco, editor) {
 
       return {
         suggestions: [
+          ...PYIDE_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "PyIDE (snippet)", s.doc)),
+          ...PYIDE_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "PyIDE API")),
           ...BUILTIN_SNIPPETS.map((s) => mkSnippetSuggestion(s.label, s.insert, "Python (snippet)", s.doc)),
           ...BUILTIN_COMPLETIONS.map((n) => mkFunctionSuggestion(n, "Python builtin")),
         ],

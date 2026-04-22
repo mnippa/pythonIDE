@@ -25,6 +25,17 @@ export const BUILTIN_COMPLETIONS = [
   "print","len","range","enumerate","sum","min","max","sorted","reversed","list","dict","set","tuple","str","int","float","input",
 ];
 
+export const PYIDE_COMPLETIONS = [
+  "outputClear",
+  "outputWrite",
+  "outputFlush",
+  "clear_output",
+  "redraw",
+  "output_clear",
+  "output_write",
+  "output_flush",
+];
+
 export const NP_SNIPPETS = [
   { label: "np.arange()", insert: "np.arange(${1:0}, ${2:10}, ${3:1})", doc: "**np.arange**\\n\\n```python\\nnp.arange(0, 10, 1)\\n```" },
   { label: "np.linspace()", insert: "np.linspace(${1:0}, ${2:1}, ${3:100})", doc: "**np.linspace**\\n\\n```python\\nnp.linspace(0, 1, 100)\\n```" },
@@ -43,6 +54,39 @@ export const BUILTIN_SNIPPETS = [
   { label: "for i in range", insert: "for ${1:i} in range(${2:n}):\n\t${3:pass}", doc: "**for-loop**\\n\\n```python\\nfor i in range(n):\n    pass\\n```" },
   { label: "if", insert: "if ${1:condition}:\n\t${2:pass}", doc: "**if**\\n\\n```python\\nif condition:\n    pass\\n```" },
   { label: "def", insert: "def ${1:name}(${2:args}):\n\t${3:pass}", doc: "**def**\\n\\n```python\\ndef f(x):\n    pass\\n```" },
+];
+
+export const PYIDE_SNIPPETS = [
+  {
+    label: "from pyide import ...",
+    insert: "from pyide import outputClear, outputWrite, outputFlush, redraw, clear_output",
+    doc: "**PyIDE Import**\\n\\n```python\\nfrom pyide import outputClear, outputWrite, outputFlush, redraw, clear_output\\n```",
+  },
+  {
+    label: "outputClear()",
+    insert: "outputClear()",
+    doc: "**outputClear()**\\n\\nLöscht den Output-Bereich im IDE-Runner.",
+  },
+  {
+    label: "outputWrite()",
+    insert: "outputWrite(${1:text})",
+    doc: "**outputWrite(value)**\\n\\nSchreibt Text in den Output-Buffer.",
+  },
+  {
+    label: "outputFlush()",
+    insert: "outputFlush()",
+    doc: "**outputFlush()**\\n\\nÜberträgt den Buffer sichtbar in den Output-Bereich.",
+  },
+  {
+    label: "redraw()",
+    insert: "redraw(${1:text})",
+    doc: "**redraw(value)**\\n\\nShortcut für `outputClear(); outputWrite(value)`.",
+  },
+  {
+    label: "clear_output()",
+    insert: "clear_output()",
+    doc: "**clear_output()**\\n\\nAlias zu `outputClear()`.",
+  },
 ];
 
 // idegui (Code-UI) API

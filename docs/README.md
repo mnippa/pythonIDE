@@ -19,6 +19,28 @@ Vollständiger Guide zur Programmierung mit idegui, einschließlich:
 
 **Zielgruppe:** KI-Assistenten (z.B. für Prompts wie "@KI erstelle ein Programm mit idegui"), Entwickler
 
+### [ui-python-api-tutorial.md](ui-python-api-tutorial.md)
+**Kompaktes Tutorial zur UI-API (HTML <-> Python Kommunikation)**
+
+Didaktische Herleitung der Syntax mit direkt nutzbaren Beispielcodes:
+- Datenbindung mit `data-element` + `ui.get()`/`ui.set()`
+- Trigger-Modi `data-run` und `data-function`
+- Trigger-Kontext (`__trigger__`, `trigger.name`, `trigger.value`)
+- Copy-Paste Startvorlage fuer eigene Aufgaben und Tutorials
+
+**Zielgruppe:** Dozierende, Autoren von Lerninhalten, KI-gestuetzte Inhaltserstellung
+
+### [ui-python-api-lesson-45min.md](ui-python-api-lesson-45min.md)
+**Unterrichtseinheit fuer 45 Minuten (inkl. Uebungen und Musterloesung)**
+
+Fertiger Ablaufplan fuer den direkten Einsatz im Unterricht:
+- Zeitplan in 5 Phasen
+- Lernziele und didaktischer Leitfaden
+- Guided Coding fuer Run- und Event-Modus
+- 3 Uebungen + Musterloesung + Bewertungs-Checkliste
+
+**Zielgruppe:** Lehrkraefte, Tutorinnen/Tutoren, Kurs-Autoren
+
 ### [architecture.md](architecture.md)
 Technische Architektur der Plattform (falls vorhanden)
 

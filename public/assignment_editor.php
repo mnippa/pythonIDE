@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Assignment Editor - Code editor view for working on tasks
  */
@@ -1198,7 +1198,7 @@ HTML;
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260302"></script>
+  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
 
   <script>
     // Theme Toggle

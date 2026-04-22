@@ -21,7 +21,9 @@ const state = {
   projectsTotalPages: 1,
   projectsTotal: 0,
   projectsLimit: 50,
-  projectsLoaded: false
+  projectsLoaded: false,
+  deploySyncBusy: false,
+  deploySyncPendingPayload: null
 };
 
 function $(id) {
@@ -49,6 +51,178 @@ async function requestJson(url, options = {}) {
   }
 
   return data;
+}
+
+function setDeploySyncBusy(isBusy) {
+  state.deploySyncBusy = !!isBusy;
+  const runBtn = $('deploy-sync-trigger');
+  const confirmRunBtn = $('deploy-sync-confirm-run');
+  if (runBtn) {
+    runBtn.disabled = state.deploySyncBusy;
+    runBtn.textContent = state.deploySyncBusy ? 'Laeuft...' : 'Ausfuehren';
+  }
+  if (confirmRunBtn) {
+    confirmRunBtn.disabled = state.deploySyncBusy || ($('deploy-sync-confirm-input')?.value || '').trim() !== 'PROMOTE LIVE';
+  }
+}
+
+function setDeploySyncStatus(message, type = 'neutral') {
+  const el = $('deploy-sync-status');
+  if (!el) return;
+  el.classList.remove('ok', 'error');
+  if (type === 'ok') el.classList.add('ok');
+  if (type === 'error') el.classList.add('error');
+  el.textContent = message || '';
+}
+
+function setDeploySyncOutput(text) {
+  const out = $('deploy-sync-output');
+  if (!out) return;
+  out.textContent = text && String(text).trim() ? String(text) : 'Keine Ausgabe vorhanden.';
+}
+
+function getDeploySyncPayloadFromUi() {
+  const mode = $('deploy-sync-mode')?.value || 'hydrate-beta';
+  const dryRun = !!$('deploy-sync-dry-run')?.checked;
+  const syncDb = !!$('deploy-sync-db')?.checked;
+  const deleteFlag = !!$('deploy-sync-delete')?.checked;
+  return {
+    mode,
+    dry_run: dryRun,
+    sync_db: syncDb,
+    delete: deleteFlag
+  };
+}
+
+function applyDeploySyncModeUi() {
+  const mode = $('deploy-sync-mode')?.value || 'hydrate-beta';
+  const syncDb = $('deploy-sync-db');
+  const deleteFlag = $('deploy-sync-delete');
+  const warning = $('deploy-sync-warning');
+
+  if (syncDb) {
+    syncDb.disabled = mode !== 'hydrate-beta';
+    if (mode !== 'hydrate-beta') syncDb.checked = false;
+  }
+
+  if (deleteFlag) {
+    deleteFlag.disabled = mode !== 'promote-live';
+    if (mode !== 'promote-live') deleteFlag.checked = false;
+  }
+
+  if (warning) {
+    if (mode === 'promote-live') {
+      warning.textContent = 'Achtung: Beta -> Live kann produktiven Code ersetzen. Vorher Dry-Run pruefen. Es folgt eine zusaetzliche Sicherheitsabfrage.';
+    } else {
+      warning.textContent = 'Hinweis: Live -> Beta aktualisiert die Beta-Umgebung mit persistenten/config Daten aus Live. Optional kann ein DB-Snapshot uebernommen werden.';
+    }
+  }
+}
+
+function openDeploySyncConfirmModal(payload) {
+  state.deploySyncPendingPayload = payload;
+  const modal = $('deploy-sync-confirm-modal');
+  const input = $('deploy-sync-confirm-input');
+  const runBtn = $('deploy-sync-confirm-run');
+  if (!modal || !input || !runBtn) return;
+  input.value = '';
+  runBtn.disabled = true;
+  modal.classList.add('active');
+  input.focus();
+}
+
+function closeDeploySyncConfirmModal() {
+  state.deploySyncPendingPayload = null;
+  const modal = $('deploy-sync-confirm-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+async function runDeploySync(payload) {
+  if (state.deploySyncBusy) return;
+  setDeploySyncBusy(true);
+  setDeploySyncStatus('Deploy-Sync wird ausgefuehrt...');
+
+  try {
+    const result = await requestJson('../api/admin/deploy/sync-live-beta.php', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    const summary = [
+      `Mode: ${result.mode || payload.mode}`,
+      `Dry-Run: ${result.dry_run ? 'ja' : 'nein'}`,
+      `Exit-Code: ${result.exit_code}`,
+      `Ausgefuehrt von: ${(result.executed_by && result.executed_by.email) ? result.executed_by.email : 'unbekannt'}`
+    ].join(' | ');
+
+    setDeploySyncStatus(`Erfolgreich: ${summary}`, 'ok');
+    setDeploySyncOutput(result.output || 'Ohne Detailausgabe.');
+  } catch (err) {
+    setDeploySyncStatus(`Fehler: ${err.message || 'Deploy-Sync fehlgeschlagen'}`, 'error');
+    setDeploySyncOutput(err.message || 'Keine zusaetzliche Fehlerausgabe.');
+  } finally {
+    setDeploySyncBusy(false);
+  }
+}
+
+function bindDeploySyncEvents() {
+  const modeSelect = $('deploy-sync-mode');
+  const runBtn = $('deploy-sync-trigger');
+  const confirmModal = $('deploy-sync-confirm-modal');
+  const confirmInput = $('deploy-sync-confirm-input');
+  const confirmRunBtn = $('deploy-sync-confirm-run');
+  const confirmCancelBtn = $('deploy-sync-confirm-cancel');
+  const confirmCloseBtn = $('deploy-sync-confirm-close');
+
+  if (!modeSelect || !runBtn) return;
+
+  applyDeploySyncModeUi();
+
+  modeSelect.addEventListener('change', applyDeploySyncModeUi);
+
+  runBtn.addEventListener('click', async () => {
+    const payload = getDeploySyncPayloadFromUi();
+
+    if (payload.mode === 'promote-live') {
+      openDeploySyncConfirmModal(payload);
+      return;
+    }
+
+    await runDeploySync(payload);
+  });
+
+  if (confirmInput && confirmRunBtn) {
+    confirmInput.addEventListener('input', () => {
+      confirmRunBtn.disabled = state.deploySyncBusy || confirmInput.value.trim() !== 'PROMOTE LIVE';
+    });
+  }
+
+  if (confirmCancelBtn) {
+    confirmCancelBtn.addEventListener('click', closeDeploySyncConfirmModal);
+  }
+
+  if (confirmCloseBtn) {
+    confirmCloseBtn.addEventListener('click', closeDeploySyncConfirmModal);
+  }
+
+  if (confirmRunBtn) {
+    confirmRunBtn.addEventListener('click', async () => {
+      const payload = state.deploySyncPendingPayload;
+      closeDeploySyncConfirmModal();
+      if (!payload) return;
+      await runDeploySync(payload);
+    });
+  }
+
+  if (confirmModal) {
+    confirmModal.addEventListener('click', (e) => {
+      if (e.target === confirmModal) {
+        closeDeploySyncConfirmModal();
+      }
+    });
+  }
 }
 
 function toDatetimeLocalValue(dateTimeStr) {
@@ -2063,6 +2237,8 @@ function bindEvents() {
     await requestJson('../api/auth/logout.php', { method: 'POST' });
     window.location.href = 'login.php';
   });
+
+  bindDeploySyncEvents();
 
   const projectsSearchBtn = $('projects-search-btn');
   if (projectsSearchBtn) {
