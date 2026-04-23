@@ -9,6 +9,120 @@ require_once __DIR__ . '/../../auth/middleware.php';
 
 header('Content-Type: application/json');
 
+function formatRemainingTime(?DateTimeImmutable $deadline): ?string {
+    if ($deadline === null) {
+        return null;
+    }
+
+    $now = new DateTimeImmutable('now');
+    if ($now >= $deadline) {
+        return null;
+    }
+
+    $diff = $now->diff($deadline);
+    $days = (int)$diff->format('%a');
+    $hours = (int)$diff->format('%h');
+    $minutes = (int)$diff->format('%i');
+
+    if ($days >= 1) {
+        $dayLabel = $days === 1 ? 'Tag' : 'Tage';
+        $hourLabel = $hours === 1 ? 'Stunde' : 'Stunden';
+        return "{$days} {$dayLabel}, {$hours} {$hourLabel}";
+    }
+
+    $hoursFormatted = str_pad((string)$hours, 2, '0', STR_PAD_LEFT);
+    $minutesFormatted = str_pad((string)$minutes, 2, '0', STR_PAD_LEFT);
+    return "{$hoursFormatted}:{$minutesFormatted}";
+}
+
+function calcAssignmentTiming(array $row): array {
+    $now = new DateTimeImmutable('now');
+    $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
+    $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
+    $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+
+    $phase = 'open';
+    if (!empty($row['assignment_active']) && (int)$row['assignment_active'] === 0) {
+        $phase = 'hidden';
+    } elseif ($availableFrom !== null && $now < $availableFrom) {
+        $phase = 'upcoming';
+    } elseif ($hardDeadline !== null && $now > $hardDeadline) {
+        $phase = 'closed';
+    } elseif ($dueDate !== null && $now > $dueDate) {
+        $phase = 'late';
+    }
+
+    $daysRemaining = null;
+    if ($hardDeadline !== null && $phase !== 'closed') {
+        $daysRemaining = (int)$now->diff($hardDeadline)->format('%r%a');
+    } elseif ($dueDate !== null && !in_array($phase, ['late', 'closed'], true)) {
+        $daysRemaining = (int)$now->diff($dueDate)->format('%r%a');
+    }
+
+    return [
+        'phase' => $phase,
+        'days_remaining' => $daysRemaining,
+        'formatted_time_remaining' => formatRemainingTime($dueDate),
+    ];
+}
+
+function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskStats): array {
+    $rawStatus = (string)($row['raw_status'] ?? 'assigned');
+    $totalTasks = (int)($taskStats['total_tasks'] ?? 0);
+    $workedTasks = (int)($taskStats['worked_tasks'] ?? 0);
+    $passedTasks = (int)($taskStats['passed_tasks'] ?? 0);
+    $finalizedTasks = (int)($taskStats['finalized_tasks'] ?? 0);
+
+    $isLate = !empty($row['is_late']);
+    if (!$isLate && !empty($row['submitted_at']) && !empty($row['effective_due_date'])) {
+        $submittedTs = strtotime((string)$row['submitted_at']);
+        $dueTs = strtotime((string)$row['effective_due_date']);
+        $isLate = $submittedTs !== false && $dueTs !== false && $submittedTs > $dueTs;
+    }
+
+    $allPassed = $totalTasks > 0 && $passedTasks >= $totalTasks;
+    $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
+
+    if ($rawStatus === 'passed' || $allPassed) {
+        $status = $isLate ? 'passed_delayed' : 'passed';
+        return [
+            'status' => $status,
+            'label' => $isLate ? 'Passed delayed' : 'Passed',
+            'is_late_completion' => $isLate,
+        ];
+    }
+
+    if (($rawStatus === 'submitted' && $workedTasks > 0) || $allWorked) {
+        return [
+            'status' => $isLate ? 'late_completed' : 'completed',
+            'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
+            'is_late_completion' => $isLate,
+        ];
+    }
+
+    if ($timing['phase'] === 'closed') {
+        return [
+            'status' => 'missed',
+            'label' => 'Verpasst',
+            'is_late_completion' => false,
+        ];
+    }
+
+    if ($workedTasks > 0 || in_array($rawStatus, ['in_progress', 'submitted', 'failed'], true)) {
+        return [
+            'status' => 'in_progress',
+            'label' => 'In Bearbeitung',
+            'is_late_completion' => false,
+        ];
+    }
+
+    return [
+        'status' => 'assigned',
+        'label' => 'Zugewiesen',
+        'is_late_completion' => false,
+    ];
+}
+
 try {
     $admin = requireAdmin();
     $conn = getDbConnection();
@@ -50,8 +164,15 @@ try {
             u.team_id,
             t.name AS team_name,
             ua_user.status AS direct_status,
-            ua_team.status AS team_status
+            ua_team.status AS team_status,
+            COALESCE(ua_user.submitted_at, ua_team.submitted_at) AS submitted_at,
+            COALESCE(ua_user.is_late, ua_team.is_late, 0) AS is_late,
+            COALESCE(ua_user.due_date, ua_team.due_date, a.due_date) AS effective_due_date,
+            a.is_active AS assignment_active,
+            a.available_from,
+            a.hard_deadline
         FROM users u
+        INNER JOIN assignments a ON a.id = ?
         LEFT JOIN teams t ON t.id = u.team_id
         LEFT JOIN user_assignments ua_user
             ON ua_user.assignment_id = ? AND ua_user.user_id = u.id
@@ -72,9 +193,9 @@ try {
 
     $stmt = $conn->prepare($sql);
     if ($hasUserTeamId && $hasAssignmentTeamId) {
-        $stmt->bind_param('iii', $assignmentId, $assignmentId, $userId);
+        $stmt->bind_param('iiii', $assignmentId, $assignmentId, $assignmentId, $userId);
     } else {
-        $stmt->bind_param('ii', $assignmentId, $userId);
+        $stmt->bind_param('iii', $assignmentId, $assignmentId, $userId);
     }
     $stmt->execute();
     $userRow = $stmt->get_result()->fetch_assoc();
@@ -90,13 +211,7 @@ try {
         jsonResponse(['ok' => false, 'error' => 'User not assigned to this assignment'], 404);
     }
 
-    $statusLabelMap = [
-        'assigned' => 'unbearbeitet',
-        'in_progress' => 'in Bearbeitung',
-        'submitted' => 'submitted',
-        'passed' => 'success',
-        'failed' => 'failed'
-    ];
+    $rawStatus = $status;
 
     $user = [
         'id' => (int)$userRow['id'],
@@ -107,7 +222,7 @@ try {
         'team_id' => $userRow['team_id'] !== null ? (int)$userRow['team_id'] : null,
         'team_name' => $userRow['team_name'],
         'status' => $status,
-        'status_label' => $statusLabelMap[$status] ?? $status,
+        'raw_status' => $rawStatus,
         'source' => $isDirect ? 'direct (User)' : 'team'
     ];
 
@@ -161,6 +276,41 @@ try {
             'active_seconds' => $activeSeconds
         ];
     }
+
+    $taskStats = [
+        'total_tasks' => count($tasks),
+        'worked_tasks' => 0,
+        'passed_tasks' => 0,
+        'finalized_tasks' => 0,
+    ];
+
+    foreach ($tasks as $task) {
+        $taskStatus = $task['status'] ?? 'unbearbeitet';
+        if (in_array($taskStatus, ['in-progress', 'passed', 'failed'], true)) {
+            $taskStats['worked_tasks']++;
+        }
+        if ($taskStatus === 'passed') {
+            $taskStats['passed_tasks']++;
+            $taskStats['finalized_tasks']++;
+        } elseif ($taskStatus === 'failed') {
+            $taskStats['finalized_tasks']++;
+        }
+    }
+
+    $displayRow = [
+        'raw_status' => $rawStatus,
+        'submitted_at' => $userRow['submitted_at'] ?? null,
+        'is_late' => $userRow['is_late'] ?? 0,
+        'effective_due_date' => $userRow['effective_due_date'] ?? null,
+        'assignment_active' => $userRow['assignment_active'] ?? 1,
+        'available_from' => $userRow['available_from'] ?? null,
+        'hard_deadline' => $userRow['hard_deadline'] ?? null,
+    ];
+    $timing = calcAssignmentTiming($displayRow);
+    $displayStatus = deriveAssignmentDisplayStatus($displayRow, $timing, $taskStats);
+    $user['status'] = $displayStatus['status'];
+    $user['status_label'] = $displayStatus['label'];
+    $user['is_late_completion'] = $displayStatus['is_late_completion'];
 
     jsonResponse([
         'ok' => true,

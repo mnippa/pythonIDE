@@ -335,15 +335,6 @@ function normalizeZipEntryPath(path) {
     .replace(/\/+/g, '/');
 }
 
-function enforceMaxOneFolderLevel(paths) {
-  for (const p of paths) {
-    const segments = normalizeZipEntryPath(p).split('/').filter(Boolean);
-    if (segments.length > 2) {
-      throw new Error(`ZIP unterstützt maximal eine Ordnerebene. Problematische Datei: ${p}`);
-    }
-  }
-}
-
 async function parseZipProjectArchive(file) {
   if (typeof JSZip === 'undefined') {
     throw new Error('JSZip ist nicht geladen. Bitte Seite neu laden.');
@@ -377,9 +368,6 @@ async function parseZipProjectArchive(file) {
       .filter((entry) => entry.normalizedPath !== '');
   }
 
-  const normalizedPaths = fileEntries.map((entry) => entry.normalizedPath);
-  enforceMaxOneFolderLevel(normalizedPaths);
-
   const files = [];
   for (const entry of fileEntries) {
     const zipFile = zip.files[entry.zipPath];
@@ -401,12 +389,19 @@ async function parseZipProjectArchive(file) {
     throw new Error('ZIP enthält keine lesbaren Textdateien.');
   }
 
-  const folders = Array.from(new Set(files
-    .map((f) => {
-      const parts = normalizeZipEntryPath(f.path).split('/').filter(Boolean);
-      return parts.length === 2 ? parts[0] : '';
-    })
-    .filter(Boolean)));
+  const foldersSet = new Set();
+  for (const f of files) {
+    const parts = normalizeZipEntryPath(f.path).split('/').filter(Boolean);
+    for (let i = 1; i < parts.length; i++) {
+      foldersSet.add(parts.slice(0, i).join('/'));
+    }
+  }
+  const folders = Array.from(foldersSet).sort((a, b) => {
+    const depthA = a.split('/').length;
+    const depthB = b.split('/').length;
+    if (depthA !== depthB) return depthA - depthB;
+    return a.localeCompare(b);
+  });
 
   return {
     archive: {

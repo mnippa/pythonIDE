@@ -687,6 +687,9 @@ if ($displayName === '') {
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
       <button id="save-project-btn" class="icon-btn" title="Speichern">💾</button>
       <button id="save-all-project-btn" class="icon-btn" title="Alle speichern">💾💾</button>
+      <button id="project-export-btn" class="icon-btn" title="Projekt exportieren">📦⬇</button>
+      <button id="project-import-btn" class="icon-btn" title="Projekt importieren">📦⬆</button>
+      <input id="project-import-file-input" type="file" accept=".pyideproj,.json,.zip" style="display:none;" />
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
       <div style="flex:1"></div>
       <div class="user-bar">
@@ -1019,7 +1022,8 @@ HTML;
     });
   </script>
 
-  <script type="module" src="js/projects-editor.js?v=20260302"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script type="module" src="js/projects-editor.js?v=20260422a"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;

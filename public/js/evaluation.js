@@ -93,10 +93,13 @@ function renderOverview() {
 
   $('assignment-title').textContent = overview.title || '-';
   $('stat-total-users').textContent = overview.stats.total || 0;
-  $('stat-unstarted').textContent = overview.stats.unstarted || 0;
+  $('stat-assigned').textContent = overview.stats.assigned || 0;
   $('stat-in-progress').textContent = overview.stats.in_progress || 0;
+  $('stat-completed').textContent = overview.stats.completed || 0;
+  $('stat-late-completed').textContent = overview.stats.late_completed || 0;
   $('stat-passed').textContent = overview.stats.passed || 0;
-  $('stat-failed').textContent = overview.stats.failed || 0;
+  $('stat-passed-delayed').textContent = overview.stats.passed_delayed || 0;
+  $('stat-missed').textContent = overview.stats.missed || 0;
   $('stat-avg-runs').textContent = formatAvg(overview.stats.avg_runs || 0);
 
   const body = $('tasks-overview-body');
@@ -203,7 +206,7 @@ function renderParticipants() {
 
   if (!state.participants || state.participants.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="9">Keine Teilnehmer zugewiesen.</td>';
+    tr.innerHTML = '<td colspan="10">Keine Teilnehmer zugewiesen.</td>';
     body.appendChild(tr);
     return;
   }
@@ -211,8 +214,34 @@ function renderParticipants() {
   state.participants.forEach((u) => {
     const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '-';
     const sourceLabel = u.is_direct ? 'direct (User)' : 'team';
-    const statusIcon = getStatusDot(u.status);
     const timeFormatted = formatTime(u.active_seconds || 0);
+    const currentRawStatus = u.raw_status || 'assigned';
+
+    // Task-level counts from task_progress
+    const tp = u.task_progress || {};
+    const total      = tp.total_tasks    || 0;
+    const worked     = tp.worked_tasks   || 0;
+    const passed     = tp.passed_tasks   || 0;
+    const finalized  = tp.finalized_tasks || 0;
+    const failed     = finalized - passed;
+    const inProgress = Math.max(0, worked - finalized);
+    const untouched  = Math.max(0, total - worked);
+
+    const taskBar = total > 0 ? `
+      <div style="display:flex;height:5px;border-radius:3px;overflow:hidden;background:#e5e7eb;margin-bottom:4px;">
+        <span style="width:${Math.round(passed/total*100)}%;background:#22c55e;"></span>
+        <span style="width:${Math.round(failed/total*100)}%;background:#ef4444;"></span>
+        <span style="width:${Math.round(inProgress/total*100)}%;background:#facc15;"></span>
+      </div>` : '';
+
+    const taskCounts = total > 0
+      ? `${taskBar}<span style="font-size:11px;color:#6b7280;">
+          ${untouched > 0 ? `<span title="unbearbeitet">⚪${untouched}</span> ` : ''}
+          ${inProgress > 0 ? `<span title="laufend">🟡${inProgress}</span> ` : ''}
+          ${passed > 0 ? `<span title="bestanden">🟢${passed}</span> ` : ''}
+          ${failed > 0 ? `<span title="nicht bestanden">🔴${failed}</span> ` : ''}
+        </span>`
+      : '<span style="font-size:11px;color:#9ca3af;">–</span>';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -220,17 +249,16 @@ function renderParticipants() {
       <td>${escapeHtml(u.email)}</td>
       <td>${escapeHtml(fullName)}</td>
       <td>${escapeHtml(u.team_name || '-')}</td>
+      <td>${taskCounts}</td>
       <td>
-        <div style="display:flex; align-items:center; gap:6px;">
-          ${statusIcon}
-          <select class="assignment-status-select" data-assignment-id="${state.assignmentId}" data-user-id="${u.id}">
-            <option value="assigned" ${u.status === 'assigned' ? 'selected' : ''}>unbearbeitet</option>
-            <option value="in_progress" ${u.status === 'in_progress' ? 'selected' : ''}>in Bearbeitung</option>
-            <option value="submitted" ${u.status === 'submitted' ? 'selected' : ''}>submitted</option>
-            <option value="passed" ${u.status === 'passed' ? 'selected' : ''}>success</option>
-            <option value="failed" ${u.status === 'failed' ? 'selected' : ''}>failed</option>
-          </select>
-        </div>
+        <select class="assignment-status-select" data-assignment-id="${state.assignmentId}" data-user-id="${u.id}">
+          <option value="assigned"      ${currentRawStatus === 'assigned'      ? 'selected' : ''}>Zugewiesen</option>
+          <option value="in_progress"   ${currentRawStatus === 'in_progress'   ? 'selected' : ''}>In Bearbeitung</option>
+          <option value="submitted"     ${currentRawStatus === 'submitted'     ? 'selected' : ''}>Eingereicht</option>
+          <option value="passed"        ${currentRawStatus === 'passed'        ? 'selected' : ''}>Bestanden</option>
+          <option value="passed_delayed"${currentRawStatus === 'passed_delayed'? 'selected' : ''}>Bestanden (verspaetet)</option>
+          <option value="failed"        ${currentRawStatus === 'failed'        ? 'selected' : ''}>Nicht bestanden</option>
+        </select>
       </td>
       <td class="mono num-right">${formatInt(u.run_count)}</td>
       <td class="mono num-right">${timeFormatted}</td>
@@ -251,8 +279,12 @@ function getStatusDot(status) {
     in_progress: 'status-in-progress',
     'in-progress': 'status-in-progress',
     submitted: 'status-in-progress',
+    completed: 'status-completed',
+    late_completed: 'status-late-completed',
     passed: 'status-passed',
-    failed: 'status-failed'
+    passed_delayed: 'status-passed-delayed',
+    failed: 'status-failed',
+    missed: 'status-missed'
   };
   const cls = map[status] || 'status-unstarted';
   return `<span class="status-dot ${cls}" title="Status"></span>`;

@@ -80,6 +80,105 @@ function calcAssignmentTiming(array $row): array {
     ];
 }
 
+function buildAssignmentTaskStatsMap(mysqli $conn, int $userId, array $assignmentIds): array {
+    $assignmentIds = array_values(array_unique(array_filter(array_map('intval', $assignmentIds))));
+    if (empty($assignmentIds)) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($assignmentIds), '?'));
+    $sql = "
+        SELECT
+            t.assignment_id,
+            COUNT(*) AS total_tasks,
+            SUM(CASE WHEN ut.status IN ('in-progress', 'passed', 'failed') THEN 1 ELSE 0 END) AS worked_tasks,
+            SUM(CASE WHEN ut.status = 'passed' THEN 1 ELSE 0 END) AS passed_tasks,
+            SUM(CASE WHEN ut.status = 'failed' THEN 1 ELSE 0 END) AS failed_tasks,
+            SUM(CASE WHEN ut.status IN ('passed', 'failed') THEN 1 ELSE 0 END) AS finalized_tasks
+        FROM tasks t
+        LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
+        WHERE t.assignment_id IN ($placeholders)
+        GROUP BY t.assignment_id
+    ";
+
+    $stmt = $conn->prepare($sql);
+    $types = 'i' . str_repeat('i', count($assignmentIds));
+    $params = array_merge([$userId], $assignmentIds);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+
+    $statsMap = [];
+    $result = $stmt->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $statsMap[(int)$row['assignment_id']] = [
+            'total_tasks' => (int)($row['total_tasks'] ?? 0),
+            'worked_tasks' => (int)($row['worked_tasks'] ?? 0),
+            'passed_tasks' => (int)($row['passed_tasks'] ?? 0),
+            'failed_tasks' => (int)($row['failed_tasks'] ?? 0),
+            'finalized_tasks' => (int)($row['finalized_tasks'] ?? 0),
+        ];
+    }
+
+    return $statsMap;
+}
+
+function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskStats): array {
+    $rawStatus = (string)($row['status'] ?? 'assigned');
+    $totalTasks = (int)($taskStats['total_tasks'] ?? 0);
+    $workedTasks = (int)($taskStats['worked_tasks'] ?? 0);
+    $passedTasks = (int)($taskStats['passed_tasks'] ?? 0);
+    $finalizedTasks = (int)($taskStats['finalized_tasks'] ?? 0);
+
+    $isLate = !empty($row['is_late']);
+    if (!$isLate && !empty($row['submitted_at']) && !empty($row['effective_due_date'])) {
+        $submittedTs = strtotime((string)$row['submitted_at']);
+        $dueTs = strtotime((string)$row['effective_due_date']);
+        $isLate = $submittedTs !== false && $dueTs !== false && $submittedTs > $dueTs;
+    }
+
+    $allPassed = $totalTasks > 0 && $passedTasks >= $totalTasks;
+    $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
+
+    if ($rawStatus === 'passed' || $allPassed) {
+        $status = $isLate ? 'passed_delayed' : 'passed';
+        return [
+            'status' => $status,
+            'label' => $isLate ? 'Passed delayed' : 'Passed',
+            'is_late_completion' => $isLate,
+        ];
+    }
+
+    if (($rawStatus === 'submitted' && $workedTasks > 0) || $allWorked) {
+        return [
+            'status' => $isLate ? 'late_completed' : 'completed',
+            'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
+            'is_late_completion' => $isLate,
+        ];
+    }
+
+    if ($timing['phase'] === 'closed') {
+        return [
+            'status' => 'missed',
+            'label' => 'Verpasst',
+            'is_late_completion' => false,
+        ];
+    }
+
+    if ($workedTasks > 0 || in_array($rawStatus, ['in_progress', 'submitted', 'failed'], true)) {
+        return [
+            'status' => 'in_progress',
+            'label' => 'In Bearbeitung',
+            'is_late_completion' => false,
+        ];
+    }
+
+    return [
+        'status' => 'assigned',
+        'label' => 'Zugewiesen',
+        'is_late_completion' => false,
+    ];
+}
+
 $filterUserId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
 $filterAssignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
 $statusFilter = isset($_GET['status']) ? $_GET['status'] : null;
@@ -153,14 +252,36 @@ if (!empty($params)) {
 $stmt->execute();
 $result = $stmt->get_result();
 
-$items = [];
+$rows = [];
 while ($row = $result->fetch_assoc()) {
+    $rows[] = $row;
+}
+
+$taskStatsMap = buildAssignmentTaskStatsMap(
+    $conn,
+    (int)($filterUserId ?: $user['id']),
+    array_map(static fn(array $row): int => (int)$row['assignment_id'], $rows)
+);
+
+$items = [];
+foreach ($rows as $row) {
     $timing = calcAssignmentTiming($row);
+    $taskStats = $taskStatsMap[(int)$row['assignment_id']] ?? [
+        'total_tasks' => 0,
+        'worked_tasks' => 0,
+        'passed_tasks' => 0,
+        'failed_tasks' => 0,
+        'finalized_tasks' => 0,
+    ];
+    $displayStatus = deriveAssignmentDisplayStatus($row, $timing, $taskStats);
+
     $items[] = [
         'id' => (int)$row['id'],
         'user_id' => (int)$row['user_id'],
         'assignment_id' => (int)$row['assignment_id'],
-        'status' => $row['status'],
+        'status' => $displayStatus['status'],
+        'status_label' => $displayStatus['label'],
+        'raw_status' => $row['status'],
         'attempts' => (int)$row['attempts'],
         'assigned_at' => $row['assigned_at'],
         'submitted_at' => $row['submitted_at'],
@@ -176,7 +297,9 @@ while ($row = $result->fetch_assoc()) {
         'assignment_title' => $row['assignment_title'],
         'assignment_difficulty' => $row['assignment_difficulty'],
         'user_email' => $row['user_email'],
-        'user_name' => trim($row['first_name'] . ' ' . $row['last_name'])
+        'user_name' => trim($row['first_name'] . ' ' . $row['last_name']),
+        'task_progress' => $taskStats,
+        'is_late_completion' => $displayStatus['is_late_completion'],
     ];
 }
 

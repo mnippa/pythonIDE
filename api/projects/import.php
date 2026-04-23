@@ -99,9 +99,6 @@ try {
             }
             $folderPath = normalizePath($folderPathRaw);
             if ($folderPath !== '') {
-                if ($sourceType === 'zip' && substr_count($folderPath, '/') > 0) {
-                    throw new Exception('ZIP-Import unterstützt maximal eine Ordnerebene.');
-                }
                 $folderPathsFromArchive[] = $folderPath;
             }
         }
@@ -116,9 +113,6 @@ try {
         $normalized = normalizePath($rawPath);
         if ($normalized === '') {
             continue;
-        }
-        if ($sourceType === 'zip' && substr_count($normalized, '/') > 1) {
-            throw new Exception('ZIP-Import unterstützt maximal eine Ordnerebene: ' . $normalized);
         }
         $folderPath = dirname($normalized);
         if ($folderPath !== '.' && $folderPath !== DIRECTORY_SEPARATOR) {
@@ -152,9 +146,6 @@ try {
         $normalizedPath = normalizePath($rawPath);
         if ($normalizedPath === '') {
             continue;
-        }
-        if ($sourceType === 'zip' && substr_count($normalizedPath, '/') > 1) {
-            throw new Exception('ZIP-Import unterstützt maximal eine Ordnerebene: ' . $normalizedPath);
         }
 
         $namePart = basename($normalizedPath);

@@ -58,6 +58,44 @@ function getStudentViewQueryParam() {
   return window.STUDENT_ASSIGNMENTS_CONTEXT ? '&student_view=1' : '';
 }
 
+function isAdminAssignmentTestMode() {
+  if (window.ADMIN_ASSIGNMENT_TEST === true) return true;
+  return String(window.location.pathname || '').includes('editor_assignment_test');
+}
+
+function updateSaveButtonTooltip() {
+  const saveTaskBtn = $('save-task-btn');
+  const saveModeIndicator = $('save-mode-indicator');
+  if (!saveTaskBtn) return;
+
+  if (!isAdminAssignmentTestMode()) {
+    if (
+      !saveTaskBtn.title ||
+      saveTaskBtn.title === 'Speichern (Template)' ||
+      saveTaskBtn.title === 'Speichern (Loesung)'
+    ) {
+      saveTaskBtn.title = 'Speichern';
+    }
+    if (saveModeIndicator) {
+      saveModeIndicator.style.display = 'none';
+      saveModeIndicator.textContent = '';
+    }
+    return;
+  }
+
+  const isSolutionMode = assignmentState.solutionMode === true;
+  const modeText = isSolutionMode ? 'Modus: Loesung' : 'Modus: Template';
+  saveTaskBtn.title = isSolutionMode ? 'Speichern (Loesung)' : 'Speichern (Template)';
+
+  if (saveModeIndicator) {
+    saveModeIndicator.textContent = modeText;
+    saveModeIndicator.style.display = 'inline-flex';
+    saveModeIndicator.style.background = isSolutionMode ? '#dcfce7' : '#dbeafe';
+    saveModeIndicator.style.color = isSolutionMode ? '#166534' : '#1d4ed8';
+    saveModeIndicator.style.borderColor = isSolutionMode ? '#86efac' : '#93c5fd';
+  }
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -703,6 +741,7 @@ function showTaskDetails(task, activeTab = 'details') {
       }
       // Refresh the sidebar to update button color
       showTaskDetails(task, 'details');
+      updateSaveButtonTooltip();
     });
   }
 
@@ -756,6 +795,7 @@ async function loadSolutionIntoMainArea(task) {
         editor.setValue(displaySolution);
         // Make solution code editable in test mode (admin can edit and save)
         editor.updateOptions({ readOnly: false });
+        updateSaveButtonTooltip();
       }
     }
   } else if (task.task_type === 'single_choice' || task.task_type === 'multiple_choice') {
@@ -1508,6 +1548,19 @@ function renderAssignmentList() {
   if (!containerEl) return;
 
   const isAssignmentPhaseOpenable = (phase) => phase === 'open' || phase === 'late';
+  const isWorkedTaskStatus = (status) => ['in-progress', 'passed', 'failed'].includes(status);
+
+  // Raw assignment-level evaluation status (from user_assignments.status)
+  const getRawStatusMeta = (rawStatus) => {
+    switch (rawStatus) {
+      case 'assigned':   return { label: 'Zugewiesen',     color: '#1d4ed8', background: '#dbeafe' };
+      case 'in_progress':return { label: 'In Bearbeitung', color: '#92400e', background: '#fef3c7' };
+      case 'submitted':  return { label: 'Eingereicht',    color: '#5b21b6', background: '#ddd6fe' };
+      case 'passed':     return { label: 'Bestanden',      color: '#166534', background: '#dcfce7' };
+      case 'failed':     return { label: 'Nicht bestanden',color: '#991b1b', background: '#fee2e2' };
+      default:           return { label: rawStatus || '–', color: '#374151', background: '#e5e7eb' };
+    }
+  };
 
   if (!assignmentState.assignments.length) {
     containerEl.innerHTML = '<div style="color:var(--text-secondary); padding:20px; text-align:center;">Keine Assignments verfügbar.</div>';
@@ -1517,26 +1570,41 @@ function renderAssignmentList() {
   containerEl.innerHTML = assignmentState.assignments.map((item) => {
     const assignment = assignmentState.assignmentDetails[item.assignment_id];
     const tasks = assignmentState.tasksByAssignment[item.assignment_id] || [];
-    const completedCount = tasks.filter(t => {
-      const status = assignmentState.taskStatuses[t.id];
-      return status === 'passed';
+    // Task-level counts (from user_tasks auto-evaluation)
+    const untouchedCount = tasks.filter(t => {
+      const s = assignmentState.taskStatuses[t.id];
+      return !s || s === 'unbearbeitet';
     }).length;
+    const inProgressCount = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'in-progress').length;
+    const passedCount    = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'passed').length;
+    const failedCount    = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'failed').length;
+    const workedCount = inProgressCount + passedCount + failedCount;
 
     const phase = item.timing_phase || 'open';
-    let phaseLabel = 'Verfuegbar';
+    const allTasksFinalized = tasks.length > 0 && untouchedCount === 0 && inProgressCount === 0;
+    // Assignment-level evaluation status (raw DB value, teacher-set)
+    // If all tasks are done but assignment is still in_progress, show pending review state.
+    const evalMeta = (item.raw_status === 'in_progress' && allTasksFinalized)
+      ? { label: 'Ausstehend', color: '#9a3412', background: '#ffedd5' }
+      : getRawStatusMeta(item.raw_status || 'assigned');
+
+    let phaseLabel = 'Verfügbar';
     let phaseColor = '#166534';
     if (phase === 'upcoming') {
       phaseLabel = 'Noch nicht offen';
       phaseColor = '#1d4ed8';
-    } else if (phase === 'late') {
-      phaseLabel = 'Verspaetete Phase';
-      phaseColor = '#b45309';
     } else if (phase === 'closed') {
       phaseLabel = 'Abgelaufen';
       phaseColor = '#991b1b';
     } else if (phase === 'hidden') {
       phaseLabel = 'Inaktiv';
       phaseColor = '#374151';
+    } else if (allTasksFinalized) {
+      phaseLabel = 'Abgeschlossen';
+      phaseColor = '#0f766e';
+    } else if (phase === 'late') {
+      phaseLabel = 'Verspätete Phase';
+      phaseColor = '#b45309';
     }
 
     const isLocked = !isAssignmentPhaseOpenable(phase);
@@ -1559,19 +1627,36 @@ function renderAssignmentList() {
       >
         <div class="assignment-card-title">${escapeHtml(item.assignment_title)}</div>
         <div class="assignment-card-description">${escapeHtml(assignment?.description || 'Keine Beschreibung')}</div>
-        <div style="display:flex;gap:8px;align-items:center;margin:6px 0 8px;">
+
+        <!-- Phase + Zeitlimit -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;">
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:${phaseColor};border:1px solid #d1d5db;">${phaseLabel}</span>
           ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
         </div>
-        <div class="assignment-card-meta">
-          <div class="assignment-card-stat">
-            <span>📝</span>
-            <span>${tasks.length} ${tasks.length === 1 ? 'Aufgabe' : 'Aufgaben'}</span>
+
+        <!-- Aufgaben-Bearbeitungsstatus (task-level, auto-evaluated) -->
+        <div style="margin-bottom:10px;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);margin-bottom:5px;">Aufgaben (${passedCount + failedCount}/${tasks.length})</div>
+          <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:#e5e7eb;margin-bottom:5px;">
+            ${tasks.length > 0 ? `
+              <span style="width:${Math.round(passedCount/tasks.length*100)}%;background:#22c55e;"></span>
+              <span style="width:${Math.round(failedCount/tasks.length*100)}%;background:#ef4444;"></span>
+              <span style="width:${Math.round(inProgressCount/tasks.length*100)}%;background:#facc15;"></span>
+            ` : ''}
           </div>
-          <div class="assignment-card-stat">
-            <span>✅</span>
-            <span>${completedCount}/${tasks.length} erledigt</span>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary);">
+            ${untouchedCount > 0 ? `<span><span style="color:#9ca3af;">●</span> ${untouchedCount} unber.</span>` : ''}
+            ${inProgressCount > 0 ? `<span><span style="color:#facc15;">●</span> ${inProgressCount} lfd.</span>` : ''}
+            ${passedCount > 0 ? `<span><span style="color:#22c55e;">●</span> ${passedCount} best.</span>` : ''}
+            ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} n.best.</span>` : ''}
+            ${tasks.length === 0 ? `<span>–</span>` : ''}
           </div>
+        </div>
+
+        <!-- Bewertungsstatus (assignment-level, gesetzt durch Lehrenden) -->
+        <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);">
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bewertung:</span>
+          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${evalMeta.background};color:${evalMeta.color};font-weight:600;">${escapeHtml(evalMeta.label)}</span>
         </div>
       </div>
     `;
@@ -2437,6 +2522,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     // Show save and download buttons for tasks
     if (saveTaskBtn) {
       saveTaskBtn.style.display = 'inline-block';
+      updateSaveButtonTooltip();
     }
 
     // Show check button if test cases exist (code tasks only)
@@ -2455,6 +2541,10 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
         if (submitBtn) submitBtn.style.display = 'none';
       }
     }
+      // Always show submit btn for non-quiz code tasks (even without test_cases)
+      if (!isQuizTask && submitBtn) {
+        submitBtn.style.display = 'inline-block';
+      }
     
     // Set up save button handler
     if (saveTaskBtn) {
@@ -2587,12 +2677,13 @@ async function saveCode(options = {}) {
     return true;
   }
 
-  // Check if we're editing a folder structure file (from admin test view)
-  if (window.currentFile && window.currentFile.taskId) {
-    return await saveTaskFile();
+  const { setStatus = true, persist = true } = options;
+  const isAdminTestMode = isAdminAssignmentTestMode();
+
+  if (!persist) {
+    return true;
   }
 
-  const { setStatus = true } = options;
   const task = assignmentState.currentTask;
   if (!task) {
     console.warn('No task loaded for saving');
@@ -2629,6 +2720,88 @@ async function saveCode(options = {}) {
     if (saveTaskBtn) {
       saveTaskBtn.style.opacity = '0.6';
       saveTaskBtn.disabled = true;
+    }
+
+    // In admin test mode, solution editor must update solution_code explicitly.
+    if (isAdminTestMode && assignmentState.solutionMode === true) {
+      console.log('[SAVE SOLUTION] Saving solution code for task:', taskId, 'Code length:', code.length);
+
+      const payload = {
+        id: taskId,
+        solution_code: code
+      };
+
+      const response = await fetch('../api/tasks/update.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || (data && data.ok === false)) {
+        throw new Error(data?.error || 'Failed to save solution');
+      }
+
+      task.solution_code = code;
+
+      if (saveTaskBtn) {
+        saveTaskBtn.style.opacity = '1';
+        saveTaskBtn.disabled = false;
+        saveTaskBtn.title = 'Lösung erfolgreich gespeichert ✓';
+        saveTaskBtn.style.background = '#10b981';
+        saveTaskBtn.style.color = '#fff';
+        setTimeout(() => {
+          saveTaskBtn.title = 'Speichern';
+          saveTaskBtn.style.background = '';
+          saveTaskBtn.style.color = '';
+        }, 3000);
+      }
+
+      return true;
+    }
+
+    // Check if we're editing a folder structure file
+    if (window.currentFile && window.currentFile.taskId) {
+      return await saveTaskFile();
+    }
+
+    // In admin test mode, regular editor saves task template code (not user progress).
+    if (isAdminTestMode) {
+      const payload = {
+        id: taskId,
+        code_template: code
+      };
+
+      const response = await fetch('../api/tasks/update.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok || (data && data.ok === false)) {
+        throw new Error(data?.error || 'Failed to save template');
+      }
+
+      task.code_template = code;
+
+      if (saveTaskBtn) {
+        saveTaskBtn.style.opacity = '1';
+        saveTaskBtn.disabled = false;
+        saveTaskBtn.title = 'Template erfolgreich gespeichert ✓';
+        saveTaskBtn.style.background = '#10b981';
+        saveTaskBtn.style.color = '#fff';
+        setTimeout(() => {
+          saveTaskBtn.title = 'Speichern';
+          saveTaskBtn.style.background = '';
+          saveTaskBtn.style.color = '';
+        }, 3000);
+      }
+
+      return true;
     }
 
     // Check if we're in solution mode (admin editing solution code)
@@ -2947,8 +3120,8 @@ async function checkTask() {
     return;
   }
 
-  // Auto-save code before checking (no status change)
-  await saveCode({ setStatus: false });
+  // Auto-save before check only outside admin test mode.
+  await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
 
   // Get code from editor
   const code = editor.getValue();
@@ -3105,7 +3278,40 @@ async function submitTask() {
   }
 
   if (!task.test_cases) {
-    alert('No test cases available');
+    // No automated check available — direct submit (manual review by teacher)
+    const confirmed = confirm('Diese Aufgabe hat keine automatischen Tests. Code jetzt abgeben?');
+    if (!confirmed) return;
+    const editorNoTest = window.editorInstance;
+    if (!editorNoTest) { alert('Editor not ready'); return; }
+    await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+    // Mark task as passed (teacher will review)
+    if (!isAdminAssignmentTestMode()) {
+      const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
+      await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: task.id, status: 'passed' })
+      }).catch(err => console.error('[Submit] Failed to update status:', err));
+    }
+    assignmentState.taskStatuses[task.id] = 'passed';
+    stopActivityTracking(task.id);
+    const nowNoTest = new Date();
+    assignmentState.taskCompletedAt[task.id] = nowNoTest.toISOString().slice(0, 19).replace('T', ' ');
+    editorNoTest.updateOptions({ readOnly: true });
+    [$('check-btn'), $('submit-btn'), $('save-task-btn'), $('undo-btn'), $('redo-btn'), $('attempts-counter')].forEach(el => { if (el) el.style.display = 'none'; });
+    const siInfo = $('submitted-info');
+    const siStatus = $('submitted-status');
+    const siDate = $('submitted-date');
+    if (siInfo && siStatus && siDate) {
+      siInfo.classList.add('show');
+      siStatus.className = 'status-passed';
+      siDate.textContent = nowNoTest.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      updateSubmittedMeta(task);
+    }
+    updateTaskStatusDisplay(task);
+    if (window.renderTaskNavigation) renderTaskNavigation();
+    showSuccessModal(task, 0, 0);
     return;
   }
 
@@ -3116,7 +3322,7 @@ async function submitTask() {
   }
 
   // Auto-save code before submitting (no status change)
-  await saveCode({ setStatus: false });
+  await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
 
   const code = editor.getValue();
   const activeFileType = detectEditorFileType();

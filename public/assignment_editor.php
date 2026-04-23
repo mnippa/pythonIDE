@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Assignment Editor - Code editor view for working on tasks
  */
@@ -1335,7 +1335,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20260412"></script>
+  <script type="module" src="js/assignments.js?v=20260422c"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

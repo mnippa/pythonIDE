@@ -26,6 +26,25 @@ try {
     $userId = isset($input['user_id']) ? (int)$input['user_id'] : null;
     $status = $input['status'] ?? null;
 
+    // passed_delayed is not a DB value; it maps to passed + is_late=1
+    $isLate = null; // null = do not touch is_late
+    if ($status === 'passed_delayed') {
+        $status = 'passed';
+        $isLate = 1;
+    } elseif ($status === 'passed') {
+        $isLate = 0; // explicitly clear is_late when setting plain passed
+    }
+
+    // General alias map for other lifecycle labels that may arrive
+    $statusAliasMap = [
+        'completed'    => 'submitted',
+        'late_completed' => 'submitted',
+        'missed'       => 'failed',
+    ];
+    if (isset($statusAliasMap[$status])) {
+        $status = $statusAliasMap[$status];
+    }
+
     $allowedStatus = ['assigned', 'in_progress', 'submitted', 'passed', 'failed'];
     if (!$assignmentId || !$userId) {
         jsonResponse(['ok' => false, 'error' => 'assignment_id and user_id required'], 400);
@@ -41,8 +60,13 @@ try {
     $existing = $stmt->get_result()->fetch_assoc();
 
     if ($existing) {
-        $update = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
-        $update->bind_param('si', $status, $existing['id']);
+        if ($isLate !== null) {
+            $update = $conn->prepare('UPDATE user_assignments SET status = ?, is_late = ? WHERE id = ?');
+            $update->bind_param('sii', $status, $isLate, $existing['id']);
+        } else {
+            $update = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
+            $update->bind_param('si', $status, $existing['id']);
+        }
         if ($update->execute()) {
             jsonResponse(['ok' => true, 'updated' => true]);
         }

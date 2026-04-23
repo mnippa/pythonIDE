@@ -189,8 +189,12 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
 
     .status-unstarted { background: #d1d5db; }
     .status-in-progress { background: #facc15; }
+    .status-completed { background: #38bdf8; }
+    .status-late-completed { background: #f59e0b; }
     .status-passed { background: #22c55e; }
+    .status-passed-delayed { background: #10b981; }
     .status-failed { background: #ef4444; }
+    .status-missed { background: #f97316; }
 
     .status-bar {
       display: flex;
@@ -281,20 +285,32 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
             <div class="stat-value" id="stat-total-users">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-unstarted"></span>Unbearbeitet</div>
-            <div class="stat-value" id="stat-unstarted">0</div>
+            <div class="stat-label"><span class="status-dot status-unstarted"></span>Zugewiesen</div>
+            <div class="stat-value" id="stat-assigned">0</div>
           </div>
           <div class="stat-card">
             <div class="stat-label"><span class="status-dot status-in-progress"></span>In Bearbeitung</div>
             <div class="stat-value" id="stat-in-progress">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-passed"></span>Success</div>
+            <div class="stat-label"><span class="status-dot status-completed"></span>Abgeschlossen</div>
+            <div class="stat-value" id="stat-completed">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label"><span class="status-dot status-late-completed"></span>Verspaetet abgeschlossen</div>
+            <div class="stat-value" id="stat-late-completed">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label"><span class="status-dot status-passed"></span>Passed</div>
             <div class="stat-value" id="stat-passed">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-failed"></span>Failed</div>
-            <div class="stat-value" id="stat-failed">0</div>
+            <div class="stat-label"><span class="status-dot status-passed-delayed"></span>Passed delayed</div>
+            <div class="stat-value" id="stat-passed-delayed">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label"><span class="status-dot status-missed"></span>Missed</div>
+            <div class="stat-value" id="stat-missed">0</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Avg Runs</div>
@@ -335,7 +351,8 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
                 <th>Email</th>
                 <th>Name</th>
                 <th>Team</th>
-                <th>Status</th>
+                <th>Aufgaben</th>
+                <th>Bewertung</th>
                 <th class="num-right">Runs</th>
                 <th class="num-right">Zeit</th>
                 <th>Source</th>
@@ -382,6 +399,6 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     </div>
   </div>
 
-  <script src="js/evaluation.js?v=1"></script>
+  <script src="js/evaluation.js?v=2"></script>
 </body>
 </html>

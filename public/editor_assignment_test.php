@@ -115,6 +115,17 @@ if ($testUserId && $testUserInfo) {
     .toolbar button{ padding:6px 10px; font-size:13px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; white-space: nowrap; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
     .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
+    .toolbar .save-mode-indicator{
+      display:none;
+      align-items:center;
+      height:28px;
+      padding:0 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      font-size:12px;
+      font-weight:700;
+      white-space:nowrap;
+    }
     #submitted-info{ display:none; margin:0 12px; font-weight:600; color:var(--text-primary); align-items:center; gap:8px; }
     #submitted-info.show{ display:flex; }
     #submitted-status.status-passed{ background-color:#34d399; }
@@ -941,6 +952,7 @@ if ($testUserId && $testUserInfo) {
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
       <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
+      <span id="save-mode-indicator" class="save-mode-indicator"></span>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
       <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
         <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
@@ -1047,6 +1059,7 @@ HTML;
     
     window.testMode = true;
     window.TEST_MODE = true;
+    window.ADMIN_ASSIGNMENT_TEST = true;
     window.EDITOR_MODE = true;
     window.ASSIGNMENT_ID = <?= $assignmentId ?>;
     
@@ -1250,6 +1263,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260412"></script>
+  <script type="module" src="js/assignments.js?v=20260423c"></script>
 </body>
 </html>
