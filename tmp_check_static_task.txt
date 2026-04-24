@@ -1,0 +1,1 @@
+ID=307 | assignment_id=29 | task_type=code_random_complex | task_difficulty=medium | title=Maximum und Durchschnitt finden

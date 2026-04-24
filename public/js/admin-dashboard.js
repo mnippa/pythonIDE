@@ -38,16 +38,25 @@ async function requestJson(url, options = {}) {
   };
 
   const response = await fetch(url, opts);
+  const raw = await response.text();
   let data = null;
   try {
-    data = await response.json();
+    data = raw ? JSON.parse(raw) : null;
   } catch (e) {
-    throw new Error('Invalid server response');
+    data = null;
   }
 
   if (!response.ok || (data && data.ok === false)) {
-    const msg = data && data.error ? data.error : response.statusText;
+    const msg = (data && (data.error || data.output))
+      ? (data.error || data.output)
+      : (raw && raw.trim()
+          ? `HTTP ${response.status}: ${raw.trim().slice(0, 800)}`
+          : response.statusText);
     throw new Error(msg);
+  }
+
+  if (!data) {
+    throw new Error('Invalid server response');
   }
 
   return data;

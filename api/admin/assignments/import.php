@@ -145,7 +145,7 @@ try {
         exit;
     }
     
-    $stmt->bind_param('iissssssssssi',
+    $stmt->bind_param('iisssssssssssi',
         $assignmentId,
         $position,
         $title,

@@ -1,0 +1,11 @@
+ID=310
+ASSIGNMENT_ID=29
+TITLE=Verschachtelte Schleifen mit Counter
+TASK_TYPE=code_random_complex
+PROBLEM_TYPE=code_completion
+CORRECT_ANSWER=
+CODE_TEMPLATE=#INIT START\r\nimport random\r\nri = random.randint(1, 5)\r\nrj = random.randint(1, 5)\r\nrk = random.randint(1, 5)\r\n#INIT END\r\n\r\ncounter = 0\r\n\r\nfor i in range(ri):\r\n    # TODO: counter hier erhöhen\r\n    for j in range(rj):\r\n        # TODO: counter hier erhöhen\r\n        for k in range(rk):\r\n            # TODO: counter hier erhöhen\r\n            pass
+SOLUTION_CODE=#INIT START\r\nimport random\r\nri = random.randint(1, 5)\r\nrj = random.randint(1, 5)\r\nrk = random.randint(1, 5)\r\n#INIT END\r\n\r\ncounter = 0\r\n\r\nfor i in range(ri):\r\n    counter += 1\r\n    for j in range(rj):\r\n        counter += 1\r\n        for k in range(rk):\r\n            counter += 1
+RANDOMIZER_CODE=import random\r\n\r\nvalues = {\r\n    "ri": random.randint(1, 5),\r\n    "rj": random.randint(1, 5),\r\n    "rk": random.randint(1, 5)\r\n}
+TEST_CASES={"type":"intelligent","mode":"vars","tests":8,"inputs":["ri","rj","rk"],"outputs":["counter"]}
+VARIABLE_OVERRIDES=

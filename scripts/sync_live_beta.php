@@ -69,6 +69,9 @@ echo "BETA root : {$betaRoot}\n";
 echo "Dry-run   : " . ($dryRun ? 'yes' : 'no') . "\n";
 echo "Sync DB   : " . ($syncDb ? 'yes' : 'no') . "\n";
 echo "Delete    : " . ($delete ? 'yes' : 'no') . "\n\n";
+if ($dryRun) {
+    echo "NOTE      : Dry-run only. No files or databases will be modified.\n\n";
+}
 
 try {
     if ($mode === 'hydrate-beta') {
@@ -90,13 +93,16 @@ function hydrateBeta(string $liveRoot, string $betaRoot, bool $dryRun, bool $syn
 {
     echo "[1/2] Sync persistent/config files LIVE -> BETA\n";
 
-    $items = [
+    $requiredItems = [
         'config/database.php',
+        'storage',
+    ];
+
+    $optionalItems = [
         'config/local.php',
         '.env',
         '.env.local',
         '.env.production',
-        'storage',
         'public/uploads',
     ];
 
@@ -107,7 +113,7 @@ function hydrateBeta(string $liveRoot, string $betaRoot, bool $dryRun, bool $syn
         'missingSource' => 0,
     ];
 
-    foreach ($items as $relPath) {
+    foreach ($requiredItems as $relPath) {
         $src = joinPath($liveRoot, $relPath);
         $dst = joinPath($betaRoot, $relPath);
 
@@ -124,7 +130,22 @@ function hydrateBeta(string $liveRoot, string $betaRoot, bool $dryRun, bool $syn
         }
     }
 
-    printStats($stats);
+    foreach ($optionalItems as $relPath) {
+        $src = joinPath($liveRoot, $relPath);
+        $dst = joinPath($betaRoot, $relPath);
+
+        if (!file_exists($src)) {
+            continue;
+        }
+
+        if (is_dir($src)) {
+            syncDirectory($src, $dst, $dryRun, $stats, []);
+        } else {
+            copyOneFile($src, $dst, $dryRun, $stats);
+        }
+    }
+
+    printStats($stats, $dryRun);
 
     if ($syncDb) {
         echo "\n[2/2] Sync database LIVE -> BETA (snapshot)\n";
@@ -162,7 +183,7 @@ function promoteLive(string $betaRoot, string $liveRoot, bool $dryRun, bool $del
     ];
 
     syncDirectory($betaRoot, $liveRoot, $dryRun, $stats, $excludePrefixes, true, $delete);
-    printStats($stats);
+    printStats($stats, $dryRun);
 }
 
 /**
@@ -433,7 +454,8 @@ function isExcluded(string $relativePath, array $excludePrefixes): bool
         if ($relativePath === $normPrefix) {
             return true;
         }
-        if (str_starts_with($relativePath, rtrim($normPrefix, '/') . '/')) {
+        $prefixWithSlash = rtrim($normPrefix, '/') . '/';
+        if (strncmp($relativePath, $prefixWithSlash, strlen($prefixWithSlash)) === 0) {
             return true;
         }
     }
@@ -450,7 +472,7 @@ function normalizePath(string $path): string
     return str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
 }
 
-function toBool(mixed $value): bool
+function toBool($value): bool
 {
     if (is_bool($value)) {
         return $value;
@@ -459,15 +481,15 @@ function toBool(mixed $value): bool
     return in_array($v, ['1', 'true', 'yes', 'y', 'on'], true);
 }
 
-function printStats(array $stats): void
+function printStats(array $stats, bool $dryRun = false): void
 {
-    echo "  copied files : " . (int)($stats['copiedFiles'] ?? 0) . "\n";
-    echo "  created dirs : " . (int)($stats['createdDirs'] ?? 0) . "\n";
+    echo "  " . ($dryRun ? 'would copy files' : 'copied files') . " : " . (int)($stats['copiedFiles'] ?? 0) . "\n";
+    echo "  " . ($dryRun ? 'would create dirs' : 'created dirs') . " : " . (int)($stats['createdDirs'] ?? 0) . "\n";
     echo "  skipped same : " . (int)($stats['skippedSame'] ?? 0) . "\n";
     echo "  missing src  : " . (int)($stats['missingSource'] ?? 0) . "\n";
     if (array_key_exists('deletedFiles', $stats)) {
-        echo "  deleted files: " . (int)($stats['deletedFiles'] ?? 0) . "\n";
-        echo "  deleted dirs : " . (int)($stats['deletedDirs'] ?? 0) . "\n";
+        echo "  " . ($dryRun ? 'would delete files' : 'deleted files') . ": " . (int)($stats['deletedFiles'] ?? 0) . "\n";
+        echo "  " . ($dryRun ? 'would delete dirs' : 'deleted dirs') . " : " . (int)($stats['deletedDirs'] ?? 0) . "\n";
     }
 }
 

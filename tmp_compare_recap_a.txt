@@ -1,0 +1,55 @@
+ASSIGNMENT_ID=25 | TITLE=A) Recap Theorie
+---
+TASK_ID=226 | POS=1 | TYPE=multiple_choice | PROBLEM=multiple_choice
+TITLE=KI in der Lehre
+SOLUTION=
+RANDOMIZER=
+TEST_CASES=
+---
+TASK_ID=227 | POS=2 | TYPE=single_choice | PROBLEM=multiple_choice
+TITLE=Hardware I
+SOLUTION=
+RANDOMIZER=
+TEST_CASES=
+---
+TASK_ID=228 | POS=3 | TYPE=single_choice | PROBLEM=multiple_choice
+TITLE=Hardware II
+SOLUTION=
+RANDOMIZER=
+TEST_CASES=
+---
+TASK_ID=229 | POS=4 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=Römische Zahlen
+SOLUTION=roman_map = {\n    "I": 1,\n    "V": 5,\n    "X": 10,\n    "L": 50,\n    "C": 100,\n    "D": 500,\n    "M": 1000\n}\n\nresult = 0\nprev = 0\n\nfor ch in reversed({roman}):\n    current = roman_map[ch]\n    if current < prev:\n        result -= current\n    else:\n        result += current\n    prev = current
+RANDOMIZER=import random\n\ndef to_roman(n):\n    pairs = [\n        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),\n        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),\n        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")\n    ]\n    out = []\n    for value, symbol in pairs:\n        while n >= value:\n            out.append(symbol)\n            n -= value\n    return "".join(out)\n\nvalue = random.randint(1800, 2000)\nroman = to_roman(value)
+TEST_CASES=
+---
+TASK_ID=230 | POS=5 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=Umrechnung binär->Dezimal
+SOLUTION=result = int({binary}, 2)
+RANDOMIZER=import random\nbinary = format(random.randint(0, 255), '08b')
+TEST_CASES=
+---
+TASK_ID=231 | POS=6 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=Umrechung Dezimal zu binär
+SOLUTION=result = format({decimal}, '08b')
+RANDOMIZER=import random\ndecimal = random.randint(0, 255)
+TEST_CASES=
+---
+TASK_ID=232 | POS=7 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=Umrechnung hex->dezimal
+SOLUTION=result = int({hex}, 16)
+RANDOMIZER=import random\ndigit = random.choice('0123456789')\nletter = random.choice('ABCDEF')\nhex = digit + letter if random.random() < 0.5 else letter + digit
+TEST_CASES=
+---
+TASK_ID=233 | POS=8 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=Umrechnung hex->bin
+SOLUTION=result = format(int({hex}, 16), "08b")
+RANDOMIZER=import random\ndigit = random.choice('0123456789')\nletter = random.choice('ABCDEF')\nhex = digit + letter if random.random() < 0.5 else letter + digit
+TEST_CASES=
+---
+TASK_ID=234 | POS=9 | TYPE=code_random_complex | PROBLEM=code_completion
+TITLE=RGB-Helligkeit (HEX): hellste Farbe
+SOLUTION=h1 = str('{hex1}').strip().strip('"').strip("'")\nh2 = str('{hex2}').strip().strip('"').strip("'")\nh3 = str('{hex3}').strip().strip('"').strip("'")\n\nif h1.startswith('#'): h1 = h1[1:]\nif h2.startswith('#'): h2 = h2[1:]\nif h3.startswith('#'): h3 = h3[1:]\n\nv1 = int(h1, 16)\nv2 = int(h2, 16)\nv3 = int(h3, 16)\n\nsum1 = ((v1 >> 16) & 255) + ((v1 >> 8) & 255) + (v1 & 255)\nsum2 = ((v2 >> 16) & 255) + ((v2 >> 8) & 255) + (v2 & 255)\nsum3 = ((v3 >> 16) & 255) + ((v3 >> 8) & 255) + (v3 & 255)\n\nresult = 1 if sum1 >= sum2 and sum1 >= sum3 else (2 if sum2 >= sum1 and sum2 >= sum3 else 3)
+RANDOMIZER=import random\n\nwhile True:\n    r1, g1, b1 = random.randint(20, 235), random.randint(20, 235), random.randint(20, 235)\n    r2, g2, b2 = random.randint(20, 235), random.randint(20, 235), random.randint(20, 235)\n    r3, g3, b3 = random.randint(20, 235), random.randint(20, 235), random.randint(20, 235)\n\n    s1 = r1 + g1 + b1\n    s2 = r2 + g2 + b2\n    s3 = r3 + g3 + b3\n\n    p12 = abs(s1 - s2) / max(s1, s2)\n    p13 = abs(s1 - s3) / max(s1, s3)\n    p23 = abs(s2 - s3) / max(s2, s3)\n\n    if p12 >= 0.15 and p13 >= 0.15 and p23 >= 0.15:\n        break\n\nhex1 = '#%02X%02X%02X' % (r1, g1, b1)\nhex2 = '#%02X%02X%02X' % (r2, g2, b2)\nhex3 = '#%02X%02X%02X' % (r3, g3, b3)
+TEST_CASES=

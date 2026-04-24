@@ -14,6 +14,36 @@
 declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+$__deploySyncFinished = false;
+register_shutdown_function(static function () use (&$__deploySyncFinished): void {
+    if ($__deploySyncFinished) {
+        return;
+    }
+
+    $error = error_get_last();
+    if ($error === null) {
+        return;
+    }
+
+    $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+    if (!in_array($error['type'] ?? 0, $fatalTypes, true)) {
+        return;
+    }
+
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+
+    $message = 'Fatal error: ' . ($error['message'] ?? 'Unknown fatal error');
+    echo json_encode([
+        'ok' => false,
+        'error' => $message,
+    ], JSON_UNESCAPED_UNICODE);
+});
 
 require_once __DIR__ . '/../../auth/middleware.php';
 
@@ -48,7 +78,7 @@ $dryRun = toBool($data['dry_run'] ?? true);
 $syncDb = toBool($data['sync_db'] ?? false);
 $delete = toBool($data['delete'] ?? false);
 
-$appRoot = realpath(__DIR__ . '/../../../..');
+$appRoot = realpath(__DIR__ . '/../../..');
 if ($appRoot === false) {
     jsonResponse(['ok' => false, 'error' => 'Could not resolve app root'], 500);
 }
@@ -90,6 +120,14 @@ if (!flock($lockHandle, LOCK_EX | LOCK_NB)) {
 }
 
 try {
+    $phpCli = resolvePhpCliBinary();
+    if ($phpCli === null) {
+        jsonResponse([
+            'ok' => false,
+            'error' => 'Could not locate a PHP CLI binary. Set DEPLOY_PHP_CLI or install php-cli.',
+        ], 500);
+    }
+
     $args = [];
     $args[] = '--mode=' . $mode;
     $args[] = '--live-root=' . $liveRoot;
@@ -104,7 +142,7 @@ try {
         $args[] = '--delete=1';
     }
 
-    $cmdParts = [escapeshellarg(PHP_BINARY), escapeshellarg($script)];
+    $cmdParts = [escapeshellarg($phpCli), '-n', escapeshellarg($script)];
     foreach ($args as $arg) {
         $cmdParts[] = escapeshellarg($arg);
     }
@@ -117,6 +155,8 @@ try {
 
     $joinedOutput = implode("\n", $output);
     $joinedOutput = preg_replace("/MYSQL_PWD='[^']*'/", "MYSQL_PWD='***'", $joinedOutput) ?? $joinedOutput;
+
+    $__deploySyncFinished = true;
 
     jsonResponse([
         'ok' => $exitCode === 0,
@@ -136,11 +176,44 @@ try {
     fclose($lockHandle);
 }
 
-function toBool(mixed $value): bool
+function toBool($value): bool
 {
     if (is_bool($value)) {
         return $value;
     }
     $v = strtolower(trim((string)$value));
     return in_array($v, ['1', 'true', 'yes', 'y', 'on'], true);
+}
+
+function resolvePhpCliBinary()
+{
+    $envPhp = getenv('DEPLOY_PHP_CLI');
+    if (is_string($envPhp) && $envPhp !== '' && is_executable($envPhp)) {
+        return $envPhp;
+    }
+
+    $candidates = [];
+
+    if (defined('PHP_BINDIR')) {
+        $candidates[] = rtrim(PHP_BINDIR, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'php';
+    }
+
+    if (defined('PHP_BINARY') && is_string(PHP_BINARY) && PHP_BINARY !== '') {
+        $binaryName = basename(PHP_BINARY);
+        if (stripos($binaryName, 'php-fpm') === false && stripos($binaryName, 'php-cgi') === false) {
+            $candidates[] = PHP_BINARY;
+        }
+    }
+
+    $candidates[] = '/usr/bin/php';
+    $candidates[] = '/usr/local/bin/php';
+    $candidates[] = '/bin/php';
+
+    foreach ($candidates as $candidate) {
+        if (is_string($candidate) && $candidate !== '' && is_executable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return null;
 }

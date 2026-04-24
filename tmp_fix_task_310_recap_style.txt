@@ -1,0 +1,7 @@
+OK Task 310 auf Recap-A-Standard aktualisiert
+ID=310 | assignment_id=29 | task_type=code_random_complex | correct_answer=counter
+CODE_TEMPLATE=ri = {ri}\r\nrj = {rj}\r\nrk = {rk}\r\n\r\ncounter = 0\r\n\r\nfor i in range(ri):\r\n    # TODO: counter hier erhöhen\r\n    for j in range(rj):\r\n        # TODO: counter hier erhöhen\r\n        for k in range(rk):\r\n            # TODO: counter hier erhöhen\r\n            pass
+SOLUTION_CODE=ri = {ri}\r\nrj = {rj}\r\nrk = {rk}\r\n\r\ncounter = 0\r\n\r\nfor i in range(ri):\r\n    counter += 1\r\n    for j in range(rj):\r\n        counter += 1\r\n        for k in range(rk):\r\n            counter += 1
+RANDOMIZER_CODE=import random\r\nri = random.randint(1, 5)\r\nrj = random.randint(1, 5)\r\nrk = random.randint(1, 5)
+VARIABLE_OVERRIDES=[{"inputs":{"ri":"<random>","rj":"<random>","rk":"<random>"},"expected":{"variable":"counter"}}]
+TEST_CASES=

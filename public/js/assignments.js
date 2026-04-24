@@ -1554,12 +1554,51 @@ function renderAssignmentList() {
   const getRawStatusMeta = (rawStatus) => {
     switch (rawStatus) {
       case 'assigned':   return { label: 'Zugewiesen',     color: '#1d4ed8', background: '#dbeafe' };
-      case 'in_progress':return { label: 'In Bearbeitung', color: '#92400e', background: '#fef3c7' };
-      case 'submitted':  return { label: 'Eingereicht',    color: '#5b21b6', background: '#ddd6fe' };
+      case 'in_progress':return { label: 'In Bearbeitung', color: '#9a3412', background: '#ffedd5' };
+      case 'submitted':  return { label: 'Eingereicht',    color: '#0f766e', background: '#ccfbf1' };
       case 'passed':     return { label: 'Bestanden',      color: '#166534', background: '#dcfce7' };
       case 'failed':     return { label: 'Nicht bestanden',color: '#991b1b', background: '#fee2e2' };
       default:           return { label: rawStatus || '–', color: '#374151', background: '#e5e7eb' };
     }
+  };
+
+  const getTaskStatusMeta = ({ phase, tasksCount, workedCount, allTasksFinalized }) => {
+    if (phase === 'upcoming' || phase === 'hidden') {
+      return { label: 'Nicht verfügbar', color: '#374151', background: '#e5e7eb' };
+    }
+    if (tasksCount === 0) {
+      return { label: 'Keine Aufgaben', color: '#374151', background: '#e5e7eb' };
+    }
+    if (allTasksFinalized) {
+      if (phase === 'late') {
+        return { label: 'Abgeschlossen (zu spät)', color: '#9a3412', background: '#ffedd5' };
+      }
+      return { label: 'Abgeschlossen', color: '#166534', background: '#dcfce7' };
+    }
+    if (workedCount > 0) {
+      return { label: 'In Bearbeitung', color: '#9a3412', background: '#ffedd5' };
+    }
+    return { label: 'Zugewiesen', color: '#1d4ed8', background: '#dbeafe' };
+  };
+
+  const getAssignmentStatusMeta = ({ rawStatus, phase, workedCount, allTasksFinalized }) => {
+    // Keep dashboard states internally consistent regardless of stored raw status.
+    if (phase === 'upcoming' || phase === 'hidden') {
+      return getRawStatusMeta('assigned');
+    }
+
+    if (!allTasksFinalized) {
+      if (workedCount > 0) {
+        return getRawStatusMeta('in_progress');
+      }
+      return getRawStatusMeta('assigned');
+    }
+
+    // All tasks finalized: default to submitted, but keep final admin decisions.
+    if (rawStatus === 'passed' || rawStatus === 'failed') {
+      return getRawStatusMeta(rawStatus);
+    }
+    return getRawStatusMeta('submitted');
   };
 
   if (!assignmentState.assignments.length) {
@@ -1582,11 +1621,18 @@ function renderAssignmentList() {
 
     const phase = item.timing_phase || 'open';
     const allTasksFinalized = tasks.length > 0 && untouchedCount === 0 && inProgressCount === 0;
-    // Assignment-level evaluation status (raw DB value, teacher-set)
-    // If all tasks are done but assignment is still in_progress, show pending review state.
-    const evalMeta = (item.raw_status === 'in_progress' && allTasksFinalized)
-      ? { label: 'Ausstehend', color: '#9a3412', background: '#ffedd5' }
-      : getRawStatusMeta(item.raw_status || 'assigned');
+    const taskMeta = getTaskStatusMeta({
+      phase,
+      tasksCount: tasks.length,
+      workedCount,
+      allTasksFinalized,
+    });
+    const assignmentMeta = getAssignmentStatusMeta({
+      rawStatus: item.raw_status || 'assigned',
+      phase,
+      workedCount,
+      allTasksFinalized,
+    });
 
     let phaseLabel = 'Verfügbar';
     let phaseColor = '#166534';
@@ -1599,9 +1645,6 @@ function renderAssignmentList() {
     } else if (phase === 'hidden') {
       phaseLabel = 'Inaktiv';
       phaseColor = '#374151';
-    } else if (allTasksFinalized) {
-      phaseLabel = 'Abgeschlossen';
-      phaseColor = '#0f766e';
     } else if (phase === 'late') {
       phaseLabel = 'Verspätete Phase';
       phaseColor = '#b45309';
@@ -1634,8 +1677,12 @@ function renderAssignmentList() {
           ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
         </div>
 
-        <!-- Aufgaben-Bearbeitungsstatus (task-level, auto-evaluated) -->
+        <!-- Bearbeitungsstatus (task-level, abgeleitet aus Tasks) -->
         <div style="margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bearbeitungsstatus:</span>
+            <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${taskMeta.background};color:${taskMeta.color};font-weight:600;">${escapeHtml(taskMeta.label)}</span>
+          </div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);margin-bottom:5px;">Aufgaben (${passedCount + failedCount}/${tasks.length})</div>
           <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:#e5e7eb;margin-bottom:5px;">
             ${tasks.length > 0 ? `
@@ -1653,10 +1700,10 @@ function renderAssignmentList() {
           </div>
         </div>
 
-        <!-- Bewertungsstatus (assignment-level, gesetzt durch Lehrenden) -->
+        <!-- Aufgabenstatus (assignment-level, Admin/Lehrendenstatus mit Fallback) -->
         <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);">
-          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bewertung:</span>
-          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${evalMeta.background};color:${evalMeta.color};font-weight:600;">${escapeHtml(evalMeta.label)}</span>
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Aufgabenstatus:</span>
+          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${assignmentMeta.background};color:${assignmentMeta.color};font-weight:600;">${escapeHtml(assignmentMeta.label)}</span>
         </div>
       </div>
     `;
@@ -2722,7 +2769,8 @@ async function saveCode(options = {}) {
       saveTaskBtn.disabled = true;
     }
 
-    // In admin test mode, solution editor must update solution_code explicitly.
+    // In admin test mode, save must always target tasks/update.php explicitly
+    // so template/solution are persisted reliably (independent of currentFile state).
     if (isAdminTestMode && assignmentState.solutionMode === true) {
       console.log('[SAVE SOLUTION] Saving solution code for task:', taskId, 'Code length:', code.length);
 
@@ -2762,13 +2810,24 @@ async function saveCode(options = {}) {
       return true;
     }
 
-    // Check if we're editing a folder structure file
-    if (window.currentFile && window.currentFile.taskId) {
-      return await saveTaskFile();
-    }
-
-    // In admin test mode, regular editor saves task template code (not user progress).
+    // In admin test mode, regular editor saves task template code.
+    // For folder tasks, keep file-save path only when editing a non-init file.
     if (isAdminTestMode) {
+      const isFolderTask = task && (
+        task.folderstructure === 1 ||
+        task.folderstructure === true ||
+        task.folderstructure === '1'
+      );
+      const isEditingNonInitFile = !!(
+        window.currentFile &&
+        window.currentFile.taskId &&
+        String(window.currentFile.path || '') !== 'init.py'
+      );
+
+      if (isFolderTask && isEditingNonInitFile) {
+        return await saveTaskFile();
+      }
+
       const payload = {
         id: taskId,
         code_template: code
@@ -2802,6 +2861,11 @@ async function saveCode(options = {}) {
       }
 
       return true;
+    }
+
+    // Check if we're editing a folder structure file
+    if (window.currentFile && window.currentFile.taskId) {
+      return await saveTaskFile();
     }
 
     // Check if we're in solution mode (admin editing solution code)
@@ -3214,8 +3278,9 @@ async function checkTask() {
       return;
     }
     
-    // Display results
-    displayTestResults(allResults, testCases, outputEl);
+    // Display results (pass admin mode flag)
+    const isAdminMode = isAdminAssignmentTestMode();
+    displayTestResults(allResults, testCases, outputEl, isAdminMode);
     
     // Create result object
     const result = {
@@ -3386,8 +3451,9 @@ async function submitTask() {
       return;
     }
     
-    // Display results
-    displayTestResults(allResults, testCases, outputEl);
+    // Display results (pass admin mode flag)
+    const isAdminMode = isAdminAssignmentTestMode();
+    displayTestResults(allResults, testCases, outputEl, isAdminMode);
     
     const result = {
       passed: allResults.every(r => r.passed),
@@ -3950,6 +4016,7 @@ async function runIntelligentTests(pyodide, code, testCases, solutionCode, rando
 
   // Generate test cases by running randomizer code multiple times
   const testOutputs = await pyodide.runPythonAsync(`
+import copy
 import json
 
 user_code = ${JSON.stringify(code)}
@@ -4106,8 +4173,8 @@ for test_num in range(tests_count):
     
     if mode == 'vars':
         # Vars mode: inject values, compare outputs
-        sol = run_vars_mode(solution_code, values, outputs)
-        usr = run_vars_mode(user_code, values, outputs)
+        sol = run_vars_mode(solution_code, copy.deepcopy(values), outputs)
+        usr = run_vars_mode(user_code, copy.deepcopy(values), outputs)
         results.append({
             "test": test_num + 1,
             "values": safe_value(values),
@@ -4116,8 +4183,8 @@ for test_num in range(tests_count):
         })
     else:
         # Function mode: call functions with values as args
-        sol = run_function_mode(solution_code, values, function_name, params)
-        usr = run_function_mode(user_code, values, function_name, params)
+        sol = run_function_mode(solution_code, copy.deepcopy(values), function_name, params)
+        usr = run_function_mode(user_code, copy.deepcopy(values), function_name, params)
         results.append({
             "test": test_num + 1,
             "values": safe_value(values),
@@ -4201,6 +4268,7 @@ json.dumps(results)
         const expectedValue = solution.output ? solution.output[outputName] : undefined;
         const actualValue = user.output ? user.output[outputName] : undefined;
         const matches = JSON.stringify(actualValue) === JSON.stringify(expectedValue);
+
         if (!matches) {
           passed = false;
         }
@@ -4587,7 +4655,7 @@ function compareValues(actual, expected) {
 /**
  * Display test results in UI - COMPACT VERSION
  */
-function displayTestResults(results, testCases, outputEl) {
+function displayTestResults(results, testCases, outputEl, isAdminMode = false) {
   // Group results by type
   const groupedByType = {};
   results.forEach((result, idx) => {
@@ -4603,102 +4671,104 @@ function displayTestResults(results, testCases, outputEl) {
   
   let html = '';
   
-  // ===== DEBUG: Show detailed test-by-test results =====
-  html += `<div style="background:#f9fafb; padding:12px; border-radius:6px; margin-bottom:16px; border:1px solid #e5e7eb;">`;
-  html += `<div style="font-weight:700; font-size:13px; color:#374151; margin-bottom:10px;">🔍 DEBUG: Einzelne Tests</div>`;
-  html += `<div style="font-size:12px;">`;
-  
-  results.forEach((result, idx) => {
-    const status = result.passed ? '✓' : '✗';
-    const statusColor = result.passed ? '#10b981' : '#ef4444';
-    const statusBg = result.passed ? '#f0fdf4' : '#fef2f2';
-    const testCase = testCases[idx] || {};
+  // ===== DEBUG: Show detailed test-by-test results (ADMIN ONLY) =====
+  if (isAdminMode) {
+    html += `<div style="background:#f9fafb; padding:12px; border-radius:6px; margin-bottom:16px; border:1px solid #e5e7eb;">`;
+    html += `<div style="font-weight:700; font-size:13px; color:#374151; margin-bottom:10px;">🔍 DEBUG: Einzelne Tests</div>`;
+    html += `<div style="font-size:12px;">`;
     
-    html += `<div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; padding:8px; background:${statusBg}; border-radius:4px; border-left:3px solid ${statusColor};">`;
-    
-    // Status indicator
-    html += `<span style="color:${statusColor}; font-weight:700; min-width:30px; font-size:14px;">${status}</span>`;
-    
-    // Test info
-    html += `<div style="flex:1;">`;
-    html += `<div style="color:#374151; font-size:12px;">Test #${idx + 1} (${result.type.toUpperCase()})`;
-    
-    // Show input/args
-    if (result.type === 'output' && result.testNumber) {
-      html += `</div>`;
-      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Output: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml((result.output || '').substring(0, 50))}</code></div>`;
-    } else if (result.type === 'function') {
-      html += ` - ${result.functionName}(${(result.args || '').toString()})`;
-      html += `</div>`;
-      if (result.output !== undefined) {
-        const outputStr = String(result.output);
-        const expectedStr = String(result.expected);
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(outputStr)}</code></div>`;
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedStr)}</code></div>`;
-        html += `<div style="color:#888; font-size:10px; margin-top:2px;">Typ: output=${typeof result.output} expected=${typeof result.expected}</div>`;
-      }
-    } else if (result.type === 'variable') {
-      html += `</div>`;
-      // result.initVars and result.expectedVars can be strings (new structure) or objects (legacy)
-      const initDisplay = typeof result.initVars === 'string' 
-        ? result.initVars 
-        : (result.initVars ? Object.keys(result.initVars).join(', ') : '');
-      const expectedDisplay = typeof result.expectedVars === 'string' 
-        ? result.expectedVars 
-        : (result.expectedVars ? Object.keys(result.expectedVars).join(', ') : '');
+    results.forEach((result, idx) => {
+      const status = result.passed ? '✓' : '✗';
+      const statusColor = result.passed ? '#10b981' : '#ef4444';
+      const statusBg = result.passed ? '#f0fdf4' : '#fef2f2';
+      const testCase = testCases[idx] || {};
       
-      if (initDisplay) {
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Init: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(initDisplay)}</code></div>`;
-      }
-      if (expectedDisplay) {
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
-      }
-    } else if (result.type === 'intelligent') {
-      html += `</div>`;
-      const inputsDisplay = result.mode === 'function'
-        ? JSON.stringify(result.args || [])
-        : JSON.stringify(result.inputs || {});
+      html += `<div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; padding:8px; background:${statusBg}; border-radius:4px; border-left:3px solid ${statusColor};">`;
       
-      // Build input values display with actual values from result.values
-      let inputValuesDisplay = '';
-      if (result.mode === 'vars' && result.values && result.inputs) {
-        const inputPairs = (result.inputs || []).map(inputName => {
-          const value = result.values[inputName];
-          return `[${inputName} = ${JSON.stringify(value)}]`;
-        }).join(', ');
-        inputValuesDisplay = inputPairs;
-      }
+      // Status indicator
+      html += `<span style="color:${statusColor}; font-weight:700; min-width:30px; font-size:14px;">${status}</span>`;
       
-      const expectedDisplay = JSON.stringify(result.expected ?? null);
-      const actualDisplay = JSON.stringify(result.actual ?? null);
-      if (result.mode === 'function') {
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Funktion: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(result.functionName || '')}</code></div>`;
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Args: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
-      } else {
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Namen: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
-        if (inputValuesDisplay) {
-          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Werte: <code style="background:#d1fae5; padding:1px 4px;">${escapeHtml(inputValuesDisplay)}</code></div>`;
+      // Test info
+      html += `<div style="flex:1;">`;
+      html += `<div style="color:#374151; font-size:12px;">Test #${idx + 1} (${result.type.toUpperCase()})`;
+      
+      // Show input/args
+      if (result.type === 'output' && result.testNumber) {
+        html += `</div>`;
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Output: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml((result.output || '').substring(0, 50))}</code></div>`;
+      } else if (result.type === 'function') {
+        html += ` - ${result.functionName}(${(result.args || '').toString()})`;
+        html += `</div>`;
+        if (result.output !== undefined) {
+          const outputStr = String(result.output);
+          const expectedStr = String(result.expected);
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(outputStr)}</code></div>`;
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedStr)}</code></div>`;
+          html += `<div style="color:#888; font-size:10px; margin-top:2px;">Typ: output=${typeof result.output} expected=${typeof result.expected}</div>`;
         }
+      } else if (result.type === 'variable') {
+        html += `</div>`;
+        // result.initVars and result.expectedVars can be strings (new structure) or objects (legacy)
+        const initDisplay = typeof result.initVars === 'string' 
+          ? result.initVars 
+          : (result.initVars ? Object.keys(result.initVars).join(', ') : '');
+        const expectedDisplay = typeof result.expectedVars === 'string' 
+          ? result.expectedVars 
+          : (result.expectedVars ? Object.keys(result.expectedVars).join(', ') : '');
+        
+        if (initDisplay) {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Init: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(initDisplay)}</code></div>`;
+        }
+        if (expectedDisplay) {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
+        }
+      } else if (result.type === 'intelligent') {
+        html += `</div>`;
+        const inputsDisplay = result.mode === 'function'
+          ? JSON.stringify(result.args || [])
+          : JSON.stringify(result.inputs || {});
+        
+        // Build input values display with actual values from result.values
+        let inputValuesDisplay = '';
+        if (result.mode === 'vars' && result.values && result.inputs) {
+          const inputPairs = (result.inputs || []).map(inputName => {
+            const value = result.values[inputName];
+            return `[${inputName} = ${JSON.stringify(value)}]`;
+          }).join(', ');
+          inputValuesDisplay = inputPairs;
+        }
+        
+        const expectedDisplay = JSON.stringify(result.expected ?? null);
+        const actualDisplay = JSON.stringify(result.actual ?? null);
+        if (result.mode === 'function') {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Funktion: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(result.functionName || '')}</code></div>`;
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Args: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+        } else {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Namen: <code style="background:#dbeafe; padding:1px 4px;">${escapeHtml(inputsDisplay)}</code></div>`;
+          if (inputValuesDisplay) {
+            html += `<div style="color:#666; font-size:11px; margin-top:2px;">Input-Werte: <code style="background:#d1fae5; padding:1px 4px;">${escapeHtml(inputValuesDisplay)}</code></div>`;
+          }
+        }
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualDisplay)}</code></div>`;
+      } else if (result.type === 'code_check') {
+        html += `</div>`;
+        const feedbackText = result.feedback || 'Code-Check';
+        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Keywords: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(feedbackText)}</code></div>`;
       }
-      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Erwartet: <code style="background:#fef3c7; padding:1px 4px;">${escapeHtml(expectedDisplay)}</code></div>`;
-      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualDisplay)}</code></div>`;
-    } else if (result.type === 'code_check') {
+      
+      // Error message
+      if (result.error) {
+        html += `<div style="color:#c00; font-size:11px; margin-top:2px;"><strong>Fehler:</strong> ${escapeHtml(result.error)}</div>`;
+      }
+      
       html += `</div>`;
-      const feedbackText = result.feedback || 'Code-Check';
-      html += `<div style="color:#666; font-size:11px; margin-top:2px;">Keywords: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(feedbackText)}</code></div>`;
-    }
-    
-    // Error message
-    if (result.error) {
-      html += `<div style="color:#c00; font-size:11px; margin-top:2px;"><strong>Fehler:</strong> ${escapeHtml(result.error)}</div>`;
-    }
+      html += `</div>`;
+    });
     
     html += `</div>`;
     html += `</div>`;
-  });
-  
-  html += `</div>`;
-  html += `</div>`;
+  }
   
   // ===== Summary by type =====
   html += `<div style="background:#f3f4f6; padding:12px; border-radius:6px; border:1px solid #d1d5db;">`;

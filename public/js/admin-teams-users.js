@@ -15,18 +15,34 @@ function escapeHtml(str) {
 }
 
 // Helper function to make JSON requests
-async function requestJson(url, options = {}) {
+async function teamsUsersRequestJson(url, options = {}) {
   const response = await fetch(url, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options
   });
 
-  const data = await response.json();
+  const raw = await response.text();
+  let data = null;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    data = null;
+  }
+
   if (!response.ok || (data && data.ok === false)) {
-    const msg = data && data.error ? data.error : response.statusText;
+    const msg = (data && (data.error || data.output))
+      ? (data.error || data.output)
+      : (raw && raw.trim()
+          ? `HTTP ${response.status}: ${raw.trim().slice(0, 800)}`
+          : response.statusText);
     throw new Error(msg);
   }
+
+  if (!data) {
+    throw new Error('Invalid server response');
+  }
+
   return data;
 }
 
@@ -77,7 +93,7 @@ async function populateAssignmentSelect(selectId) {
   if (!select) return;
 
   select.innerHTML = '<option value="">-- Assignment auswählen --</option>';
-  const response = await requestJson('../api/assignments/list.php?all=1');
+  const response = await teamsUsersRequestJson('../api/assignments/list.php?all=1');
 
   if (response.ok && Array.isArray(response.assignments)) {
     response.assignments
@@ -101,7 +117,7 @@ function getInviteLink(token) {
 
 async function loadTeams() {
   try {
-    const response = await requestJson('../api/admin/teams/list.php');
+    const response = await teamsUsersRequestJson('../api/admin/teams/list.php');
     if (response.ok) {
       teamsData = response.teams;
       renderTeams();
@@ -187,8 +203,8 @@ async function loadTeamMembers(teamId) {
     params.set('limit', '100');
     params.set('page', '1');
     const [usersResponse, assignmentsResponse] = await Promise.all([
-      requestJson(`../api/admin/users/list.php?${params.toString()}`),
-      requestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`)
+      teamsUsersRequestJson(`../api/admin/users/list.php?${params.toString()}`),
+      teamsUsersRequestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`)
     ]);
     teamMembersData = Array.isArray(usersResponse.users) ? usersResponse.users : [];
     teamAssignmentsData = Array.isArray(assignmentsResponse.items) ? assignmentsResponse.items : [];
@@ -211,7 +227,7 @@ async function loadTeamAssignments(teamId) {
   }
 
   try {
-    const response = await requestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`);
+    const response = await teamsUsersRequestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`);
     teamAssignmentsData = Array.isArray(response.items) ? response.items : [];
     renderTeamAssignments();
   } catch (err) {
@@ -368,7 +384,7 @@ async function submitUserEdit(e) {
 
 async function loadSemesters() {
   try {
-    const response = await requestJson('../api/system/semester.php?action=list');
+    const response = await teamsUsersRequestJson('../api/system/semester.php?action=list');
     if (response.ok) {
       semestersData = response.semesters || [];
       updateSemesterFilters();
@@ -399,7 +415,7 @@ function updateSemesterFilters() {
 
 async function createTeam(data) {
   try {
-    const response = await requestJson('../api/admin/teams/create.php', {
+    const response = await teamsUsersRequestJson('../api/admin/teams/create.php', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -417,7 +433,7 @@ async function createTeam(data) {
 
 async function updateTeam(id, data) {
   try {
-    const response = await requestJson(`../api/admin/teams/update.php?id=${id}`, {
+    const response = await teamsUsersRequestJson(`../api/admin/teams/update.php?id=${id}`, {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -437,7 +453,7 @@ async function deleteTeam(id) {
   if (!confirm('Delete team? Users will be unassigned.')) return;
   
   try {
-    const response = await requestJson(`../api/admin/teams/delete.php?id=${id}`, {
+    const response = await teamsUsersRequestJson(`../api/admin/teams/delete.php?id=${id}`, {
       method: 'POST'
     });
     
@@ -480,7 +496,7 @@ async function loadUsers() {
     params.append('limit', String(limit));
     
     const url = '../api/admin/users/list.php' + (params.toString() ? '?' + params.toString() : '');
-    const response = await requestJson(url);
+    const response = await teamsUsersRequestJson(url);
     
     if (response.ok) {
       usersData = response.users;
@@ -573,7 +589,7 @@ async function deleteUser(userId) {
   if (!confirm(`Benutzer löschen: ${label}?`)) return;
 
   try {
-    await requestJson(`../api/admin/users/delete.php?id=${userId}`, {
+    await teamsUsersRequestJson(`../api/admin/users/delete.php?id=${userId}`, {
       method: 'POST'
     });
 
@@ -596,7 +612,7 @@ async function bulkDeleteUsers() {
   if (!confirm(`${ids.length} ausgewählte Benutzer löschen?`)) return;
 
   try {
-    const response = await requestJson('../api/admin/users/bulk-delete.php', {
+    const response = await teamsUsersRequestJson('../api/admin/users/bulk-delete.php', {
       method: 'POST',
       body: JSON.stringify({ user_ids: ids })
     });
@@ -728,7 +744,7 @@ async function openTeamAssignModal(teamId, existingItem = null) {
 
 async function openAssignmentSettingsModal(assignmentId) {
   try {
-    const response = await requestJson(`../api/assignments/get.php?id=${assignmentId}`);
+    const response = await teamsUsersRequestJson(`../api/assignments/get.php?id=${assignmentId}`);
     const a = response.assignment;
     if (!a) throw new Error('Assignment not found');
 
@@ -756,7 +772,7 @@ async function deleteTeamAssignmentDefault(teamId, assignmentId) {
     return;
   }
 
-  await requestJson('../api/admin/teams/assignment-defaults/delete.php', {
+  await teamsUsersRequestJson('../api/admin/teams/assignment-defaults/delete.php', {
     method: 'POST',
     body: JSON.stringify({ team_id: teamId, assignment_id: assignmentId })
   });
@@ -800,7 +816,7 @@ async function submitTeamAssign(e) {
       body.due_date = null;
     }
 
-    const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
+    const response = await teamsUsersRequestJson('../api/admin/assignments/bulk-assign.php', {
       method: 'POST',
       body: JSON.stringify(body)
     });
@@ -854,7 +870,7 @@ async function submitBulkAssign(e) {
       body.due_date = toMysqlDateTime(dueDate);
     }
     
-    const response = await requestJson('../api/admin/assignments/bulk-assign.php', {
+    const response = await teamsUsersRequestJson('../api/admin/assignments/bulk-assign.php', {
       method: 'POST',
       body: JSON.stringify(body)
     });
@@ -884,7 +900,7 @@ async function submitBulkAssign(e) {
 
 // Update user (change team, role, status)
 async function updateUser(userId, data) {
-  const response = await requestJson(`../api/admin/users/update.php?id=${userId}`, {
+  const response = await teamsUsersRequestJson(`../api/admin/users/update.php?id=${userId}`, {
     method: 'POST',
     body: JSON.stringify(data)
   });
@@ -902,7 +918,7 @@ async function createResetLinkForUser(userId) {
 
   if (!confirm(`Reset-Link für ${label} erzeugen?`)) return;
 
-  const response = await requestJson('../api/admin/users/create-reset-link.php', {
+  const response = await teamsUsersRequestJson('../api/admin/users/create-reset-link.php', {
     method: 'POST',
     body: JSON.stringify({ user_id: userId })
   });
