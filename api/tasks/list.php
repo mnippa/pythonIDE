@@ -11,11 +11,28 @@ header('Content-Type: application/json');
 $user = requireAuth();
 $conn = getDbConnection();
 
+function parseApiDateTime(?string $value, bool $dateOnlyAsEndOfDay = false): ?DateTimeImmutable {
+    if ($value === null || trim($value) === '') {
+        return null;
+    }
+
+    $raw = trim($value);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+        $raw .= $dateOnlyAsEndOfDay ? ' 23:59:59' : ' 00:00:00';
+    }
+
+    try {
+        return new DateTimeImmutable($raw);
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
 function calcTimingPhaseForAccess(array $row): string {
     $now = new DateTimeImmutable('now');
-    $availableFrom = !empty($row['available_from']) ? new DateTimeImmutable($row['available_from']) : null;
-    $dueDate = !empty($row['effective_due_date']) ? new DateTimeImmutable($row['effective_due_date']) : null;
-    $hardDeadline = !empty($row['hard_deadline']) ? new DateTimeImmutable($row['hard_deadline']) : null;
+    $availableFrom = parseApiDateTime($row['available_from'] ?? null, false);
+    $dueDate = parseApiDateTime($row['effective_due_date'] ?? null, true);
+    $hardDeadline = parseApiDateTime($row['hard_deadline'] ?? null, true);
 
     if (isset($row['is_active']) && (int)$row['is_active'] === 0) {
         return 'hidden';

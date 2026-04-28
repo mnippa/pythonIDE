@@ -1,5 +1,14 @@
 # MwSt-Rechner Installation - Vergleich der Methoden
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine auf ein konkretes Task-Beispiel bezogene Vergleichsnotiz.
+Sie ist nicht die allgemeine Referenz fuer heutiges Task-Authoring oder Deploy-Flows.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+
 ## 📊 Installations-Methoden im Vergleich
 
 | Kriterium | 🌟 JSON-Import (UI) | 🔧 SQL-Script |

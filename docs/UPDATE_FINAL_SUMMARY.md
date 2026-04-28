@@ -1,5 +1,14 @@
 # 🎓 Python IDE - Datenbankschema Update v2 - FINAL
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine dated Summary eines frueheren Update-Schritts.
+Sie ist hilfreich als Verlauf, aber nicht als aktuelle Single Source of Truth.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [architecture.md](architecture.md)
+
 ## ✅ Änderungen (08.02.2026)
 
 ### 1️⃣ Semester-System **KORRIGIERT**

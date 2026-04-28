@@ -1241,6 +1241,73 @@ if "idegui" not in sys.modules:
       }
     }
 
+    async function buildFolderTaskRuntimePayload(taskId, preferredMainPath = 'init.py') {
+      const safeTaskId = Number(taskId || 0);
+      if (!safeTaskId) return null;
+
+      const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+      const listUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+      const listResponse = await fetch(listUrl, { credentials: 'include' });
+      const listData = await listResponse.json();
+
+      if (!listResponse.ok || (listData && listData.ok === false)) {
+        throw new Error(listData?.error || 'Task-Dateiliste konnte nicht geladen werden');
+      }
+
+      const fileEntries = [];
+      const walk = (items) => {
+        if (!Array.isArray(items)) return;
+        for (const item of items) {
+          if (!item || typeof item !== 'object') continue;
+          if (item.type === 'folder') {
+            walk(item.children || []);
+            continue;
+          }
+          if (item.type === 'file' && item.virtual !== true && item.is_text !== false) {
+            const relPath = String(item.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+            if (relPath) fileEntries.push(relPath);
+          }
+        }
+      };
+
+      walk(listData.files || []);
+
+      const files = [];
+      for (const relPath of fileEntries) {
+        let content = null;
+
+        if (typeof window.getTaskDraftContent === 'function') {
+          const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
+          if (draftContent !== null && draftContent !== undefined) {
+            content = String(draftContent || '');
+          }
+        }
+
+        if (content === null) {
+          const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
+          const readResponse = await fetch(readUrl, { credentials: 'include' });
+          const readData = await readResponse.json();
+
+          if (!readResponse.ok || (readData && readData.ok === false)) {
+            throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+          }
+
+          content = String(readData.content || '');
+        }
+
+        files.push({ path: relPath, content });
+      }
+
+      if (files.length === 0) return null;
+
+      const mainPath = String(preferredMainPath || 'init.py').replace(/\\/g, '/').replace(/^\/+/, '') || 'init.py';
+      return {
+        root: '/task_runtime',
+        mainPath,
+        files,
+      };
+    }
+
     function outputClear() {
       outputBuffer = '';
       if (outputEl) {
@@ -2023,6 +2090,17 @@ compile(code, "<usercode>", "exec")
           projectRuntimePayload = await window.getProjectPythonRuntimePayload();
         } catch (projectRuntimeError) {
           console.warn('[Run] project runtime payload fallback to null:', projectRuntimeError);
+        }
+      }
+
+      if (!projectRuntimePayload && hasFolderStructure && currentTask?.id) {
+        try {
+          projectRuntimePayload = await buildFolderTaskRuntimePayload(
+            currentTask.id,
+            activeIsPython ? activePath : 'init.py'
+          );
+        } catch (taskRuntimeError) {
+          console.warn('[Run] task runtime payload fallback to null:', taskRuntimeError);
         }
       }
 

@@ -1,5 +1,15 @@
 # Test-Typen und Validierungs-Flow - Neue Dokumentation (v2)
 
+## Legacy/Current-state Banner
+
+Dieses Dokument ist als Referenz weiter nutzbar, kann aber in Details einen aelteren Zwischenstand enthalten.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+
+Bei Widerspruechen gilt der aktuelle Code plus `CONTEXT_CURRENT.md`.
+
 ## ⚠️ WICHTIG: task_text Feld
 
 **`task_text` ist die STUDENT-FACING AUFGABENSTELLUNG für ALLE Task-Typen:**

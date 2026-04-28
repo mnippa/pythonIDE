@@ -1,5 +1,14 @@
 # 📁 Dateiverwaltungssystem - Implementierungszusammenfassung
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine historische Implementierungszusammenfassung.
+Aktuelle Pfade, APIs und Laufzeitannahmen koennen sich seitdem geaendert haben.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [FILE_API_DOCUMENTATION.md](FILE_API_DOCUMENTATION.md)
+
 ## 🎯 Was wurde implementiert?
 
 Ein vollständiges **Dateiverwaltungssystem** für die Python IDE mit:

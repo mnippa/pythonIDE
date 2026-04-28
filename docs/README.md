@@ -1,10 +1,34 @@
-# idegui Dokumentation
+# PythonIDE Dokumentation
 
 ## 📚 Übersicht
 
-Dieses Verzeichnis enthält die Dokumentation für die idegui-Plattform.
+Dieses Verzeichnis enthält die Dokumentation für PythonIDE.
+
+Wichtig: Nicht alle älteren Dateien bilden den aktuellen Implementierungsstand vollständig ab.
+Für neue Chats, neue Entwickler und KI-Assistenten zuerst lesen:
+
+### [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+**Aktueller Gesamt-Kontext der Plattform**
+
+Enthält den derzeit relevanten Stand zu:
+- Assignment- und Task-Modell
+- Statuslogik im Dashboard
+- Folder-Tasks und Dateispeicher (DB + Filesystem)
+- Pyodide-Runtime-Flow
+- Live/Beta-Deploy-Sync
+
+**Zielgruppe:** Entwickler, Admins, KI-Assistenten, neue Chats
 
 ## 📖 Dokumentationsdateien
+
+### [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+**Master-Kontext für den aktuellen Stand**
+
+Empfohlener erster Einstieg bei:
+- Weiterentwicklung von PythonIDE
+- Debugging von Assignment-/Task-Logik
+- Fragen zu Folder-Dateien, Pyodide oder Statuslogik
+- Deploy-/Live-Beta-Themen
 
 ### [idegui-programming-guide.md](idegui-programming-guide.md)
 **Hauptdokumentation für KI-Assistenten und Entwickler**
@@ -42,14 +66,40 @@ Fertiger Ablaufplan fuer den direkten Einsatz im Unterricht:
 **Zielgruppe:** Lehrkraefte, Tutorinnen/Tutoren, Kurs-Autoren
 
 ### [architecture.md](architecture.md)
-Technische Architektur der Plattform (falls vorhanden)
+Technische Architektur der Plattform
 
 ### [setup.md](setup.md)
 Setup- und Installations-Anleitung (falls vorhanden)
 
+### [code-ui.md](code-ui.md)
+Spezifika für `code_ui`, Folderstruktur, Reset und Policies.
+
+### [code-ui-architecture.md](code-ui-architecture.md)
+Folder- und Runtime-Modell für Code-UI-Tasks.
+
+### [ASSIGNMENTS_API_DOCUMENTATION.md](ASSIGNMENTS_API_DOCUMENTATION.md)
+Assignment- und User-Assignment-APIs.
+
+### [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+Kompakter Leitfaden fuer neue Aufgaben, Feldbelegung, Tests und Folder-Tasks.
+
+### [DEPLOYMENT_DEBIAN.md](DEPLOYMENT_DEBIAN.md)
+Shell-/Server-Sicht auf Deployments und Rechte.
+
 ## 🎯 Schnellstart für KIs
 
-Um ein neues Programm mit idegui zu erstellen, lies die [idegui-programming-guide.md](idegui-programming-guide.md) und folge diesem Format:
+Für PythonIDE-Arbeit allgemein:
+
+1. [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+2. Danach themenspezifisch weiter in die passende Fach-Doku
+
+Für neue Aufgaben und Task-Inhalte:
+
+1. [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+2. Danach bei Bedarf [test-types-documentation-final-v2.md](test-types-documentation-final-v2.md)
+3. Bei Folder-/Code-UI-Themen zusätzlich [code-ui.md](code-ui.md)
+
+Um ein neues idegui-Programm zu erstellen, lies danach die [idegui-programming-guide.md](idegui-programming-guide.md) und folge diesem Format:
 
 **User-Prompt:**
 ```
@@ -118,7 +168,12 @@ def button_clicked(trigger):
 - Projekt-Erstellung API: `/api/projects/create.php`
 - Demo-Projekte: Kniffel und Blackjack in der Projektauswahl
 
+## Hinweis zu älteren Docs
+
+Einige ältere Dateien dokumentieren frühere Zwischenstände.
+Wenn Statuswerte, Dateispeicher oder Runtime-Verhalten unklar wirken, immer mit [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md) und dem aktuellen Code gegenprüfen.
+
 ---
 
-**Letzte Aktualisierung:** März 2026  
-**Version:** 1.0
+**Letzte Aktualisierung:** April 2026  
+**Version:** 1.1

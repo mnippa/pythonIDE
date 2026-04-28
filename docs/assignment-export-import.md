@@ -1,5 +1,17 @@
 # Assignment Import/Export Format
 
+## Hinweis zum aktuellen Stand
+
+Diese Datei beschreibt das JSON-Grundformat fuer Assignment-Export und -Import, aber nicht alle spaeter hinzugekommenen Plattformdetails.
+
+Vor dem Erstellen neuer Inhalte zusaetzlich lesen:
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+
+Wichtig:
+- Felder und Laufzeitverhalten fuer Folder-Tasks und `code_ui` gehen ueber dieses reine JSON-Schema hinaus
+- Dateiinhalte ausserhalb von `init.py` koennen im Filesystem liegen und muessen fuer die Runtime separat beruecksichtigt werden
+
 ## Übersicht
 
 Das Assignment-Format ermöglicht den Export und Import von kompletten Assignments mit allen zugehörigen Tasks als JSON-Datei.

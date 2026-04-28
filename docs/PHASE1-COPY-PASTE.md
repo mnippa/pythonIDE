@@ -1,5 +1,14 @@
 # Phase 1 – Copy/Paste Vorlagen für GUI-Anlage
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine historische Arbeitsvorlage fuer einen konkreten Rollout-Zeitpunkt.
+Sie dient nicht als allgemeine, aktuelle Referenz fuer neue Aufgaben.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+
 Ziel: Diese Inhalte direkt beim Erstellen der Tasks in der Admin-GUI einfügen.
 
 - Reihenfolge: D1.1 → D1.2 → D1.3 → D1.4 → D1.5 → D2.1

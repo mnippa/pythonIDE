@@ -1,5 +1,15 @@
 # Test-Typen - Strukturierte Tests für Python Code
 
+## Legacy/Current-state Banner
+
+Dieses Dokument beschreibt ein frueheres Test-Modell und ist nicht als alleinige Quelle fuer neue Aufgaben gedacht.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+
+Bei Widerspruechen gilt der aktuelle Code plus `CONTEXT_CURRENT.md`.
+
 ## Übersicht
 
 Das Python IDE unterstützt **3 verschiedene Test-Typen**, die klar strukturiert sind:

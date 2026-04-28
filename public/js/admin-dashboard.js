@@ -1646,8 +1646,38 @@ function validateIntelligentTests(testCases, solutionCode) {
   return null;
 }
 
-function openEditTaskModal(taskId) {
-  const task = state.tasks.find((t) => t.id === taskId);
+async function fetchFreshTaskForEdit(taskId) {
+  if (!state.currentAssignmentId) {
+    return null;
+  }
+
+  const response = await requestJson(`../api/tasks/list.php?assignment_id=${state.currentAssignmentId}&include_expected=1`);
+  if (!response.ok || !Array.isArray(response.tasks)) {
+    return null;
+  }
+
+  return response.tasks.find((t) => t.id === taskId) || null;
+}
+
+async function openEditTaskModal(taskId) {
+  let task = null;
+
+  // Always load a fresh snapshot before opening edit modal to avoid stale code/template values.
+  try {
+    task = await fetchFreshTaskForEdit(taskId);
+  } catch (err) {
+    console.warn('Failed to fetch fresh task for edit modal, using local cache:', err);
+  }
+
+  if (task) {
+    const localTaskIndex = state.tasks.findIndex((t) => t.id === taskId);
+    if (localTaskIndex >= 0) {
+      state.tasks[localTaskIndex] = task;
+    }
+  } else {
+    task = state.tasks.find((t) => t.id === taskId);
+  }
+
   if (!task) return;
 
   // Basic fields
@@ -2445,7 +2475,7 @@ function bindEvents() {
     }
 
     if (action === 'edit-task') {
-      openEditTaskModal(id);
+      await openEditTaskModal(id);
     }
 
     if (action === 'view-task') {

@@ -1,5 +1,18 @@
 # Tasks/Problems Structure - Dokumentation
 
+## Hinweis zum aktuellen Stand
+
+Diese Datei enthält weiterhin nützliche Strukturhinweise für Tasks und Inhaltsfelder.
+Einige Statusbezeichnungen und ältere Flows entsprechen aber nicht mehr exakt dem aktuellen UI- und Runtime-Verhalten.
+
+Für den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [ASSIGNMENTS_API_DOCUMENTATION.md](ASSIGNMENTS_API_DOCUMENTATION.md)
+
+Besonders wichtig:
+- Assignment-Status und Task-Status sind zwei verschiedene Ebenen.
+- Folder-Tasks nutzen heute eine Kombination aus DB, Filesystem und Pyodide-Runtime-Sync.
+
 ## 🏗️ Aufbau: Assignment → Tasks
 
 ```
@@ -81,6 +94,9 @@ essay            - Freie Text-Antwort
 ```
 
 ### user_tasks Tabelle (Progress-Tracking)
+
+Hinweis: Die untenstehenden Statuswerte stammen aus einer älteren Modellbeschreibung.
+Im aktuellen Frontend treten u. a. `unbearbeitet`, `in-progress`, `passed`, `failed` als Task-Progress-Werte auf.
 
 | Feld | Typ | Beschreibung |
 |------|-----|-------------|

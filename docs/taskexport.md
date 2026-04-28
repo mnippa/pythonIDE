@@ -1,5 +1,18 @@
 # Task Export Format (JSON)
 
+## Current-state note
+
+This file is the reference for the single-task JSON import shape, but it is not a full authoring guide.
+
+Read first when creating new tasks:
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+
+Important:
+- for new tasks, prefer `task_text` for the short student-facing instruction
+- use `description` for detailed conditions and checking notes
+- folder-based tasks may require files outside the JSON payload
+
 This document defines the JSON format for importing a single task into an existing assignment.
 
 ## Overview

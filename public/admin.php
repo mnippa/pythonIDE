@@ -516,8 +516,13 @@ if ($displayName === '') {
       }
     }
   </style>
-  <!-- TinyMCE WYSIWYG Editor -->
-  <script src="https://cdn.tiny.cloud/1/92ilkg0odvjjgllurbkfzkvhcgpl3iv3052x9jiytymys5q9/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+  <!-- TinyMCE WYSIWYG Editor (local first, keyless CDN fallback) -->
+  <script src="vendor/tinymce/tinymce.min.js"></script>
+  <script>
+    if (typeof window.tinymce === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.3/tinymce.min.js"><\\/script>');
+    }
+  </script>
 </head>
 <body>
   <?php

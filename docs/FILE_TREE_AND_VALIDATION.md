@@ -1,5 +1,20 @@
 # File Tree & Code Validation System
 
+## Hinweis zum aktuellen Stand
+
+Diese Datei beschreibt einen älteren Zwischenstand.
+Sie ist nicht mehr ausreichend als Referenz für die aktuelle Assignment- und Folder-Task-Runtime.
+
+Heute gilt zusätzlich:
+- Folder-Tasks haben virtuelle `init.py`-Inhalte aus der DB.
+- Weitere Dateien liegen im Filesystem und können User-Overrides in der DB haben.
+- Diese Dateien müssen vor RUN/CHECK/SUBMIT in Pyodide geladen werden.
+
+Für den aktuellen Stand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [code-ui.md](code-ui.md)
+- [code-ui-architecture.md](code-ui-architecture.md)
+
 ## Übersicht
 
 Das System bietet:
@@ -169,8 +184,9 @@ php scripts/migrate_test_cases.php
 - `public/editor.php` - HTML Integration
 - `scripts/migrate_test_cases.php` - DB Migration
 
-### API nicht nötig
-Alles läuft clientseitig im Browser!
+### Historischer Hinweis
+Die Aussage "API nicht nötig" gilt für den heutigen Folder-Task- und Assignment-Flow nicht mehr allgemein.
+Aktuelle Flows verwenden APIs für Dateilisten, Datei-Inhalte, User-Overrides und Runtime-Synchronisation.
 
 ---
 Status: ✅ Implementiert  

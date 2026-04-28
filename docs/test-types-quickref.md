@@ -1,5 +1,15 @@
 # Schnellreferenz: Test-Typen
 
+## Legacy/Current-state Banner
+
+Diese Schnellreferenz ist historisch nuetzlich, aber nicht vollstaendig fuer den aktuellen Plattformstand.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+
+Bei Widerspruechen gilt der aktuelle Code plus `CONTEXT_CURRENT.md`.
+
 ## Übersicht
 
 3 Test-Typen mit klarer Struktur:

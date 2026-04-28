@@ -1,5 +1,14 @@
 ## Datenbankschema-Aktualisierung (2026-02-08)
 
+## Legacy/Current-state Banner
+
+Diese Datei beschreibt ein historisches Schema-Update und ist als Verlaufseintrag gedacht.
+Fuer aktuelle Status-/Flow-Fragen muss zusaetzlich die heutige Produktlogik beruecksichtigt werden.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [DATABASE_COMPLETE.md](DATABASE_COMPLETE.md)
+
 ### Neue Felder
 
 #### Users-Tabelle

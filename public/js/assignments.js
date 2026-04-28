@@ -19,7 +19,8 @@ const assignmentState = {
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
   solutionVisible: {}, // Track solution visibility per task: { taskId: boolean }
   solutionMode: false, // Track if currently in solution mode (readonly)
-  savedCodeBeforeSolution: null, // Store user code before showing solution
+  // Restore buffer for leaving solution mode on the same task only
+  savedCodeBeforeSolution: null, // { taskId, code }
   hasAutoLoaded: false, // Flag to prevent multiple auto-loads
   taskLoadToken: 0, // Guards against async race conditions during fast task switching
   // Activity tracking: accumulated active seconds per task
@@ -141,6 +142,9 @@ function clearTaskDrafts(taskId) {
 
 function cacheCurrentEditorDraft() {
   if (!window.editorInstance || !window.currentFile) return;
+  // In admin assignment test solution mode, editor content represents solution_code,
+  // not init.py/template content. Do not mirror it into file draft maps.
+  if (isAdminAssignmentTestMode() && assignmentState.solutionMode === true) return;
   const { taskId, path } = window.currentFile;
   if (!taskId || !path) return;
   setTaskDraftContent(taskId, path, window.editorInstance.getValue());
@@ -277,6 +281,35 @@ async function saveAllTaskDrafts(taskId) {
 async function confirmTaskSwitchWithDrafts(nextTaskId) {
   const currentTaskId = assignmentState.currentTaskId;
   if (!currentTaskId || Number(currentTaskId) === Number(nextTaskId)) return true;
+
+  // Special handling for admin solution mode: compare/save solution_code directly,
+  // never through init.py/template draft persistence.
+  if (isAdminAssignmentTestMode() && assignmentState.solutionMode === true) {
+    const editor = window.editorInstance;
+    const currentTask = assignmentState.currentTask;
+    if (!editor || !currentTask) return true;
+
+    const editorCode = String(editor.getValue() ?? '');
+    const solutionCode = String(currentTask.solution_code || '').replace(/\\n/g, '\n');
+
+    if (editorCode === solutionCode) {
+      return true;
+    }
+
+    const shouldSaveSolution = window.confirm('Du hast ungespeicherte Änderungen im Lösungscode. Speichern, bevor du den Task wechselst?');
+    if (shouldSaveSolution) {
+      try {
+        await saveCode({ setStatus: false, persist: true });
+        return true;
+      } catch (error) {
+        alert('Speichern des Lösungscodes fehlgeschlagen: ' + (error?.message || error));
+        return false;
+      }
+    }
+
+    const shouldDiscardSolution = window.confirm('Änderungen im Lösungscode verwerfen und Task wechseln?');
+    return !!shouldDiscardSolution;
+  }
 
   cacheCurrentEditorDraft();
 
@@ -788,7 +821,10 @@ async function loadSolutionIntoMainArea(task) {
     // Save current code before showing solution
     const editor = window.editorInstance;
     if (editor) {
-      assignmentState.savedCodeBeforeSolution = editor.getValue();
+      assignmentState.savedCodeBeforeSolution = {
+        taskId: task.id,
+        code: editor.getValue()
+      };
       if (task.solution_code) {
         // Convert escaped newlines to actual newlines (safeguard for older data)
         const displaySolution = task.solution_code.replace(/\\n/g, '\n');
@@ -2460,10 +2496,16 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     if (runBtn) runBtn.style.display = 'inline-block';
     
     // Restore saved code if returning from solution mode, otherwise load from DB
-    if (assignmentState.savedCodeBeforeSolution !== null) {
-      setEditorToInitPy(taskId, assignmentState.savedCodeBeforeSolution);
+    const savedBeforeSolution = assignmentState.savedCodeBeforeSolution;
+    if (
+      savedBeforeSolution &&
+      Number(savedBeforeSolution.taskId) === Number(taskId)
+    ) {
+      setEditorToInitPy(taskId, String(savedBeforeSolution.code ?? ''));
       assignmentState.savedCodeBeforeSolution = null;
     } else {
+      // If buffer belongs to another task, drop it to avoid cross-task code leakage.
+      assignmentState.savedCodeBeforeSolution = null;
       // Load saved code from user_tasks if available
       try {
         const savedCode = await loadSavedCode(taskId);
@@ -2718,6 +2760,30 @@ async function downloadCode() {
   URL.revokeObjectURL(url);
 }
 
+function normalizeCodeForEquality(value) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\\n/g, '\n');
+}
+
+function confirmIfTemplateAndSolutionIdentical(task, code, targetField) {
+  if (!task) return true;
+
+  const normalizedCode = normalizeCodeForEquality(code);
+  const normalizedTemplate = targetField === 'template'
+    ? normalizedCode
+    : normalizeCodeForEquality(task.code_template || '');
+  const normalizedSolution = targetField === 'solution'
+    ? normalizedCode
+    : normalizeCodeForEquality(task.solution_code || '');
+
+  if (normalizedTemplate !== normalizedSolution) {
+    return true;
+  }
+
+  return window.confirm('Template-Code und Lösungscode sind identisch. Trotzdem speichern?');
+}
+
 async function saveCode(options = {}) {
   // In test mode, skip API persistence (keep changes in DOM only)
   if (window.TEST_MODE_NO_PERSIST === true) {
@@ -2772,6 +2838,15 @@ async function saveCode(options = {}) {
     // In admin test mode, save must always target tasks/update.php explicitly
     // so template/solution are persisted reliably (independent of currentFile state).
     if (isAdminTestMode && assignmentState.solutionMode === true) {
+      const allowSave = confirmIfTemplateAndSolutionIdentical(task, code, 'solution');
+      if (!allowSave) {
+        if (saveTaskBtn) {
+          saveTaskBtn.style.opacity = '1';
+          saveTaskBtn.disabled = false;
+        }
+        return false;
+      }
+
       console.log('[SAVE SOLUTION] Saving solution code for task:', taskId, 'Code length:', code.length);
 
       const payload = {
@@ -2828,6 +2903,15 @@ async function saveCode(options = {}) {
         return await saveTaskFile();
       }
 
+      const allowSave = confirmIfTemplateAndSolutionIdentical(task, code, 'template');
+      if (!allowSave) {
+        if (saveTaskBtn) {
+          saveTaskBtn.style.opacity = '1';
+          saveTaskBtn.disabled = false;
+        }
+        return false;
+      }
+
       const payload = {
         id: taskId,
         code_template: code
@@ -2870,6 +2954,15 @@ async function saveCode(options = {}) {
 
     // Check if we're in solution mode (admin editing solution code)
     if (assignmentState.solutionMode === true) {
+      const allowSave = confirmIfTemplateAndSolutionIdentical(task, code, 'solution');
+      if (!allowSave) {
+        if (saveTaskBtn) {
+          saveTaskBtn.style.opacity = '1';
+          saveTaskBtn.disabled = false;
+        }
+        return false;
+      }
+
       console.log('[SAVE SOLUTION] Saving solution code for task:', taskId, 'Code length:', code.length);
       
       // Save to tasks API (solution_code field)
@@ -3154,6 +3247,96 @@ function renderNonPythonCheckResult(fileType, code, outputEl) {
   </div>`;
 }
 
+async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath = 'init.py') {
+  const safeTaskId = Number(taskId || 0);
+  if (!safeTaskId || !pyodide || !pyodide.FS) return;
+
+  const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+  const listUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+  const listResponse = await fetch(listUrl, { credentials: 'include' });
+  const listData = await listResponse.json();
+
+  if (!listResponse.ok || (listData && listData.ok === false)) {
+    throw new Error(listData?.error || 'Task-Dateiliste konnte nicht geladen werden');
+  }
+
+  const filePaths = [];
+  const walk = (items) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      if (item.type === 'folder') {
+        walk(item.children || []);
+        continue;
+      }
+      if (item.type === 'file' && item.virtual !== true && item.is_text !== false) {
+        const relPath = String(item.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+        if (relPath) filePaths.push(relPath);
+      }
+    }
+  };
+  walk(listData.files || []);
+
+  const runtimeRoot = '/task_runtime';
+  try {
+    pyodide.FS.mkdirTree(runtimeRoot);
+  } catch (_e) {
+    // already exists
+  }
+
+  for (const relPath of filePaths) {
+    let content = null;
+
+    if (typeof window.getTaskDraftContent === 'function') {
+      const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
+      if (draftContent !== null && draftContent !== undefined) {
+        content = String(draftContent || '');
+      }
+    }
+
+    if (content === null) {
+      const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
+      const readResponse = await fetch(readUrl, { credentials: 'include' });
+      const readData = await readResponse.json();
+      if (!readResponse.ok || (readData && readData.ok === false)) {
+        throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+      }
+      content = String(readData.content || '');
+    }
+
+    const absPath = `${runtimeRoot}/${relPath}`;
+    const parentDir = absPath.substring(0, absPath.lastIndexOf('/'));
+    if (parentDir) {
+      try {
+        pyodide.FS.mkdirTree(parentDir);
+      } catch (_e) {
+        // already exists
+      }
+    }
+
+    pyodide.FS.writeFile(absPath, content, { encoding: 'utf8' });
+  }
+
+  const mainPath = String(preferredMainPath || 'init.py').replace(/\\/g, '/').replace(/^\/+/, '') || 'init.py';
+  await pyodide.runPythonAsync(`
+import os
+import sys
+import importlib
+
+runtime_root = ${JSON.stringify(runtimeRoot)}
+main_rel = ${JSON.stringify(mainPath)}
+
+if runtime_root not in sys.path:
+    sys.path.insert(0, runtime_root)
+
+main_dir = os.path.dirname(os.path.join(runtime_root, main_rel))
+if main_dir and main_dir not in sys.path:
+    sys.path.insert(0, main_dir)
+
+importlib.invalidate_caches()
+`);
+}
+
 async function checkTask() {
   const task = assignmentState.currentTask;
   if (!task) {
@@ -3208,6 +3391,20 @@ async function checkTask() {
     if (!pyodide) {
       outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
       return;
+    }
+
+    const hasFolderStructure = task && (
+      task.folderstructure === 1 ||
+      task.folderstructure === true ||
+      task.folderstructure === '1'
+    );
+    if (hasFolderStructure) {
+      try {
+        await syncFolderTaskFilesToPyodide(pyodide, task.id, String(window.currentFile?.path || 'init.py'));
+      } catch (syncErr) {
+        outputEl.innerHTML = `<span style="color:#c00;">Task-Dateien konnten nicht in Pyodide geladen werden: ${escapeHtml(String(syncErr.message || syncErr))}</span>`;
+        return;
+      }
     }
 
     // Parse test cases
@@ -3404,6 +3601,20 @@ async function submitTask() {
     if (!pyodide) {
       outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
       return;
+    }
+
+    const hasFolderStructure = task && (
+      task.folderstructure === 1 ||
+      task.folderstructure === true ||
+      task.folderstructure === '1'
+    );
+    if (hasFolderStructure) {
+      try {
+        await syncFolderTaskFilesToPyodide(pyodide, task.id, String(window.currentFile?.path || 'init.py'));
+      } catch (syncErr) {
+        outputEl.innerHTML = `<span style="color:#c00;">Task-Dateien konnten nicht in Pyodide geladen werden: ${escapeHtml(String(syncErr.message || syncErr))}</span>`;
+        return;
+      }
     }
 
     // Parse test cases
@@ -4753,8 +4964,14 @@ function displayTestResults(results, testCases, outputEl, isAdminMode = false) {
         html += `<div style="color:#666; font-size:11px; margin-top:2px;">Ergebnis: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(actualDisplay)}</code></div>`;
       } else if (result.type === 'code_check') {
         html += `</div>`;
-        const feedbackText = result.feedback || 'Code-Check';
-        html += `<div style="color:#666; font-size:11px; margin-top:2px;">Keywords: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(feedbackText)}</code></div>`;
+        const feedbackText = result.feedback || '';
+        if (feedbackText) {
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Feedback: <code style="background:#e5e7eb; padding:1px 4px;">${escapeHtml(feedbackText)}</code></div>`;
+        }
+        if (result.keywordResults && result.keywordResults.length > 0) {
+          const kwDisplay = result.keywordResults.map(kr => `${kr.found ? '✓' : '✗'} ${escapeHtml(kr.keyword)}`).join(', ');
+          html += `<div style="color:#666; font-size:11px; margin-top:2px;">Keywords (${escapeHtml(result.operator)}): <code style="background:#e5e7eb; padding:1px 4px;">${kwDisplay}</code></div>`;
+        }
       }
       
       // Error message
@@ -4892,9 +5109,13 @@ function displayTestResults(results, testCases, outputEl, isAdminMode = false) {
       // Show all code_check tests with their feedback
       html += `<div style="font-size:12px; color:#555; margin-top:4px;">`;
       items.forEach((item, itemIdx) => {
-        const feedbackText = item.result.feedback || 'Code-Check';
-        const statusIcon = item.result.passed ? '✓' : '✗';
-        const statusColor = item.result.passed ? '#10b981' : '#ef4444';
+        const passed = item.result.passed;
+        // For failed checks: show only configured hint text, not keyword names
+        const feedbackText = passed
+          ? (item.result.feedback || 'Code-Check')
+          : (item.result.feedback || 'Anforderung nicht erfüllt');
+        const statusIcon = passed ? '✓' : '✗';
+        const statusColor = passed ? '#10b981' : '#ef4444';
         html += `<div style="color:${statusColor}; margin-top:${itemIdx > 0 ? '6px' : '0'};"><strong>${statusIcon}</strong> ${escapeHtml(feedbackText)}</div>`;
       });
       html += `</div>`;
@@ -5063,7 +5284,7 @@ function runCodeCheck(code, testCases) {
       keywords: keywords,
       operator,
       keywordResults,
-      feedback: feedback || `Keywords ${operator === 'AND' ? '(all required)' : operator === 'OR' ? '(at least one)' : '(forbidden)'}: ${keywords.join(', ')}`
+      feedback: feedback
     });
   });
   

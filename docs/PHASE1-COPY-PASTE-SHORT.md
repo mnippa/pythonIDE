@@ -1,5 +1,14 @@
 # Phase 1 – Ultra-Kurz Copy/Paste
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine historische Kurzvorlage fuer einen konkreten Import-/Erstellungsdurchlauf.
+Sie ist nicht als aktuelle Standard-Doku fuer Task-Authoring gedacht.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [TASK_AUTHORING_GUIDE.md](TASK_AUTHORING_GUIDE.md)
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+
 ## D1.1 Test: Addition
 
 **Type:** Code  

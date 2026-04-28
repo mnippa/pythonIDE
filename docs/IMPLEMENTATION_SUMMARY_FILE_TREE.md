@@ -1,5 +1,14 @@
 # 🎯 Implementation Summary: File Tree & Code Validation
 
+## Legacy/Current-state Banner
+
+Diese Datei ist eine Implementierungszusammenfassung eines frueheren Ausbaustands.
+Einzelpunkte koennen heute durch spaetere Aenderungen ueberholt sein.
+
+Fuer den aktuellen Produktstand zuerst lesen:
+- [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md)
+- [FILE_TREE_AND_VALIDATION.md](FILE_TREE_AND_VALIDATION.md)
+
 ## ✅ Abgeschlossen
 
 ### 1. **Dateibaum (File Tree)**

@@ -1,5 +1,15 @@
 # Assignments and Tasks API Documentation
 
+## Current-state note
+
+This file focuses on endpoint shapes.
+For the current product behavior first read [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md).
+
+Important before using this document:
+- assignment status and task progress are different concepts
+- current dashboard display separates availability, task progress, and assignment status
+- folder-based tasks use DB + filesystem + runtime sync, not only plain task records
+
 ## Overview
 This document covers:
 - Assignments (admin create/update/delete; user list/read)

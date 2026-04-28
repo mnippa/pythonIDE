@@ -1,5 +1,14 @@
 # Datenbankstruktur - Komplette Übersicht (08.02.2026)
 
+## Hinweis zum aktuellen Stand
+
+Diese Datei ist als Strukturueberblick weiterhin nuetzlich, beschreibt aber nicht in allen Punkten den heutigen Produktstand vollstaendig.
+
+Vor allem beachten:
+- aktuelle Task-Progress-Werte im Frontend weichen teils von aelteren Tabellenbeispielen ab
+- folder-basierte Tasks nutzen neben DB-Tabellen auch Dateien im Filesystem und User-Overrides
+- fuer den aktuellen Gesamtzusammenhang zuerst [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md) lesen
+
 ## 🎯 Erweiterungen in dieser Version
 
 ### 1. Semester-System ✅
@@ -84,6 +93,8 @@ feedback
 created_at
 updated_at
 ```
+
+Hinweis: Diese Statusauflistung ist historisch. Im aktuellen Frontend treten unter anderem `unbearbeitet`, `in-progress`, `passed`, `failed` als Task-Progress-Werte auf.
 
 ### test_cases (Existing)
 ```
