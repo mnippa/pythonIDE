@@ -236,9 +236,31 @@ function bindDeploySyncEvents() {
 
 function toDatetimeLocalValue(dateTimeStr) {
   if (!dateTimeStr) return '';
-  const d = dateTimeStr instanceof Date
-    ? dateTimeStr
-    : new Date(String(dateTimeStr).replace(' ', 'T'));
+  if (dateTimeStr instanceof Date) {
+    const d = dateTimeStr;
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  }
+
+  const normalized = String(dateTimeStr).trim();
+  const mysqlMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}):(\d{2})(?::\d{2})?)?$/);
+  if (mysqlMatch) {
+    const [, datePart, hh = '00', mm = '00'] = mysqlMatch;
+    return `${datePart}T${hh}:${mm}`;
+  }
+
+  const localMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  if (localMatch) {
+    const [, datePart, hh, mm] = localMatch;
+    return `${datePart}T${hh}:${mm}`;
+  }
+
+  const d = new Date(normalized.replace(' ', 'T'));
   if (Number.isNaN(d.getTime())) return '';
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -250,7 +272,14 @@ function toDatetimeLocalValue(dateTimeStr) {
 
 function fromDatetimeLocalValue(value) {
   if (!value) return null;
-  const d = new Date(value);
+  const normalized = String(value).trim();
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const [, datePart, hh, mm, ss] = match;
+    return `${datePart} ${hh}:${mm}:${ss || '00'}`;
+  }
+
+  const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return null;
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -941,7 +970,21 @@ async function handleAssignmentSubmit(e) {
   }
 
   if (id) {
-    payload.id = parseInt(id, 10);
+    const assignmentId = parseInt(id, 10);
+    const existingAssignment = state.assignments.find((x) => x.id === assignmentId);
+
+    // Optional: when due date changes centrally, ask whether linked user due dates should be synced.
+    if (existingAssignment && payload.due_date !== existingAssignment.due_date) {
+      const shouldPropagate = confirm(
+        'Die zentrale Due Date wurde geändert.\n\n' +
+        'Sollen bestehende User-Assignment Due Dates ebenfalls aktualisiert werden?\n\n' +
+        'Hinweis: Es werden nur Einträge mitgezogen, die bisher exakt der alten zentralen Due Date entsprachen.'
+      );
+      payload.propagate_due_date_to_user_assignments = shouldPropagate;
+      payload.propagate_matching_only = true;
+    }
+
+    payload.id = assignmentId;
     await requestJson('../api/assignments/update.php', {
       method: 'POST',
       body: JSON.stringify(payload)

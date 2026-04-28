@@ -55,37 +55,66 @@ let teamAssignmentsData = [];
 
 function toMysqlDateTime(localValue) {
   if (!localValue) return null;
-  const d = new Date(localValue);
+  const normalized = String(localValue).trim();
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const [, datePart, hh, mm, ss] = match;
+    return `${datePart} ${hh}:${mm}:${ss || '00'}`;
+  }
+
+  // Fallback for unexpected formats
+  const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return null;
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const hh = String(d.getHours()).padStart(2, '0');
   const mi = String(d.getMinutes()).padStart(2, '0');
   const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  return `${yyyy}-${m}-${dd} ${hh}:${mi}:${ss}`;
 }
 
 function toDatetimeLocalValue(dateTimeStr) {
   if (!dateTimeStr) return '';
-  const d = new Date(String(dateTimeStr).replace(' ', 'T'));
+  const normalized = String(dateTimeStr).trim();
+  const mysqlMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}):(\d{2})(?::\d{2})?)?$/);
+  if (mysqlMatch) {
+    const [, datePart, hh = '00', mm = '00'] = mysqlMatch;
+    return `${datePart}T${hh}:${mm}`;
+  }
+
+  const localMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  if (localMatch) {
+    const [, datePart, hh, mm] = localMatch;
+    return `${datePart}T${hh}:${mm}`;
+  }
+
+  // Fallback for unexpected formats
+  const d = new Date(normalized.replace(' ', 'T'));
   if (Number.isNaN(d.getTime())) return '';
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const hh = String(d.getHours()).padStart(2, '0');
   const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  return `${yyyy}-${m}-${dd}T${hh}:${mi}`;
 }
 
 function formatShortDate(dateTimeStr) {
   if (!dateTimeStr) return '-';
-  const d = new Date(String(dateTimeStr).replace(' ', 'T'));
+  const normalized = String(dateTimeStr).trim();
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, yyyy, mm, dd] = match;
+    return `${dd}.${mm}.${yyyy}`;
+  }
+
+  const d = new Date(normalized.replace(' ', 'T'));
   if (Number.isNaN(d.getTime())) return '-';
   const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
+  return `${dd}.${m}.${yyyy}`;
 }
 
 async function populateAssignmentSelect(selectId) {

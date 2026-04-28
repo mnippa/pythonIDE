@@ -45,6 +45,24 @@ requireAdminOwnedAssignment($conn, $assignmentId, $user);
 
 $allowedDifficulties = ['beginner', 'intermediate', 'advanced'];
 
+$propagateDueDateToUsers = false;
+if (array_key_exists('propagate_due_date_to_user_assignments', $input)) {
+    $parsed = filter_var($input['propagate_due_date_to_user_assignments'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($parsed === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid propagate_due_date_to_user_assignments value'], 400);
+    }
+    $propagateDueDateToUsers = $parsed;
+}
+
+$propagateMatchingOnly = true;
+if (array_key_exists('propagate_matching_only', $input)) {
+    $parsed = filter_var($input['propagate_matching_only'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($parsed === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid propagate_matching_only value'], 400);
+    }
+    $propagateMatchingOnly = $parsed;
+}
+
 $updates = [];
 $params = [];
 $types = '';
@@ -165,6 +183,15 @@ if (array_key_exists('available_from', $input) || array_key_exists('due_date', $
     }
 }
 
+$previousDueDate = null;
+if (array_key_exists('due_date', $input) && $propagateDueDateToUsers) {
+    $oldDueStmt = $conn->prepare('SELECT due_date FROM assignments WHERE id = ?');
+    $oldDueStmt->bind_param('i', $assignmentId);
+    $oldDueStmt->execute();
+    $oldDueRow = $oldDueStmt->get_result()->fetch_assoc() ?: [];
+    $previousDueDate = $oldDueRow['due_date'] ?? null;
+}
+
 if (empty($updates)) {
     jsonResponse(['ok' => false, 'error' => 'No fields to update'], 400);
 }
@@ -177,7 +204,49 @@ $stmt = $conn->prepare($sql);
 $stmt->bind_param($types, ...$params);
 
 if ($stmt->execute()) {
-    jsonResponse(['ok' => true, 'message' => 'Assignment updated']);
+    $propagatedRows = 0;
+
+    if (array_key_exists('due_date', $input) && $propagateDueDateToUsers) {
+        $newDueDate = normalizeDateTimeInput($input['due_date']);
+
+        if ($newDueDate !== $previousDueDate) {
+            if ($propagateMatchingOnly) {
+                if ($previousDueDate === null) {
+                    $syncStmt = $conn->prepare(
+                        'UPDATE user_assignments
+                         SET due_date = ?
+                         WHERE assignment_id = ?
+                           AND due_date IS NULL'
+                    );
+                    $syncStmt->bind_param('si', $newDueDate, $assignmentId);
+                } else {
+                    $syncStmt = $conn->prepare(
+                        'UPDATE user_assignments
+                         SET due_date = ?
+                         WHERE assignment_id = ?
+                           AND due_date = ?'
+                    );
+                    $syncStmt->bind_param('sis', $newDueDate, $assignmentId, $previousDueDate);
+                }
+            } else {
+                $syncStmt = $conn->prepare(
+                    'UPDATE user_assignments
+                     SET due_date = ?
+                     WHERE assignment_id = ?'
+                );
+                $syncStmt->bind_param('si', $newDueDate, $assignmentId);
+            }
+
+            $syncStmt->execute();
+            $propagatedRows = $syncStmt->affected_rows;
+        }
+    }
+
+    jsonResponse([
+        'ok' => true,
+        'message' => 'Assignment updated',
+        'propagated_user_due_dates' => $propagatedRows,
+    ]);
 } else {
     jsonResponse(['ok' => false, 'error' => 'Failed to update assignment'], 500);
 }
