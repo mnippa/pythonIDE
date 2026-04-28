@@ -117,7 +117,8 @@ class TaskImporter {
           const tasks = Array.isArray(data) ? data : [data];
           resolve({
             tasks,
-            images: {} // No images in JSON
+            images: {}, // No images in JSON
+            folderFilesMap: {}
           });
         } catch (err) {
           reject(new Error('Invalid JSON format: ' + err.message));
@@ -145,6 +146,21 @@ class TaskImporter {
       zip.folder('images')?.forEach((relativePath, file) => {
         // Just track that we have images; we'll process them later
       });
+
+      // Extract folder_files (for folderstructure tasks)
+      const folderFilesMap = {}; // Maps 'task_N/path' or 'path' => content string
+      if (zip.folder('folder_files')) {
+        await Promise.all(
+          Object.entries(zip.files)
+            .filter(([path]) => path.startsWith('folder_files/') && !zip.files[path].dir)
+            .map(async ([path, file]) => {
+              const content = await file.async('text');
+              // Strip leading 'folder_files/'
+              const relativePath = path.replace(/^folder_files\//, '');
+              folderFilesMap[relativePath] = content;
+            })
+        );
+      }
 
       // Process manifest if it exists
       let manifest = null;
@@ -199,7 +215,7 @@ class TaskImporter {
         throw new Error('No tasks found in ZIP file');
       }
 
-      return { tasks, images, manifest };
+      return { tasks, images, manifest, folderFilesMap };
     } catch (err) {
       if (err.message.includes('No tasks found')) {
         throw err;
@@ -276,7 +292,7 @@ class TaskImporter {
   /**
    * Import tasks
    */
-  async importTasks(tasks, images) {
+  async importTasks(tasks, images, folderFilesMap = {}) {
     const results = {
       created: [],
       failed: []
@@ -376,6 +392,7 @@ class TaskImporter {
           variable_overrides: (taskType === 'code_random_complex' && !variableOverridesNormalized)
             ? null
             : variableOverridesNormalized,
+          folderstructure: taskWithImages.folderstructure ? 1 : 0,
           options: taskWithImages.options || []
         };
 
@@ -390,6 +407,11 @@ class TaskImporter {
           if (!response.ok) throw new Error(`Update failed: ${response.status}`);
           const result = await response.json();
           if (!result.ok) throw new Error(result.error || 'Update failed');
+
+          // Restore folder files if present
+          if (taskWithImages.folderstructure) {
+            await this.restoreFolderFiles(taskWithImages.id, i, taskWithImages._folder_files_dir, folderFilesMap);
+          }
 
           results.created.push({
             title: task.title,
@@ -407,11 +429,18 @@ class TaskImporter {
           const result = await response.json();
           if (!result.ok) throw new Error(result.error || 'Create failed');
 
+          const newTaskId = result.id;
+
+          // Restore folder files for newly created task
+          if (taskWithImages.folderstructure && newTaskId) {
+            await this.restoreFolderFiles(newTaskId, i, taskWithImages._folder_files_dir, folderFilesMap);
+          }
+
           results.created.push({
             title: task.title,
             type: taskWithImages.task_type,
             action: 'created',
-            id: result.id
+            id: newTaskId
           });
         }
       } catch (err) {
@@ -424,6 +453,47 @@ class TaskImporter {
     }
 
     return results;
+  }
+
+  /**
+   * Restore folder files for a task after create/update
+   * folderFilesMap keys are either 'task_N/path' (multi-task export) or 'path' (single-task export)
+   */
+  async restoreFolderFiles(taskId, taskIndex, folderFilesDirHint, folderFilesMap) {
+    if (!folderFilesMap || Object.keys(folderFilesMap).length === 0) return;
+
+    // Determine key prefix: multi-task export uses 'task_N/' prefix
+    const multiPrefix = `task_${taskIndex + 1}/`;
+
+    for (const [mapKey, content] of Object.entries(folderFilesMap)) {
+      let filePath = null;
+
+      if (mapKey.startsWith(multiPrefix)) {
+        // Multi-task export: strip the 'task_N/' prefix
+        filePath = mapKey.slice(multiPrefix.length);
+      } else if (!mapKey.includes('/task_')) {
+        // Single-task export: key is directly the relative path
+        filePath = mapKey;
+      }
+
+      if (!filePath) continue;
+
+      try {
+        // Ensure parent folders exist by using create_file which handles path creation
+        await fetch(`../api/tasks/folder-manage.php?action=create_file&task_id=${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: filePath.split('/').pop(),
+            parent_path: filePath.includes('/') ? filePath.split('/').slice(0, -1).join('/') : '',
+            content
+          })
+        });
+        // Ignore 409 (already exists) – we'll just skip those
+      } catch (e) {
+        console.warn(`Could not restore folder file ${filePath} for task ${taskId}:`, e);
+      }
+    }
   }
 }
 

@@ -60,8 +60,65 @@ class TaskExporter {
       stoff: task.stoff || '',
       correct_answer: task.correct_answer || '',
       variable_overrides: task.variable_overrides || null,
+      folderstructure: task.folderstructure ? 1 : 0,
       options
     };
+  }
+
+  /**
+   * Fetch all real files from a folder-based task via API
+   * Returns array of { path, content } objects
+   */
+  async fetchFolderFiles(taskId) {
+    try {
+      const res = await fetch(`../api/tasks/get-folder-files.php?task_id=${taskId}&include_content=1`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!data.ok || !Array.isArray(data.files)) return [];
+
+      // Collect only real (non-virtual) files recursively
+      const realFiles = [];
+      const collectFiles = (items, prefix = '') => {
+        for (const item of items) {
+          const itemPath = prefix ? `${prefix}/${item.name}` : item.name;
+          if (item.type === 'file' && !item.virtual) {
+            realFiles.push({ path: item.path || itemPath, content: typeof item.content === 'string' ? item.content : null });
+          } else if (item.type === 'folder' && Array.isArray(item.children)) {
+            collectFiles(item.children, itemPath);
+          }
+        }
+      };
+      collectFiles(data.files);
+
+      // Fetch content of each real file
+      const results = [];
+      for (const fileEntry of realFiles) {
+        const filePath = fileEntry.path;
+        if (fileEntry.content !== null) {
+          results.push({ path: filePath, content: fileEntry.content });
+          continue;
+        }
+
+        try {
+          const readRes = await fetch(`../api/tasks/folder-manage.php?action=read&task_id=${taskId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: filePath })
+          });
+          if (!readRes.ok) continue;
+          const readData = await readRes.json();
+          if (readData.ok) {
+            results.push({ path: filePath, content: readData.content });
+          }
+        } catch (e) {
+          console.warn(`Could not read folder file ${filePath}:`, e);
+        }
+      }
+      return results;
+    } catch (e) {
+      console.warn('fetchFolderFiles failed:', e);
+      return [];
+    }
   }
 
   /**
@@ -166,6 +223,14 @@ class TaskExporter {
         });
       }
 
+      // Bundle folder files if folderstructure is enabled
+      if (task.folderstructure && task.id) {
+        const folderFiles = await this.fetchFolderFiles(task.id);
+        for (const { path, content } of folderFiles) {
+          zip.file(`folder_files/${path}`, content);
+        }
+      }
+
       // Add task JSON
       zip.file('task.json', JSON.stringify(taskExport, null, 2));
 
@@ -233,6 +298,18 @@ class TaskExporter {
               opt.image_url = imageMap[opt.image_url];
             }
           });
+        }
+
+        // Bundle folder files for this task
+        if (task.folderstructure && task.id) {
+          const folderFiles = await this.fetchFolderFiles(task.id);
+          const taskFolderFilesDir = `folder_files/task_${i + 1}/`;
+          for (const { path, content } of folderFiles) {
+            zip.file(taskFolderFilesDir + path, content);
+          }
+          if (folderFiles.length > 0) {
+            taskExport._folder_files_dir = taskFolderFilesDir;
+          }
         }
 
         // Add task JSON to tasks folder

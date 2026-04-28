@@ -11,6 +11,9 @@ header('Content-Type: application/json');
 
 $user = requireAuth();
 
+$isAdmin = (($user['role'] ?? '') === 'admin');
+$includeContent = isset($_GET['include_content']) && (string)$_GET['include_content'] === '1' && $isAdmin;
+
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -99,7 +102,7 @@ $files[] = [
 ];
 
 // List real files and folders from folder (recursive)
-$scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryWithPolicy, $resolveReadOnly, $policies, $isCodeUiTask, $allowStudentWebEdit) {
+$scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryWithPolicy, $resolveReadOnly, $policies, $isCodeUiTask, $allowStudentWebEdit, $includeContent) {
     $items = [];
     
     if (!is_dir($dir)) {
@@ -125,7 +128,7 @@ $scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryW
                 'children' => $scanDirectoryWithPolicy($filePath, $relativePath)
             ];
         } else {
-            $items[] = [
+            $item = [
                 'name' => $file,
                 'type' => 'file',
                 'virtual' => false,
@@ -133,6 +136,15 @@ $scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryW
                 'path' => $relativePath,
                 'read_only' => $resolveReadOnly($relativePath, $policies, $isCodeUiTask, $allowStudentWebEdit)
             ];
+
+            if ($includeContent) {
+                $content = @file_get_contents($filePath);
+                if ($content !== false) {
+                    $item['content'] = $content;
+                }
+            }
+
+            $items[] = $item;
         }
     }
     

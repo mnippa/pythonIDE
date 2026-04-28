@@ -429,6 +429,47 @@ try {
         jsonResponse(['ok' => true, 'content' => $content]);
     }
 
+    // READ FILE (get content for export)
+    // ============================================
+    elseif ($action === 'read') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $path = isset($input['path']) ? trim($input['path']) : '';
+
+        if (!$path) {
+            jsonResponse(['ok' => false, 'error' => 'Path required'], 400);
+        }
+
+        $path = $normalizedInputPath($path);
+        if ($path === '') {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
+
+        $fullPath = $folderPath . '/' . $path;
+
+        // Security check: prevent directory traversal
+        $realFull = realpath($fullPath);
+        $realFolder = realpath($folderPath);
+        if (!$realFull || !$realFolder || strpos($realFull, $realFolder) !== 0) {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
+
+        if (!is_file($fullPath)) {
+            jsonResponse(['ok' => false, 'error' => 'File not found'], 404);
+        }
+
+        $content = file_get_contents($fullPath);
+        if ($content === false) {
+            jsonResponse(['ok' => false, 'error' => 'Failed to read file'], 500);
+        }
+
+        jsonResponse([
+            'ok' => true,
+            'path' => $path,
+            'content' => $content
+        ]);
+    }
+
+    // ============================================
     // SAVE FILE (update content)
     // ============================================
     elseif ($action === 'save') {

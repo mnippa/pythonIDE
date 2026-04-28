@@ -1988,7 +1988,7 @@ async function createProjectFromDialog() {
     document.getElementById('project-desc-input').value = '';
     const templateSelect = document.getElementById('project-template-input');
     if (templateSelect) {
-      templateSelect.value = 'python_logic';
+      templateSelect.value = 'empty_python';
     }
     
     // Reload projects and load the new one

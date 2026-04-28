@@ -767,9 +767,9 @@ HTML;
         <div style="margin-bottom: 15px;">
           <label style="display: block; margin-bottom: 8px; font-weight: 600;">Vorlage:</label>
           <select id="project-template-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);">
-            <option value="empty_python">Leeres Python Projekt</option>
+            <option value="empty_python" selected>Leeres Python Projekt</option>
             <option value="empty_python_html">Leeres Python-HTML Projekt</option>
-            <option value="python_logic" selected>Python-HTML mit Python-Logik</option>
+            <option value="python_logic">Python-HTML mit Python-Logik</option>
             <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
             <option value="kniffel_demo">🎲 Demo: Kniffel (Yahtzee)</option>
             <option value="blackjack_demo">🎰 Demo: Blackjack</option>

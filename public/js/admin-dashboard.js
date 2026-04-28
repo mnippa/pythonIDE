@@ -2140,15 +2140,15 @@ function bindEvents() {
       
       try {
         // Process import with new importer
-        const { tasks, images, manifest } = await window.taskImporter.processImport(file);
+        const { tasks, images, manifest, folderFilesMap } = await window.taskImporter.processImport(file);
         
         // Add assignment ID to each task (ensure it's an integer)
         tasks.forEach(task => {
           task.assignment_id = parseInt(state.currentAssignmentId, 10);
         });
         
-        // Import tasks with images
-        const results = await window.taskImporter.importTasks(tasks, images);
+        // Import tasks with images and folder files
+        const results = await window.taskImporter.importTasks(tasks, images, folderFilesMap || {});
         
         // Show results
         const createdCount = results.created.length;
