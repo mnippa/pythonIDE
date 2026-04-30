@@ -2,7 +2,11 @@ const state = {
   assignments: [],
   assignmentId: null,
   overview: null,
-  participants: []
+  participants: [],
+  participantFilters: {
+    team: '',
+    search: ''
+  }
 };
 
 function $(id) {
@@ -197,12 +201,70 @@ async function loadParticipants() {
   if (!state.assignmentId) return;
   const data = await requestJson(`../api/admin/assignments/users/list.php?assignment_id=${state.assignmentId}`);
   state.participants = data.users || [];
+  renderParticipantTeamFilter();
   renderParticipants();
+}
+
+function renderParticipantTeamFilter() {
+  const select = $('participants-team-filter');
+  if (!select) return;
+
+  const previousValue = state.participantFilters.team || '';
+  const teams = Array.from(new Set(
+    (state.participants || [])
+      .map((participant) => (participant.team_name || '').trim())
+      .filter(Boolean)
+  )).sort((left, right) => left.localeCompare(right, 'de', { sensitivity: 'base' }));
+
+  select.innerHTML = '<option value="">Alle Teams</option>';
+  teams.forEach((teamName) => {
+    const option = document.createElement('option');
+    option.value = teamName;
+    option.textContent = teamName;
+    select.appendChild(option);
+  });
+
+  if (teams.includes(previousValue)) {
+    select.value = previousValue;
+  } else {
+    state.participantFilters.team = '';
+    select.value = '';
+  }
+}
+
+function getFilteredParticipants() {
+  const teamFilter = (state.participantFilters.team || '').trim();
+  const searchFilter = (state.participantFilters.search || '').trim().toLocaleLowerCase('de');
+
+  return (state.participants || []).filter((participant) => {
+    const matchesTeam = !teamFilter || (participant.team_name || '') === teamFilter;
+    if (!matchesTeam) {
+      return false;
+    }
+
+    if (!searchFilter) {
+      return true;
+    }
+
+    const haystack = [
+      participant.email,
+      participant.first_name,
+      participant.last_name,
+      [participant.first_name, participant.last_name].filter(Boolean).join(' ')
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('de');
+
+    return haystack.includes(searchFilter);
+  });
 }
 
 function renderParticipants() {
   const body = $('participants-body');
   body.innerHTML = '';
+
+  const filteredParticipants = getFilteredParticipants();
 
   if (!state.participants || state.participants.length === 0) {
     const tr = document.createElement('tr');
@@ -211,7 +273,14 @@ function renderParticipants() {
     return;
   }
 
-  state.participants.forEach((u) => {
+  if (filteredParticipants.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="10">Keine Teilnehmer für den aktuellen Filter gefunden.</td>';
+    body.appendChild(tr);
+    return;
+  }
+
+  filteredParticipants.forEach((u) => {
     const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '-';
     const sourceLabel = u.is_direct ? 'direct (User)' : 'team';
     const timeFormatted = formatTime(u.active_seconds || 0);
@@ -344,6 +413,16 @@ function bindEvents() {
     state.assignmentId = parseInt(e.target.value, 10);
     setAssignmentIdInUrl(state.assignmentId);
     await Promise.all([loadOverview(), loadParticipants()]);
+  });
+
+  $('participants-team-filter')?.addEventListener('change', (e) => {
+    state.participantFilters.team = e.target.value || '';
+    renderParticipants();
+  });
+
+  $('participants-search')?.addEventListener('input', (e) => {
+    state.participantFilters.search = e.target.value || '';
+    renderParticipants();
   });
 
   $('back-to-admin').addEventListener('click', () => {

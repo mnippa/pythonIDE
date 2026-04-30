@@ -343,6 +343,18 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     <section class="panel" id="tab-participants">
       <div class="evaluation-card">
         <h2>Teilnehmer</h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+          <div style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+            <label for="participants-team-filter">Team</label>
+            <select id="participants-team-filter">
+              <option value="">Alle Teams</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;min-width:260px;flex:1;">
+            <label for="participants-search">Studierende suchen</label>
+            <input type="text" id="participants-search" placeholder="Mail, Vorname oder Nachname" />
+          </div>
+        </div>
         <div style="overflow:auto;">
           <table>
             <thead>
@@ -399,6 +411,6 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     </div>
   </div>
 
-  <script src="js/evaluation.js?v=2"></script>
+  <script src="js/evaluation.js?v=3"></script>
 </body>
 </html>
