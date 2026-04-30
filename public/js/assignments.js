@@ -23,6 +23,7 @@ const assignmentState = {
   savedCodeBeforeSolution: null, // { taskId, code }
   hasAutoLoaded: false, // Flag to prevent multiple auto-loads
   taskLoadToken: 0, // Guards against async race conditions during fast task switching
+  fileOpenToken: 0, // Guards against stale async file-open operations
   // Activity tracking: accumulated active seconds per task
   taskActiveSeconds: {}, // { taskId: totalSeconds }
   taskLastActivityTime: {}, // { taskId: timestamp }
@@ -180,6 +181,12 @@ function updateTaskFileDirtyIndicator(taskId, path) {
   const baseName = nameEl.dataset.baseName || String(nameEl.textContent || '').replace(/\s\*$/, '');
   nameEl.dataset.baseName = baseName;
   nameEl.textContent = isTaskPathDirty(taskId, path) ? `${baseName} *` : baseName;
+}
+
+function isTaskMismatchForFileOperation(taskId) {
+  if (!taskId) return true;
+  if (assignmentState.currentTaskId === null || assignmentState.currentTaskId === undefined) return false;
+  return Number(taskId) !== Number(assignmentState.currentTaskId);
 }
 
 async function persistTaskFileContent(taskId, path, content, isVirtual = false) {
@@ -1591,6 +1598,7 @@ function renderAssignmentList() {
     switch (rawStatus) {
       case 'assigned':   return { label: 'Zugewiesen',     color: '#1d4ed8', background: '#dbeafe' };
       case 'in_progress':return { label: 'In Bearbeitung', color: '#9a3412', background: '#ffedd5' };
+      case 'rework':     return { label: 'Nacharbeit',     color: '#9a3412', background: '#ffedd5' };
       case 'submitted':  return { label: 'Eingereicht',    color: '#0f766e', background: '#ccfbf1' };
       case 'passed':     return { label: 'Bestanden',      color: '#166534', background: '#dcfce7' };
       case 'failed':     return { label: 'Nicht bestanden',color: '#991b1b', background: '#fee2e2' };
@@ -1622,6 +1630,10 @@ function renderAssignmentList() {
     // Keep dashboard states internally consistent regardless of stored raw status.
     if (phase === 'upcoming' || phase === 'hidden') {
       return getRawStatusMeta('assigned');
+    }
+
+    if (rawStatus === 'rework') {
+      return getRawStatusMeta('rework');
     }
 
     if (!allTasksFinalized) {
@@ -2906,6 +2918,9 @@ async function saveCode(options = {}) {
       );
 
       if (isFolderTask && isEditingNonInitFile) {
+        if (Number(window.currentFile.taskId) !== Number(taskId)) {
+          throw new Error('Datei/Task-Kontext inkonsistent. Bitte Aufgabe neu laden und erneut speichern.');
+        }
         return await saveTaskFile();
       }
 
@@ -6313,8 +6328,15 @@ async function toggleTaskFileReadonly(taskId, path, readOnly) {
 
 // Open task file in editor
 async function openTaskFileInEditor(taskId, path) {
+  const fileOpenToken = ++assignmentState.fileOpenToken;
+  const isStaleFileOpen = () => assignmentState.fileOpenToken !== fileOpenToken || isTaskMismatchForFileOperation(taskId);
+
   try {
     cacheCurrentEditorDraft();
+
+    if (isStaleFileOpen()) {
+      return;
+    }
 
     let fileName = path.split('/').pop();
     let language = 'plaintext';
@@ -6338,6 +6360,9 @@ async function openTaskFileInEditor(taskId, path) {
       language = 'python';
       
       if (window.editorInstance && window.monaco) {
+        if (isStaleFileOpen()) {
+          return;
+        }
         const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/init.py`));
         window.editorInstance.setModel(editorModel);
         window.editorInstance.updateOptions({ readOnly: false });
@@ -6364,12 +6389,18 @@ async function openTaskFileInEditor(taskId, path) {
     } else {
       // Real file handling
       const response = await fetch(readEndpoint);
+      if (isStaleFileOpen()) {
+        return;
+      }
       
       if (!response.ok) {
         throw new Error('Datei nicht gefunden: ' + path);
       }
       
       const result = await response.json();
+      if (isStaleFileOpen()) {
+        return;
+      }
       content = result.content || '';
       setTaskSavedSnapshot(taskId, path, content);
     }
@@ -6404,6 +6435,9 @@ async function openTaskFileInEditor(taskId, path) {
     
     // Set editor content
     if (window.editorInstance && window.monaco) {
+      if (isStaleFileOpen()) {
+        return;
+      }
       const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/${path}`));
       window.editorInstance.setModel(editorModel);
 
@@ -6448,6 +6482,16 @@ async function saveTaskFile(silent = false) {
   }
 
   const { taskId, path, fileName, isVirtual, readOnly } = window.currentFile;
+
+  if (isTaskMismatchForFileOperation(taskId)) {
+    console.warn('[saveTaskFile] Blocked cross-task save attempt', {
+      fileTaskId: taskId,
+      currentTaskId: assignmentState.currentTaskId,
+      path,
+    });
+    if (!silent) alert('Speichern abgebrochen: Datei gehört nicht zur aktuell geöffneten Aufgabe. Bitte Aufgabe/Datei neu öffnen.');
+    return false;
+  }
 
   if (readOnly) {
     if (!silent) alert('Diese Datei ist schreibgeschützt.');

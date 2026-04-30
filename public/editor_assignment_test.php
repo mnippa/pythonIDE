@@ -1263,6 +1263,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260428a"></script>
+  <script type="module" src="js/assignments.js?v=20260430b"></script>
 </body>
 </html>

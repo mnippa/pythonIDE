@@ -124,6 +124,10 @@ $dueTs = !empty($schedule['user_due_date'])
     : (!empty($schedule['assignment_due_date']) ? strtotime($schedule['assignment_due_date']) : null);
 $hardTs = !empty($schedule['hard_deadline']) ? strtotime($schedule['hard_deadline']) : null;
 
+if ($dueTs !== null && ($hardTs === null || $hardTs < $dueTs)) {
+    $hardTs = $dueTs;
+}
+
 if ((int)$schedule['is_active'] !== 1) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Assignment is inactive']);

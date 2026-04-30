@@ -42,14 +42,8 @@ try {
         $input = json_decode(file_get_contents('php://input'), true);
         $content = isset($input['content']) ? $input['content'] : '';
 
-        // Verify task exists
-        $checkStmt = $conn->prepare('SELECT id FROM tasks WHERE id = ?');
-        $checkStmt->bind_param('i', $taskId);
-        $checkStmt->execute();
-        if ($checkStmt->get_result()->num_rows === 0) {
-            jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
-        }
-        $checkStmt->close();
+        // Reuse centralized task access validation.
+        requireAdminOwnedTask($conn, $taskId, $user);
 
         $stmt = $conn->prepare('UPDATE tasks SET code_template = ? WHERE id = ?');
         if (!$stmt) {

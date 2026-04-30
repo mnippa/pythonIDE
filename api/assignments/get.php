@@ -28,11 +28,22 @@ function parseApiDateTime(?string $value, bool $dateOnlyAsEndOfDay = false): ?Da
     }
 }
 
+function getEffectiveHardDeadline(?DateTimeImmutable $hardDeadline, ?DateTimeImmutable $dueDate): ?DateTimeImmutable {
+    if ($dueDate !== null && ($hardDeadline === null || $hardDeadline < $dueDate)) {
+        return $dueDate;
+    }
+
+    return $hardDeadline;
+}
+
 function calcTimingPhaseForAccess(array $row): string {
     $now = new DateTimeImmutable('now');
     $availableFrom = parseApiDateTime($row['available_from'] ?? null, false);
     $dueDate = parseApiDateTime($row['effective_due_date'] ?? null, true);
-    $hardDeadline = parseApiDateTime($row['hard_deadline'] ?? null, true);
+    $hardDeadline = getEffectiveHardDeadline(
+        parseApiDateTime($row['hard_deadline'] ?? null, true),
+        $dueDate
+    );
 
     if (isset($row['is_active']) && (int)$row['is_active'] === 0) {
         return 'hidden';

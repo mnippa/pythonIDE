@@ -293,6 +293,10 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
             <div class="stat-value" id="stat-in-progress">0</div>
           </div>
           <div class="stat-card">
+            <div class="stat-label"><span class="status-dot status-in-progress"></span>Nacharbeit</div>
+            <div class="stat-value" id="stat-rework">0</div>
+          </div>
+          <div class="stat-card">
             <div class="stat-label"><span class="status-dot status-completed"></span>Abgeschlossen</div>
             <div class="stat-value" id="stat-completed">0</div>
           </div>
@@ -411,6 +415,6 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     </div>
   </div>
 
-  <script src="js/evaluation.js?v=3"></script>
+  <script src="js/evaluation.js?v=4"></script>
 </body>
 </html>

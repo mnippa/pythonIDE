@@ -99,6 +99,7 @@ function renderOverview() {
   $('stat-total-users').textContent = overview.stats.total || 0;
   $('stat-assigned').textContent = overview.stats.assigned || 0;
   $('stat-in-progress').textContent = overview.stats.in_progress || 0;
+  $('stat-rework').textContent = overview.stats.rework || 0;
   $('stat-completed').textContent = overview.stats.completed || 0;
   $('stat-late-completed').textContent = overview.stats.late_completed || 0;
   $('stat-passed').textContent = overview.stats.passed || 0;
@@ -320,9 +321,10 @@ function renderParticipants() {
       <td>${escapeHtml(u.team_name || '-')}</td>
       <td>${taskCounts}</td>
       <td>
-        <select class="assignment-status-select" data-assignment-id="${state.assignmentId}" data-user-id="${u.id}">
+        <select class="assignment-status-select" data-assignment-id="${state.assignmentId}" data-user-id="${u.id}" data-current-status="${escapeHtml(currentRawStatus)}">
           <option value="assigned"      ${currentRawStatus === 'assigned'      ? 'selected' : ''}>Zugewiesen</option>
           <option value="in_progress"   ${currentRawStatus === 'in_progress'   ? 'selected' : ''}>In Bearbeitung</option>
+          <option value="rework"        ${currentRawStatus === 'rework'        ? 'selected' : ''}>Nacharbeit</option>
           <option value="submitted"     ${currentRawStatus === 'submitted'     ? 'selected' : ''}>Eingereicht</option>
           <option value="passed"        ${currentRawStatus === 'passed'        ? 'selected' : ''}>Bestanden</option>
           <option value="passed_delayed"${currentRawStatus === 'passed_delayed'? 'selected' : ''}>Bestanden (verspaetet)</option>
@@ -347,6 +349,7 @@ function getStatusDot(status) {
     unbearbeitet: 'status-unstarted',
     in_progress: 'status-in-progress',
     'in-progress': 'status-in-progress',
+    rework: 'status-in-progress',
     submitted: 'status-in-progress',
     completed: 'status-completed',
     late_completed: 'status-late-completed',
@@ -446,8 +449,17 @@ function bindEvents() {
     const assignmentId = parseInt(select.dataset.assignmentId, 10);
     const userId = parseInt(select.dataset.userId, 10);
     const status = select.value;
+    const previousStatus = select.dataset.currentStatus || 'assigned';
 
     if (!assignmentId || !userId) return;
+
+    if (status === 'rework') {
+      const confirmed = window.confirm('Nacharbeit starten? Dabei wird die individuelle Frist auf jetzt + 10 Tage gesetzt und fehlgeschlagene Aufgaben werden auf unbearbeitet zurückgesetzt.');
+      if (!confirmed) {
+        select.value = previousStatus;
+        return;
+      }
+    }
 
     try {
       await requestJson('../api/admin/assignments/users/update-status.php', {
@@ -457,6 +469,7 @@ function bindEvents() {
       await loadOverview();
       await loadParticipants();
     } catch (err) {
+      select.value = previousStatus;
       alert('Update failed: ' + err.message);
     }
   });

@@ -52,11 +52,39 @@ function parseApiDateTime(?string $value, bool $dateOnlyAsEndOfDay = false): ?Da
     }
 }
 
+function getEffectiveHardDeadline(?DateTimeImmutable $hardDeadline, ?DateTimeImmutable $dueDate): ?DateTimeImmutable {
+    if ($dueDate !== null && ($hardDeadline === null || $hardDeadline < $dueDate)) {
+        return $dueDate;
+    }
+
+    return $hardDeadline;
+}
+
+function isReworkState(array $row, string $rawStatus, bool $allPassed, bool $allWorked): bool {
+    if ($rawStatus !== 'in_progress') {
+        return false;
+    }
+
+    if ($allPassed || $allWorked) {
+        return false;
+    }
+
+    $assignmentDueDate = parseApiDateTime($row['assignment_due_date'] ?? null, true);
+    $userDueDate = parseApiDateTime($row['user_due_date'] ?? null, true);
+
+    return $assignmentDueDate !== null
+        && $userDueDate !== null
+        && $userDueDate > $assignmentDueDate;
+}
+
 function calcAssignmentTiming(array $row): array {
     $now = new DateTimeImmutable('now');
     $availableFrom = parseApiDateTime($row['available_from'] ?? null, false);
     $dueDate = parseApiDateTime($row['effective_due_date'] ?? null, true);
-    $hardDeadline = parseApiDateTime($row['hard_deadline'] ?? null, true);
+    $hardDeadline = getEffectiveHardDeadline(
+        parseApiDateTime($row['hard_deadline'] ?? null, true),
+        $dueDate
+    );
 
     $phase = 'open';
     if (!empty($row['assignment_active']) && (int)$row['assignment_active'] === 0) {
@@ -99,6 +127,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
 
     $allPassed = $totalTasks > 0 && $passedTasks >= $totalTasks;
     $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
+    $isRework = isReworkState($row, $rawStatus, $allPassed, $allWorked);
 
     if ($rawStatus === 'passed' || $allPassed) {
         $status = $isLate ? 'passed_delayed' : 'passed';
@@ -106,6 +135,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
             'status' => $status,
             'label' => $isLate ? 'Passed delayed' : 'Passed',
             'is_late_completion' => $isLate,
+            'is_rework' => false,
         ];
     }
 
@@ -114,6 +144,16 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
             'status' => $isLate ? 'late_completed' : 'completed',
             'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
             'is_late_completion' => $isLate,
+            'is_rework' => false,
+        ];
+    }
+
+    if ($isRework) {
+        return [
+            'status' => 'rework',
+            'label' => 'Nacharbeit',
+            'is_late_completion' => false,
+            'is_rework' => true,
         ];
     }
 
@@ -122,6 +162,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
             'status' => 'missed',
             'label' => 'Verpasst',
             'is_late_completion' => false,
+            'is_rework' => false,
         ];
     }
 
@@ -130,6 +171,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
             'status' => 'in_progress',
             'label' => 'In Bearbeitung',
             'is_late_completion' => false,
+            'is_rework' => false,
         ];
     }
 
@@ -137,6 +179,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         'status' => 'assigned',
         'label' => 'Zugewiesen',
         'is_late_completion' => false,
+        'is_rework' => false,
     ];
 }
 
@@ -184,6 +227,8 @@ try {
             ua_team.status AS team_status,
             COALESCE(ua_user.submitted_at, ua_team.submitted_at) AS submitted_at,
             COALESCE(ua_user.is_late, ua_team.is_late, 0) AS is_late,
+            COALESCE(ua_user.due_date, ua_team.due_date) AS user_due_date,
+            a.due_date AS assignment_due_date,
             COALESCE(ua_user.due_date, ua_team.due_date, a.due_date) AS effective_due_date,
             a.is_active AS assignment_active,
             a.available_from,
@@ -328,6 +373,8 @@ try {
     $user['status'] = $displayStatus['status'];
     $user['status_label'] = $displayStatus['label'];
     $user['is_late_completion'] = $displayStatus['is_late_completion'];
+    $user['raw_status'] = $displayStatus['is_rework'] ? 'rework' : $rawStatus;
+    $user['is_rework'] = $displayStatus['is_rework'];
 
     jsonResponse([
         'ok' => true,
