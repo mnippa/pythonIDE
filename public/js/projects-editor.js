@@ -600,6 +600,8 @@ async function getProjectRunContext() {
   };
 }
 
+const PROJECT_DATA_FILE_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.tsv', '.dat', '.xml', '.yaml', '.yml', '.md', '.ini', '.cfg']);
+
 function collectProjectPythonFiles(nodes, parentPath = '') {
   if (!Array.isArray(nodes)) return [];
 
@@ -620,6 +622,35 @@ function collectProjectPythonFiles(nodes, parentPath = '') {
         name: node.name,
         path
       });
+    }
+  }
+
+  return result;
+}
+
+function collectProjectDataFiles(nodes, parentPath = '') {
+  if (!Array.isArray(nodes)) return [];
+
+  const result = [];
+  for (const node of nodes) {
+    if (!node || typeof node.name !== 'string') continue;
+
+    if (node.type === 'folder') {
+      const folderPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+      result.push(...collectProjectDataFiles(node.children || [], folderPath));
+      continue;
+    }
+
+    if (node.type === 'file') {
+      const ext = node.name.toLowerCase().slice(node.name.lastIndexOf('.'));
+      if (PROJECT_DATA_FILE_EXTENSIONS.has(ext)) {
+        const path = parentPath ? `${parentPath}/${node.name}` : node.name;
+        result.push({
+          id: Number(node.id || 0),
+          name: node.name,
+          path
+        });
+      }
     }
   }
 
@@ -774,6 +805,18 @@ async function getProjectPythonRuntimePayload() {
     path,
     content: pathToContent.get(path) ?? ''
   }));
+
+  // Include data files (txt, csv, json, etc.) so open() calls work in Pyodide
+  const dataFiles = collectProjectDataFiles(treeNodes);
+  for (const dataFile of dataFiles) {
+    if (!includedPaths.has(dataFile.path)) {
+      const fileData = await readProjectFileById(currentProject.id, dataFile.id);
+      files.push({
+        path: dataFile.path,
+        content: fileData?.content ?? ''
+      });
+    }
+  }
 
   return {
     root: '/project',
@@ -2179,3 +2222,4 @@ window.toggleProjectVisibility = toggleProjectVisibility;
 window.beforeRunExecution = beforeRunExecution;
 window.getProjectRunContext = getProjectRunContext;
 window.getProjectPythonRuntimePayload = getProjectPythonRuntimePayload;
+window.getCurrentProjectOpenFileName = () => String(currentOpenFileName || '');

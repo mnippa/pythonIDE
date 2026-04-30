@@ -479,17 +479,16 @@ class TaskImporter {
       if (!filePath) continue;
 
       try {
-        // Ensure parent folders exist by using create_file which handles path creation
-        await fetch(`../api/tasks/folder-manage.php?action=create_file&task_id=${taskId}`, {
+        // Use 'save' action – creates or overwrites, handles parent dirs automatically
+        const res = await fetch(`../api/tasks/folder-manage.php?action=save&task_id=${taskId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: filePath.split('/').pop(),
-            parent_path: filePath.includes('/') ? filePath.split('/').slice(0, -1).join('/') : '',
-            content
-          })
+          body: JSON.stringify({ path: filePath, content })
         });
-        // Ignore 409 (already exists) – we'll just skip those
+        const data = await res.json().catch(() => null);
+        if (!res.ok || (data && data.ok === false)) {
+          console.warn(`restoreFolderFiles: save failed for ${filePath} (task ${taskId}):`, data?.error || res.status);
+        }
       } catch (e) {
         console.warn(`Could not restore folder file ${filePath} for task ${taskId}:`, e);
       }

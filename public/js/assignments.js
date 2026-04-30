@@ -1598,7 +1598,7 @@ function renderAssignmentList() {
     }
   };
 
-  const getTaskStatusMeta = ({ phase, tasksCount, workedCount, allTasksFinalized }) => {
+  const getTaskStatusMeta = ({ phase, tasksCount, workedCount, allTasksFinalized, isLateCompletion }) => {
     if (phase === 'upcoming' || phase === 'hidden') {
       return { label: 'Nicht verfügbar', color: '#374151', background: '#e5e7eb' };
     }
@@ -1606,7 +1606,8 @@ function renderAssignmentList() {
       return { label: 'Keine Aufgaben', color: '#374151', background: '#e5e7eb' };
     }
     if (allTasksFinalized) {
-      if (phase === 'late') {
+      // Late completion must reflect actual submission timing, not just current phase.
+      if (isLateCompletion) {
         return { label: 'Abgeschlossen (zu spät)', color: '#9a3412', background: '#ffedd5' };
       }
       return { label: 'Abgeschlossen', color: '#166534', background: '#dcfce7' };
@@ -1662,6 +1663,7 @@ function renderAssignmentList() {
       tasksCount: tasks.length,
       workedCount,
       allTasksFinalized,
+      isLateCompletion: !!item.is_late_completion,
     });
     const assignmentMeta = getAssignmentStatusMeta({
       rawStatus: item.raw_status || 'assigned',
@@ -1975,10 +1977,14 @@ async function refreshCurrentTaskFromAPI() {
 
   try {
     console.log('[Task Refresh] Fetching latest task data for task', assignmentState.currentTaskId);
-    const response = await requestJson('/api/tasks/list.php?assignment_id=' + assignmentState.currentAssignmentId + getStudentViewQueryParam());
+    const response = await requestJson('../api/tasks/list.php?assignment_id=' + assignmentState.currentAssignmentId + getStudentViewQueryParam());
     
     if (response && response.tasks && response.tasks.length > 0) {
-      const updatedTask = response.tasks[0];
+      const updatedTask = response.tasks.find((t) => Number(t.id) === Number(assignmentState.currentTaskId));
+      if (!updatedTask) {
+        console.warn('[Task Refresh] Current task not found in assignment payload');
+        return false;
+      }
       normalizeTaskData(updatedTask);
       
       // Update current task in memory
@@ -3251,8 +3257,11 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   const safeTaskId = Number(taskId || 0);
   if (!safeTaskId || !pyodide || !pyodide.FS) return;
 
+  const isAdminFolderMode = window.testMode === true;
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-  const listUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+  const listUrl = isAdminFolderMode
+    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1`
+    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
   const listResponse = await fetch(listUrl, { credentials: 'include' });
   const listData = await listResponse.json();
 
@@ -3260,7 +3269,7 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
     throw new Error(listData?.error || 'Task-Dateiliste konnte nicht geladen werden');
   }
 
-  const filePaths = [];
+  const fileEntries = [];
   const walk = (items) => {
     if (!Array.isArray(items)) return;
     for (const item of items) {
@@ -3271,7 +3280,12 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
       }
       if (item.type === 'file' && item.virtual !== true && item.is_text !== false) {
         const relPath = String(item.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
-        if (relPath) filePaths.push(relPath);
+        if (relPath) {
+          fileEntries.push({
+            path: relPath,
+            content: typeof item.content === 'string' ? item.content : null
+          });
+        }
       }
     }
   };
@@ -3284,7 +3298,9 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
     // already exists
   }
 
-  for (const relPath of filePaths) {
+  for (const fileEntry of fileEntries) {
+    const relPath = fileEntry.path;
+    if (!relPath) continue;
     let content = null;
 
     if (typeof window.getTaskDraftContent === 'function') {
@@ -3294,14 +3310,32 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
       }
     }
 
+    if (content === null && fileEntry.content !== null) {
+      content = String(fileEntry.content || '');
+    }
+
     if (content === null) {
-      const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
-      const readResponse = await fetch(readUrl, { credentials: 'include' });
-      const readData = await readResponse.json();
-      if (!readResponse.ok || (readData && readData.ok === false)) {
-        throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+      if (isAdminFolderMode) {
+        const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: relPath })
+        });
+        const readData = await readResponse.json();
+        if (!readResponse.ok || (readData && readData.ok === false)) {
+          throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+        }
+        content = String(readData.content || '');
+      } else {
+        const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
+        const readResponse = await fetch(readUrl, { credentials: 'include' });
+        const readData = await readResponse.json();
+        if (!readResponse.ok || (readData && readData.ok === false)) {
+          throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+        }
+        content = String(readData.content || '');
       }
-      content = String(readData.content || '');
     }
 
     const absPath = `${runtimeRoot}/${relPath}`;

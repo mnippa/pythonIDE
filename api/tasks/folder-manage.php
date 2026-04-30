@@ -433,7 +433,14 @@ try {
     // ============================================
     elseif ($action === 'read') {
         $input = json_decode(file_get_contents('php://input'), true);
-        $path = isset($input['path']) ? trim($input['path']) : '';
+        $path = '';
+        if (isset($input['path'])) {
+            $path = trim((string)$input['path']);
+        } elseif (isset($_POST['path'])) {
+            $path = trim((string)$_POST['path']);
+        } elseif (isset($_GET['path'])) {
+            $path = trim((string)$_GET['path']);
+        }
 
         if (!$path) {
             jsonResponse(['ok' => false, 'error' => 'Path required'], 400);

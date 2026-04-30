@@ -78,6 +78,19 @@ if ($displayName === '') {
     #theme-toggle::after{ content:'🌙'; font-size:14px; display:block; width:20px; height:20px; line-height:20px; transition:transform 0.3s; }
     html.dark-mode #theme-toggle::after{ content:'☀️'; }
 
+    .toolcheck{ display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; user-select:none; }
+    .toolcheck input{ transform: translateY(0.5px); }
+    .settings-panel{
+      position:fixed; top:58px; right:10px; z-index:120;
+      background:var(--panel); color:var(--text-primary);
+      border:1px solid var(--border); border-radius:10px;
+      padding:10px; min-width:190px;
+      display:none; flex-direction:column; gap:8px;
+      box-shadow:0 12px 30px rgba(0,0,0,0.12);
+    }
+    .settings-panel.open{ display:flex; }
+    .settings-title{ font-size:12px; font-weight:300; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-secondary); }
+
     /* MASTER GRID: left sidebar | editor | splitter | right output */
     .app{
       height: 100%;
@@ -698,6 +711,7 @@ if ($displayName === '') {
           {$adminBadge}
         </div>
         {$adminLink}
+        <button id="settings-toggle" class="icon-btn" title="Module / Bibliotheken" aria-label="Module settings">⚙</button>
         <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
         <button id="logout-btn" title="Abmelden">🚪</button>
       </div>
@@ -705,6 +719,30 @@ if ($displayName === '') {
 HTML;
   include(__DIR__ . '/../components/header.php');
   ?>
+
+  <div id="settings-panel" class="settings-panel" aria-hidden="true">
+    <div class="settings-title">Module</div>
+    <label class="toolcheck" title="NumPy laden">
+      <input id="pkg-numpy" type="checkbox" checked>
+      <span>NumPy</span>
+    </label>
+    <label class="toolcheck" title="Matplotlib laden">
+      <input id="pkg-matplotlib" type="checkbox" checked>
+      <span>Matplotlib</span>
+    </label>
+    <label class="toolcheck" title="Pandas laden">
+      <input id="pkg-pandas" type="checkbox">
+      <span>Pandas</span>
+    </label>
+    <label class="toolcheck" title="Panel nicht verfuegbar in Pyodide">
+      <input id="pkg-panel" type="checkbox" disabled>
+      <span>Panel (nicht verfügbar)</span>
+    </label>
+    <label class="toolcheck" title="Seaborn nicht verfuegbar in Pyodide">
+      <input id="pkg-seaborn" type="checkbox" disabled>
+      <span>Seaborn (nicht verfügbar)</span>
+    </label>
+  </div>
 
   <!-- Editor View -->
   <div class="app with-project-details" id="editor-view" style="display:grid;">
@@ -852,6 +890,23 @@ HTML;
         html.classList.toggle('dark-mode');
         const isDark = html.classList.contains('dark-mode');
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      });
+    })();
+
+    // Settings Toggle
+    (function() {
+      const settingsBtn = document.getElementById('settings-toggle');
+      const settingsPanel = document.getElementById('settings-panel');
+      settingsBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsPanel.classList.toggle('open');
+        settingsPanel.setAttribute('aria-hidden', settingsPanel.classList.contains('open') ? 'false' : 'true');
+      });
+      document.addEventListener('click', (e) => {
+        if (settingsPanel && !settingsPanel.contains(e.target)) {
+          settingsPanel.classList.remove('open');
+          settingsPanel.setAttribute('aria-hidden', 'true');
+        }
       });
     })();
 

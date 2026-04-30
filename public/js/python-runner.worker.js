@@ -251,6 +251,11 @@ if isinstance(project_runtime, dict):
             project_main_dir = os.path.dirname(project_main_path)
             if project_main_dir and project_main_dir not in sys.path:
                 sys.path.insert(0, project_main_dir)
+            if project_main_dir:
+                try:
+                    os.chdir(project_main_dir)
+                except Exception:
+                    pass
 
         if runtime_root not in sys.path:
             sys.path.insert(0, runtime_root)
