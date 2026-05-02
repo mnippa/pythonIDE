@@ -26,7 +26,7 @@ $userId = isset($input['user_id']) ? (int)$input['user_id'] : null;
 $email = isset($input['email']) ? trim($input['email']) : null;
 $status = $input['status'] ?? 'assigned';
 
-$allowedStatus = ['assigned', 'in_progress', 'submitted', 'passed', 'failed'];
+$allowedStatus = ['assigned', 'in_progress', 'rework', 'submitted', 'passed', 'failed'];
 if (!in_array($status, $allowedStatus, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);
 }

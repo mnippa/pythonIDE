@@ -305,19 +305,19 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
             <div class="stat-value" id="stat-late-completed">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-passed"></span>Passed</div>
+            <div class="stat-label"><span class="status-dot status-passed"></span>Bestanden</div>
             <div class="stat-value" id="stat-passed">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-passed-delayed"></span>Passed delayed</div>
+            <div class="stat-label"><span class="status-dot status-passed-delayed"></span>Bestanden (verspaetet)</div>
             <div class="stat-value" id="stat-passed-delayed">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label"><span class="status-dot status-missed"></span>Missed</div>
+            <div class="stat-label"><span class="status-dot status-missed"></span>Verpasst</div>
             <div class="stat-value" id="stat-missed">0</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Avg Runs</div>
+            <div class="stat-label">Durchschnitt Runs</div>
             <div class="stat-value" id="stat-avg-runs">0.0</div>
           </div>
         </div>

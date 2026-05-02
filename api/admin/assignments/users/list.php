@@ -61,20 +61,7 @@ function getEffectiveHardDeadline(?DateTimeImmutable $hardDeadline, ?DateTimeImm
 }
 
 function isReworkState(array $row, string $rawStatus, bool $allPassed, bool $allWorked): bool {
-    if ($rawStatus !== 'in_progress') {
-        return false;
-    }
-
-    if ($allPassed || $allWorked) {
-        return false;
-    }
-
-    $assignmentDueDate = parseApiDateTime($row['assignment_due_date'] ?? null, true);
-    $userDueDate = parseApiDateTime($row['user_due_date'] ?? null, true);
-
-    return $assignmentDueDate !== null
-        && $userDueDate !== null
-        && $userDueDate > $assignmentDueDate;
+    return $rawStatus === 'rework';
 }
 
 function calcAssignmentTiming(array $row): array {
@@ -129,11 +116,20 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
     $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
     $isRework = isReworkState($row, $rawStatus, $allPassed, $allWorked);
 
+    if ($isRework) {
+        return [
+            'status' => 'rework',
+            'label' => 'Nacharbeit',
+            'is_late_completion' => false,
+            'is_rework' => true,
+        ];
+    }
+
     if ($rawStatus === 'passed' || $allPassed) {
         $status = $isLate ? 'passed_delayed' : 'passed';
         return [
             'status' => $status,
-            'label' => $isLate ? 'Passed delayed' : 'Passed',
+            'label' => $isLate ? 'Bestanden (verspaetet)' : 'Bestanden',
             'is_late_completion' => $isLate,
             'is_rework' => false,
         ];
@@ -145,15 +141,6 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
             'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
             'is_late_completion' => $isLate,
             'is_rework' => false,
-        ];
-    }
-
-    if ($isRework) {
-        return [
-            'status' => 'rework',
-            'label' => 'Nacharbeit',
-            'is_late_completion' => false,
-            'is_rework' => true,
         ];
     }
 

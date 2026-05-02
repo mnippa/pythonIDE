@@ -309,7 +309,7 @@ function renderParticipants() {
           ${untouched > 0 ? `<span title="unbearbeitet">⚪${untouched}</span> ` : ''}
           ${inProgress > 0 ? `<span title="laufend">🟡${inProgress}</span> ` : ''}
           ${passed > 0 ? `<span title="bestanden">🟢${passed}</span> ` : ''}
-          ${failed > 0 ? `<span title="nicht bestanden">🔴${failed}</span> ` : ''}
+          ${failed > 0 ? `<span title="nacharbeit offen">🔴${failed}</span> ` : ''}
         </span>`
       : '<span style="font-size:11px;color:#9ca3af;">–</span>';
 
@@ -454,7 +454,7 @@ function bindEvents() {
     if (!assignmentId || !userId) return;
 
     if (status === 'rework') {
-      const confirmed = window.confirm('Nacharbeit starten? Dabei wird die individuelle Frist auf jetzt + 10 Tage gesetzt und fehlgeschlagene Aufgaben werden auf unbearbeitet zurückgesetzt.');
+      const confirmed = window.confirm('Nacharbeit starten? Dabei wird die individuelle Frist auf jetzt + 10 Tage gesetzt und nicht bestandene Aufgaben werden wieder auf unbearbeitet gesetzt.');
       if (!confirmed) {
         select.value = previousStatus;
         return;

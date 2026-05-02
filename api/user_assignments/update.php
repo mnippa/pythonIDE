@@ -72,7 +72,7 @@ if (!$isAdmin && !$isOwner) {
     jsonResponse(['ok' => false, 'error' => 'Access denied'], 403);
 }
 
-$allowedStatusAll = ['assigned', 'in_progress', 'submitted', 'passed', 'failed'];
+$allowedStatusAll = ['assigned', 'in_progress', 'rework', 'submitted', 'passed', 'failed'];
 $allowedStatusUser = ['assigned', 'in_progress', 'submitted'];
 
 $updates = [];

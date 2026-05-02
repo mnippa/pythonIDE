@@ -53,7 +53,7 @@ try {
                  SET status = ?, due_date = ?, submitted_at = NULL, is_late = 0
                  WHERE id = ?'
             );
-            $mappedStatus = 'in_progress';
+            $mappedStatus = 'rework';
             $uaId = (int)$existing['id'];
             $update->bind_param('ssi', $mappedStatus, $reworkDueDate, $uaId);
             if (!$update->execute()) {
@@ -64,7 +64,7 @@ try {
                 'INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by, due_date, submitted_at, is_late)
                  VALUES (?, ?, ?, ?, ?, NULL, 0)'
             );
-            $mappedStatus = 'in_progress';
+            $mappedStatus = 'rework';
             $adminId = (int)$admin['id'];
             $insert->bind_param('iisis', $userId, $assignmentId, $mappedStatus, $adminId, $reworkDueDate);
             if (!$insert->execute()) {
@@ -120,7 +120,7 @@ try {
         $status = $statusAliasMap[$status];
     }
 
-    $allowedStatus = ['assigned', 'in_progress', 'submitted', 'passed', 'failed'];
+    $allowedStatus = ['assigned', 'in_progress', 'rework', 'submitted', 'passed', 'failed'];
 
     if (!in_array($status, $allowedStatus, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);

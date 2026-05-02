@@ -1327,7 +1327,7 @@ function getStatusLabel(status) {
     'unbearbeitet': 'Unbearbeitet',
     'in-progress': 'In Bearbeitung',
     'passed': 'Bestanden ✓',
-    'failed': 'Misslungen'
+    'failed': 'Nacharbeit offen'
   };
   return labels[status] || status;
 }
@@ -1727,10 +1727,10 @@ function renderAssignmentList() {
           ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
         </div>
 
-        <!-- Bearbeitungsstatus (task-level, abgeleitet aus Tasks) -->
+        <!-- Aufgabenstatus (task-level, abgeleitet aus Tasks) -->
         <div style="margin-bottom:10px;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bearbeitungsstatus:</span>
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Aufgabenstatus:</span>
             <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${taskMeta.background};color:${taskMeta.color};font-weight:600;">${escapeHtml(taskMeta.label)}</span>
           </div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);margin-bottom:5px;">Aufgaben (${passedCount + failedCount}/${tasks.length})</div>
@@ -1745,14 +1745,14 @@ function renderAssignmentList() {
             ${untouchedCount > 0 ? `<span><span style="color:#9ca3af;">●</span> ${untouchedCount} unber.</span>` : ''}
             ${inProgressCount > 0 ? `<span><span style="color:#facc15;">●</span> ${inProgressCount} lfd.</span>` : ''}
             ${passedCount > 0 ? `<span><span style="color:#22c55e;">●</span> ${passedCount} best.</span>` : ''}
-            ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} n.best.</span>` : ''}
+            ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} nacharb.</span>` : ''}
             ${tasks.length === 0 ? `<span>–</span>` : ''}
           </div>
         </div>
 
-        <!-- Aufgabenstatus (assignment-level, Admin/Lehrendenstatus mit Fallback) -->
+        <!-- Bewertungsstatus (assignment-level, Admin/Lehrendenstatus mit Fallback) -->
         <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);">
-          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Aufgabenstatus:</span>
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bewertungsstatus:</span>
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${assignmentMeta.background};color:${assignmentMeta.color};font-weight:600;">${escapeHtml(assignmentMeta.label)}</span>
         </div>
       </div>
