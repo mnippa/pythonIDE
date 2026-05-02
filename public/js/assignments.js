@@ -670,8 +670,9 @@ function showTaskDetails(task, activeTab = 'details') {
   
   console.log('[SOLUTION RESULT] Final hasSolution:', hasSolution, 'for task', task.id);
 
+  const _currentAssignmentRawStatus = assignmentState.assignments.find(a => a.assignment_id === assignmentState.currentAssignmentId)?.raw_status || null;
   if (detailsHtml === '' || detailsHtml.trim() === `<div class="task-status-header">
-    <span class="${statusClass(status)}">${getStatusLabel(status)}</span>
+    <span class="${statusClass(status)}">${getStatusLabel(status, _currentAssignmentRawStatus)}</span>
     ${(task.task_type !== 'code' && task.task_type !== 'code_ui') ? `<span class="task-attempts-info">${attemptsLabel}: ${attempts}/${maxAttempts}</span>` : ''}
   </div>`) {
     detailsHtml += '<p>Keine weiteren Details vorhanden.</p>';
@@ -1322,12 +1323,12 @@ async function computeCodeReadingSolution(task, varValues, variableName) {
   }
 }
 
-function getStatusLabel(status) {
+function getStatusLabel(status, assignmentRawStatus = null) {
   const labels = {
     'unbearbeitet': 'Unbearbeitet',
     'in-progress': 'In Bearbeitung',
     'passed': 'Bestanden ✓',
-    'failed': 'Nacharbeit offen'
+    'failed': assignmentRawStatus === 'rework' ? 'Nacharbeit offen' : 'Nicht bestanden'
   };
   return labels[status] || status;
 }
@@ -1745,7 +1746,7 @@ function renderAssignmentList() {
             ${untouchedCount > 0 ? `<span><span style="color:#9ca3af;">●</span> ${untouchedCount} unber.</span>` : ''}
             ${inProgressCount > 0 ? `<span><span style="color:#facc15;">●</span> ${inProgressCount} lfd.</span>` : ''}
             ${passedCount > 0 ? `<span><span style="color:#22c55e;">●</span> ${passedCount} best.</span>` : ''}
-            ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} nacharb.</span>` : ''}
+            ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} ${item.raw_status === 'rework' ? 'nacharb.' : 'nicht best.'}</span>` : ''}
             ${tasks.length === 0 ? `<span>–</span>` : ''}
           </div>
         </div>

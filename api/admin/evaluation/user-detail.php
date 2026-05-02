@@ -279,7 +279,7 @@ try {
         'unbearbeitet' => 'unbearbeitet',
         'in-progress' => 'in Bearbeitung',
         'passed' => 'Bestanden',
-        'failed' => 'Nacharbeit offen'
+        'failed' => $rawStatus === 'rework' ? 'Nacharbeit offen' : 'Nicht bestanden'
     ];
 
     $tasks = [];
