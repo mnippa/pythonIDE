@@ -841,7 +841,10 @@ window.QuizRenderer = {
           payload.current_status = taskState.status || 'unbearbeitet';
         }
       }
-      
+
+      // Flush partial seconds to DB at the moment of submission
+      if (!window.testMode) window.flushHeartbeat?.(taskId);
+
       console.log('[QUIZ] Submitting quiz answer - Endpoint: ' + apiEndpoint + ' - Payload:', payload);
       const response = await fetch(apiEndpoint, {
         method: 'POST',
@@ -958,7 +961,16 @@ window.QuizRenderer = {
           console.log('[QUIZ] Refreshing task navigation list');
           window.renderTaskNavigation();
         }
-        
+
+        // Heartbeat: stop on final, reset counter on continued attempts
+        if (!window.testMode) {
+          if (data.status === 'passed' || data.status === 'failed') {
+            window.stopActivityTracking?.(taskId);
+          } else if (data.status === 'in-progress' || data.status === 'in_progress') {
+            window.resetHeartbeatCounter?.(taskId);
+          }
+        }
+
         // Show success modal for passed quiz tasks
         if (data.status === 'passed' && window.showSuccessModal) {
           const task = window.assignmentState?.currentTask;

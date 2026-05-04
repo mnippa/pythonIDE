@@ -28,6 +28,7 @@ const assignmentState = {
   taskActiveSeconds: {}, // { taskId: totalSeconds }
   taskLastActivityTime: {}, // { taskId: timestamp }
   taskActivityIntervals: {}, // { taskId: timerId }
+  taskLastTickTime: {}, // { taskId: timestamp } - when last heartbeat tick fired
   taskFileMeta: {} // { taskId: { path: { read_only, ... } } }
 };
 
@@ -38,6 +39,23 @@ window.assignmentState = assignmentState;
 const ACTIVITY_HEARTBEAT_INTERVAL = 30000; // Send heartbeat every 30 seconds
 const ACTIVITY_IDLE_TIMEOUT = 90000; // 90 seconds of inactivity = idle
 const ACTIVITY_DEBUG = false;
+
+// Page Visibility tracking: pause heartbeats while tab is hidden / screen locked
+let _activityPageHidden = document.hidden;
+document.addEventListener('visibilitychange', () => {
+  _activityPageHidden = document.hidden;
+  if (document.hidden) {
+    logActivityDebug('page hidden – heartbeats paused');
+  } else {
+    // Tab became visible again: reset the last-activity timestamp for the current
+    // task so the idle window starts fresh (we don't count the time away).
+    const taskId = assignmentState.currentTaskId;
+    if (taskId) {
+      assignmentState.taskLastActivityTime[taskId] = Date.now();
+      logActivityDebug('page visible – activity timestamp reset', { taskId });
+    }
+  }
+});
 
 function logActivityDebug(message, data) {
   if (!ACTIVITY_DEBUG) return;
@@ -403,69 +421,109 @@ function statusClass(status) {
 function startActivityTracking(taskId) {
   if (!taskId) return;
   logActivityDebug('startActivityTracking', { taskId });
-  
+
+  // Always stop any existing tracking first (removes old listeners + interval)
+  stopActivityTracking(taskId);
+
   // Initialize task activity tracking
   assignmentState.taskLastActivityTime[taskId] = Date.now();
   assignmentState.taskActiveSeconds[taskId] = assignmentState.taskActiveSeconds[taskId] || 0;
-  
-  // Clear any existing interval
-  if (assignmentState.taskActivityIntervals[taskId]) {
-    clearInterval(assignmentState.taskActivityIntervals[taskId]);
-  }
+  assignmentState.taskLastTickTime[taskId] = Date.now();
+
+  // --- Named activity handler (stored so stopActivityTracking can remove it) ---
+  const updateActivity = () => {
+    assignmentState.taskLastActivityTime[taskId] = Date.now();
+    logActivityDebug('activity event', { taskId });
+  };
+
+  // Attach to document so scrolling description / output also counts
+  document.addEventListener('keydown', updateActivity);
+  document.addEventListener('mousedown', updateActivity);
+  document.addEventListener('scroll', updateActivity, true);
+
+  // Store the handler reference so stopActivityTracking can clean it up
+  assignmentState.taskActivityHandlers = assignmentState.taskActivityHandlers || {};
+  assignmentState.taskActivityHandlers[taskId] = updateActivity;
+  logActivityDebug('activity listeners bound', { taskId });
 
   // Start heartbeat interval: send accumulated seconds to server periodically
   assignmentState.taskActivityIntervals[taskId] = setInterval(() => {
+    // Never accumulate time while the page is hidden (tab switch / screen lock)
+    if (_activityPageHidden) {
+      logActivityDebug('heartbeat skipped – page hidden', { taskId });
+      return;
+    }
+
     const now = Date.now();
     const lastActivity = assignmentState.taskLastActivityTime[taskId] || now;
     const timeSinceLastActivity = now - lastActivity;
     logActivityDebug('heartbeat tick', { taskId, timeSinceLastActivity });
-    
+
     // Only add time if user was active (not idle)
     if (timeSinceLastActivity < ACTIVITY_IDLE_TIMEOUT) {
       const secondsSinceLastHeartbeat = ACTIVITY_HEARTBEAT_INTERVAL / 1000;
       assignmentState.taskActiveSeconds[taskId] += secondsSinceLastHeartbeat;
       logActivityDebug('active time added', { taskId, secondsSinceLastHeartbeat });
-      
-      // Send heartbeat to server
       sendActivityHeartbeat(taskId, secondsSinceLastHeartbeat, true);
     } else {
-      // User is idle
       logActivityDebug('idle heartbeat', { taskId });
       sendActivityHeartbeat(taskId, 0, false);
+      assignmentState.taskLastTickTime[taskId] = now;
     }
   }, ACTIVITY_HEARTBEAT_INTERVAL);
-  
-  // Set up activity event listeners on editor
-  const editor = window.editorInstance;
-  if (editor) {
-    const editorContainer = editor.getDomNode();
-    if (editorContainer) {
-      const updateActivity = () => {
-        assignmentState.taskLastActivityTime[taskId] = Date.now();
-        logActivityDebug('activity event', { taskId });
-      };
-      
-      editorContainer.addEventListener('click', updateActivity);
-      editorContainer.addEventListener('keydown', updateActivity);
-      editorContainer.addEventListener('scroll', updateActivity);
-      logActivityDebug('activity listeners bound', { taskId });
-    } else {
-      logActivityDebug('editor container missing', { taskId });
-    }
-  } else {
-    logActivityDebug('editor instance missing', { taskId });
-  }
 }
 
 /**
- * Stop tracking activity for a task
+ * Stop tracking activity for a task (clears interval AND removes event listeners)
+/**
+ * Flush partial seconds since last heartbeat tick to the server.
+ * Call this at the moment of task submission to capture the non-round remainder.
+ */
+function flushHeartbeat(taskId) {
+  if (!taskId || _activityPageHidden) return;
+  const now = Date.now();
+  const lastTick = assignmentState.taskLastTickTime[taskId] || now;
+  const lastActivity = assignmentState.taskLastActivityTime[taskId] || now;
+  const timeSinceLastActivity = now - lastActivity;
+  if (timeSinceLastActivity < ACTIVITY_IDLE_TIMEOUT) {
+    const partialSeconds = Math.round((now - lastTick) / 1000);
+    if (partialSeconds > 0) {
+      logActivityDebug('flushHeartbeat', { taskId, partialSeconds });
+      sendActivityHeartbeat(taskId, partialSeconds, true);
+    }
+  }
+  assignmentState.taskLastTickTime[taskId] = now;
+}
+
+/**
+ * Reset the heartbeat counter after a failed attempt, so the next attempt
+ * starts accumulating from zero (DB still holds the total of all previous attempts).
+ */
+function resetHeartbeatCounter(taskId) {
+  if (!taskId) return;
+  const now = Date.now();
+  assignmentState.taskLastActivityTime[taskId] = now;
+  assignmentState.taskLastTickTime[taskId] = now;
+  assignmentState.taskActiveSeconds[taskId] = 0;
+  logActivityDebug('resetHeartbeatCounter', { taskId });
+}
+
+/**
+ * Stop tracking activity for a task (clears interval AND removes event listeners)
  */
 function stopActivityTracking(taskId) {
   if (assignmentState.taskActivityIntervals[taskId]) {
     clearInterval(assignmentState.taskActivityIntervals[taskId]);
     delete assignmentState.taskActivityIntervals[taskId];
-    logActivityDebug('stopActivityTracking', { taskId });
   }
+  const handlers = assignmentState.taskActivityHandlers || {};
+  if (handlers[taskId]) {
+    document.removeEventListener('keydown', handlers[taskId]);
+    document.removeEventListener('mousedown', handlers[taskId]);
+    document.removeEventListener('scroll', handlers[taskId], true);
+    delete handlers[taskId];
+  }
+  logActivityDebug('stopActivityTracking', { taskId });
 }
 
 /**
@@ -1088,12 +1146,6 @@ async function computeRandomComplexSolution(task, varValues) {
       throw new Error('Pyodide konnte nicht geladen werden (Timeout)');
     }
   }
-  
-  let solutionCode = task.solution_code || '';
-  if (!solutionCode) {
-    throw new Error('Keine Musterlösung vorhanden');
-  }
-  
   // Convert escaped newlines to actual newlines (safeguard for older data)
   solutionCode = solutionCode.replace(/\\n/g, '\n');
   
@@ -2449,6 +2501,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Stop activity tracking for previous task (prevTaskId captured before state update above)
   if (prevTaskId) {
+    flushHeartbeat(prevTaskId);
     stopActivityTracking(prevTaskId);
   }
 
@@ -3660,6 +3713,7 @@ async function submitTask() {
       }).catch(err => console.error('[Submit] Failed to update status:', err));
     }
     assignmentState.taskStatuses[task.id] = 'passed';
+    flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     const nowNoTest = new Date();
     assignmentState.taskCompletedAt[task.id] = nowNoTest.toISOString().slice(0, 19).replace('T', ' ');
@@ -5524,8 +5578,9 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
   if (result.passed === true) {
     // All tests passed - GREEN
     assignmentState.taskStatuses[task.id] = 'passed';
-    
-    // FREEZE time tracking - submission complete
+
+    // FREEZE time tracking - flush partial seconds then stop
+    flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     
     // Store completion timestamp
@@ -5579,7 +5634,8 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
     // Submission failed - RED (final, regardless of attempts)
     assignmentState.taskStatuses[task.id] = 'failed';
     
-    // FREEZE time tracking - submission complete (failed)
+    // FREEZE time tracking - flush partial seconds then stop
+    flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     
     // Store completion timestamp
@@ -5839,6 +5895,9 @@ document.addEventListener('DOMContentLoaded', () => {
   window.showSuccessModal = showSuccessModal;
   window.closeSuccessModal = closeSuccessModal;
   window.renderTaskNavigation = renderTaskNavigation;
+  window.flushHeartbeat = flushHeartbeat;
+  window.resetHeartbeatCounter = resetHeartbeatCounter;
+  window.stopActivityTracking = stopActivityTracking;
 });
 
 // Load and display task folder files
