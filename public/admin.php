@@ -1642,6 +1642,19 @@ if ($displayName === '') {
     #task-modal textarea,
     #task-create-modal textarea,
     #assignment-modal textarea { min-height:120px; }
+
+    /* Make placeholders in task create/edit flows clearly distinct from entered text */
+    #pre-task-modal input::placeholder,
+    #pre-task-modal textarea::placeholder,
+    #task-create-modal input::placeholder,
+    #task-create-modal textarea::placeholder,
+    #task-modal input::placeholder,
+    #task-modal textarea::placeholder {
+      color: #b8c2cf;
+      opacity: 1;
+      font-style: italic;
+    }
+
     #task-modal,
     #task-create-modal,
     #assignment-modal { animation: fadeIn 0.2s ease-in; }

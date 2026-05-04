@@ -1685,6 +1685,8 @@ function renderAssignmentList() {
       workedCount,
       allTasksFinalized,
     });
+    const isAssignmentPassed = (item.raw_status || '') === 'passed';
+    const isAssignmentFinished = allTasksFinalized;
 
     let phaseLabel = 'Verfügbar';
     let phaseColor = '#166534';
@@ -1702,7 +1704,8 @@ function renderAssignmentList() {
       phaseColor = '#b45309';
     }
 
-    const isLocked = !isAssignmentPhaseOpenable(phase);
+    // Finished assignments are always viewable (read-only), regardless of phase
+    const isLocked = !isAssignmentFinished && !isAssignmentPhaseOpenable(phase);
 
     let timeLabel = '';
     if (item.formatted_time_remaining) {
@@ -1720,14 +1723,20 @@ function renderAssignmentList() {
         data-assignment-locked="${isLocked ? '1' : '0'}"
         style="${isLocked ? 'opacity:0.75;cursor:not-allowed;' : ''}"
       >
-        <div class="assignment-card-title">${escapeHtml(item.assignment_title)}</div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;">
+          <div class="assignment-card-title" style="margin-bottom:0;flex:1;">${escapeHtml(item.assignment_title)}</div>
+          ${isAssignmentPassed ? `<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:12px;font-weight:700;border:1px solid #86efac;">✓ Bestanden</span>` : ''}
+          ${isAssignmentFinished && !isAssignmentPassed ? `<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:600;border:1px solid #bbf7d0;">✓ Abgegeben</span>` : ''}
+        </div>
         <div class="assignment-card-description">${escapeHtml(assignment?.description || 'Keine Beschreibung')}</div>
 
-        <!-- Phase + Zeitlimit -->
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;">
-          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:${phaseColor};border:1px solid #d1d5db;">${phaseLabel}</span>
-          ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
-        </div>
+        ${!isAssignmentFinished ? `
+          <!-- Phase + Zeitlimit -->
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;">
+            <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:${phaseColor};border:1px solid #d1d5db;">${phaseLabel}</span>
+            ${timeLabel ? `<span style="font-size:12px;color:var(--text-secondary);">${timeLabel}</span>` : ''}
+          </div>
+        ` : ''}
 
         <!-- Aufgabenstatus (task-level, abgeleitet aus Tasks) -->
         <div style="margin-bottom:10px;">
@@ -1755,7 +1764,10 @@ function renderAssignmentList() {
         <!-- Bewertungsstatus (assignment-level, Admin/Lehrendenstatus mit Fallback) -->
         <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);">
           <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bewertungsstatus:</span>
-          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${assignmentMeta.background};color:${assignmentMeta.color};font-weight:600;">${escapeHtml(assignmentMeta.label)}</span>
+          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${assignmentMeta.background};color:${assignmentMeta.color};font-weight:600;display:inline-flex;align-items:center;gap:6px;">
+            ${isAssignmentPassed ? '<span aria-hidden="true" style="color:#15803d;font-weight:800;">✓</span>' : ''}
+            <span>${escapeHtml(assignmentMeta.label)}</span>
+          </span>
         </div>
       </div>
     `;
@@ -1781,7 +1793,14 @@ function openAssignmentEditor(assignmentId) {
   const phase = assignmentEntry?.timing_phase || 'open';
   const isOpenable = phase === 'open' || phase === 'late';
 
-  if (!isOpenable) {
+  // Finished assignments are always viewable for review, regardless of phase
+  const tasksForCheck = assignmentState.tasksByAssignment[assignmentId] || [];
+  const allDone = tasksForCheck.length > 0 && tasksForCheck.every(t => {
+    const s = assignmentState.taskStatuses[t.id];
+    return s === 'passed' || s === 'failed';
+  });
+
+  if (!isOpenable && !allDone) {
     alert('Dieses Assignment ist derzeit nicht verfuegbar.');
     return;
   }
