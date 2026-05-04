@@ -2447,6 +2447,15 @@ function bindEvents() {
       const a = state.assignments.find((x) => x.id === id);
       if (!a) return;
       if (!confirm(`ACHTUNG: Alle Versuche und Fortschritte für "${a.title}" werden zurückgesetzt!\\n\\nSind Sie sicher?`)) return;
+      const resetToken = `RESET-${id}`;
+      const typedToken = window.prompt(
+        `Sicherheitsprüfung: Gib ${resetToken} ein, um den Reset für "${a.title}" auszuführen.`
+      );
+      if (typedToken === null) return;
+      if (String(typedToken).trim() !== resetToken) {
+        alert('Abgebrochen: Sicherheitscode stimmt nicht überein.');
+        return;
+      }
       try {
         const response = await requestJson('../api/assignments/reset_attempts.php', {
           method: 'POST',

@@ -3085,6 +3085,19 @@ async function incrementRunCount(taskId) {
       task_id: taskId,
       run_count: assignmentState.taskRuns[taskId]
     };
+
+    // Transition status from 'unbearbeitet' to 'in-progress' on first run.
+    // Only upgrade – never downgrade a task that is already passed/failed/in-progress.
+    const currentStatus = assignmentState.taskStatuses[taskId];
+    if (!currentStatus || currentStatus === 'unbearbeitet') {
+      payload.status = 'in-progress';
+      assignmentState.taskStatuses[taskId] = 'in-progress';
+      const currentTask = assignmentState.currentTask;
+      if (currentTask && Number(currentTask.id) === Number(taskId)) {
+        updateTaskStatusDisplay(currentTask);
+      }
+    }
+
     console.log('[RUN_COUNT] Incrementing run count - Payload:', payload);
     const response = await requestJson('../api/user_tasks/update.php', {
       method: 'POST',
@@ -3096,6 +3109,29 @@ async function incrementRunCount(taskId) {
   }
 }
 
+async function beforeAssignmentRunExecution() {
+  if (window.TEST_MODE_NO_PERSIST === true) {
+    return true;
+  }
+
+  if (isAdminAssignmentTestMode()) {
+    return true;
+  }
+
+  const task = assignmentState.currentTask;
+  if (!task) {
+    return true;
+  }
+
+  const saved = await saveCode({ setStatus: true, persist: true });
+  if (!saved) {
+    throw new Error('Speichern vor RUN fehlgeschlagen');
+  }
+
+  return true;
+}
+
+window.beforeRunExecution = beforeAssignmentRunExecution;
 window.incrementTaskRunCount = incrementRunCount;
 
 function showSuccessModal(task, attempts, maxAttempts) {

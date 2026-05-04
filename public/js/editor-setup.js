@@ -1986,9 +1986,19 @@ compile(code, "<usercode>", "exec")
 
       if (typeof window.beforeRunExecution === 'function') {
         try {
-          await window.beforeRunExecution();
+          const preRunResult = await window.beforeRunExecution();
+          if (preRunResult === false) {
+            runPerfOutcome = 'stopped';
+            runPerfReason = 'before-run-cancelled';
+            lintEl.innerHTML = '<span class="lint-checking">Ausfuehrung abgebrochen.</span>';
+            return;
+          }
         } catch (preRunError) {
+          runPerfOutcome = 'error';
+          runPerfReason = 'before-run-failed';
           console.warn('[Run] beforeRunExecution failed:', preRunError);
+          lintEl.innerHTML = '<span class="lint-error">Speichern vor RUN fehlgeschlagen.</span>';
+          return;
         }
       }
 
