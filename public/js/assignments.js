@@ -1367,16 +1367,17 @@ window.showTaskDetails = showTaskDetails;
 function showTaskQuestionAboveEditor(task) {
   const editorContainer = document.getElementById('editor-container');
   if (!editorContainer) return;
-  
-  const taskContent = task.task_text;
-  
-  if (!taskContent) return; // No question to show
-  
+
+  // Always clear previous task question first. Some tasks intentionally have
+  // empty task_text and must not keep stale content from the previously loaded task.
   // Remove existing question if it exists
   const existingQuestion = editorContainer.querySelector('.quiz-question');
   if (existingQuestion) {
     existingQuestion.remove();
   }
+
+  const taskContent = task?.task_text;
+  if (!taskContent) return; // No question to show
   
   // Create question element using same classes as quiz tasks
   const questionEl = document.createElement('div');
@@ -2400,7 +2401,19 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
   const isCodeUiTask = task.task_type === 'code_ui';
-  
+
+  // Update task state and UI IMMEDIATELY (before any async waits).
+  // This ensures the description panel and task question reflect the last-clicked
+  // task even when rapid navigation races with async code loading.
+  const prevTaskId = assignmentState.currentTaskId;
+  assignmentState.currentTask = task;
+  assignmentState.currentAssignmentId = assignmentId;
+  assignmentState.currentTaskId = taskId;
+  showTaskDetails(task);
+  showTaskQuestionAboveEditor(task);
+  renderTaskNavigation();
+  updateAttemptsCounter(task);
+
   // For code tasks, wait for editor to be ready
   if (!isQuizTask) {
     try {
@@ -2415,15 +2428,10 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 
   const editor = window.editorInstance;
 
-  // Stop activity tracking for previous task
-  if (assignmentState.currentTaskId) {
-    stopActivityTracking(assignmentState.currentTaskId);
+  // Stop activity tracking for previous task (prevTaskId captured before state update above)
+  if (prevTaskId) {
+    stopActivityTracking(prevTaskId);
   }
-
-  // Store current task info globally for Check button
-  assignmentState.currentTask = task;
-  assignmentState.currentAssignmentId = assignmentId;
-  assignmentState.currentTaskId = taskId;
 
   // GUI setup: Only for tasks (not projects)
   if (!window.currentProject && window.guiBridge) {
@@ -2540,19 +2548,9 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     }
   }
 
-  // Show task details
-  showTaskDetails(task);
-  
-  // Show task question above editor for code tasks
-  if (!isQuizTask) {
-    showTaskQuestionAboveEditor(task);
-  }
-
-  // Render task navigation
-  renderTaskNavigation();
-
-  // Show/update attempts counter if task has test_cases
-  updateAttemptsCounter(task);
+  // Task details, question, nav, and attempts counter were already updated
+  // synchronously at the start of loadTaskIntoEditor (before the first await).
+  // No duplicate call needed here.
 
   // NOTE: Auto-save removed - only save when user clicks Save button or switches tasks
 
