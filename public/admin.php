@@ -727,7 +727,7 @@ if ($displayName === '') {
           <h2 style="margin: 0;">👥 Teams</h2>
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-team-modal">+ New Team</button>
         </div>
-        <div class="admin-card-subtitle">Teams für Gruppen-Zuweisung. Über <strong>👥 Teilnehmer</strong> und <strong>📚 Assignments</strong> in der Team-Zeile können Sie Mitglieder und Standard-Assignments direkt verwalten.</div>
+        <div class="admin-card-subtitle">Teams für Gruppen-Zuweisung. Klicken Sie auf ID, Name oder Beschreibung eines Teams, um Teilnehmer und Standard-Assignments unten zu verwalten.</div>
         
         <div style="overflow:auto;">
           <table id="teams-table">
@@ -736,7 +736,7 @@ if ($displayName === '') {
                 <th>ID</th>
                 <th>Name</th>
                 <th>Description</th>
-                <th>Users</th>
+                <th>Teilnehmer</th>
                 <th>Einladungslink</th>
                 <th>Active</th>
                 <th>Actions</th>
@@ -747,26 +747,26 @@ if ($displayName === '') {
         </div>
       </div>
 
-      <div class="admin-card">
-        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Teilnehmer - Assignment-Übersicht</h3>
-        <div class="admin-card-subtitle">Assignment-Matrix für alle Teilnehmer dieses Teams (alphabetisch sortiert).</div>
-        <div class="search-filter" style="margin-bottom: var(--hspf-spacing-md);">
-          <select id="teams-members-team-filter" style="min-width: 220px;">
-            <option value="">Team auswählen</option>
-          </select>
+      <div class="admin-card" style="display:none;" id="team-detail-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
+          <h3 style="margin: 0;">Teilnehmer - Assignment-Übersicht für <span id="selected-team-name" style="font-weight: 700;"></span></h3>
+          <button class="hspf-btn" type="button" onclick="document.getElementById('team-detail-card').style.display='none'; document.getElementById('team-assignments-detail-card').style.display='none';">✕ Close</button>
         </div>
         <div style="overflow:auto;">
           <table id="team-matrix-table">
             <thead id="team-matrix-head"></thead>
             <tbody id="team-matrix-body">
-              <tr><td colspan="100" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben ein Team auswählen.</td></tr>
+              <tr><td colspan="100" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Team wird geladen...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="admin-card">
-        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Standard-Assignments</h3>
+      <div class="admin-card" style="display:none;" id="team-assignments-detail-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
+          <h3 style="margin: 0;">Standard-Assignments für <span id="selected-team-name-2" style="font-weight: 700;"></span></h3>
+          <button class="hspf-btn hspf-btn-primary" type="button" id="add-team-assignment-btn" style="display:none;">+ Neues Assignment</button>
+        </div>
         <div class="admin-card-subtitle">Verwaltet die Default-Zuordnungen pro Team. Entfernen betrifft nur zukünftige bzw. neue Team-Zuweisungen; bestehende User-Assignments bleiben erhalten.</div>
         <div style="overflow:auto;">
           <table>
@@ -782,7 +782,7 @@ if ($displayName === '') {
               </tr>
             </thead>
             <tbody id="team-assignments-body">
-              <tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf <strong>📚 Assignments</strong> klicken – oder links ein Team auswählen.</td></tr>
+              <tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Team-Assignments werden geladen...</td></tr>
             </tbody>
           </table>
         </div>

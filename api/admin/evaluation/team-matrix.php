@@ -19,17 +19,22 @@ try {
         jsonResponse(['ok' => true, 'assignments' => [], 'users' => []]);
     }
 
-    // 1. All assignments that have at least one user/team assignment
-    $aStmt = $conn->query(
-        'SELECT DISTINCT a.id, a.title
+    // 1. Only assignments explicitly assigned to this team.
+    $aStmt = $conn->prepare(
+        'SELECT a.id, a.title
          FROM assignments a
-         WHERE EXISTS (
-             SELECT 1 FROM user_assignments ua WHERE ua.assignment_id = a.id
+         WHERE a.id IN (
+             SELECT tad.assignment_id
+             FROM team_assignment_defaults tad
+             WHERE tad.team_id = ?
          )
          ORDER BY a.id'
     );
+    $aStmt->bind_param('i', $teamId);
+    $aStmt->execute();
+    $aResult = $aStmt->get_result();
     $assignments = [];
-    while ($row = $aStmt->fetch_assoc()) {
+    while ($row = $aResult->fetch_assoc()) {
         $assignments[] = [
             'id'    => (int)$row['id'],
             'title' => $row['title'],
@@ -41,8 +46,7 @@ try {
         jsonResponse(['ok' => true, 'assignments' => [], 'users' => []]);
     }
 
-    // 2. All users IN THIS TEAM with their assignment statuses
-    // Use a CROSS JOIN approach: every user × every assignment, then LEFT JOIN with user_assignments
+    // 2. All users in this team × assignments explicitly assigned to this team.
     $sql = '
         SELECT
             u.id AS user_id,
@@ -56,9 +60,9 @@ try {
             SELECT id, first_name, last_name, email FROM users WHERE team_id = ?
         ) u
         CROSS JOIN (
-            SELECT DISTINCT id, title FROM assignments
-            WHERE EXISTS (
-                SELECT 1 FROM user_assignments ua WHERE ua.assignment_id = assignments.id
+            SELECT a.id, a.title FROM assignments a
+            WHERE a.id IN (
+                SELECT tad.assignment_id FROM team_assignment_defaults tad WHERE tad.team_id = ?
             )
         ) a
         LEFT JOIN user_assignments ua_direct
@@ -72,7 +76,7 @@ try {
     if (!$stmt) {
         throw new RuntimeException('Prepare failed: ' . $conn->error);
     }
-    $stmt->bind_param('ii', $teamId, $teamId);
+    $stmt->bind_param('iii', $teamId, $teamId, $teamId);
     $stmt->execute();
     $result = $stmt->get_result();
 

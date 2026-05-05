@@ -171,16 +171,14 @@ function renderTeams() {
       : '<span style="color:var(--hspf-text-secondary);">-</span>';
 
     tr.innerHTML = `
-      <td class="mono">${team.id}</td>
-      <td>${escapeHtml(team.name)}</td>
-      <td>${escapeHtml(team.description || '')}</td>
+      <td class="mono" style="cursor:pointer;" data-team-click="${team.id}">${team.id}</td>
+      <td style="cursor:pointer;" data-team-click="${team.id}">${escapeHtml(team.name)}</td>
+      <td style="cursor:pointer;" data-team-click="${team.id}">${escapeHtml(team.description || '')}</td>
       <td>${team.user_count}</td>
       <td>${linkHtml}</td>
       <td>${team.is_active ? '✓' : '✗'}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn" data-action="show-team-members" data-id="${team.id}" title="Teilnehmer anzeigen">👥 Teilnehmer</button>
-          <button class="icon-btn" data-action="assign-team-assignment" data-id="${team.id}" title="Assignments zuordnen">📚 Assignments</button>
           <button class="icon-btn" data-action="copy-team-invite" data-id="${team.id}" title="Copy invite link">🔗</button>
           <button class="icon-btn" data-action="regen-team-invite" data-id="${team.id}" title="Regenerate invite link">♻️</button>
           <button class="icon-btn" data-action="edit-team" data-id="${team.id}" title="Edit">✏️</button>
@@ -297,28 +295,27 @@ function renderTeamMatrix(data, errorMessage = null) {
 async function loadTeamAssignments(teamId) {
   if (!teamId) {
     teamAssignmentsData = [];
-    renderTeamAssignments();
+    renderTeamAssignments(null);
     return;
   }
 
   try {
     const response = await teamsUsersRequestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`);
     teamAssignmentsData = Array.isArray(response.items) ? response.items : [];
-    renderTeamAssignments();
+    renderTeamAssignments(teamId);
   } catch (err) {
     console.error('Load team assignments failed:', err);
     teamAssignmentsData = [];
-    renderTeamAssignments(err.message);
+    renderTeamAssignments(null, err.message);
   }
 }
 
-function renderTeamAssignments(errorMessage = '') {
+function renderTeamAssignments(teamId, errorMessage = '') {
   const tbody = $('team-assignments-body');
   if (!tbody) return;
 
-  const teamId = $('teams-members-team-filter')?.value || '';
   if (!teamId) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf 📚 Assignments klicken.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Standard-Assignments für dieses Team.</td></tr>';
     return;
   }
 
@@ -856,10 +853,9 @@ async function submitTeamAssign(e) {
     statusDiv.className = 'success';
     statusDiv.textContent = `✓ Team-Zuordnung gespeichert | Defaults: ${defaultsSaved} | Aktuelle Mitglieder: ${materialized}`;
 
-    const selectedTeamId = $('teams-members-team-filter')?.value || '';
-    if (selectedTeamId && parseInt(selectedTeamId, 10) === teamId) {
+    // Reload both matrix and assignments for the team
+    if (window.selectedTeamId && window.selectedTeamId === teamId) {
       await loadTeamMembers(teamId);
-    } else {
       await loadTeamAssignments(teamId);
     }
     await loadUsers();
@@ -1017,7 +1013,14 @@ $('bulk-delete-users-btn')?.addEventListener('click', () => {
 
 $('teams-members-team-filter')?.addEventListener('change', async () => {
   const teamId = $('teams-members-team-filter')?.value || '';
-  await loadTeamMembers(teamId ? parseInt(teamId, 10) : null);
+  if (teamId) {
+    const tid = parseInt(teamId, 10);
+    await loadTeamMembers(tid);
+    await loadTeamAssignments(tid);
+  } else {
+    await loadTeamMembers(null);
+    await loadTeamAssignments(null);
+  }
 });
 
 document.getElementById('user-edit-form')?.addEventListener('submit', submitUserEdit);
@@ -1122,10 +1125,62 @@ document.addEventListener('click', async (e) => {
       alert('Reset-Link konnte nicht erzeugt werden: ' + err.message);
     }
   } else if (action === 'show-team-members') {
-    $('teams-members-team-filter').value = String(id);
-    await loadTeamMembers(id);
+    const team = teamsData.find(t => t.id === id);
+    if (!team) return;
+    showTeamDetail(id, team.name);
   }
 });
+
+// Team click handler - show detail cards
+document.addEventListener('click', (e) => {
+  const teamClick = e.target.dataset.teamClick;
+  if (!teamClick) return;
+  
+  const teamId = parseInt(teamClick, 10);
+  const team = teamsData.find(t => t.id === teamId);
+  if (!team) return;
+  
+  showTeamDetail(teamId, team.name);
+});
+
+// Show team detail cards and load data
+async function showTeamDetail(teamId, teamName) {
+  const detailCard = $('team-detail-card');
+  const assignmentCard = $('team-assignments-detail-card');
+  
+  if (!detailCard || !assignmentCard) return;
+  
+  // Show cards
+  detailCard.style.display = 'block';
+  assignmentCard.style.display = 'block';
+  
+  // Update team name labels
+  $('selected-team-name').textContent = escapeHtml(teamName);
+  $('selected-team-name-2').textContent = escapeHtml(teamName);
+  
+  // Store team ID globally for plus button handler
+  window.selectedTeamId = teamId;
+
+  // Highlight selected team row
+  document.querySelectorAll('#teams-body tr').forEach(row => row.style.backgroundColor = '');
+  const activeRow = document.querySelector(`#teams-body td[data-team-click="${teamId}"]`)?.closest('tr');
+  if (activeRow) activeRow.style.backgroundColor = '#dbeafe';
+  
+  // Show plus button for new assignment
+  const addBtn = $('add-team-assignment-btn');
+  if (addBtn) addBtn.style.display = 'inline-block';
+  
+  // Load team matrix
+  await loadTeamMembers(teamId);
+  
+  // Load team assignments
+  await loadTeamAssignments(teamId);
+  
+  // Scroll to detail cards
+  setTimeout(() => {
+    assignmentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
 
 // Open team modal
 $('open-team-modal')?.addEventListener('click', () => {
@@ -1136,6 +1191,26 @@ $('open-team-modal')?.addEventListener('click', () => {
   const isActive = confirm('Is Active?');
   
   createTeam({ name, description, is_active: isActive ? 1 : 0 });
+});
+
+// Add new team assignment button
+$('add-team-assignment-btn')?.addEventListener('click', async () => {
+  const teamName = $('selected-team-name-2')?.textContent || '';
+  const teamIdInput = $('team-assign-team-id');
+  
+  if (!teamIdInput || !teamName) {
+    alert('Kein Team ausgewählt');
+    return;
+  }
+  
+  // Extract team ID from the currently displayed team
+  // The team ID should be stored somewhere - let's use a global variable for now
+  if (!window.selectedTeamId) {
+    alert('Fehler: Team-ID nicht gefunden');
+    return;
+  }
+  
+  await openTeamAssignModal(window.selectedTeamId);
 });
 
 // Initial load
