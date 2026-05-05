@@ -1074,22 +1074,105 @@ window.QuizRenderer = {
     if (!isIterative) return null;
     const current = this.getCurrentIteration(task);
     const max = this.getMaxIterations(task);
-    return { current, max };
+    const storedValues = window.assignmentState?.taskUserAnswers?.[task.id]?.iteration_values || null;
+    return { current, max, taskId: task.id, storedValues };
   },
 
   getIterationHtml(iterationInfo) {
     if (!iterationInfo) return '';
-    const percentage = Math.round((iterationInfo.current / iterationInfo.max) * 100);
+    const { current, max, taskId, storedValues } = iterationInfo;
+    const percentage = Math.round((current / max) * 100);
+
+    // Build pagination buttons for all iterations up to current
+    let buttonsHtml = '';
+    for (let i = 1; i <= max; i++) {
+      const isCurrent = i === current;
+      const isPast = i < current;
+      const isFuture = i > current;
+      let btnClass = 'iter-btn';
+      if (isCurrent) btnClass += ' iter-btn--active';
+      if (isPast) btnClass += ' iter-btn--done';
+      if (isFuture) btnClass += ' iter-btn--locked';
+
+      const clickable = isPast && storedValues;
+      const onclick = clickable
+        ? `onclick="window.QuizRenderer.showIterationReview(${taskId}, ${i - 1})" title="Iteration ${i} ansehen"`
+        : isCurrent ? `title="Aktuelle Iteration"` : `title="Noch gesperrt" disabled`;
+
+      buttonsHtml += `<button class="${btnClass}" ${clickable ? '' : 'disabled'} ${onclick}>${i}</button>`;
+    }
+
     return `
       <div class="quiz-iteration-bar">
         <div class="iteration-header">
-          📊 Iteration ${iterationInfo.current} / ${iterationInfo.max}
+          <span>📊 Iteration ${current} / ${max}</span>
+          <div class="iter-pagination">${buttonsHtml}</div>
         </div>
         <div class="iteration-progress-bar">
           <div class="iteration-progress-fill" style="width: ${percentage}%"></div>
         </div>
+        <div id="iter-review-${taskId}" class="iter-review" style="display:none;"></div>
       </div>
     `;
+  },
+
+  showIterationReview(taskId, idx) {
+    const reviewEl = document.getElementById(`iter-review-${taskId}`);
+    if (!reviewEl) return;
+
+    const iv = window.assignmentState?.taskUserAnswers?.[taskId]?.iteration_values;
+    if (!Array.isArray(iv) || !iv[idx]) {
+      reviewEl.style.display = 'none';
+      return;
+    }
+
+    // Toggle: clicking the same iteration again hides the panel
+    const currentlyShowing = reviewEl.dataset.showing === String(idx);
+    if (currentlyShowing) {
+      reviewEl.style.display = 'none';
+      reviewEl.dataset.showing = '';
+      // Reset all buttons highlight
+      const bar = reviewEl.closest('.quiz-iteration-bar');
+      if (bar) bar.querySelectorAll('.iter-btn--reviewing').forEach(b => b.classList.remove('iter-btn--reviewing'));
+      return;
+    }
+
+    const entry = iv[idx];
+    const inputs = entry.inputs;
+    const answer = entry.answer;
+
+    let inputsHtml = '';
+    if (inputs && Object.keys(inputs).length > 0) {
+      inputsHtml = Object.entries(inputs).map(([k, v]) => {
+        const formatted = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return `<li><code>${this.escapeHtml(k)} = ${this.escapeHtml(formatted)}</code></li>`;
+      }).join('');
+      inputsHtml = `<ul>${inputsHtml}</ul>`;
+    } else {
+      inputsHtml = `<em>(Werte nicht verfügbar – Legacy-Iteration)</em>`;
+    }
+
+    const answerHtml = answer !== null && answer !== undefined
+      ? `<span class="iter-review-answer">${this.escapeHtml(String(answer))}</span>`
+      : `<em>keine Antwort</em>`;
+
+    reviewEl.innerHTML = `
+      <div class="iter-review-inner">
+        <strong>Iteration ${entry.iteration} – Rückblick</strong>
+        <div class="iter-review-inputs"><strong>Werte:</strong>${inputsHtml}</div>
+        <div class="iter-review-answer-row"><strong>Antwort:</strong> ${answerHtml}</div>
+      </div>
+    `;
+    reviewEl.style.display = 'block';
+    reviewEl.dataset.showing = String(idx);
+
+    // Highlight the clicked button
+    const bar = reviewEl.closest('.quiz-iteration-bar');
+    if (bar) {
+      bar.querySelectorAll('.iter-btn--reviewing').forEach(b => b.classList.remove('iter-btn--reviewing'));
+      const allBtns = bar.querySelectorAll('.iter-btn--done');
+      if (allBtns[idx]) allBtns[idx].classList.add('iter-btn--reviewing');
+    }
   },
 
   escapeHtml(text) {
@@ -1107,6 +1190,123 @@ window.QuizRenderer = {
     return escaped.replace(/\n/g, '<br>').replace(/\r\n/g, '<br>');
   },
 
+  /**
+   * Generate input values for ALL iterations of a task and persist them to DB.
+   * For code_random_complex: runs randomizer_code N times via Pyodide.
+   * For code_reading: reads deterministic values from variable_overrides.
+   * Legacy users (current_iteration > 1, no iteration_values): past iterations
+   * get placeholder entries for code_random_complex (random values are gone),
+   * but code_reading can reconstruct all entries deterministically.
+   * Never overwrites existing iteration_values in DB (server enforces this).
+   */
+  async initAllIterations(task) {
+    const maxIterations = this.getMaxIterations(task);
+    const currentIteration = this.getCurrentIteration(task);
+    const iterationValues = [];
+
+    const isRandomComplex = task.task_type === 'code_random_complex';
+    const isCodeReading = task.task_type === 'code_reading';
+
+    if ((isRandomComplex || isCodeReading) && task.variable_overrides) {
+      const overrides = typeof task.variable_overrides === 'string'
+        ? JSON.parse(task.variable_overrides)
+        : task.variable_overrides;
+
+      if (Array.isArray(overrides) && overrides.length > 0) {
+        const firstSet = overrides[0];
+        const hasRandomMarkers = firstSet && firstSet.inputs &&
+          Object.values(firstSet.inputs).some(v => v === '<random>');
+
+        if (isRandomComplex && hasRandomMarkers && task.randomizer_code) {
+          // Past iterations for legacy users cannot be recovered — add placeholders
+          for (let i = 1; i < currentIteration; i++) {
+            iterationValues.push({ iteration: i, inputs: null, answer: '(nicht verfügbar)' });
+          }
+
+          // Generate values for remaining iterations (currentIteration to max) via Pyodide
+          const pyodide = await this.getPyodideOrThrow();
+          const requestedRandomKeys = Object.entries(firstSet.inputs || {})
+            .filter(([, val]) => val === '<random>')
+            .map(([key]) => key);
+          const safeCode = task.randomizer_code.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+
+          for (let i = currentIteration; i <= maxIterations; i++) {
+            const python = `
+import sys
+__randomizer_namespace = {}
+exec("""${safeCode}""", __randomizer_namespace)
+__randomizer_namespace
+`;
+            const resultObj = await pyodide.runPythonAsync(python);
+            const allVariables = resultObj.toJs();
+
+            const inputs = {};
+            Object.entries(allVariables).forEach(([rawKey, val]) => {
+              const key = String(rawKey ?? '');
+              if (!key || !requestedRandomKeys.includes(key)) return;
+              try {
+                const serialized = JSON.stringify(val);
+                if (serialized !== undefined) inputs[key] = val;
+              } catch (e) { /* skip non-serializable */ }
+            });
+
+            iterationValues.push({ iteration: i, inputs, answer: null });
+          }
+        } else {
+          // code_reading or fixed code_random_complex: deterministic, reconstruct all
+          for (let i = 0; i < maxIterations; i++) {
+            const idx = i % overrides.length;
+            const selectedSet = overrides[idx];
+            const inputs = {};
+            if (selectedSet?.inputs) {
+              Object.entries(selectedSet.inputs).forEach(([key, val]) => {
+                if (val !== '<random>') inputs[key] = val;
+              });
+            }
+            iterationValues.push({ iteration: i + 1, inputs, answer: null });
+          }
+        }
+      }
+    }
+
+    if (iterationValues.length === 0) return null;
+
+    if (window.testMode === true || window.TEST_MODE_NO_PERSIST === true) {
+      if (!window.assignmentState.taskUserAnswers[task.id]) {
+        window.assignmentState.taskUserAnswers[task.id] = {};
+      }
+      window.assignmentState.taskUserAnswers[task.id].iteration_values = iterationValues;
+      return iterationValues;
+    }
+
+    try {
+      const response = await fetch('../api/user_tasks/init_iterations.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: task.id, iteration_values: iterationValues })
+      });
+      const data = await response.json();
+      // Server returns canonical values — may differ if row was already set between our check and POST
+      const storedValues = (data.ok && Array.isArray(data.iteration_values))
+        ? data.iteration_values
+        : iterationValues;
+
+      if (!window.assignmentState.taskUserAnswers[task.id]) {
+        window.assignmentState.taskUserAnswers[task.id] = {};
+      }
+      window.assignmentState.taskUserAnswers[task.id].iteration_values = storedValues;
+      return storedValues;
+    } catch (err) {
+      console.warn('[ITER] init_iterations fetch failed, using locally generated values:', err);
+      if (!window.assignmentState.taskUserAnswers[task.id]) {
+        window.assignmentState.taskUserAnswers[task.id] = {};
+      }
+      window.assignmentState.taskUserAnswers[task.id].iteration_values = iterationValues;
+      return iterationValues;
+    }
+  },
+
   async ensureGeneratedValues(task) {
     const currentIteration = this.getCurrentIteration(task);
     const existingAnswer = window.assignmentState?.taskUserAnswers?.[task.id] || {};
@@ -1115,6 +1315,41 @@ window.QuizRenderer = {
     if (existing && Object.keys(existing).length > 0 && existingIteration === currentIteration) {
       return existing;
     }
+
+    // --- NEW: check stored iteration_values first ---
+    const storedIterValues = existingAnswer.iteration_values;
+    if (Array.isArray(storedIterValues)) {
+      const entry = storedIterValues.find(e => e.iteration === currentIteration);
+      if (entry && entry.inputs && Object.keys(entry.inputs).length > 0) {
+        if (!window.assignmentState.taskUserAnswers[task.id]) {
+          window.assignmentState.taskUserAnswers[task.id] = {};
+        }
+        window.assignmentState.taskUserAnswers[task.id].variable_values = entry.inputs;
+        window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+        return entry.inputs;
+      }
+    }
+
+    // If iteration_values is null: generate and persist all iterations now
+    if (!storedIterValues) {
+      try {
+        const allValues = await this.initAllIterations(task);
+        if (Array.isArray(allValues)) {
+          const entry = allValues.find(e => e.iteration === currentIteration);
+          if (entry && entry.inputs && Object.keys(entry.inputs).length > 0) {
+            if (!window.assignmentState.taskUserAnswers[task.id]) {
+              window.assignmentState.taskUserAnswers[task.id] = {};
+            }
+            window.assignmentState.taskUserAnswers[task.id].variable_values = entry.inputs;
+            window.assignmentState.taskUserAnswers[task.id].iteration = currentIteration;
+            return entry.inputs;
+          }
+        }
+      } catch (e) {
+        console.warn('[ITER] initAllIterations failed, falling back to single-iteration generation:', e);
+      }
+    }
+    // --- END NEW ---
 
     // Check if variable_overrides exist (can be either CODE_READING feste Werte OR CODE_RANDOM_COMPLEX with <random> markers)
     if (task.variable_overrides) {

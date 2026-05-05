@@ -748,30 +748,18 @@ if ($displayName === '') {
       </div>
 
       <div class="admin-card">
-        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Teilnehmer</h3>
-        <div class="admin-card-subtitle">Liste der Teilnehmer pro Team, analog zur User-Filteransicht.</div>
+        <h3 style="margin-bottom: var(--hspf-spacing-sm);">Team-Teilnehmer - Assignment-Übersicht</h3>
+        <div class="admin-card-subtitle">Assignment-Matrix für alle Teilnehmer dieses Teams (alphabetisch sortiert).</div>
         <div class="search-filter" style="margin-bottom: var(--hspf-spacing-md);">
           <select id="teams-members-team-filter" style="min-width: 220px;">
             <option value="">Team auswählen</option>
           </select>
-          <input type="text" id="teams-members-search" placeholder="Teilnehmer suchen (Mail, Vorname, Nachname)" />
         </div>
         <div style="overflow:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Team</th>
-                <th>Semester</th>
-                <th>Assignments</th>
-                <th>Role</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="teams-members-body">
-              <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf <strong>👥 Teilnehmer</strong> oder <strong>📚 Assignments</strong> klicken – oder links ein Team auswählen.</td></tr>
+          <table id="team-matrix-table">
+            <thead id="team-matrix-head"></thead>
+            <tbody id="team-matrix-body">
+              <tr><td colspan="100" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben ein Team auswählen.</td></tr>
             </tbody>
           </table>
         </div>

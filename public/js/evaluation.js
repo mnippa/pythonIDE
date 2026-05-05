@@ -170,6 +170,38 @@ function formatInt(value) {
   return String(Math.round(num));
 }
 
+function fmtDateTime(dtStr) {
+  if (!dtStr) return null;
+  const d = new Date(dtStr.replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fmtDateOnly(dtStr) {
+  if (!dtStr) return null;
+  const d = new Date(dtStr.replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)}`;
+}
+
+function cleanLastName(lastName) {
+  if (!lastName) return '';
+  return String(lastName).replace(/\s*\([^)]*\)\s*/g, '').trim();
+}
+
+function fmtRelativeToDue(submittedStr, dueDateStr) {
+  if (!submittedStr || !dueDateStr) return null;
+  const sub = new Date(submittedStr.replace(' ', 'T'));
+  const due = new Date(dueDateStr.replace(' ', 'T'));
+  if (isNaN(sub) || isNaN(due)) return null;
+  const diffDays = Math.round((sub - due) / 86400000);
+  if (diffDays === 0) return { label: '(0T)', late: false };
+  if (diffDays > 0) return { label: `(+${diffDays}T)`, late: true };
+  return { label: `(${diffDays}T)`, late: false };
+}
+
 function formatTime(seconds) {
   if (seconds === null || seconds === undefined || seconds === 0) return '0:00';
   const sec = Number(seconds);
@@ -269,14 +301,14 @@ function renderParticipants() {
 
   if (!state.participants || state.participants.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="10">Keine Teilnehmer zugewiesen.</td>';
+    tr.innerHTML = '<td colspan="11">Keine Teilnehmer zugewiesen.</td>';
     body.appendChild(tr);
     return;
   }
 
   if (filteredParticipants.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="10">Keine Teilnehmer für den aktuellen Filter gefunden.</td>';
+    tr.innerHTML = '<td colspan="11">Keine Teilnehmer für den aktuellen Filter gefunden.</td>';
     body.appendChild(tr);
     return;
   }
@@ -314,12 +346,32 @@ function renderParticipants() {
       : '<span style="font-size:11px;color:#9ca3af;">–</span>';
 
     const tr = document.createElement('tr');
+
+    const subFmt = fmtDateOnly(u.submitted_at);
+    const gradFmtDate = fmtDateOnly(u.graded_at);
+    const graderLastName = cleanLastName(u.graded_by_last_name);
+    const rel = fmtRelativeToDue(u.submitted_at, u.effective_due_date);
+    const relBadge = rel
+      ? `<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;background:${rel.late ? '#fef3c7' : '#f0fdf4'};color:${rel.late ? '#b45309' : '#166534'};">${escapeHtml(rel.label)}</span>`
+      : '';
+    const submissionHtml = subFmt
+      ? `<span style="font-size:11px;color:#374151;font-weight:600;display:inline-flex;align-items:center;gap:4px;">${escapeHtml(subFmt)}${relBadge}</span>`
+      : '<span style="font-size:11px;color:#9ca3af;">–</span>';
+    const gradedInfoHtml = gradFmtDate
+      ? `<div style="margin-top:6px;font-size:10px;color:#6b7280;padding-top:6px;border-top:1px solid #e5e7eb;">
+           ${escapeHtml(gradFmtDate)}${graderLastName ? ` / ${escapeHtml(graderLastName)}` : ''}
+         </div>`
+      : '';
+
     tr.innerHTML = `
       <td class="mono">${u.id}</td>
       <td>${escapeHtml(u.email)}</td>
       <td>${escapeHtml(fullName)}</td>
       <td>${escapeHtml(u.team_name || '-')}</td>
       <td>${taskCounts}</td>
+      <td style="min-width:130px;">
+        ${submissionHtml}
+      </td>
       <td>
         <select class="assignment-status-select" data-assignment-id="${state.assignmentId}" data-user-id="${u.id}" data-current-status="${escapeHtml(currentRawStatus)}">
           <option value="assigned"      ${currentRawStatus === 'assigned'      ? 'selected' : ''}>Zugewiesen</option>
@@ -330,6 +382,7 @@ function renderParticipants() {
           <option value="passed_delayed"${currentRawStatus === 'passed_delayed'? 'selected' : ''}>Bestanden (verspaetet)</option>
           <option value="failed"        ${currentRawStatus === 'failed'        ? 'selected' : ''}>Nicht bestanden</option>
         </select>
+        ${gradedInfoHtml}
       </td>
       <td class="mono num-right">${formatInt(u.run_count)}</td>
       <td class="mono num-right">${timeFormatted}</td>
@@ -337,6 +390,7 @@ function renderParticipants() {
       <td>
         <button class="btn" data-action="view-user" data-user-id="${u.id}">View</button>
         <button class="btn" data-action="test-view" data-user-id="${u.id}" style="margin-left:4px;">Test View</button>
+        <button class="btn" data-action="reset-user-attempts" data-user-id="${u.id}" data-user-name="${escapeHtml(fullName)}" style="margin-left:4px;" title="Teilnehmer-Aufgaben zurücksetzen">↺</button>
       </td>
     `;
     body.appendChild(tr);
@@ -493,6 +547,30 @@ function bindEvents() {
       if (!userId || !state.assignmentId) return;
       const url = `editor_assignment_test.php?assignment_id=${state.assignmentId}&test_user_id=${userId}`;
       window.open(url, '_blank');
+      return;
+    }
+
+    const resetUserBtn = e.target.closest('button[data-action="reset-user-attempts"]');
+    if (resetUserBtn) {
+      const userId = parseInt(resetUserBtn.dataset.userId, 10);
+      const userName = resetUserBtn.dataset.userName || `#${userId}`;
+      if (!userId || !state.assignmentId) return;
+
+      const assignmentTitle = (state.assignments.find(a => a.id === state.assignmentId) || {}).title || `#${state.assignmentId}`;
+      const confirmed = window.confirm(`Wirklich alle Aufgaben zurücksetzen?\n\nTeilnehmer: ${userName}\nAssignment: ${assignmentTitle}`);
+      if (!confirmed) return;
+
+      try {
+        const response = await requestJson('../api/admin/assignments/users/reset-attempts.php', {
+          method: 'POST',
+          body: JSON.stringify({ assignment_id: state.assignmentId, user_id: userId })
+        });
+        alert(`Erfolg: ${response.affected_rows || 0} Aufgaben zurückgesetzt.`);
+        await loadOverview();
+        await loadParticipants();
+      } catch (err) {
+        alert('Reset failed: ' + err.message);
+      }
       return;
     }
 

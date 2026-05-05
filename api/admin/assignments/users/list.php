@@ -228,6 +228,8 @@ try {
             t.name AS team_name,
             COALESCE(ua_user.status, ua_team.status, "assigned") AS raw_status,
             COALESCE(ua_user.submitted_at, ua_team.submitted_at) AS submitted_at,
+            COALESCE(ua_user.graded_at, ua_team.graded_at) AS graded_at,
+            COALESCE(ua_user.graded_by, ua_team.graded_by) AS graded_by_id,
             COALESCE(ua_user.is_late, ua_team.is_late, 0) AS is_late,
             COALESCE(ua_user.due_date, ua_team.due_date) AS user_due_date,
             a.due_date AS assignment_due_date,
@@ -237,7 +239,8 @@ try {
             a.hard_deadline,
             CASE WHEN ua_user.id IS NOT NULL THEN 1 ELSE 0 END AS is_direct,
             ' . $runSelect . ',
-            ' . $activeSelect . '
+            ' . $activeSelect . ',
+            grader.last_name AS graded_by_last_name
         FROM users u
         INNER JOIN assignments a ON a.id = ?
         LEFT JOIN teams t ON t.id = u.team_id
@@ -245,6 +248,8 @@ try {
             ON ua_user.assignment_id = ? AND ua_user.user_id = u.id
         LEFT JOIN user_assignments ua_team
             ON ua_team.assignment_id = ? AND ua_team.team_id = u.team_id
+        LEFT JOIN users grader
+            ON grader.id = COALESCE(ua_user.graded_by, ua_team.graded_by)
         WHERE ua_user.id IS NOT NULL OR ua_team.id IS NOT NULL
         ORDER BY u.last_name, u.first_name, u.email
     ';
@@ -339,6 +344,11 @@ try {
             'is_direct' => (bool)$row['is_direct'],
             'run_count' => (int)$row['run_count'],
             'active_seconds' => (int)$row['active_seconds'],
+            'submitted_at' => $row['submitted_at'] ?? null,
+            'graded_at' => $row['graded_at'] ?? null,
+            'graded_by_last_name' => $row['graded_by_last_name'] ?? null,
+            'effective_due_date' => $row['effective_due_date'] ?? null,
+            'is_late' => !empty($row['is_late']),
             'is_late_completion' => $displayStatus['is_late_completion'],
             'is_rework' => $displayStatus['is_rework'],
             'timing_phase' => $timing['phase'],

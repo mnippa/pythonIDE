@@ -522,6 +522,29 @@ if ($isIterative) {
 }
 
 // Create or update user_tasks entry
+// Also update iteration_values[currentIteration-1].answer for audit trail
+$iterationAnswerUpdate = '';
+if (in_array($taskType, ['code_reading', 'code_random_complex'])) {
+    // Read existing iteration_values, patch the current iteration's answer
+    $ivStmt = $conn->prepare('SELECT iteration_values FROM user_tasks WHERE user_id = ? AND task_id = ?');
+    $ivStmt->bind_param('ii', $userId, $taskId);
+    $ivStmt->execute();
+    $ivRow = $ivStmt->get_result()->fetch_assoc();
+    if ($ivRow && $ivRow['iteration_values']) {
+        $iv = json_decode($ivRow['iteration_values'], true);
+        if (is_array($iv)) {
+            foreach ($iv as &$entry) {
+                if ((int)($entry['iteration'] ?? 0) === $currentIteration) {
+                    $entry['answer'] = isset($input['text_answer']) ? trim($input['text_answer']) : null;
+                    break;
+                }
+            }
+            unset($entry);
+            $iterationAnswerUpdate = json_encode($iv);
+        }
+    }
+}
+
 $stmt = $conn->prepare(
         'INSERT INTO user_tasks (user_id, task_id, status, selected_options, text_answer, variable_values, attempts, current_iteration)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -554,6 +577,15 @@ $stmt->bind_param(
 );
 
 if ($stmt->execute()) {
+    // Persist iteration answer in iteration_values (audit trail)
+    if ($iterationAnswerUpdate !== '') {
+        $ivUpdateStmt = $conn->prepare(
+            'UPDATE user_tasks SET iteration_values = ? WHERE user_id = ? AND task_id = ?'
+        );
+        $ivUpdateStmt->bind_param('sii', $iterationAnswerUpdate, $userId, $taskId);
+        $ivUpdateStmt->execute();
+    }
+
     $assignmentStatus = $status === 'passed' ? 'submitted' : 'in_progress';
     $assignmentId = (int)$schedule['assignment_id'];
     $assignedByForProgress = (int)$userId;

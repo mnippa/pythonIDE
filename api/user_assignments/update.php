@@ -92,7 +92,15 @@ if (isset($input['status'])) {
     $types .= 's';
 
     if (in_array($status, ['submitted', 'passed', 'failed'], true)) {
-        $updates[] = 'submitted_at = ?';
+        // Only set submitted_at if not already set
+        if (empty($current['submitted_at'])) {
+            $updates[] = 'submitted_at = ?';
+            $params[] = date('Y-m-d H:i:s');
+            $types .= 's';
+        }
+    }
+    if ($isAdmin && in_array($status, ['passed', 'failed'], true)) {
+        $updates[] = 'graded_at = ?';
         $params[] = date('Y-m-d H:i:s');
         $types .= 's';
     }

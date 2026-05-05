@@ -368,6 +368,7 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
                 <th>Name</th>
                 <th>Team</th>
                 <th>Aufgaben</th>
+                <th>Abgabe</th>
                 <th>Bewertung</th>
                 <th class="num-right">Runs</th>
                 <th class="num-right">Zeit</th>
@@ -380,6 +381,8 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
         </div>
       </div>
     </section>
+  </div>
+
   </div>
 
   <div class="modal" id="user-detail-modal">

@@ -132,22 +132,66 @@ try {
     $existing = $stmt->get_result()->fetch_assoc();
 
     if ($existing) {
+        $now = date('Y-m-d H:i:s');
+        $uaId = (int)$existing['id'];
+
+        // Read current submitted_at to preserve it if already set
+        $cur = $conn->prepare('SELECT submitted_at FROM user_assignments WHERE id = ?');
+        $cur->bind_param('i', $uaId);
+        $cur->execute();
+        $curRow = $cur->get_result()->fetch_assoc();
+        $existingSubmittedAt = $curRow['submitted_at'] ?? null;
+
+        $setParts = ['status = ?'];
+        $bindTypes = 's';
+        $bindValues = [$status];
+
         if ($isLate !== null) {
-            $update = $conn->prepare('UPDATE user_assignments SET status = ?, is_late = ? WHERE id = ?');
-            $update->bind_param('sii', $status, $isLate, $existing['id']);
-        } else {
-            $update = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
-            $update->bind_param('si', $status, $existing['id']);
+            $setParts[] = 'is_late = ?';
+            $bindTypes .= 'i';
+            $bindValues[] = $isLate;
         }
+
+        // Set submitted_at only if not already set and status implies submission
+        if (empty($existingSubmittedAt) && in_array($status, ['submitted', 'passed', 'failed'], true)) {
+            $setParts[] = 'submitted_at = ?';
+            $bindTypes .= 's';
+            $bindValues[] = $now;
+        }
+
+        // Always set graded_at + graded_by when admin marks passed or failed
+        if (in_array($status, ['passed', 'failed'], true)) {
+            $setParts[] = 'graded_at = ?';
+            $bindTypes .= 's';
+            $bindValues[] = $now;
+            $setParts[] = 'graded_by = ?';
+            $bindTypes .= 'i';
+            $bindValues[] = (int)$admin['id'];
+        }
+
+        $setParts[] = 'id = ?';  // append WHERE value last
+        $bindTypes .= 'i';
+        $bindValues[] = $uaId;
+
+        $sql = 'UPDATE user_assignments SET ' . implode(', ', array_slice($setParts, 0, -1)) . ' WHERE id = ?';
+        $update = $conn->prepare($sql);
+        $update->bind_param($bindTypes, ...$bindValues);
         if ($update->execute()) {
             jsonResponse(['ok' => true, 'updated' => true]);
         }
         jsonResponse(['ok' => false, 'error' => 'Failed to update status'], 500);
     }
 
-    $insert = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by) VALUES (?, ?, ?, ?)');
     $adminId = (int)$admin['id'];
-    $insert->bind_param('iisi', $userId, $assignmentId, $status, $adminId);
+    $isGradedInsert = in_array($status, ['passed', 'failed'], true);
+    $nowInsert = date('Y-m-d H:i:s');
+    if ($isGradedInsert) {
+        $insert = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by, submitted_at, graded_at, graded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $insert->bind_param('iisissi', $userId, $assignmentId, $status, $adminId, $nowInsert, $nowInsert, $adminId);
+    } else {
+        $insert = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by) VALUES (?, ?, ?, ?)');
+        $insert->bind_param('iisi', $userId, $assignmentId, $status, $adminId);
+    }
 
     if ($insert->execute()) {
         jsonResponse(['ok' => true, 'created' => true]);

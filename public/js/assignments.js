@@ -122,6 +122,32 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/**
+ * Format a datetime string as "DD.MM.YY HH:MM"
+ */
+function fmtDateTime(dtStr) {
+  if (!dtStr) return null;
+  const d = new Date(dtStr.replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Returns relative days vs due date: "pünktlich", "+2 Tage", "-1 Tag"
+ */
+function fmtRelativeToDue(submittedStr, dueDateStr) {
+  if (!submittedStr || !dueDateStr) return null;
+  const sub = new Date(submittedStr.replace(' ', 'T'));
+  const due = new Date(dueDateStr.replace(' ', 'T'));
+  if (isNaN(sub) || isNaN(due)) return null;
+  const diffMs = sub - due;
+  const diffDays = Math.round(diffMs / 86400000);
+  if (diffDays === 0) return 'pünktlich';
+  if (diffDays > 0) return `+${diffDays} ${diffDays === 1 ? 'Tag' : 'Tage'}`;
+  return `${diffDays} ${Math.abs(diffDays) === 1 ? 'Tag' : 'Tage'}`;
+}
+
 const taskDraftFiles = {};
 const taskSavedSnapshots = {};
 
@@ -1548,7 +1574,8 @@ async function loadSingleAssignment(assignmentId) {
           assignmentState.taskUserAnswers[ut.task_id] = {
             selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
             text_answer: ut.text_answer || '',
-            variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+            variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
+            iteration_values: Array.isArray(ut.iteration_values) ? ut.iteration_values : null
           };
           if (ut.run_count !== undefined && ut.run_count !== null) {
             assignmentState.taskRuns[ut.task_id] = ut.run_count;
@@ -1612,7 +1639,8 @@ async function loadAssignments() {
               assignmentState.taskUserAnswers[ut.task_id] = {
                 selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
                 text_answer: ut.text_answer || '',
-                variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {}
+                variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
+                iteration_values: Array.isArray(ut.iteration_values) ? ut.iteration_values : null
               };
               if (ut.run_count !== undefined && ut.run_count !== null) {
                 assignmentState.taskRuns[ut.task_id] = ut.run_count;
@@ -1821,6 +1849,29 @@ function renderAssignmentList() {
             <span>${escapeHtml(assignmentMeta.label)}</span>
           </span>
         </div>
+
+        ${(() => {
+          const subFmt = fmtDateTime(item.submitted_at);
+          const relDue = fmtRelativeToDue(item.submitted_at, item.due_date);
+          const gradFmt = fmtDateTime(item.graded_at);
+          if (!subFmt && !gradFmt) return '';
+          const lateColor = item.is_late ? '#b45309' : '#166534';
+          const lateBg    = item.is_late ? '#fef3c7' : '#f0fdf4';
+          return `
+          <div style="margin-top:8px;padding:6px 10px;border-radius:8px;background:var(--hspf-bg-secondary,#f9f9f9);border:1px solid var(--border);font-size:11px;color:var(--text-secondary);display:flex;flex-direction:column;gap:3px;">
+            ${subFmt ? `
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+              <span style="font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Abgabe:</span>
+              <span style="font-weight:600;color:var(--text-primary,#1a1a1a);">${escapeHtml(subFmt)}</span>
+              ${relDue ? `<span style="padding:1px 6px;border-radius:999px;background:${lateBg};color:${lateColor};font-weight:700;">${escapeHtml(relDue)}</span>` : ''}
+            </div>` : ''}
+            ${gradFmt ? `
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Bewertet:</span>
+              <span style="font-weight:600;color:var(--text-primary,#1a1a1a);">${escapeHtml(gradFmt)}</span>
+            </div>` : ''}
+          </div>`;
+        })()}
       </div>
     `;
   }).join('');

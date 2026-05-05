@@ -219,33 +219,79 @@ function updateTeamFilters() {
 
 async function loadTeamMembers(teamId) {
   if (!teamId) {
-    teamMembersData = [];
-    teamAssignmentsData = [];
-    renderTeamMembers();
-    renderTeamAssignments();
+    renderTeamMatrix(null);
     return;
   }
 
   try {
-    const params = new URLSearchParams();
-    params.set('team_id', String(teamId));
-    params.set('limit', '100');
-    params.set('page', '1');
-    const [usersResponse, assignmentsResponse] = await Promise.all([
-      teamsUsersRequestJson(`../api/admin/users/list.php?${params.toString()}`),
-      teamsUsersRequestJson(`../api/admin/teams/assignment-defaults/list.php?team_id=${encodeURIComponent(teamId)}`)
-    ]);
-    teamMembersData = Array.isArray(usersResponse.users) ? usersResponse.users : [];
-    teamAssignmentsData = Array.isArray(assignmentsResponse.items) ? assignmentsResponse.items : [];
-    renderTeamMembers();
-    renderTeamAssignments();
+    const data = await teamsUsersRequestJson(`../api/admin/evaluation/team-matrix.php?team_id=${encodeURIComponent(teamId)}`);
+    renderTeamMatrix(data);
   } catch (err) {
-    console.error('Load team members failed:', err);
-    teamMembersData = [];
-    teamAssignmentsData = [];
-    renderTeamMembers();
-    renderTeamAssignments(err.message);
+    console.error('Load team matrix failed:', err);
+    renderTeamMatrix(null, err.message);
   }
+}
+
+function renderTeamMatrix(data, errorMessage = null) {
+  const head = $('team-matrix-head');
+  const body = $('team-matrix-body');
+  
+  if (!head || !body) return;
+
+  if (errorMessage) {
+    body.innerHTML = `<tr><td colspan="100" style="text-align:center;padding:16px;color:#dc2626;">${escapeHtml(errorMessage)}</td></tr>`;
+    return;
+  }
+
+  if (!data || !data.ok) {
+    body.innerHTML = '<tr><td colspan="100" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben ein Team auswählen.</td></tr>';
+    return;
+  }
+
+  const assignments = data.assignments || [];
+  const users = data.users || [];
+
+  const ampelDot = (status) => {
+    const map = {
+      passed:          { bg: '#22c55e', title: 'Bestanden' },
+      passed_delayed:  { bg: '#10b981', title: 'Bestanden (verspätet)' },
+      failed:          { bg: '#ef4444', title: 'Nicht bestanden' },
+      rework:          { bg: '#f97316', title: 'Nacharbeit' },
+      in_progress:     { bg: '#facc15', title: 'In Bearbeitung' },
+      assigned:        { bg: '#d1d5db', title: 'Zugewiesen' },
+    };
+    const s = map[status] || map.assigned;
+    return `<span title="${s.title}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${s.bg};"></span>`;
+  };
+
+  // Header row
+  let thHtml = '<tr>'
+    + '<th>Name</th>'
+    + assignments.map(a => `<th style="text-align:center;font-size:11px;max-width:70px;white-space:normal;word-break:break-word;" title="${escapeHtml(a.title)}">${escapeHtml(a.short)}</th>`).join('')
+    + '<th style="text-align:center;">Bestanden</th>'
+    + '</tr>';
+  head.innerHTML = thHtml;
+
+  // Body rows
+  if (users.length === 0) {
+    body.innerHTML = `<tr><td colspan="${1 + assignments.length + 1}" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Teilnehmer in diesem Team.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = users.map(u => {
+    const name = [u.last_name, u.first_name].filter(Boolean).join(', ') || u.email || `#${u.id}`;
+    const dots = assignments.map(a => {
+      const status = (u.statuses || {})[a.id];
+      return `<td style="text-align:center;">${status ? ampelDot(status) : '<span style="color:#e5e7eb;">–</span>'}</td>`;
+    }).join('');
+    const summaryColor = u.passed > 0 && u.passed === u.total ? '#15803d' : (u.passed > 0 ? '#b45309' : '#6b7280');
+    const summary = `<span style="font-weight:700;color:${summaryColor};">${u.passed}/${u.total}</span>`;
+    return `<tr>
+      <td style="white-space:nowrap;">${escapeHtml(name)}</td>
+      ${dots}
+      <td style="text-align:center;">${summary}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function loadTeamAssignments(teamId) {
@@ -264,51 +310,6 @@ async function loadTeamAssignments(teamId) {
     teamAssignmentsData = [];
     renderTeamAssignments(err.message);
   }
-}
-
-function renderTeamMembers() {
-  const tbody = $('teams-members-body');
-  if (!tbody) return;
-
-  const teamId = $('teams-members-team-filter')?.value || '';
-  const search = ($('teams-members-search')?.value || '').trim().toLowerCase();
-
-  if (!teamId) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Bitte oben in der Team-Zeile auf 👥 Teilnehmer oder 📚 Assignments klicken.</td></tr>';
-    return;
-  }
-
-  const filtered = teamMembersData.filter((u) => {
-    if (!search) return true;
-    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ').toLowerCase();
-    return String(u.email || '').toLowerCase().includes(search)
-      || fullName.includes(search)
-      || String(u.first_name || '').toLowerCase().includes(search)
-      || String(u.last_name || '').toLowerCase().includes(search);
-  });
-
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Teilnehmer gefunden.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = filtered.map((u) => {
-    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '-';
-    const stats = u.assignment_stats || { total: 0, unstarted: 0, in_progress: 0, passed: 0, failed: 0 };
-    const statsText = `${stats.total} (⚪:${stats.unstarted} 🟡:${stats.in_progress} 🟢:${stats.passed} ⚫:${stats.failed})`;
-    return `
-      <tr>
-        <td class="mono">${u.id}</td>
-        <td>${escapeHtml(u.email)}</td>
-        <td>${escapeHtml(fullName)}</td>
-        <td>${escapeHtml(u.team_name || '-')}</td>
-        <td>${escapeHtml(u.semester || '-')}</td>
-        <td>${statsText}</td>
-        <td>${u.role === 'admin' ? '🔑 Admin' : 'User'}</td>
-        <td>${escapeHtml(u.status || 'aktiv')}</td>
-      </tr>
-    `;
-  }).join('');
 }
 
 function renderTeamAssignments(errorMessage = '') {
@@ -1017,10 +1018,6 @@ $('bulk-delete-users-btn')?.addEventListener('click', () => {
 $('teams-members-team-filter')?.addEventListener('change', async () => {
   const teamId = $('teams-members-team-filter')?.value || '';
   await loadTeamMembers(teamId ? parseInt(teamId, 10) : null);
-});
-
-$('teams-members-search')?.addEventListener('input', () => {
-  renderTeamMembers();
 });
 
 document.getElementById('user-edit-form')?.addEventListener('submit', submitUserEdit);
