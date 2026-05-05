@@ -2174,6 +2174,135 @@ function waitForEditor(maxAttempts = 20, interval = 100) {
   });
 }
 
+function resetAssignmentPlotPanel() {
+  const outputPanel = document.getElementById('output-container');
+  const plotPanel = document.getElementById('plot-container');
+  const outputTab = document.querySelector('.output-plot-tab[data-tab="output"]');
+  const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
+
+  if (plotPanel) {
+    plotPanel.innerHTML = '';
+    plotPanel.classList.remove('active');
+  }
+
+  if (outputPanel) {
+    outputPanel.classList.add('active');
+  }
+
+  if (outputTab) {
+    outputTab.classList.add('active');
+  }
+
+  if (plotTab) {
+    plotTab.classList.remove('active');
+    plotTab.style.display = 'none';
+  }
+}
+
+function syncAssignmentPlotUiForTask(task) {
+  const tabsContainer = document.getElementById('output-plot-tabs');
+  const outputPanel = document.getElementById('output-container');
+  const plotPanel = document.getElementById('plot-container');
+  const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
+
+  const isCodeTask = !!task && (task.task_type === 'code' || task.task_type === 'code_ui');
+
+  // Always reset plot artifacts when switching tasks.
+  resetAssignmentPlotPanel();
+
+  if (!isCodeTask) {
+    // Plot navigation should not appear for non-code tasks.
+    if (tabsContainer) tabsContainer.style.display = 'none';
+    if (plotPanel) plotPanel.style.display = 'none';
+    if (plotTab) plotTab.style.display = 'none';
+    if (outputPanel) outputPanel.style.display = 'block';
+    return;
+  }
+
+  // Code tasks: keep Output tab visible and let plot tab appear only when plot content exists.
+  if (tabsContainer) tabsContainer.style.display = 'flex';
+  if (plotPanel) plotPanel.style.display = '';
+  if (outputPanel) outputPanel.style.display = '';
+}
+
+function switchAssignmentOutputTab() {
+  const outputPanel = document.getElementById('output-container');
+  const plotPanel = document.getElementById('plot-container');
+  const outputTab = document.querySelector('.output-plot-tab[data-tab="output"]');
+  const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
+
+  if (outputPanel) outputPanel.classList.add('active');
+  if (plotPanel) plotPanel.classList.remove('active');
+  if (outputTab) outputTab.classList.add('active');
+  if (plotTab) plotTab.classList.remove('active');
+}
+
+const assignmentLoadedPackages = new Set();
+
+function inferAssignmentPackagesFromCode(code) {
+  const text = String(code || '');
+  const inferred = new Set();
+
+  if (/^\s*(import\s+matplotlib\b|from\s+matplotlib\b)/m.test(text)) {
+    inferred.add('matplotlib');
+  }
+  if (/^\s*(import\s+numpy\b|from\s+numpy\b)/m.test(text)) {
+    inferred.add('numpy');
+  }
+  if (/^\s*(import\s+pandas\b|from\s+pandas\b)/m.test(text)) {
+    inferred.add('pandas');
+  }
+
+  return Array.from(inferred);
+}
+
+async function ensureAssignmentPackages(pyodide, code) {
+  const inferred = inferAssignmentPackagesFromCode(code);
+  const toLoad = inferred.filter((pkg) => !assignmentLoadedPackages.has(pkg));
+  if (!toLoad.length) return;
+
+  await pyodide.loadPackage(toLoad);
+  toLoad.forEach((pkg) => assignmentLoadedPackages.add(pkg));
+}
+
+async function prepareAssignmentCheckRuntime(pyodide, code) {
+  const needsMatplotlib = /^\s*(import\s+matplotlib\b|from\s+matplotlib\b)/m.test(String(code || ''));
+  if (!needsMatplotlib) return;
+
+  await pyodide.runPythonAsync(`
+import sys
+
+try:
+  import matplotlib
+  # Force non-interactive backend for CHECK/SUBMIT to avoid UI rendering in lint/output areas.
+  try:
+    matplotlib.use("Agg", force=True)
+  except TypeError:
+    matplotlib.use("Agg")
+
+  if "matplotlib.pyplot" in sys.modules:
+    import matplotlib.pyplot as plt
+    try:
+      plt.close("all")
+    except Exception:
+      pass
+except Exception:
+  pass
+`);
+}
+
+async function cleanupAssignmentMatplotlibState(pyodide) {
+  if (!pyodide) return;
+
+  await pyodide.runPythonAsync(`
+try:
+    import matplotlib.pyplot as plt
+    plt.close("all")
+except Exception:
+    pass
+`);
+}
+
 function triggerCodeUiPythonRun() {
   const runButton = document.getElementById('run-btn');
   if (!runButton) return;
@@ -2523,6 +2652,8 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
   const isCodeUiTask = task.task_type === 'code_ui';
+
+  syncAssignmentPlotUiForTask(task);
 
   // Update task state and UI IMMEDIATELY (before any async waits).
   // This ensures the description panel and task question reflect the last-clicked
@@ -3551,6 +3682,9 @@ async function checkTask() {
     return;
   }
 
+  // Ensure CHECK feedback is immediately visible in the Output panel.
+  switchAssignmentOutputTab();
+
   const attempts = assignmentState.taskAttempts[task.id] || 0;
   const maxAttempts = task.max_attempts || 10;
   if (attempts >= maxAttempts) {
@@ -3599,6 +3733,11 @@ async function checkTask() {
       outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
       return;
     }
+
+    await ensureAssignmentPackages(pyodide, code);
+    await prepareAssignmentCheckRuntime(pyodide, code);
+
+    try {
 
     const hasFolderStructure = task && (
       task.folderstructure === 1 ||
@@ -3726,6 +3865,10 @@ async function checkTask() {
     // Process validation result (for CHECK only - don't change status)
     processValidationResult(result, task, outputEl, false);
 
+    } finally {
+      await cleanupAssignmentMatplotlibState(pyodide);
+    }
+
   } catch (err) {
     outputEl.innerHTML = `<div style="color:#c00;"><strong>Fehler:</strong> ${escapeHtml(String(err))}</div>`;
   }
@@ -3811,6 +3954,11 @@ async function submitTask() {
       return;
     }
 
+    await ensureAssignmentPackages(pyodide, code);
+    await prepareAssignmentCheckRuntime(pyodide, code);
+
+    try {
+
     const hasFolderStructure = task && (
       task.folderstructure === 1 ||
       task.folderstructure === true ||
@@ -3885,6 +4033,10 @@ async function submitTask() {
     // Process with isSubmission=true to commit status and lock editor
     processValidationResult(result, task, outputEl, true);
 
+    } finally {
+      await cleanupAssignmentMatplotlibState(pyodide);
+    }
+
   } catch (err) {
     outputEl.innerHTML = `<div style="color:#c00;"><strong>Fehler:</strong> ${escapeHtml(String(err))}</div>`;
   }
@@ -3919,6 +4071,20 @@ function detectTestType(testCases) {
  */
 function migrateLegacyTestCases(testCases) {
   if (!Array.isArray(testCases) || testCases.length === 0) return testCases;
+
+  const hasLegacyIntelligentEntries = testCases.some(tc =>
+    tc && !tc.type && tc.mode && (tc.mode === 'function' || tc.mode === 'vars')
+  );
+  if (hasLegacyIntelligentEntries) {
+    return testCases.map(tc => {
+      if (!tc || tc.type || !tc.mode) return tc;
+      if (tc.mode !== 'function' && tc.mode !== 'vars') return tc;
+      return {
+        type: 'intelligent',
+        ...tc
+      };
+    });
+  }
 
   // Migrate legacy CODE_CHECK structure:
   // [{ type: 'code_check', pattern: '...', hint: '...' }]
@@ -4886,6 +5052,11 @@ async function runVariableTests(pyodide, code, testCases) {
   
   const initVarNames = testSpec.init_var_names || [];
   const expectedVarNames = testSpec.expected_var_names || [];
+  const toleranceRaw = testSpec.tolerance_percent;
+  const tolerancePercent = (toleranceRaw === '' || toleranceRaw === null || toleranceRaw === undefined)
+    ? null
+    : Number(toleranceRaw);
+  const hasTolerancePercent = Number.isFinite(tolerancePercent) && tolerancePercent >= 0;
   const isNewStructure = Array.isArray(testSpec.test_cases);
   const casesToRun = isNewStructure ? testSpec.test_cases : testCases;
   
@@ -4974,7 +5145,7 @@ json.dumps(results)
           expectedVarNames.forEach((varName, vIdx) => {
             const expectedValue = vIdx < expectedValues.length ? expectedValues[vIdx] : undefined;
             const actualValue = testResult.variables[varName];
-            const matches = compareValues(actualValue, expectedValue);
+            const matches = compareVariableValue(actualValue, expectedValue, hasTolerancePercent ? tolerancePercent : null);
             
             matchDetails.push({
               varName,
@@ -4992,7 +5163,7 @@ json.dumps(results)
           if (testCase.expected_vars) {
             for (const [varName, expectedValue] of Object.entries(testCase.expected_vars)) {
               const actualValue = testResult.variables[varName];
-              const matches = compareValues(actualValue, expectedValue);
+              const matches = compareVariableValue(actualValue, expectedValue, hasTolerancePercent ? tolerancePercent : null);
               
               matchDetails.push({
                 varName,
@@ -5047,6 +5218,22 @@ json.dumps(results)
   }
   
   return results;
+}
+
+function compareVariableValue(actual, expected, tolerancePercent = null) {
+  const hasTolerance = Number.isFinite(tolerancePercent) && tolerancePercent >= 0;
+  if (!hasTolerance) {
+    return compareValues(actual, expected);
+  }
+
+  const actualNum = Number(actual);
+  const expectedNum = Number(expected);
+  if (Number.isFinite(actualNum) && Number.isFinite(expectedNum)) {
+    const allowedDelta = Math.abs(expectedNum) * (tolerancePercent / 100);
+    return Math.abs(actualNum - expectedNum) <= allowedDelta;
+  }
+
+  return compareValues(actual, expected);
 }
 
 /**

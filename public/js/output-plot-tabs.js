@@ -34,8 +34,14 @@ export function initOutputPlotTabs() {
 
   function syncPlotTabVisibility() {
     if (!plotTab) return;
+    const hadPlot = plotTab.style.display !== 'none';
     const showPlotTab = hasPlotContent();
     plotTab.style.display = showPlotTab ? '' : 'none';
+
+    // Auto-switch to Plot tab when new plot content appears
+    if (showPlotTab && !hadPlot) {
+      setActiveTab('plot');
+    }
 
     if (!showPlotTab && plotPanel.classList.contains('active')) {
       setActiveTab('output');

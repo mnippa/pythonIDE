@@ -791,6 +791,24 @@ if "idegui" not in sys.modules:
     return packages;
   }
 
+  function inferPackagesFromCode(code) {
+    const text = String(code || '');
+    const inferred = new Set();
+
+    // Infer common scientific packages from import statements.
+    if (/^\s*(import\s+matplotlib\b|from\s+matplotlib\b)/m.test(text)) {
+      inferred.add('matplotlib');
+    }
+    if (/^\s*(import\s+numpy\b|from\s+numpy\b)/m.test(text)) {
+      inferred.add('numpy');
+    }
+    if (/^\s*(import\s+pandas\b|from\s+pandas\b)/m.test(text)) {
+      inferred.add('pandas');
+    }
+
+    return Array.from(inferred).filter((pkg) => availablePackages.has(pkg));
+  }
+
   async function ensurePackages(packages) {
     const toLoad = (packages || []).filter((pkg) => !loadedPackages.has(pkg));
     if (!toLoad.length) return;
@@ -2152,7 +2170,10 @@ compile(code, "<usercode>", "exec")
         }
       }
 
-      const selectedPackages = getSelectedPackages();
+      const selectedPackages = Array.from(new Set([
+        ...getSelectedPackages(),
+        ...inferPackagesFromCode(code),
+      ]));
       const enableMatplotlib = selectedPackages.includes("matplotlib");
 
       if (canUseWorkerRunner) {

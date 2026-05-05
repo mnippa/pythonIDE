@@ -2796,6 +2796,7 @@ function addTestCase(type, dataArray, containerId) {
   } else if (type === 'variable') {
     testCase.init_var_names = [];
     testCase.expected_var_names = [];
+    testCase.tolerance_percent = '';
     testCase.test_cases = [{ init_values: [], expected_values: [] }]; // Start with one empty test case
   } else if (type === 'intelligent') {
     testCase.mode = 'function';
@@ -3046,6 +3047,7 @@ function renderTestCaseHTML(test, idx, containerId) {
       </div>
     `;
   } else if (type === 'variable') {
+    const tolerancePercent = (test.tolerance_percent ?? '').toString();
     html += `
       <div style="margin-bottom:8px;">
         <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
@@ -3063,6 +3065,18 @@ function renderTestCaseHTML(test, idx, containerId) {
         <input type="text" class="variable-expected-names-input" data-idx="${idx}" value="${(test.expected_var_names || []).join(', ')}" 
                placeholder="summe, produkt" 
                style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:12px;">
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label style="display:block; font-size:12px; margin-bottom:8px; font-weight:bold;">
+          Abweichung in Prozent (optional):
+        </label>
+        <input type="number" class="variable-tolerance-input" data-idx="${idx}" value="${escapeHtml(tolerancePercent)}"
+               placeholder="z.B. 1 für ±1%" step="0.01" min="0"
+               style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; margin-bottom:6px;">
+        <div style="font-size:11px; color:#666;">
+          Leer = exakter Vergleich. Wenn gesetzt, gilt für numerische Werte: erwartet ± x%.
+        </div>
       </div>
       
       <div style="margin-bottom:8px;">
@@ -3194,9 +3208,9 @@ function renderTestCaseHTML(test, idx, containerId) {
         
         <div style="margin-bottom:12px;">
           <label style="display:block; font-size:12px; margin-bottom:4px; font-weight:bold;">Tests Count:</label>
-          <input type="number" class="intelligent-tests-input" data-idx="${idx}" value="${tests}" min="1" max="20"
+           <input type="number" class="intelligent-tests-input" data-idx="${idx}" value="${tests}" step="1" inputmode="numeric"
                  style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
-          <div style="font-size:10px; color:#666; margin-top:2px;">Anzahl der Testdurchläufe mit verschiedenen Zufallswerten</div>
+           <div style="font-size:10px; color:#666; margin-top:2px;">Anzahl der Testdurchlaeufe mit verschiedenen Zufallswerten (mindestens 1)</div>
         </div>
     `;
     
@@ -3445,6 +3459,22 @@ function bindTestCaseEvents(dataArray, containerId) {
       // Parse comma-separated variable names
       const names = value.split(',').map(n => n.trim()).filter(n => n.length > 0);
       dataArray[testIdx]['expected_var_names'] = names;
+    });
+  });
+
+  container.querySelectorAll('.variable-tolerance-input').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const testIdx = parseInt(e.target.dataset.idx, 10);
+      const raw = String(e.target.value || '').trim();
+      if (raw === '') {
+        dataArray[testIdx]['tolerance_percent'] = '';
+        return;
+      }
+
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        dataArray[testIdx]['tolerance_percent'] = parsed;
+      }
     });
   });
 
@@ -3717,6 +3747,20 @@ function generateJSON(dataArray, textareaId) {
  */
 function migrateLegacyTestCases(testCases) {
   if (!Array.isArray(testCases) || testCases.length === 0) return testCases;
+
+  const hasLegacyIntelligentEntries = testCases.some(tc =>
+    tc && !tc.type && tc.mode && (tc.mode === 'function' || tc.mode === 'vars')
+  );
+  if (hasLegacyIntelligentEntries) {
+    return testCases.map(tc => {
+      if (!tc || tc.type || !tc.mode) return tc;
+      if (tc.mode !== 'function' && tc.mode !== 'vars') return tc;
+      return {
+        type: 'intelligent',
+        ...tc
+      };
+    });
+  }
 
   // Migrate legacy CODE_CHECK structure:
   // [{ type: 'code_check', pattern: '...', hint: '...' }]

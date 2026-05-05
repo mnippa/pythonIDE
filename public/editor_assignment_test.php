@@ -623,10 +623,10 @@ if ($testUserId && $testUserInfo) {
       background:rgba(245, 245, 250, 0.95) !important;
     }
 
-    /* RIGHT COLUMN: output top + plot bottom */
+    /* RIGHT COLUMN: GUI top (auto) + Output/Plot tabs (fill remaining height) */
     .right{
-      display:grid;
-      grid-template-rows: 1fr 1fr;
+      display:flex;
+      flex-direction:column;
       min-width:0; min-height:0;
       gap: 0;
     }
@@ -649,6 +649,7 @@ if ($testUserId && $testUserInfo) {
     #output-plot-section{
       display:grid;
       grid-template-rows: auto 1fr;
+      flex: 1 1 auto;
       min-width:0; min-height:0;
     }
     
@@ -1091,7 +1092,7 @@ HTML;
   <script src="js/quiz-renderer.js?v=20250224"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
+  <script type="module" src="js/editor-setup.js?v=20260505a"></script>
 
   <script>
     // Theme Toggle
@@ -1263,6 +1264,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260430b"></script>
+  <script type="module" src="js/assignments.js?v=20260506a"></script>
 </body>
 </html>

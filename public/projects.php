@@ -1016,7 +1016,7 @@ HTML;
       tab.addEventListener('click', () => {
         document.querySelectorAll('.output-plot-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.output-plot-panel').forEach(p => p.classList.remove('active'));
-        
+
         tab.classList.add('active');
         const tabName = tab.getAttribute('data-tab');
         const panel = document.getElementById(tabName + '-container');

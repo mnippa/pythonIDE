@@ -13,3 +13,6 @@
 node_modules/
 # Generated help documentation (W3Schools content)
 storage/help/help.json
+
+# Local-only DB helpers/secrets (never commit)
+config/database.beta_live.local.php

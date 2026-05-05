@@ -610,10 +610,10 @@ if ($displayName === '') {
       background:rgba(245, 245, 250, 0.95) !important;
     }
 
-    /* RIGHT COLUMN: GUI top (50%) + Output/Plot tabs bottom (50%) */
+    /* RIGHT COLUMN: GUI top (auto) + Output/Plot tabs (fill remaining height) */
     .right{
-      display:grid;
-      grid-template-rows: 1fr 1fr;
+      display:flex;
+      flex-direction:column;
       min-width:0; min-height:0;
       gap: 0;
     }
@@ -636,6 +636,7 @@ if ($displayName === '') {
     #output-plot-section{
       display:grid;
       grid-template-rows: auto 1fr;
+      flex: 1 1 auto;
       min-width:0; min-height:0;
     }
     
@@ -1198,7 +1199,7 @@ HTML;
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
+  <script type="module" src="js/editor-setup.js?v=20260505a"></script>
 
   <script>
     // Theme Toggle
@@ -1335,7 +1336,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20260430b"></script>
+  <script type="module" src="js/assignments.js?v=20260506a"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

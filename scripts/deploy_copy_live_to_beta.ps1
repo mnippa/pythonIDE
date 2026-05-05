@@ -67,6 +67,7 @@ $excludeFiles = @(
     "debug_*",
     "check_*",
     "tmp_*",
+    "database.beta_live.local.php",
     "README*",
     "ROADMAP*"
 )

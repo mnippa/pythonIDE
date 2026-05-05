@@ -195,8 +195,22 @@ try {
     };
 
     $hasUserTasks = $tableExists($conn, 'user_tasks');
+    $hasUserTaskStatus = $hasUserTasks && $columnExists($conn, 'user_tasks', 'status');
     $hasRunCount = $hasUserTasks && $columnExists($conn, 'user_tasks', 'run_count');
     $hasActiveSeconds = $hasUserTasks && $columnExists($conn, 'user_tasks', 'active_seconds');
+
+    $hasUaTeamId = $columnExists($conn, 'user_assignments', 'team_id');
+    $hasUaStatus = $columnExists($conn, 'user_assignments', 'status');
+    $hasUaSubmittedAt = $columnExists($conn, 'user_assignments', 'submitted_at');
+    $hasUaGradedAt = $columnExists($conn, 'user_assignments', 'graded_at');
+    $hasUaGradedBy = $columnExists($conn, 'user_assignments', 'graded_by');
+    $hasUaIsLate = $columnExists($conn, 'user_assignments', 'is_late');
+    $hasUaDueDate = $columnExists($conn, 'user_assignments', 'due_date');
+
+    $hasAssignmentDueDate = $columnExists($conn, 'assignments', 'due_date');
+    $hasAssignmentIsActive = $columnExists($conn, 'assignments', 'is_active');
+    $hasAssignmentAvailableFrom = $columnExists($conn, 'assignments', 'available_from');
+    $hasAssignmentHardDeadline = $columnExists($conn, 'assignments', 'hard_deadline');
 
     $runSelect = '0 AS run_count';
     if ($hasRunCount) {
@@ -218,6 +232,59 @@ try {
         ) AS active_seconds';
     }
 
+    // ua_team join is only possible when user_assignments has a team_id column
+    $uaTeamJoin = $hasUaTeamId
+        ? 'LEFT JOIN user_assignments ua_team ON ua_team.assignment_id = ? AND ua_team.team_id = u.team_id'
+        : '';
+    $assignmentDueDateExpr = $hasAssignmentDueDate ? 'a.due_date' : 'NULL';
+    $assignmentIsActiveExpr = $hasAssignmentIsActive ? 'a.is_active' : '1';
+    $assignmentAvailableFromExpr = $hasAssignmentAvailableFrom ? 'a.available_from' : 'NULL';
+    $assignmentHardDeadlineExpr = $hasAssignmentHardDeadline ? 'a.hard_deadline' : 'NULL';
+
+    $uaTeamStatus = $hasUaStatus
+        ? ($hasUaTeamId
+            ? 'COALESCE(ua_user.status, ua_team.status, "assigned")'
+            : 'COALESCE(ua_user.status, "assigned")')
+        : '"assigned"';
+
+    $uaTeamSubmittedAt = $hasUaSubmittedAt
+        ? ($hasUaTeamId ? 'COALESCE(ua_user.submitted_at, ua_team.submitted_at)' : 'ua_user.submitted_at')
+        : 'NULL';
+
+    $uaTeamGradedAt = $hasUaGradedAt
+        ? ($hasUaTeamId ? 'COALESCE(ua_user.graded_at, ua_team.graded_at)' : 'ua_user.graded_at')
+        : 'NULL';
+
+    $uaTeamGradedBy = $hasUaGradedBy
+        ? ($hasUaTeamId ? 'COALESCE(ua_user.graded_by, ua_team.graded_by)' : 'ua_user.graded_by')
+        : 'NULL';
+
+    $uaTeamIsLate = $hasUaIsLate
+        ? ($hasUaTeamId ? 'COALESCE(ua_user.is_late, ua_team.is_late, 0)' : 'COALESCE(ua_user.is_late, 0)')
+        : '0';
+
+    $uaTeamDueDate = $hasUaDueDate
+        ? ($hasUaTeamId ? 'COALESCE(ua_user.due_date, ua_team.due_date)' : 'ua_user.due_date')
+        : 'NULL';
+
+    if ($hasUaDueDate) {
+        $uaTeamEffDueDate = $hasUaTeamId
+            ? 'COALESCE(ua_user.due_date, ua_team.due_date, ' . $assignmentDueDateExpr . ')'
+            : 'COALESCE(ua_user.due_date, ' . $assignmentDueDateExpr . ')';
+    } else {
+        $uaTeamEffDueDate = $assignmentDueDateExpr;
+    }
+    $uaTeamWhere = $hasUaTeamId
+        ? 'ua_user.id IS NOT NULL OR ua_team.id IS NOT NULL'
+        : 'ua_user.id IS NOT NULL';
+    if ($hasUaGradedBy) {
+        $uaTeamGraderJoin = $hasUaTeamId
+            ? 'LEFT JOIN users grader ON grader.id = COALESCE(ua_user.graded_by, ua_team.graded_by)'
+            : 'LEFT JOIN users grader ON grader.id = ua_user.graded_by';
+    } else {
+        $uaTeamGraderJoin = 'LEFT JOIN users grader ON 1 = 0';
+    }
+
     $sql = '
         SELECT
             u.id,
@@ -226,17 +293,17 @@ try {
             u.last_name,
             u.team_id,
             t.name AS team_name,
-            COALESCE(ua_user.status, ua_team.status, "assigned") AS raw_status,
-            COALESCE(ua_user.submitted_at, ua_team.submitted_at) AS submitted_at,
-            COALESCE(ua_user.graded_at, ua_team.graded_at) AS graded_at,
-            COALESCE(ua_user.graded_by, ua_team.graded_by) AS graded_by_id,
-            COALESCE(ua_user.is_late, ua_team.is_late, 0) AS is_late,
-            COALESCE(ua_user.due_date, ua_team.due_date) AS user_due_date,
-            a.due_date AS assignment_due_date,
-            COALESCE(ua_user.due_date, ua_team.due_date, a.due_date) AS effective_due_date,
-            a.is_active AS assignment_active,
-            a.available_from,
-            a.hard_deadline,
+            ' . $uaTeamStatus . ' AS raw_status,
+            ' . $uaTeamSubmittedAt . ' AS submitted_at,
+            ' . $uaTeamGradedAt . ' AS graded_at,
+            ' . $uaTeamGradedBy . ' AS graded_by_id,
+            ' . $uaTeamIsLate . ' AS is_late,
+            ' . $uaTeamDueDate . ' AS user_due_date,
+            ' . $assignmentDueDateExpr . ' AS assignment_due_date,
+            ' . $uaTeamEffDueDate . ' AS effective_due_date,
+            ' . $assignmentIsActiveExpr . ' AS assignment_active,
+            ' . $assignmentAvailableFromExpr . ' AS available_from,
+            ' . $assignmentHardDeadlineExpr . ' AS hard_deadline,
             CASE WHEN ua_user.id IS NOT NULL THEN 1 ELSE 0 END AS is_direct,
             ' . $runSelect . ',
             ' . $activeSelect . ',
@@ -246,27 +313,32 @@ try {
         LEFT JOIN teams t ON t.id = u.team_id
         LEFT JOIN user_assignments ua_user
             ON ua_user.assignment_id = ? AND ua_user.user_id = u.id
-        LEFT JOIN user_assignments ua_team
-            ON ua_team.assignment_id = ? AND ua_team.team_id = u.team_id
-        LEFT JOIN users grader
-            ON grader.id = COALESCE(ua_user.graded_by, ua_team.graded_by)
-        WHERE ua_user.id IS NOT NULL OR ua_team.id IS NOT NULL
+        ' . $uaTeamJoin . '
+        ' . $uaTeamGraderJoin . '
+        WHERE ' . $uaTeamWhere . '
         ORDER BY u.last_name, u.first_name, u.email
     ';
 
+    // Count bind params: base=2 (assignment JOIN + ua_user JOIN) + optional ua_team JOIN + optional subqueries
+    $baseParams = 2;
+    $joinParams  = $hasUaTeamId ? 1 : 0;
+    $subParams   = ($hasRunCount ? 1 : 0) + ($hasActiveSeconds ? 1 : 0);
+    $totalParams = $baseParams + $joinParams + $subParams;
+    $paramTypes  = str_repeat('i', $totalParams);
+    $paramValues = array_fill(0, $totalParams, $assignmentId);
+
     $stmt = $conn->prepare($sql);
-    if ($hasRunCount && $hasActiveSeconds) {
-        // 5 params: assignment join + 2 JOINs + runSelect subquery + activeSelect subquery
-        $stmt->bind_param('iiiii', $assignmentId, $assignmentId, $assignmentId, $assignmentId, $assignmentId);
-    } elseif ($hasRunCount || $hasActiveSeconds) {
-        // 4 params: assignment join + 2 JOINs + one subquery
-        $stmt->bind_param('iiii', $assignmentId, $assignmentId, $assignmentId, $assignmentId);
-    } else {
-        // 3 params: assignment join + the 2 JOINs
-        $stmt->bind_param('iii', $assignmentId, $assignmentId, $assignmentId);
+    if (!$stmt) {
+        throw new RuntimeException('Failed to prepare assignment users query: ' . $conn->error);
     }
-    $stmt->execute();
+    $stmt->bind_param($paramTypes, ...$paramValues);
+    if (!$stmt->execute()) {
+        throw new RuntimeException('Failed to execute assignment users query: ' . $stmt->error);
+    }
     $result = $stmt->get_result();
+    if ($result === false) {
+        throw new RuntimeException('Failed to fetch assignment users result: ' . $stmt->error);
+    }
 
     $users = [];
     $userRows = [];
@@ -275,7 +347,7 @@ try {
     }
 
     $taskStatsByUser = [];
-    if (!empty($userRows)) {
+    if (!empty($userRows) && $hasUserTaskStatus) {
         $userIds = array_values(array_map(static function (array $row): int {
             return (int)$row['id'];
         }, $userRows));
@@ -295,12 +367,20 @@ try {
         ";
 
         $taskStatsStmt = $conn->prepare($taskStatsSql);
+        if (!$taskStatsStmt) {
+            throw new RuntimeException('Failed to prepare task stats query: ' . $conn->error);
+        }
         $taskStatsTypes = 'i' . str_repeat('i', count($userIds));
         $taskStatsParams = array_merge([$assignmentId], $userIds);
         $taskStatsStmt->bind_param($taskStatsTypes, ...$taskStatsParams);
-        $taskStatsStmt->execute();
+        if (!$taskStatsStmt->execute()) {
+            throw new RuntimeException('Failed to execute task stats query: ' . $taskStatsStmt->error);
+        }
 
         $taskStatsResult = $taskStatsStmt->get_result();
+        if ($taskStatsResult === false) {
+            throw new RuntimeException('Failed to fetch task stats result: ' . $taskStatsStmt->error);
+        }
         while ($statsRow = $taskStatsResult->fetch_assoc()) {
             $statsUserId = (int)$statsRow['user_id'];
             if ($statsUserId <= 0) {
@@ -362,7 +442,25 @@ try {
         'users' => $users,
         'count' => count($users)
     ]);
-} catch (Exception $e) {
-    error_log('Assignment users list error: ' . $e->getMessage());
+} catch (Throwable $e) {
+    $assignmentIdLog = isset($assignmentId) ? (string)$assignmentId : 'n/a';
+    $flags = [
+        'ua_team_id' => isset($hasUaTeamId) ? (int)$hasUaTeamId : -1,
+        'ua_status' => isset($hasUaStatus) ? (int)$hasUaStatus : -1,
+        'ua_submitted_at' => isset($hasUaSubmittedAt) ? (int)$hasUaSubmittedAt : -1,
+        'ua_graded_at' => isset($hasUaGradedAt) ? (int)$hasUaGradedAt : -1,
+        'ua_graded_by' => isset($hasUaGradedBy) ? (int)$hasUaGradedBy : -1,
+        'ua_is_late' => isset($hasUaIsLate) ? (int)$hasUaIsLate : -1,
+        'ua_due_date' => isset($hasUaDueDate) ? (int)$hasUaDueDate : -1,
+        'a_due_date' => isset($hasAssignmentDueDate) ? (int)$hasAssignmentDueDate : -1,
+        'a_is_active' => isset($hasAssignmentIsActive) ? (int)$hasAssignmentIsActive : -1,
+        'a_available_from' => isset($hasAssignmentAvailableFrom) ? (int)$hasAssignmentAvailableFrom : -1,
+        'a_hard_deadline' => isset($hasAssignmentHardDeadline) ? (int)$hasAssignmentHardDeadline : -1,
+        'user_tasks' => isset($hasUserTasks) ? (int)$hasUserTasks : -1,
+        'user_tasks_status' => isset($hasUserTaskStatus) ? (int)$hasUserTaskStatus : -1,
+        'run_count' => isset($hasRunCount) ? (int)$hasRunCount : -1,
+        'active_seconds' => isset($hasActiveSeconds) ? (int)$hasActiveSeconds : -1,
+    ];
+    error_log('Assignment users list error: ' . $e->getMessage() . ' | assignment_id=' . $assignmentIdLog . ' | flags=' . json_encode($flags));
     jsonResponse(['ok' => false, 'error' => 'Failed to load assignment users'], 500);
 }

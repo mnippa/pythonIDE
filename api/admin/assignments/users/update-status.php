@@ -126,6 +126,9 @@ try {
         jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);
     }
 
+    $hasGradedAt = (bool)$conn->query("SHOW COLUMNS FROM `user_assignments` LIKE 'graded_at'")->num_rows;
+    $hasGradedBy = (bool)$conn->query("SHOW COLUMNS FROM `user_assignments` LIKE 'graded_by'")->num_rows;
+
     $stmt = $conn->prepare('SELECT id FROM user_assignments WHERE user_id = ? AND assignment_id = ?');
     $stmt->bind_param('ii', $userId, $assignmentId);
     $stmt->execute();
@@ -161,12 +164,16 @@ try {
 
         // Always set graded_at + graded_by when admin marks passed or failed
         if (in_array($status, ['passed', 'failed'], true)) {
-            $setParts[] = 'graded_at = ?';
-            $bindTypes .= 's';
-            $bindValues[] = $now;
-            $setParts[] = 'graded_by = ?';
-            $bindTypes .= 'i';
-            $bindValues[] = (int)$admin['id'];
+            if ($hasGradedAt) {
+                $setParts[] = 'graded_at = ?';
+                $bindTypes .= 's';
+                $bindValues[] = $now;
+            }
+            if ($hasGradedBy) {
+                $setParts[] = 'graded_by = ?';
+                $bindTypes .= 'i';
+                $bindValues[] = (int)$admin['id'];
+            }
         }
 
         $setParts[] = 'id = ?';  // append WHERE value last
@@ -186,8 +193,24 @@ try {
     $isGradedInsert = in_array($status, ['passed', 'failed'], true);
     $nowInsert = date('Y-m-d H:i:s');
     if ($isGradedInsert) {
-        $insert = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by, submitted_at, graded_at, graded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $insert->bind_param('iisissi', $userId, $assignmentId, $status, $adminId, $nowInsert, $nowInsert, $adminId);
+        $insertCols   = 'user_id, assignment_id, status, assigned_by, submitted_at';
+        $insertPh     = '?, ?, ?, ?, ?';
+        $insertTypes  = 'iisis';
+        $insertParams = [$userId, $assignmentId, $status, $adminId, $nowInsert];
+        if ($hasGradedAt) {
+            $insertCols  .= ', graded_at';
+            $insertPh    .= ', ?';
+            $insertTypes .= 's';
+            $insertParams[] = $nowInsert;
+        }
+        if ($hasGradedBy) {
+            $insertCols  .= ', graded_by';
+            $insertPh    .= ', ?';
+            $insertTypes .= 'i';
+            $insertParams[] = $adminId;
+        }
+        $insert = $conn->prepare("INSERT INTO user_assignments ({$insertCols}) VALUES ({$insertPh})");
+        $insert->bind_param($insertTypes, ...$insertParams);
     } else {
         $insert = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by) VALUES (?, ?, ?, ?)');
         $insert->bind_param('iisi', $userId, $assignmentId, $status, $adminId);
