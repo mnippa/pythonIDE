@@ -5074,11 +5074,12 @@ expected_var_names_json = ${JSON.stringify(JSON.stringify(expectedVarNames))}
 expected_var_names = json.loads(expected_var_names_json)
 is_new_structure = ${isNewStructure ? 'True' : 'False'}
 
-# Remove #INIT Start# ... #INIT End# blocks for CHECK
+# Remove #INIT START ... #INIT END blocks for CHECK
+# Supports legacy/title-case markers too (e.g. #INIT Start# ... #INIT End#).
 # This allows students to test with their own values (RUN)
-# but we ignore those values during CHECK
-pattern = r'#INIT Start#.*?#INIT End#'
-code_without_init = re.sub(pattern, '', user_code, flags=re.DOTALL)
+# but we ignore those values during CHECK.
+pattern = r'#INIT\\s+START#?.*?#INIT\\s+END#?'
+code_without_init = re.sub(pattern, '', user_code, flags=re.DOTALL | re.IGNORECASE)
 
 results = []
 for idx, test in enumerate(test_cases):

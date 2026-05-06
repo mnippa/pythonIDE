@@ -1264,6 +1264,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260506a"></script>
+  <script type="module" src="js/assignments.js?v=20260506b"></script>
 </body>
 </html>
