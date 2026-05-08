@@ -176,6 +176,122 @@ async function readProjectFileByName(projectId, fileName) {
   return readProjectFileById(projectId, fileId);
 }
 
+function findProjectFilePathById(nodes, targetId, parentPath = '') {
+  if (!Array.isArray(nodes)) return null;
+
+  const normalizedTargetId = Number(targetId || 0);
+  if (!normalizedTargetId) return null;
+
+  for (const node of nodes) {
+    if (!node || typeof node.name !== 'string') continue;
+
+    const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    if (node.type === 'file' && Number(node.id || 0) === normalizedTargetId) {
+      return currentPath;
+    }
+
+    if (node.type === 'folder') {
+      const childPath = findProjectFilePathById(node.children || [], normalizedTargetId, currentPath);
+      if (childPath) return childPath;
+    }
+  }
+
+  return null;
+}
+
+async function resolveProjectRelativePath(fileId, fallbackFileName = '') {
+  if (!currentProject?.id || !fileId) {
+    return String(fallbackFileName || '').replace(/^\/+/, '');
+  }
+
+  try {
+    const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+
+    if (!treeResponse.ok) {
+      return String(fallbackFileName || '').replace(/^\/+/, '');
+    }
+
+    const treeData = await treeResponse.json();
+    const treeNodes = Array.isArray(treeData?.tree)
+      ? treeData.tree
+      : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+    const foundPath = findProjectFilePathById(treeNodes, fileId, '');
+    if (foundPath) {
+      return String(foundPath || '').replace(/^\/+/, '');
+    }
+  } catch (err) {
+    console.warn('[projects-editor] resolveProjectRelativePath failed:', err);
+  }
+
+  return String(fallbackFileName || '').replace(/^\/+/, '');
+}
+
+async function syncProjectFileToPyodideRuntime(fileId, fileName, content) {
+  if (!window.pyodide || !currentProject?.id) {
+    return;
+  }
+
+  const relativePath = await resolveProjectRelativePath(fileId, fileName);
+  if (!relativePath) {
+    return;
+  }
+
+  const normalizedPath = String(relativePath).replace(/\\/g, '/').replace(/^\/+/, '');
+  const isPython = normalizedPath.toLowerCase().endsWith('.py');
+  const runtimeSyncPayload = {
+    root: '/project',
+    relPath: normalizedPath,
+    content: String(content ?? ''),
+    invalidateModules: isPython,
+  };
+
+  await window.pyodide.runPythonAsync(`
+import json
+import os
+import sys
+import importlib
+
+payload = json.loads(${JSON.stringify(JSON.stringify(runtimeSyncPayload))})
+runtime_root = str(payload.get('root') or '/project')
+rel_path = str(payload.get('relPath') or '').replace('\\\\', '/').strip('/')
+
+if rel_path:
+    abs_path = runtime_root.rstrip('/') + '/' + rel_path
+    parent_dir = os.path.dirname(abs_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+    with open(abs_path, 'w', encoding='utf-8') as fh:
+        fh.write(str(payload.get('content') or ''))
+
+    if runtime_root not in sys.path:
+        sys.path.insert(0, runtime_root)
+
+    if bool(payload.get('invalidateModules')):
+        abs_root = os.path.abspath(runtime_root)
+        prefix = abs_root + os.sep
+        for mod_name, mod in list(sys.modules.items()):
+            mod_file = getattr(mod, '__file__', None)
+            if not mod_file:
+                continue
+            try:
+                mod_abs = os.path.abspath(str(mod_file))
+            except Exception:
+                continue
+            if mod_abs == abs_path or mod_abs.startswith(prefix):
+                sys.modules.pop(mod_name, None)
+        importlib.invalidate_caches()
+`);
+
+  if (isPython) {
+    delete window.__codeUiGlobals;
+  }
+}
+
 async function ensureInitPyExists(projectId, projectName, fallbackCode = '') {
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
     credentials: 'include',
@@ -1048,6 +1164,12 @@ async function persistProjectFileContent(fileId, fileName, content) {
 
   setProjectSavedSnapshot(fileId, fileName, content);
   setProjectDraftContent(fileId, fileName, content);
+
+  try {
+    await syncProjectFileToPyodideRuntime(fileId, fileName, content);
+  } catch (runtimeSyncError) {
+    console.warn('[projects-editor] Pyodide runtime sync after save failed:', runtimeSyncError);
+  }
 }
 
 async function saveCurrentProjectFile() {
@@ -1400,7 +1522,12 @@ async function loadProject(projectId) {
     await ensureInitPyExists(projectId, project.name, project.code || '');
     
     // Update UI
-    document.getElementById('project-page-title').textContent = project.name || 'Projekt';
+    const projectTitleEl = document.getElementById('project-page-title');
+    if (projectTitleEl) {
+      const effectiveProjectName = project.name || 'Projekt';
+      projectTitleEl.textContent = effectiveProjectName;
+      projectTitleEl.title = effectiveProjectName;
+    }
     
     // Render project list with active state
     renderProjectList();
@@ -1735,8 +1862,12 @@ async function renderProjectHtml() {
     const inlineStyleTags = parsed?.querySelectorAll?.('style') || [];
     const inlineCss = Array.from(inlineStyleTags).map((tag) => tag.textContent || '').join('\n');
     
-    // Inject body HTML into container
-    guiContainer.innerHTML = bodyHtml;
+    // Inject body HTML into a dedicated stage wrapper so project GUI layouts
+    // can stretch to the full available height without affecting non-project modes.
+    const stage = document.createElement('div');
+    stage.className = 'project-gui-stage';
+    stage.innerHTML = bodyHtml;
+    guiContainer.appendChild(stage);
     console.log('[projects-editor] HTML content injected');
     
     // Restore preserved input values BEFORE binding triggers
@@ -2100,6 +2231,35 @@ function setupEventListeners() {
   document.getElementById('project-export-btn')?.addEventListener('click', async () => {
     await exportCurrentProjectToFile();
   });
+
+  // Restore editor undo/redo toolbar controls for project mode.
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  if (undoBtn) {
+    undoBtn.style.display = 'inline-block';
+    if (!undoBtn.dataset.bound) {
+      undoBtn.addEventListener('click', () => {
+        const editor = getEditorInstance();
+        if (!editor || typeof editor.trigger !== 'function') return;
+        editor.focus?.();
+        editor.trigger('', 'undo');
+      });
+      undoBtn.dataset.bound = '1';
+    }
+  }
+
+  if (redoBtn) {
+    redoBtn.style.display = 'inline-block';
+    if (!redoBtn.dataset.bound) {
+      redoBtn.addEventListener('click', () => {
+        const editor = getEditorInstance();
+        if (!editor || typeof editor.trigger !== 'function') return;
+        editor.focus?.();
+        editor.trigger('', 'redo');
+      });
+      redoBtn.dataset.bound = '1';
+    }
+  }
 
   document.getElementById('project-import-btn')?.addEventListener('click', async () => {
     const canSwitch = await confirmProjectSwitchWithDrafts();

@@ -6,8 +6,10 @@
 export function initOutputPlotTabs() {
   const tabs = document.querySelectorAll('.output-plot-tab');
   const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
+  const tabsContainer = document.getElementById('output-plot-tabs');
   const outputPanel = document.getElementById('output-container');
   const plotPanel = document.getElementById('plot-container');
+  const isProjectMode = document.body?.dataset?.pyideMode === 'projects';
 
   if (!tabs.length || !outputPanel || !plotPanel) {
     console.log('[OutputPlotTabs] Components not found, skipping init');
@@ -37,6 +39,11 @@ export function initOutputPlotTabs() {
     const hadPlot = plotTab.style.display !== 'none';
     const showPlotTab = hasPlotContent();
     plotTab.style.display = showPlotTab ? '' : 'none';
+
+    // In projects, keep full output height until a plot actually exists.
+    if (tabsContainer && isProjectMode) {
+      tabsContainer.classList.toggle('hidden-when-no-plot', !showPlotTab);
+    }
 
     // Auto-switch to Plot tab when new plot content appears
     if (showPlotTab && !hadPlot) {

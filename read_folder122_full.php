@@ -1,0 +1,9 @@
+<?php
+require_once __DIR__ . '/config/database.php';
+$conn = getDbConnection();
+
+$res = $conn->query("SELECT name, content FROM project_files WHERE project_id=48 AND folder_id=122 ORDER BY name");
+while ($row = $res->fetch_assoc()) {
+    echo "=== " . $row['name'] . " ===\n";
+    echo $row['content'] . "\n\n";
+}

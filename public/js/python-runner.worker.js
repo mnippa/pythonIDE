@@ -72,6 +72,13 @@ self.__pyideWorkerInput = function __pyideWorkerInput(promptText = '') {
   });
 };
 
+self.__pyideWorkerClear = function __pyideWorkerClear() {
+  self.postMessage({
+    type: 'clear',
+    token: currentToken,
+  });
+};
+
 self.onmessage = async (event) => {
   const message = event.data || {};
 
@@ -175,8 +182,11 @@ def _worker_input(prompt=''):
 builtins.input = _worker_input
 
 def outputClear():
-  # Worker mode cannot directly clear DOM output.
-  print('\n' * 2)
+  # Call JavaScript function to clear DOM output
+  try:
+    js_window.__pyideWorkerClear()
+  except Exception:
+    pass
 
 def outputWrite(value=''):
   text = '' if value is None else str(value)

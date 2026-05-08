@@ -791,24 +791,6 @@ if "idegui" not in sys.modules:
     return packages;
   }
 
-  function inferPackagesFromCode(code) {
-    const text = String(code || '');
-    const inferred = new Set();
-
-    // Infer common scientific packages from import statements.
-    if (/^\s*(import\s+matplotlib\b|from\s+matplotlib\b)/m.test(text)) {
-      inferred.add('matplotlib');
-    }
-    if (/^\s*(import\s+numpy\b|from\s+numpy\b)/m.test(text)) {
-      inferred.add('numpy');
-    }
-    if (/^\s*(import\s+pandas\b|from\s+pandas\b)/m.test(text)) {
-      inferred.add('pandas');
-    }
-
-    return Array.from(inferred).filter((pkg) => availablePackages.has(pkg));
-  }
-
   async function ensurePackages(packages) {
     const toLoad = (packages || []).filter((pkg) => !loadedPackages.has(pkg));
     if (!toLoad.length) return;
@@ -2004,19 +1986,9 @@ compile(code, "<usercode>", "exec")
 
       if (typeof window.beforeRunExecution === 'function') {
         try {
-          const preRunResult = await window.beforeRunExecution();
-          if (preRunResult === false) {
-            runPerfOutcome = 'stopped';
-            runPerfReason = 'before-run-cancelled';
-            lintEl.innerHTML = '<span class="lint-checking">Ausfuehrung abgebrochen.</span>';
-            return;
-          }
+          await window.beforeRunExecution();
         } catch (preRunError) {
-          runPerfOutcome = 'error';
-          runPerfReason = 'before-run-failed';
           console.warn('[Run] beforeRunExecution failed:', preRunError);
-          lintEl.innerHTML = '<span class="lint-error">Speichern vor RUN fehlgeschlagen.</span>';
-          return;
         }
       }
 
@@ -2170,10 +2142,7 @@ compile(code, "<usercode>", "exec")
         }
       }
 
-      const selectedPackages = Array.from(new Set([
-        ...getSelectedPackages(),
-        ...inferPackagesFromCode(code),
-      ]));
+      const selectedPackages = getSelectedPackages();
       const enableMatplotlib = selectedPackages.includes("matplotlib");
 
       if (canUseWorkerRunner) {
@@ -2366,6 +2335,30 @@ if isinstance(project_runtime, dict):
 
     if runtime_root not in sys.path:
       sys.path.insert(0, runtime_root)
+
+    # Ensure updated project modules are re-imported on each RUN.
+    try:
+      import importlib
+      abs_root = os.path.abspath(runtime_root)
+      prefix = abs_root + os.sep
+      stale_modules = []
+      for mod_name, mod in list(sys.modules.items()):
+        mod_file = getattr(mod, '__file__', None)
+        if not mod_file:
+          continue
+        try:
+          mod_abs = os.path.abspath(str(mod_file))
+        except Exception:
+          continue
+        if mod_abs.startswith(prefix):
+          stale_modules.append(mod_name)
+
+      for mod_name in stale_modules:
+        sys.modules.pop(mod_name, None)
+
+      importlib.invalidate_caches()
+    except Exception:
+      pass
 
 _js_output_write = js_window.__pyideOutputWrite
 _js_output_flush = js_window.__pyideOutputFlush

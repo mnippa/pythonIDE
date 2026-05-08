@@ -66,6 +66,54 @@ if ($displayName === '') {
       grid-template-rows: auto 1fr;
     }
 
+    body[data-pyide-mode="projects"] .hspf-header-content {
+      max-width: none;
+      padding-left: 8px;
+      min-width: 0;
+      gap: 10px;
+    }
+
+    body[data-pyide-mode="projects"] .hspf-header-left {
+      flex: 1 1 auto;
+      min-width: 0;
+      flex-wrap: nowrap;
+      overflow: hidden;
+    }
+
+    body[data-pyide-mode="projects"] .hspf-page-title {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    body[data-pyide-mode="projects"] #project-page-title {
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
+    }
+
+    body[data-pyide-mode="projects"] .hspf-header-right {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
+    body[data-pyide-mode="projects"] .hspf-header-right .toolbar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      min-width: 0;
+      scrollbar-width: thin;
+    }
+
+    body[data-pyide-mode="projects"] .hspf-header-right .user-bar {
+      flex: 0 0 auto;
+    }
+
     .toolbar{
       display:flex; gap:12px; align-items:center; flex-wrap:wrap;
       padding:3px 10px;
@@ -465,6 +513,29 @@ if ($displayName === '') {
       flex: 0 0 auto;
     }
 
+    .right.gui-active #gui-container.active {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+      border-bottom: none;
+    }
+
+    .right.gui-active #output-plot-section {
+      display: none;
+    }
+
+    .right.gui-active #gui-container.active .project-gui-stage {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .right.gui-active #gui-container.active .project-gui-stage > :first-child:last-child {
+      flex: 1 1 auto;
+      min-height: 100%;
+      width: 100%;
+    }
+
     #output-plot-section {
       display: flex;
       flex-direction: column;
@@ -478,6 +549,9 @@ if ($displayName === '') {
       border-bottom:1px solid var(--border);
       background:var(--panel);
       flex:0 0 auto;
+    }
+    body[data-pyide-mode="projects"] #output-plot-tabs.hidden-when-no-plot {
+      display: none;
     }
     .output-plot-tab{
       padding:8px 12px;
@@ -520,6 +594,8 @@ if ($displayName === '') {
     }
     #plot-container {
       background: var(--bg);
+    }
+    #plot-container.output-plot-panel.active {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -680,7 +756,7 @@ if ($displayName === '') {
     }
   </style>
 </head>
-<body>
+<body data-pyide-mode="projects">
   <?php
   $pageTitle = '<span id="project-page-title">Meine Projekte</span>';
   $showUser = false;
@@ -873,7 +949,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
+  <script type="module" src="js/editor-setup.js?v=20260507b"></script>
 
   <script>
     // Theme Toggle
@@ -1011,19 +1087,6 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
 
-    // Output/Plot Tab Switching
-    document.querySelectorAll('.output-plot-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.output-plot-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.output-plot-panel').forEach(p => p.classList.remove('active'));
-
-        tab.classList.add('active');
-        const tabName = tab.getAttribute('data-tab');
-        const panel = document.getElementById(tabName + '-container');
-        if (panel) panel.classList.add('active');
-      });
-    });
-
     // Create Project from Dialog
     async function createProjectFromDialog() {
       const name = document.getElementById('project-name-input').value.trim();
@@ -1078,7 +1141,7 @@ HTML;
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script type="module" src="js/projects-editor.js?v=20260422a"></script>
+  <script type="module" src="js/projects-editor.js?v=20260507e"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;

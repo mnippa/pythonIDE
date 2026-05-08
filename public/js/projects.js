@@ -45,6 +45,44 @@ function waitForEditor() {
   });
 }
 
+function scopeProjectCssToGui(cssText, scopeSelector) {
+  if (!cssText || !scopeSelector) return cssText || '';
+
+  const keyframePlaceholders = [];
+  let css = String(cssText);
+
+  // Keep keyframes untouched, otherwise selector prefixing would break 0%/100% blocks.
+  css = css.replace(/@keyframes\s+[^{]+\{[\s\S]*?\}\s*\}/g, (match) => {
+    const token = `__PYIDE_KEYFRAMES_${keyframePlaceholders.length}__`;
+    keyframePlaceholders.push(match);
+    return token;
+  });
+
+  css = css.replace(/(^|[{}])\s*([^@{}][^{}]*)\{/g, (full, prefix, selectorGroup) => {
+    const scopedSelectors = selectorGroup
+      .split(',')
+      .map((rawSelector) => {
+        const selector = rawSelector.trim();
+        if (!selector) return selector;
+        if (selector.startsWith(scopeSelector)) return selector;
+        if (selector === 'html' || selector === 'body' || selector === ':root') {
+          return scopeSelector;
+        }
+        return `${scopeSelector} ${selector}`;
+      })
+      .join(', ');
+
+    return `${prefix}\n${scopedSelectors}{`;
+  });
+
+  keyframePlaceholders.forEach((content, index) => {
+    const token = `__PYIDE_KEYFRAMES_${index}__`;
+    css = css.replace(token, content);
+  });
+
+  return css;
+}
+
 // Render HTML/CSS for HTML projects (similar to renderCodeUiHtml for tasks)
 async function renderProjectHtml(projectId) {
   const guiContainer = document.getElementById('gui-container');
@@ -138,19 +176,20 @@ async function renderProjectHtml(projectId) {
     const inlineStyleTags = parsed?.querySelectorAll?.('style') || [];
     const inlineCss = Array.from(inlineStyleTags).map((tag) => tag.textContent || '').join('\n');
 
-    guiContainer.innerHTML = bodyHtml || '';
+    guiContainer.innerHTML = `<div class="project-code-ui-scope">${bodyHtml || ''}</div>`;
     guiContainer.dataset.projectId = String(projectId);
 
     // Inject CSS
     if (cssContent || inlineCss) {
       const combinedCss = [cssContent, inlineCss].filter(Boolean).join('\n\n');
+      const scopedCss = scopeProjectCssToGui(combinedCss, '#gui-container .project-code-ui-scope');
       let styleEl = document.getElementById('project-dynamic-styles');
       if (!styleEl) {
         styleEl = document.createElement('style');
         styleEl.id = 'project-dynamic-styles';
         document.head.appendChild(styleEl);
       }
-      styleEl.textContent = combinedCss;
+      styleEl.textContent = scopedCss;
     }
 
     console.log('[projects.js] HTML rendered for project', projectId);
