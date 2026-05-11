@@ -792,6 +792,9 @@ async function beforeRunExecution() {
     return;
   }
 
+  // Ensure current editor content is in draft cache before reading it in renderProjectHtml
+  cacheCurrentProjectEditorDraft();
+
   const guiContainer = document.getElementById('gui-container');
   const currentDir = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
   const alreadyRendered = Boolean(
@@ -1924,6 +1927,9 @@ async function renderProjectHtml() {
       console.error('[projects-editor] GUI container not found');
       return;
     }
+
+    // Flush current editor content into draft cache so unsaved edits are picked up
+    cacheCurrentProjectEditorDraft();
 
     const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
       credentials: 'include',
