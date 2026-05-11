@@ -57,6 +57,80 @@ function isPythonFile(fileName) {
   return typeof fileName === 'string' && fileName.toLowerCase().endsWith('.py');
 }
 
+function isProjectGuiAssetFile(fileName) {
+  const lower = String(fileName || '').toLowerCase();
+  return lower === 'index.html' || lower === 'style.css' || lower.endsWith('/index.html') || lower.endsWith('/style.css');
+}
+
+function normalizeProjectDirectory(relativePath = '') {
+  const normalized = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized.includes('/')) {
+    return '';
+  }
+  return normalized.slice(0, normalized.lastIndexOf('/'));
+}
+
+async function resolveProjectDirectory(fileId, fallbackFileName = '') {
+  const relativePath = await resolveProjectRelativePath(fileId, fallbackFileName);
+  return normalizeProjectDirectory(relativePath);
+}
+
+function clearProjectOutputPanels() {
+  const outputEl = document.getElementById('output-container');
+  const plotEl = document.getElementById('plot-container');
+  if (outputEl) {
+    outputEl.textContent = '';
+  }
+  if (plotEl) {
+    plotEl.innerHTML = '';
+  }
+}
+
+function getActiveProjectFolderPath() {
+  if (!projectFileManager || !Array.isArray(projectFileManager.folderPath)) {
+    return '';
+  }
+  return projectFileManager.folderPath
+    .map((segment) => String(segment?.name || '').trim())
+    .filter(Boolean)
+    .join('/');
+}
+
+function setProjectGuiPlaceholder(folderPath = '') {
+  const guiContainer = document.getElementById('gui-container');
+  if (!guiContainer) return;
+
+  guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
+  guiContainer.dataset.projectHtmlRendered = '0';
+  guiContainer.dataset.projectHtmlDirty = '0';
+  guiContainer.dataset.projectHtmlActiveFolder = String(folderPath || '');
+}
+
+function markProjectGuiDirty(folderPath = '') {
+  const guiContainer = document.getElementById('gui-container');
+  if (!guiContainer) return;
+
+  if (folderPath) {
+    guiContainer.dataset.projectHtmlActiveFolder = String(folderPath);
+  }
+  guiContainer.dataset.projectHtmlDirty = '1';
+}
+
+async function markProjectGuiDirtyForFile(fileId, fileName) {
+  if (!currentProject || !isHtmlLikeProject(currentProject) || !isProjectGuiAssetFile(fileName)) {
+    return;
+  }
+
+  const fileDir = await resolveProjectDirectory(fileId, fileName);
+  const guiContainer = document.getElementById('gui-container');
+  const activeFolder = String(guiContainer?.dataset?.projectHtmlActiveFolder || '');
+  const currentDir = await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+
+  if (!activeFolder || activeFolder === fileDir || currentDir === fileDir) {
+    markProjectGuiDirty(fileDir);
+  }
+}
+
 function getEditorInstance() {
   return window.editor || window.editorInstance || null;
 }
@@ -119,6 +193,7 @@ function cacheCurrentProjectEditorDraft() {
   if (!editor || !currentOpenFileId) return;
   setProjectDraftContent(currentOpenFileId, currentOpenFileName, editor.getValue());
   applyProjectFileDirtyMarker(currentOpenFileId);
+  void markProjectGuiDirtyForFile(currentOpenFileId, currentOpenFileName);
 }
 
 function applyProjectFileDirtyMarker(fileId) {
@@ -174,6 +249,50 @@ async function readProjectFileByName(projectId, fileName) {
   const fileId = findFileIdByName(treeNodes, fileName);
   if (!fileId) return null;
   return readProjectFileById(projectId, fileId);
+}
+
+function findProjectFileIdByPath(nodes, targetPath, parentPath = '') {
+  if (!Array.isArray(nodes) || !targetPath) return null;
+
+  for (const node of nodes) {
+    if (!node || typeof node.name !== 'string') continue;
+
+    const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    if (node.type === 'file' && currentPath === targetPath) {
+      return Number(node.id || 0) || null;
+    }
+
+    if (node.type === 'folder') {
+      const childId = findProjectFileIdByPath(node.children || [], targetPath, currentPath);
+      if (childId) return childId;
+    }
+  }
+
+  return null;
+}
+
+async function readProjectFileByPreferredPath(projectId, fileName, preferredFolderPath = '') {
+  const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!treeResponse.ok) return null;
+
+  const treeData = await treeResponse.json();
+  const treeNodes = Array.isArray(treeData?.tree)
+    ? treeData.tree
+    : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+  const normalizedFolder = String(preferredFolderPath || '').replace(/^\/+|\/+$/g, '');
+  const preferredPath = normalizedFolder ? `${normalizedFolder}/${fileName}` : String(fileName || '');
+  const preferredId = findProjectFileIdByPath(treeNodes, preferredPath, '');
+  if (preferredId) {
+    return readProjectFileById(projectId, preferredId);
+  }
+
+  const fallbackId = findFileIdByName(treeNodes, fileName);
+  if (!fallbackId) return null;
+  return readProjectFileById(projectId, fallbackId);
 }
 
 function findProjectFilePathById(nodes, targetId, parentPath = '') {
@@ -332,6 +451,8 @@ async function openFileInEditor(fileId, fileName, content) {
   if (!editor) return;
 
   const normalizedId = Number(fileId || 0);
+  const previousDir = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+  const nextDir = getActiveProjectFolderPath() || await resolveProjectDirectory(normalizedId, fileName || '');
   const draftContent = getProjectDraftContent(normalizedId);
   const effectiveContent = draftContent !== null ? draftContent : String(content || '');
 
@@ -350,6 +471,11 @@ async function openFileInEditor(fileId, fileName, content) {
   setProjectSavedSnapshot(normalizedId, currentOpenFileName, currentOpenFileSnapshot);
   setProjectDraftContent(normalizedId, currentOpenFileName, effectiveContent);
   applyProjectFileDirtyMarker(normalizedId);
+
+  if (currentProject && isHtmlLikeProject(currentProject) && previousDir !== nextDir) {
+    clearProjectOutputPanels();
+    setProjectGuiPlaceholder(nextDir);
+  }
   
   markFileInTreeWithRetry(fileId);
 }
@@ -667,9 +793,12 @@ async function beforeRunExecution() {
   }
 
   const guiContainer = document.getElementById('gui-container');
+  const currentDir = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
   const alreadyRendered = Boolean(
     guiContainer
     && guiContainer.dataset.projectHtmlRendered === '1'
+    && String(guiContainer.dataset.projectHtmlDirty || '0') !== '1'
+    && String(guiContainer.dataset.projectHtmlActiveFolder || '') === String(currentDir || '')
     && guiContainer.dataset.projectId === String(currentProject.id)
     && guiContainer.querySelector('[data-element]')
   );
@@ -694,17 +823,18 @@ async function getProjectRunContext() {
   const editor = getEditorInstance();
   let code = String(editor?.getValue?.() || '');
   let fileName = currentOpenFileName || '';
+  const activeFolder = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
 
   if (!isPythonFile(fileName)) {
-    const initFile = await readProjectFileByName(currentProject.id, 'init.py');
+    const initFile = await readProjectFileByPreferredPath(currentProject.id, 'init.py', activeFolder);
     const initFileId = Number(initFile?.fileId || initFile?.id || 0);
     const draft = getProjectDraftContent(initFileId);
     if (draft !== null) {
       code = String(draft || '');
-      fileName = 'init.py';
+      fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
     } else if (initFile?.content != null) {
       code = String(initFile.content || '');
-      fileName = 'init.py';
+      fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
     }
   }
 
@@ -869,12 +999,20 @@ async function getProjectPythonRuntimePayload() {
   if (!pyFiles.length) return null;
 
   const pathToMeta = new Map(pyFiles.map((f) => [f.path, f]));
+  const activeFolder = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
 
   let mainPath = '';
   if (currentOpenFileId) {
     const openFile = pyFiles.find((f) => Number(f.id) === Number(currentOpenFileId));
     if (openFile) {
       mainPath = openFile.path;
+    }
+  }
+
+  if (!mainPath && activeFolder) {
+    const activeInitPath = `${activeFolder}/init.py`;
+    if (pathToMeta.has(activeInitPath)) {
+      mainPath = activeInitPath;
     }
   }
 
@@ -1002,6 +1140,20 @@ async function triggerProjectFunctionCall(triggerElement) {
   }
 
   const functionValue = triggerElement?.getAttribute?.('value') ?? triggerElement?.value ?? '';
+  const triggerSignature = `${functionName}::${functionValue}`;
+  const triggerNow = Date.now();
+  const lastTrigger = window.__codeUiLastFunctionTrigger || null;
+  if (
+    lastTrigger
+    && lastTrigger.signature === triggerSignature
+    && (triggerNow - Number(lastTrigger.at || 0)) < 150
+  ) {
+    return;
+  }
+  window.__codeUiLastFunctionTrigger = {
+    signature: triggerSignature,
+    at: triggerNow,
+  };
 
   const outputEl = document.getElementById('output-container');
   const lintEl = document.getElementById('lint-container');
@@ -1122,12 +1274,13 @@ async function saveCurrentOpenFile() {
   }
 
   if (!currentOpenFileId) {
-    const initFile = await readProjectFileByName(currentProject.id, 'init.py');
+    const activeFolder = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+    const initFile = await readProjectFileByPreferredPath(currentProject.id, 'init.py', activeFolder);
     if (!initFile?.fileId) {
       throw new Error('Keine aktive Datei zum Speichern');
     }
     currentOpenFileId = Number(initFile.fileId);
-    currentOpenFileName = initFile.fileName || 'init.py';
+    currentOpenFileName = initFile.fileName || (activeFolder ? `${activeFolder}/init.py` : 'init.py');
   }
 
   const content = String(editor.getValue() || '');
@@ -1170,6 +1323,8 @@ async function persistProjectFileContent(fileId, fileName, content) {
   } catch (runtimeSyncError) {
     console.warn('[projects-editor] Pyodide runtime sync after save failed:', runtimeSyncError);
   }
+
+  await markProjectGuiDirtyForFile(fileId, fileName);
 }
 
 async function saveCurrentProjectFile() {
@@ -1584,6 +1739,16 @@ async function loadProject(projectId) {
           projectName: project.name,
           readOnly: false,
           doubleClickAction: 'open-folder',
+          onFolderChanged: async (_folderId, folderPath) => {
+            if (!currentProject || !isHtmlLikeProject(currentProject)) {
+              return;
+            }
+            const activeFolder = Array.isArray(folderPath)
+              ? folderPath.map((segment) => String(segment?.name || '').trim()).filter(Boolean).join('/')
+              : '';
+            clearProjectOutputPanels();
+            setProjectGuiPlaceholder(activeFolder);
+          },
           beforeFileSelect: async () => {
             cacheCurrentProjectEditorDraft();
             return true;
@@ -1623,8 +1788,7 @@ async function loadProject(projectId) {
       // Always show GUI container for HTML/Mixed, even if empty (will render on first RUN)
       guiContainer.classList.add('active');
       setProjectsRightPanelMode(true);
-      guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
-      guiContainer.dataset.projectHtmlRendered = '0';
+      setProjectGuiPlaceholder('');
       guiContainer.dataset.projectId = String(project.id);
       delete guiContainer.dataset.codeUiRunBound;
     } else {
@@ -1633,6 +1797,8 @@ async function loadProject(projectId) {
       setProjectsRightPanelMode(false);
       guiContainer.innerHTML = '';
       delete guiContainer.dataset.projectHtmlRendered;
+      delete guiContainer.dataset.projectHtmlDirty;
+      delete guiContainer.dataset.projectHtmlActiveFolder;
       delete guiContainer.dataset.projectId;
       delete guiContainer.dataset.codeUiRunBound;
     }
@@ -1758,27 +1924,60 @@ async function renderProjectHtml() {
       console.error('[projects-editor] GUI container not found');
       return;
     }
+
+    const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+
+    if (!treeResponse.ok) {
+      throw new Error('Failed to load file tree');
+    }
+
+    const treeData = await treeResponse.json();
+    if (!treeData.ok) {
+      throw new Error(treeData.error || 'Failed to load file tree');
+    }
+
+    const treeNodes = Array.isArray(treeData?.tree)
+      ? treeData.tree
+      : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
+
+    const currentDir = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+
+    const findProjectFileIdByPath = (nodes, targetPath, parentPath = '') => {
+      if (!Array.isArray(nodes) || !targetPath) return null;
+
+      for (const node of nodes) {
+        if (!node || typeof node.name !== 'string') continue;
+
+        const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        if (node.type === 'file' && currentPath === targetPath) {
+          return Number(node.id || 0) || null;
+        }
+
+        if (node.type === 'folder') {
+          const childId = findProjectFileIdByPath(node.children || [], targetPath, currentPath);
+          if (childId) return childId;
+        }
+      }
+
+      return null;
+    };
     
     // Helper to read a project file by name
     const readProjectFile = async (fileName) => {
       console.log(`[projects-editor] Reading file: ${fileName}`);
-      // Get file tree to find file ID
-      const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
-        credentials: 'include',
-        cache: 'no-store'
-      });
-      
-      if (!treeResponse.ok) {
-        throw new Error(`Failed to load file tree`);
-      }
-      
-      const treeData = await treeResponse.json();
-      if (!treeData.ok) {
-        throw new Error(treeData.error || 'Failed to load file tree');
-      }
-      
-      // Find file in tree
       let fileId = null;
+
+      if (currentDir) {
+        const preferredPath = `${currentDir}/${fileName}`;
+        fileId = findProjectFileIdByPath(treeNodes, preferredPath, '');
+        if (fileId) {
+          console.log(`[projects-editor] Found ${fileName} in current folder:`, preferredPath, fileId);
+        }
+      }
+
       const findFile = (nodes) => {
         if (!nodes || !Array.isArray(nodes)) return false;
         for (const node of nodes) {
@@ -1793,11 +1992,11 @@ async function renderProjectHtml() {
         }
         return false;
       };
-      
-      const tree = treeData.tree || treeData || [];
-      console.log('[projects-editor] File tree structure:', tree);
-      const filesToSearch = Array.isArray(tree) ? tree : (tree.children || []);
-      findFile(filesToSearch);
+
+      if (!fileId) {
+        console.log('[projects-editor] File tree structure:', treeNodes);
+        findFile(treeNodes);
+      }
       
       if (!fileId) {
         console.warn(`[projects-editor] File not found: ${fileName}`);
@@ -1828,7 +2027,7 @@ async function renderProjectHtml() {
     console.log('[projects-editor] index.html loaded:', htmlContent ? `${htmlContent.length} chars` : 'NOT FOUND');
     if (!htmlContent) {
       // Keep container visible but show placeholder
-      guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Drücke "Run", um die GUI anzuzeigen</p>';
+      setProjectGuiPlaceholder(currentDir);
       return;
     }
     
@@ -1903,6 +2102,8 @@ async function renderProjectHtml() {
     guiContainer.classList.add('active');
     setProjectsRightPanelMode(true);
     guiContainer.dataset.projectHtmlRendered = '1';
+    guiContainer.dataset.projectHtmlDirty = '0';
+    guiContainer.dataset.projectHtmlActiveFolder = String(currentDir || '');
     guiContainer.dataset.projectId = String(currentProject.id);
     console.log('[projects-editor] GUI container marked active');
     
@@ -1912,6 +2113,7 @@ async function renderProjectHtml() {
     const guiContainer = document.getElementById('gui-container');
     guiContainer.innerHTML = '<p style="color: #888; padding: 20px; text-align: center;">Fehler beim Laden der GUI</p>';
     guiContainer.classList.add('active');
+    guiContainer.dataset.projectHtmlRendered = '0';
     setProjectsRightPanelMode(true);
   }
 }

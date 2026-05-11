@@ -27,6 +27,7 @@ class FileTreeManager {
     this.beforeFileSelect = options.beforeFileSelect || (async () => true);
     this.onFileDeleted = options.onFileDeleted || (() => {});
     this.onFileSaved = options.onFileSaved || (() => {});
+    this.onFolderChanged = options.onFolderChanged || (() => {});
     this.doubleClickAction = options.doubleClickAction || 'open-folder';
     
     this.uploadExtensions = options.uploadExtensions || ['.py', '.txt', '.md', '.json', '.html', '.htm', '.jpg', '.jpeg', '.webp', '.gif', '.zip'];
@@ -386,6 +387,7 @@ class FileTreeManager {
     // Replace path instead of pushing to avoid duplication
     this.folderPath = this.folderPath.filter(f => f.id !== folderId);
     this.folderPath.push({ id: folderId, name: folderName });
+    this.onFolderChanged(this.currentFolderId, [...this.folderPath]);
     this.render(this.currentProjectTree);
   }
 
@@ -405,6 +407,7 @@ class FileTreeManager {
         this.folderPath = this.folderPath.slice(0, index + 1);
       }
     }
+    this.onFolderChanged(this.currentFolderId, [...this.folderPath]);
     this.render(this.currentProjectTree);
   }
 
