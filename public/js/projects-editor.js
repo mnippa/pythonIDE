@@ -1160,11 +1160,13 @@ async function resetPyodideModulesIfNeeded(force = false) {
   pyodideRuntimeModulesDirty = false;
   
   try {
-    console.log('[projects-editor] Clearing Pyodide sys.modules due to folder change...');
+    console.log('[projects-editor] Clearing Pyodide sys.modules and .pyc caches...');
     await window.pyodide.runPythonAsync(`
 import sys
 import importlib
-# Remove only modules that were loaded from /project.
+import os
+
+# Aggressively remove all user modules (not system modules) from /project.
 # Wrap __file__ access in try/except: some lazy modules (e.g. idegui)
 # raise in __getattr__ and would abort the whole cleanup.
 modules_to_remove = []
@@ -1189,10 +1191,32 @@ for cache_key in list(sys.path_importer_cache.keys()):
 # Keep sys.path clean from stale project folders, current run will re-add active dir
 sys.path[:] = [p for p in sys.path if not str(p).startswith('/project/')]
 
+# Aggressively invalidate all import caches multiple times
 importlib.invalidate_caches()
-print(f"[Pyodide] Cleared {len(modules_to_remove)} modules from /project")
+if hasattr(importlib, '_bootstrap_external'):
+  try:
+    importlib._bootstrap_external._path_importer_cache.clear()
+  except Exception:
+    pass
+
+# Remove .pyc bytecode files under /project to force reimport
+try:
+  runtime_root = '/project'
+  if os.path.exists(runtime_root):
+    for dirpath, dirnames, filenames in os.walk(runtime_root):
+      for fname in filenames:
+        if fname.endswith('.pyc'):
+          try:
+            pyc_path = os.path.join(dirpath, fname)
+            os.remove(pyc_path)
+          except Exception:
+            pass
+except Exception:
+  pass
+
+print(f"[Pyodide] Cleared {len(modules_to_remove)} modules and .pyc bytecode from /project")
     `);
-    console.log('[projects-editor] Pyodide sys.modules cleared successfully');
+    console.log('[projects-editor] Pyodide sys.modules and .pyc caches cleared successfully');
   } catch (err) {
     console.warn('[projects-editor] Failed to clear Pyodide sys.modules:', err);
   }
@@ -1923,7 +1947,12 @@ async function loadProject(projectId) {
             await openFileInEditor(fileId, fileName, content);
             console.log('[projects-editor] Opened file from tree:', fileName);
           },
-          onFileSaved: () => {},
+          onFileSaved: () => {
+            // File was saved via tree editor: mark Pyodide runtime as dirty
+            // so modules are reloaded on next run
+            pyodideRuntimeModulesDirty = true;
+            console.log('[projects-editor] File saved via tree - marking Pyodide runtime as dirty');
+          },
           onFileDeleted: () => {}
         });
         console.log('[projects-editor] FileTreeManager instance created, calling init()...');
@@ -2597,7 +2626,9 @@ function setupEventListeners() {
   document.getElementById('save-project-btn')?.addEventListener('click', async () => {
     try {
       await saveCurrentOpenFile();
-      console.log('[projects-editor] File saved:', currentOpenFileName);
+      // Mark Pyodide runtime as dirty: user changed a project file
+      pyodideRuntimeModulesDirty = true;
+      console.log('[projects-editor] File saved:', currentOpenFileName, '- marking Pyodide runtime as dirty');
     } catch (error) {
       console.error('[projects-editor] Save failed:', error);
       alert('Speichern fehlgeschlagen');
@@ -2607,7 +2638,9 @@ function setupEventListeners() {
   document.getElementById('save-all-project-btn')?.addEventListener('click', async () => {
     try {
       await saveAllProjectFiles();
-      console.log('[projects-editor] All files saved');
+      // Mark Pyodide runtime as dirty: user may have changed any project file
+      pyodideRuntimeModulesDirty = true;
+      console.log('[projects-editor] All files saved - marking Pyodide runtime as dirty');
     } catch (error) {
       console.error('[projects-editor] Save all failed:', error);
       alert('Alle speichern fehlgeschlagen');

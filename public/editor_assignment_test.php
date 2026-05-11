@@ -1092,7 +1092,7 @@ HTML;
   <script src="js/quiz-renderer.js?v=20250224"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260505a"></script>
+  <script type="module" src="js/editor-setup.js?v=20260511c"></script>
 
   <script>
     // Theme Toggle

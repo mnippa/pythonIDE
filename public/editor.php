@@ -870,7 +870,7 @@ exit;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260422zq"></script>
+  <script type="module" src="js/editor-setup.js?v=20260511c"></script>
 
   <script>
     // Theme Toggle

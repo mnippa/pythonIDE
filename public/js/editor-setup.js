@@ -783,11 +783,17 @@ if "idegui" not in sys.modules:
 
   function getSelectedPackages() {
     const packages = [];
-    if (moduleCheckboxes.numpy?.checked) packages.push("numpy");
-    if (moduleCheckboxes.matplotlib?.checked) packages.push("matplotlib");
-    if (moduleCheckboxes.pandas?.checked) packages.push("pandas");
-    if (moduleCheckboxes.panel?.checked) packages.push("panel");
-    if (moduleCheckboxes.seaborn?.checked) packages.push("seaborn");
+    // In assignment mode, always include numpy and matplotlib
+    // In projects mode, check the checkboxes if they exist
+    if (document.getElementById("pkg-numpy")?.checked || !document.getElementById("pkg-numpy")) {
+      packages.push("numpy");
+    }
+    if (document.getElementById("pkg-matplotlib")?.checked || !document.getElementById("pkg-matplotlib")) {
+      packages.push("matplotlib");
+    }
+    if (document.getElementById("pkg-pandas")?.checked) packages.push("pandas");
+    if (document.getElementById("pkg-panel")?.checked) packages.push("panel");
+    if (document.getElementById("pkg-seaborn")?.checked) packages.push("seaborn");
     return packages;
   }
 
