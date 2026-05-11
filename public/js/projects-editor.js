@@ -17,6 +17,13 @@ let projectEditorDraftListenerBound = false;
 let projectSkipNextDraftCache = false;
 let unsavedChoiceResolver = null;
 let lastOpenedProjectIdFromDb = null;
+let projectFileTreeDirty = false; // Flag to force tree reload after file changes
+let pyodideRuntimeFolderPath = null; // Track which folder's code is currently loaded in Pyodide VFS
+let pyodideRuntimeModulesDirty = false; // Flag: folder changed, need to invalidate sys.modules
+let projectsEditorInitPromise = null;
+let projectsEditorInitialized = false;
+let loadProjectPromise = null;
+let loadProjectIdInFlight = null;
 
 async function waitForEditorInstance() {
   for (let attempt = 0; attempt < 200; attempt++) {
@@ -238,7 +245,7 @@ async function readProjectFileById(projectId, fileId) {
 async function readProjectFileByName(projectId, fileName) {
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
     credentials: 'include',
-    cache: 'no-store'
+    cache: 'reload'
   });
   if (!treeResponse.ok) return null;
 
@@ -274,7 +281,7 @@ function findProjectFileIdByPath(nodes, targetPath, parentPath = '') {
 async function readProjectFileByPreferredPath(projectId, fileName, preferredFolderPath = '') {
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
     credentials: 'include',
-    cache: 'no-store'
+    cache: 'reload'
   });
   if (!treeResponse.ok) return null;
 
@@ -442,6 +449,8 @@ async function ensureInitPyExists(projectId, projectName, fallbackCode = '') {
       content: defaultContent
     })
   });
+  
+  projectFileTreeDirty = true; // Mark tree as dirty since new file was created
 }
 
 async function openFileInEditor(fileId, fileName, content) {
@@ -795,6 +804,18 @@ async function beforeRunExecution() {
   // Ensure current editor content is in draft cache before reading it in renderProjectHtml
   cacheCurrentProjectEditorDraft();
 
+  // If file tree was marked dirty (e.g., after saving HTML/CSS), reinitialize it with fresh data
+  if (projectFileTreeDirty && projectFileManager && typeof projectFileManager.init === 'function') {
+    projectFileTreeDirty = false;
+    console.log('[projects-editor] File tree was dirty, reinitializing with fresh data...');
+    try {
+      await projectFileManager.init();
+      console.log('[projects-editor] File tree reinitialized successfully');
+    } catch (reloadErr) {
+      console.warn('[projects-editor] File tree reinit failed, continuing anyway:', reloadErr);
+    }
+  }
+
   const guiContainer = document.getElementById('gui-container');
   const currentDir = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
   const alreadyRendered = Boolean(
@@ -988,7 +1009,7 @@ async function getProjectPythonRuntimePayload() {
 
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
     credentials: 'include',
-    cache: 'no-store'
+    cache: 'reload'
   });
 
   if (!treeResponse.ok) return null;
@@ -1001,14 +1022,43 @@ async function getProjectPythonRuntimePayload() {
   const pyFiles = collectProjectPythonFiles(treeNodes);
   if (!pyFiles.length) return null;
 
-  const pathToMeta = new Map(pyFiles.map((f) => [f.path, f]));
-  const activeFolder = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+  const openFileMeta = currentOpenFileId
+    ? pyFiles.find((f) => Number(f.id) === Number(currentOpenFileId))
+    : null;
+  const openFileDir = openFileMeta?.path && openFileMeta.path.includes('/')
+    ? openFileMeta.path.slice(0, openFileMeta.path.lastIndexOf('/'))
+    : '';
+
+  const activeFolder =
+    getActiveProjectFolderPath()
+    || pyodideRuntimeFolderPath
+    || openFileDir
+    || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
+
+  const scopeRoot = activeFolder ? String(activeFolder).split('/')[0] : '';
+
+  // Enforce runtime scope to a single top-level folder (e.g. 02_...),
+  // so same module names in parallel folders cannot collide.
+  const runtimePyFiles = scopeRoot
+    ? pyFiles.filter((f) => f.path === scopeRoot || f.path.startsWith(`${scopeRoot}/`))
+    : pyFiles;
+  const pathToMeta = new Map(runtimePyFiles.map((f) => [f.path, f]));
 
   let mainPath = '';
   if (currentOpenFileId) {
-    const openFile = pyFiles.find((f) => Number(f.id) === Number(currentOpenFileId));
-    if (openFile) {
+    const openFile = runtimePyFiles.find((f) => Number(f.id) === Number(currentOpenFileId));
+    const openFileInActiveFolder = !scopeRoot
+      || openFile?.path === scopeRoot
+      || openFile?.path.startsWith(`${scopeRoot}/`);
+    if (openFile && openFileInActiveFolder) {
       mainPath = openFile.path;
+    }
+  }
+
+  if (!mainPath && activeFolder) {
+    const activeMainPath = `${activeFolder}/main.py`;
+    if (pathToMeta.has(activeMainPath)) {
+      mainPath = activeMainPath;
     }
   }
 
@@ -1019,15 +1069,22 @@ async function getProjectPythonRuntimePayload() {
     }
   }
 
+  if (!mainPath && activeFolder) {
+    const firstActiveFolderPyFile = runtimePyFiles.find((f) => f.path.startsWith(`${activeFolder}/`));
+    if (firstActiveFolderPyFile) {
+      mainPath = firstActiveFolderPyFile.path;
+    }
+  }
+
   if (!mainPath) {
-    const initFile = pyFiles.find((f) => f.path === 'init.py' || f.name === 'init.py');
+    const initFile = runtimePyFiles.find((f) => f.path === 'init.py' || f.name === 'init.py');
     if (initFile) {
       mainPath = initFile.path;
     }
   }
 
-  if (!mainPath && pyFiles.length > 0) {
-    mainPath = pyFiles[0].path;
+  if (!mainPath && runtimePyFiles.length > 0) {
+    mainPath = runtimePyFiles[0].path;
   }
 
   const includedPaths = new Set();
@@ -1064,7 +1121,10 @@ async function getProjectPythonRuntimePayload() {
   }));
 
   // Include data files (txt, csv, json, etc.) so open() calls work in Pyodide
-  const dataFiles = collectProjectDataFiles(treeNodes);
+  const dataFiles = collectProjectDataFiles(treeNodes).filter((dataFile) => {
+    if (!scopeRoot) return true;
+    return dataFile.path === scopeRoot || dataFile.path.startsWith(`${scopeRoot}/`);
+  });
   for (const dataFile of dataFiles) {
     if (!includedPaths.has(dataFile.path)) {
       const fileData = await readProjectFileById(currentProject.id, dataFile.id);
@@ -1086,6 +1146,56 @@ function triggerProjectPythonRun() {
   const runButton = document.getElementById('run-btn');
   if (!runButton) return;
   runButton.click();
+}
+
+/**
+ * Reset Pyodide's sys.modules if folder changed
+ * Called before runtime payload is synced to avoid stale module imports
+ */
+async function resetPyodideModulesIfNeeded(force = false) {
+  if ((!pyodideRuntimeModulesDirty && !force) || !window.pyodide) {
+    return;
+  }
+
+  pyodideRuntimeModulesDirty = false;
+  
+  try {
+    console.log('[projects-editor] Clearing Pyodide sys.modules due to folder change...');
+    await window.pyodide.runPythonAsync(`
+import sys
+import importlib
+# Remove only modules that were loaded from /project.
+# Wrap __file__ access in try/except: some lazy modules (e.g. idegui)
+# raise in __getattr__ and would abort the whole cleanup.
+modules_to_remove = []
+for name, module in list(sys.modules.items()):
+  try:
+    module_file = getattr(module, '__file__', None)
+  except Exception:
+    module_file = None
+  if module_file and str(module_file).startswith('/project/'):
+    modules_to_remove.append(name)
+
+for mod in modules_to_remove:
+  if mod in sys.modules:
+    del sys.modules[mod]
+
+# Drop cached path importers for previous project paths
+for cache_key in list(sys.path_importer_cache.keys()):
+  key = str(cache_key)
+  if key.startswith('/project'):
+    del sys.path_importer_cache[cache_key]
+
+# Keep sys.path clean from stale project folders, current run will re-add active dir
+sys.path[:] = [p for p in sys.path if not str(p).startswith('/project/')]
+
+importlib.invalidate_caches()
+print(f"[Pyodide] Cleared {len(modules_to_remove)} modules from /project")
+    `);
+    console.log('[projects-editor] Pyodide sys.modules cleared successfully');
+  } catch (err) {
+    console.warn('[projects-editor] Failed to clear Pyodide sys.modules:', err);
+  }
 }
 
 function setProjectTriggerContext(guiContainer, triggerElement, isEventDriven = false) {
@@ -1327,6 +1437,12 @@ async function persistProjectFileContent(fileId, fileName, content) {
     console.warn('[projects-editor] Pyodide runtime sync after save failed:', runtimeSyncError);
   }
 
+  // Mark file tree as dirty if HTML/CSS was saved, so next render gets fresh data
+  if (fileName && isProjectGuiAssetFile(fileName)) {
+    projectFileTreeDirty = true;
+    console.log('[projects-editor] HTML/CSS file saved, marked file tree as dirty for refresh');
+  }
+
   await markProjectGuiDirtyForFile(fileId, fileName);
 }
 
@@ -1486,7 +1602,8 @@ async function confirmProjectSwitchWithDrafts() {
 
 async function loadPreferredProjectFile(projectId, projectFallbackCode) {
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
-    credentials: 'include'
+    credentials: 'include',
+    cache: 'reload'
   });
   if (!treeResponse.ok) {
     return {
@@ -1545,27 +1662,47 @@ async function loadPreferredProjectFile(projectId, projectFallbackCode) {
  * Initialize projects editor on page load
  */
 async function initProjectsEditor() {
-  console.log('Initializing projects editor...');
+  if (projectsEditorInitialized) {
+    return;
+  }
 
-  document.getElementById('project-list-panel')?.classList.add('active');
-  
-  // Load projects list
-  await loadProjects();
-  
-  // Set up event listeners
-  setupEventListeners();
-  
-  // Auto-load last opened project (DB first, localStorage fallback)
-  const localProjectId = localStorage.getItem('lastOpenedProjectId');
-  const effectiveLastProjectId = Number(lastOpenedProjectIdFromDb || localProjectId || 0);
-  if (effectiveLastProjectId && projects.length > 0) {
-    const project = projects.find(p => p.id === effectiveLastProjectId);
-    if (project) {
-      console.log('[projects-editor] Auto-loading last project:', effectiveLastProjectId);
-      await loadProject(project.id);
-    } else {
-      console.log('[projects-editor] Last project not found, staying on project list');
+  if (projectsEditorInitPromise) {
+    await projectsEditorInitPromise;
+    return;
+  }
+
+  projectsEditorInitPromise = (async () => {
+    console.log('Initializing projects editor...');
+
+    document.getElementById('project-list-panel')?.classList.add('active');
+    
+    // Load projects list
+    await loadProjects();
+    
+    // Set up event listeners
+    setupEventListeners();
+    
+    // Auto-load last opened project (DB first, localStorage fallback)
+    const localProjectId = localStorage.getItem('lastOpenedProjectId');
+    const effectiveLastProjectId = Number(lastOpenedProjectIdFromDb || localProjectId || 0);
+    if (effectiveLastProjectId && projects.length > 0) {
+      const project = projects.find(p => p.id === effectiveLastProjectId);
+      if (project) {
+        console.log('[projects-editor] Auto-loading last project:', effectiveLastProjectId);
+        await loadProject(project.id);
+      } else {
+        console.log('[projects-editor] Last project not found, staying on project list');
+      }
     }
+
+    projectsEditorInitialized = true;
+  })();
+
+  try {
+    await projectsEditorInitPromise;
+  } catch (initErr) {
+    projectsEditorInitPromise = null;
+    throw initErr;
   }
 }
 
@@ -1644,12 +1781,29 @@ function renderProjectList() {
  * Load a specific project
  */
 async function loadProject(projectId) {
+  const normalizedProjectId = Number(projectId || 0);
+  if (!normalizedProjectId) {
+    return;
+  }
+
+  if (loadProjectPromise && loadProjectIdInFlight === normalizedProjectId) {
+    console.log('[projects-editor] loadProject already running for project:', normalizedProjectId, '- skipping duplicate trigger');
+    return loadProjectPromise;
+  }
+
+  loadProjectIdInFlight = normalizedProjectId;
+
+  loadProjectPromise = (async () => {
   try {
     window.currentProject = null;
     updateWebHelpButton(null);
     setProjectsRightPanelMode(false);
     
-    const response = await fetch(`../api/projects/load.php?id=${projectId}`, {
+    // Reset Pyodide runtime tracking when switching projects
+    pyodideRuntimeFolderPath = null;
+    pyodideRuntimeModulesDirty = false;
+    
+    const response = await fetch(`../api/projects/load.php?id=${normalizedProjectId}`, {
       credentials: 'include'
     });
     
@@ -1677,7 +1831,7 @@ async function loadProject(projectId) {
     projectSavedSnapshots = {};
     projectFileNamesById = {};
 
-    await ensureInitPyExists(projectId, project.name, project.code || '');
+    await ensureInitPyExists(normalizedProjectId, project.name, project.code || '');
     
     // Update UI
     const projectTitleEl = document.getElementById('project-page-title');
@@ -1698,7 +1852,7 @@ async function loadProject(projectId) {
     const editorReady = await waitForEditorInstance();
     if (editorReady) {
       try {
-        const preferredFile = await loadPreferredProjectFile(projectId, project.code || '');
+        const preferredFile = await loadPreferredProjectFile(normalizedProjectId, project.code || '');
         setEditorContent(editorReady, preferredFile.content || '');
         window.editor = editorReady;
         currentOpenFileId = preferredFile.fileId ? Number(preferredFile.fileId) : null;
@@ -1720,7 +1874,7 @@ async function loadProject(projectId) {
     }
     
     // File tree like assignment-test/projects.js: use FileTreeManager first
-    console.log('[projects-editor] Starting file tree initialization for project:', projectId);
+    console.log('[projects-editor] Starting file tree initialization for project:', normalizedProjectId);
     const treeContainer = document.getElementById('project-file-tree');
     if (treeContainer) {
       treeContainer.innerHTML = '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Dateibaum...</p>';
@@ -1738,17 +1892,26 @@ async function loadProject(projectId) {
       try {
         console.log('[projects-editor] Creating FileTreeManager instance...');
         projectFileManager = new window.FileTreeManager('project-file-tree', {
-          projectId,
+          projectId: normalizedProjectId,
           projectName: project.name,
           readOnly: false,
           doubleClickAction: 'open-folder',
           onFolderChanged: async (_folderId, folderPath) => {
-            if (!currentProject || !isHtmlLikeProject(currentProject)) {
-              return;
-            }
             const activeFolder = Array.isArray(folderPath)
               ? folderPath.map((segment) => String(segment?.name || '').trim()).filter(Boolean).join('/')
               : '';
+            
+            // Track: folder changed, so Pyodide's runtime state is now stale
+            if (activeFolder !== pyodideRuntimeFolderPath) {
+              pyodideRuntimeModulesDirty = true;
+              pyodideRuntimeFolderPath = activeFolder;
+              console.log('[projects-editor] Folder changed to:', activeFolder, '- marking Pyodide runtime as dirty');
+            }
+
+            if (!currentProject || !isHtmlLikeProject(currentProject)) {
+              return;
+            }
+            
             clearProjectOutputPanels();
             setProjectGuiPlaceholder(activeFolder);
           },
@@ -1775,11 +1938,11 @@ async function loadProject(projectId) {
       } catch (treeErr) {
         console.error('[projects-editor] FileTreeManager failed, fallback to manual tree:', treeErr);
         projectFileManager = null;
-        await renderFileTreeManually(projectId);
+        await renderFileTreeManually(normalizedProjectId);
       }
     } else {
       console.log('[projects-editor] FileTreeManager not available, using manual tree');
-      await renderFileTreeManually(projectId);
+      await renderFileTreeManually(normalizedProjectId);
       setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
     }
     
@@ -1811,12 +1974,15 @@ async function loadProject(projectId) {
     document.getElementById('plot-container').innerHTML = '';
     
     // Save as last opened project (DB + localStorage fallback)
-    await persistLastOpenedProject(projectId);
+    await persistLastOpenedProject(normalizedProjectId);
     
     // Auto-open init.py after FileTreeManager is ready
     setTimeout(async () => {
       try {
         const initFile = await readProjectFileByName(projectId, 'init.py');
+        if (!currentProject || Number(currentProject.id) !== normalizedProjectId) {
+          return;
+        }
         const initFileId = Number(initFile?.id || initFile?.fileId || 0);
         if (initFileId) {
           console.log('[projects-editor] Auto-opening init.py:', initFileId);
@@ -1834,6 +2000,16 @@ async function loadProject(projectId) {
   } catch (error) {
     console.error('Error loading project:', error);
     alert('Fehler beim Laden des Projekts');
+  }
+  })();
+
+  try {
+    return await loadProjectPromise;
+  } finally {
+    if (loadProjectIdInFlight === normalizedProjectId) {
+      loadProjectPromise = null;
+      loadProjectIdInFlight = null;
+    }
   }
 }
 
@@ -1933,7 +2109,7 @@ async function renderProjectHtml() {
 
     const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${currentProject.id}`, {
       credentials: 'include',
-      cache: 'no-store'
+      cache: 'reload'
     });
 
     if (!treeResponse.ok) {
@@ -2139,7 +2315,8 @@ async function renderFileTreeManually(projectId) {
     
     console.log('[projects-editor] Fetching tree from API...');
     const response = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
-      credentials: 'include'
+      credentials: 'include',
+      cache: 'reload'
     });
     
     if (!response.ok) {
@@ -2215,6 +2392,7 @@ async function renderFileTreeManually(projectId) {
         alert(createData?.error || 'Erstellen fehlgeschlagen');
         return;
       }
+      projectFileTreeDirty = true; // Mark tree as dirty since file/folder was created
       await renderFileTreeManually(projectId);
     };
 
@@ -2590,4 +2768,5 @@ window.toggleProjectVisibility = toggleProjectVisibility;
 window.beforeRunExecution = beforeRunExecution;
 window.getProjectRunContext = getProjectRunContext;
 window.getProjectPythonRuntimePayload = getProjectPythonRuntimePayload;
+window.resetPyodideModulesIfNeeded = resetPyodideModulesIfNeeded;
 window.getCurrentProjectOpenFileName = () => String(currentOpenFileName || '');

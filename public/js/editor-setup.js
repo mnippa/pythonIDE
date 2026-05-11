@@ -2125,7 +2125,19 @@ compile(code, "<usercode>", "exec")
       let projectRuntimePayload = null;
       if (currentProject && typeof window.getProjectPythonRuntimePayload === 'function') {
         try {
+          // If folder changed, clear Pyodide's sys.modules to avoid stale imports
+          if (typeof window.resetPyodideModulesIfNeeded === 'function') {
+            await window.resetPyodideModulesIfNeeded();
+          }
+          
           projectRuntimePayload = await window.getProjectPythonRuntimePayload();
+          if (projectRuntimePayload && Array.isArray(projectRuntimePayload.files)) {
+            const pyPaths = projectRuntimePayload.files
+              .map((entry) => String(entry?.path || ''))
+              .filter((p) => p.toLowerCase().endsWith('.py'));
+            console.log('[Run] Runtime payload mainPath:', projectRuntimePayload.mainPath);
+            console.log('[Run] Runtime payload python files:', pyPaths);
+          }
         } catch (projectRuntimeError) {
           console.warn('[Run] project runtime payload fallback to null:', projectRuntimeError);
         }
@@ -2301,6 +2313,28 @@ if isinstance(project_runtime, dict):
   runtime_files = project_runtime.get('files') or []
 
   if runtime_files:
+    # Clean up old VFS to remove stale .py files from previous project folders.
+    # shutil.rmtree can fail with EBUSY on Emscripten when a dir is still mounted,
+    # so we fall back to walking and removing individual .py files.
+    try:
+      import shutil, stat
+      if os.path.exists(runtime_root):
+        try:
+          shutil.rmtree(runtime_root)
+          print(f"[VFS Cleanup] Removed VFS root: {runtime_root}")
+        except Exception:
+          # Fallback: delete only .py files to avoid stale module resolution
+          for dirpath, dirnames, filenames in os.walk(runtime_root):
+            for fname in filenames:
+              if fname.endswith('.py'):
+                try:
+                  os.remove(os.path.join(dirpath, fname))
+                except Exception:
+                  pass
+          print(f"[VFS Cleanup] Removed stale .py files under: {runtime_root}")
+    except Exception as e:
+      print(f"[VFS Cleanup] Warning: {e}")
+    
     try:
       os.makedirs(runtime_root, exist_ok=True)
     except Exception:
@@ -2325,6 +2359,12 @@ if isinstance(project_runtime, dict):
     if main_rel:
       project_main_path = runtime_root.rstrip('/') + '/' + main_rel
       project_main_dir = os.path.dirname(project_main_path)
+      if project_main_dir:
+        # Keep only the active project folder under /project in import search path
+        sys.path[:] = [
+          p for p in sys.path
+          if not str(p).startswith(runtime_root.rstrip('/') + '/') or str(p) == project_main_dir
+        ]
       if project_main_dir and project_main_dir not in sys.path:
         sys.path.insert(0, project_main_dir)
       if project_main_dir:

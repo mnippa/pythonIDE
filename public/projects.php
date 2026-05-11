@@ -949,7 +949,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260507b"></script>
+  <script type="module" src="js/editor-setup.js?v=20260508a"></script>
 
   <script>
     // Theme Toggle
@@ -1141,7 +1141,7 @@ HTML;
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script type="module" src="js/projects-editor.js?v=20260507e"></script>
+  <script type="module" src="js/projects-editor.js?v=20260511a"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;
