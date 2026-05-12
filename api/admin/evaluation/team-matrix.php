@@ -55,7 +55,8 @@ try {
             u.email,
             a.id AS assignment_id,
             COALESCE(ua_direct.status, ua_team.status, \'assigned\') AS raw_status,
-            COALESCE(ua_direct.is_late, ua_team.is_late, 0) AS is_late
+            COALESCE(ua_direct.is_late, ua_team.is_late, 0) AS is_late,
+            COALESCE(ua_direct.is_rework, ua_team.is_rework, 0) AS is_rework
         FROM (
             SELECT id, first_name, last_name, email FROM users WHERE team_id = ?
         ) u
@@ -80,7 +81,7 @@ try {
     $stmt->execute();
     $result = $stmt->get_result();
 
-    // 3. Aggregate per user
+    // 3. Aggregate per user with auto-detection of is_late
     $userMap = [];
     while ($row = $result->fetch_assoc()) {
         $uid = (int)$row['user_id'];
@@ -95,8 +96,14 @@ try {
         }
         $aid = (int)$row['assignment_id'];
         $raw = (string)$row['raw_status'];
-        $late = !empty($row['is_late']);
-        $userMap[$uid]['statuses'][$aid] = mapStatus($raw, $late);
+        // is_late is now correctly set by migration 054 backfill
+        $isLate = !empty($row['is_late']);
+        $rework = !empty($row['is_rework']);
+        $userMap[$uid]['statuses'][$aid] = [
+            'status' => mapStatus($raw, $isLate),
+            'is_late' => $isLate,
+            'is_rework' => $rework,
+        ];
     }
 
     // 4. Compute summary and convert to list
@@ -108,7 +115,9 @@ try {
         foreach ($assignmentIds as $aid) {
             if (isset($u['statuses'][$aid])) {
                 $total++;
-                if (in_array($u['statuses'][$aid], ['passed', 'passed_delayed'], true)) {
+                $statusObj = $u['statuses'][$aid];
+                $statusStr = is_array($statusObj) ? $statusObj['status'] : $statusObj;
+                if (in_array($statusStr, ['passed', 'passed_delayed'], true)) {
                     $passed++;
                 }
             }

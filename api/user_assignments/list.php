@@ -161,12 +161,8 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
     $passedTasks = (int)($taskStats['passed_tasks'] ?? 0);
     $finalizedTasks = (int)($taskStats['finalized_tasks'] ?? 0);
 
+    // is_late is now correctly set by migration 054 backfill
     $isLate = !empty($row['is_late']);
-    if (!$isLate && !empty($row['submitted_at']) && !empty($row['effective_due_date'])) {
-        $submittedAt = parseApiDateTime((string)$row['submitted_at'], false);
-        $dueDate = parseApiDateTime((string)$row['effective_due_date'], true);
-        $isLate = $submittedAt !== null && $dueDate !== null && $submittedAt > $dueDate;
-    }
 
     $allPassed = $totalTasks > 0 && $passedTasks >= $totalTasks;
     $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
@@ -347,7 +343,7 @@ foreach ($rows as $row) {
         'hard_deadline' => $row['hard_deadline'],
         'allow_late_submission' => isset($row['allow_late_submission']) ? (bool)$row['allow_late_submission'] : true,
         'is_late' => $displayStatus['is_late'] ?? (isset($row['is_late']) ? (bool)$row['is_late'] : false),
-        'is_rework' => isset($row['is_rework']) ? (bool)$row['is_rework'] : false,
+        'is_rework' => $displayStatus['is_rework'] ?? (isset($row['is_rework']) ? (bool)$row['is_rework'] : false),
         'timing_phase' => $timing['phase'],
         'days_remaining' => $timing['days_remaining'],
         'formatted_time_remaining' => $timing['formatted_time_remaining'],
@@ -357,7 +353,6 @@ foreach ($rows as $row) {
         'user_name' => trim($row['first_name'] . ' ' . $row['last_name']),
         'task_progress' => $taskStats,
         'is_late_completion' => $displayStatus['is_late_completion'],
-        'is_rework' => $displayStatus['is_rework'],
     ];
 }
 

@@ -279,8 +279,14 @@ function renderTeamMatrix(data, errorMessage = null) {
   body.innerHTML = users.map(u => {
     const name = [u.last_name, u.first_name].filter(Boolean).join(', ') || u.email || `#${u.id}`;
     const dots = assignments.map(a => {
-      const status = (u.statuses || {})[a.id];
-      return `<td style="text-align:center;">${status ? ampelDot(status) : '<span style="color:#e5e7eb;">–</span>'}</td>`;
+      const statusObj = (u.statuses || {})[a.id];
+      const status = typeof statusObj === 'object' ? statusObj.status : statusObj;
+      const isLate = typeof statusObj === 'object' ? statusObj.is_late : false;
+      const isRework = typeof statusObj === 'object' ? statusObj.is_rework : false;
+      let flags = '';
+      if (isLate) flags += '<span title="Verspätet" style="margin-left:2px;">🕐</span>';
+      if (isRework) flags += '<span title="Nacharbeit" style="margin-left:2px;">🔨</span>';
+      return `<td style="text-align:center;white-space:nowrap;">${status ? ampelDot(status) : '<span style="color:#e5e7eb;">–</span>'}${flags}</td>`;
     }).join('');
     const summaryColor = u.passed > 0 && u.passed === u.total ? '#15803d' : (u.passed > 0 ? '#b45309' : '#6b7280');
     const summary = `<span style="font-weight:700;color:${summaryColor};">${u.passed}/${u.total}</span>`;

@@ -109,12 +109,8 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         'rework' => 'Nacharbeit',
     ];
 
+    // is_late is now correctly set by migration 054 backfill
     $isLate = !empty($row['is_late']);
-    if (!$isLate && !empty($row['submitted_at']) && !empty($row['effective_due_date'])) {
-        $submittedAt = parseApiDateTime((string)$row['submitted_at'], false);
-        $dueDate = parseApiDateTime((string)$row['effective_due_date'], true);
-        $isLate = $submittedAt !== null && $dueDate !== null && $submittedAt > $dueDate;
-    }
 
     return [
         'status' => in_array($rawStatus, array_keys($statusMap), true) ? $rawStatus : 'assigned',
