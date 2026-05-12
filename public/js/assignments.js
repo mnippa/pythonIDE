@@ -29,7 +29,8 @@ const assignmentState = {
   taskLastActivityTime: {}, // { taskId: timestamp }
   taskActivityIntervals: {}, // { taskId: timerId }
   taskLastTickTime: {}, // { taskId: timestamp } - when last heartbeat tick fired
-  taskFileMeta: {} // { taskId: { path: { read_only, ... } } }
+  taskFileMeta: {}, // { taskId: { path: { read_only, ... } } }
+  userTestEditorUnlockedByTask: {} // { taskId: boolean }
 };
 
 // Export to window for editor-setup.js access
@@ -78,15 +79,35 @@ function getStudentViewQueryParam() {
   return window.STUDENT_ASSIGNMENTS_CONTEXT ? '&student_view=1' : '';
 }
 
+function isAdminTaskLabMode() {
+  if (window.ADMIN_TASK_LAB_VIEW === true) return true;
+  return window.testMode === true && !window.TEST_USER_ID;
+}
+
+function isAdminUserTestMode() {
+  return window.ADMIN_USER_TEST_VIEW === true;
+}
+
 function isAdminAssignmentTestMode() {
+  if (isAdminTaskLabMode() || isAdminUserTestMode()) return true;
   if (window.ADMIN_ASSIGNMENT_TEST === true) return true;
-  return String(window.location.pathname || '').includes('editor_assignment_test');
+  const pathname = String(window.location.pathname || '');
+  return pathname.includes('editor_assignment_test') || pathname.includes('editor_assignment_user_test');
 }
 
 function updateSaveButtonTooltip() {
   const saveTaskBtn = $('save-task-btn');
   const saveModeIndicator = $('save-mode-indicator');
   if (!saveTaskBtn) return;
+
+  if (isAdminUserTestMode()) {
+    saveTaskBtn.title = 'Speichern (Studentcode)';
+    if (saveModeIndicator) {
+      saveModeIndicator.style.display = 'none';
+      saveModeIndicator.textContent = '';
+    }
+    return;
+  }
 
   if (!isAdminAssignmentTestMode()) {
     if (
@@ -114,6 +135,210 @@ function updateSaveButtonTooltip() {
     saveModeIndicator.style.color = isSolutionMode ? '#166534' : '#1d4ed8';
     saveModeIndicator.style.borderColor = isSolutionMode ? '#86efac' : '#93c5fd';
   }
+}
+
+function isCurrentTaskEditableInUserTest() {
+  if (!isAdminUserTestMode()) return true;
+  const taskId = Number(assignmentState.currentTaskId || 0);
+  if (!taskId) return false;
+  return assignmentState.userTestEditorUnlockedByTask[taskId] === true;
+}
+
+function updateUserTestLockButton() {
+  const lockBtn = $('user-test-lock-btn');
+  if (!lockBtn) return;
+
+  if (!isAdminUserTestMode()) {
+    lockBtn.style.display = 'none';
+    return;
+  }
+
+  lockBtn.style.display = 'inline-flex';
+  const unlocked = isCurrentTaskEditableInUserTest();
+  lockBtn.textContent = unlocked ? '🔓' : '🔒';
+  lockBtn.title = unlocked
+    ? 'Editor entsperrt - klicken zum Sperren'
+    : 'Editor gesperrt - klicken zum Entsperren';
+}
+
+function applyUserTestEditorLockState(task) {
+  if (!isAdminUserTestMode()) return;
+  const editor = window.editorInstance;
+  if (!editor || !task) return;
+
+  const unlocked = isCurrentTaskEditableInUserTest();
+  const finalized = ['passed', 'failed'].includes(String(assignmentState.taskStatuses[task.id] || ''));
+  const lockDueToSolution = assignmentState.solutionMode === true;
+  const editable = unlocked && !finalized && !lockDueToSolution;
+
+  editor.updateOptions({ readOnly: !editable });
+
+  const saveTaskBtn = $('save-task-btn');
+  const undoBtn = $('undo-btn');
+  const redoBtn = $('redo-btn');
+
+  [saveTaskBtn, undoBtn, redoBtn].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !editable;
+    btn.style.opacity = editable ? '1' : '0.5';
+    btn.style.cursor = editable ? 'pointer' : 'not-allowed';
+  });
+
+  updateUserTestLockButton();
+}
+
+function syncAssignmentStatusInState(assignmentId, assignmentStatus) {
+  const row = (assignmentState.assignments || []).find((a) => Number(a.assignment_id) === Number(assignmentId));
+  if (!row) return;
+  row.raw_status = assignmentStatus;
+  row.user_status = assignmentStatus;
+}
+
+async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullReset = false, reloadEditor = false) {
+  const task = assignmentState.currentTask;
+  const assignmentId = Number(assignmentState.currentAssignmentId || window.ASSIGNMENT_ID || 0);
+  const userId = Number(window.TEST_USER_ID || 0);
+  const taskId = Number(task?.id || assignmentState.currentTaskId || 0);
+  if (!task || !assignmentId || !userId || !taskId) {
+    throw new Error('Assignment, User oder Task fehlt.');
+  }
+
+  const response = await requestJson('../api/admin/assignments/users/set-task-status.php', {
+    method: 'POST',
+    body: JSON.stringify({
+      assignment_id: assignmentId,
+      user_id: userId,
+      task_id: taskId,
+      status: newStatus,
+      reset_checks: !!resetChecks,
+      full_reset: !!fullReset
+    })
+  });
+
+  assignmentState.taskStatuses[taskId] = response.status_effective || newStatus;
+  assignmentState.taskAttempts[taskId] = Number(response.attempts_after || 0);
+
+  if (['passed', 'failed'].includes(String(assignmentState.taskStatuses[taskId]))) {
+    assignmentState.taskCompletedAt[taskId] = response.completed_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+  } else {
+    delete assignmentState.taskCompletedAt[taskId];
+  }
+
+  if (response.assignment_status) {
+    syncAssignmentStatusInState(assignmentId, response.assignment_status);
+  }
+
+  if (reloadEditor) {
+    // Full reload from DB – also calls showTaskDetails / toolbar refresh internally
+    await loadTaskIntoEditor(assignmentId, taskId);
+  } else {
+    updateAttemptsCounter(task);
+    updateTaskStatusDisplay(task);
+    updateSubmittedMeta(task);
+    refreshCurrentTaskToolbarForStatus(task);
+    showTaskDetails(task, 'details');
+  }
+}
+
+function refreshCurrentTaskToolbarForStatus(task) {
+  if (!task) return;
+  const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
+  const isFinalized = status === 'passed' || status === 'failed';
+  const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
+
+  const checkBtn = $('check-btn');
+  const submitBtn = $('submit-btn');
+  const saveTaskBtn = $('save-task-btn');
+  const undoBtn = $('undo-btn');
+  const redoBtn = $('redo-btn');
+  const attemptsCounter = $('attempts-counter');
+  const submittedInfo = $('submitted-info');
+  const submittedStatus = $('submitted-status');
+  const submittedDate = $('submitted-date');
+  const downloadBtn = $('download-btn');
+  const statusGreyBtn = $('admin-status-grey-btn');
+  const statusYellowBtn = $('admin-status-yellow-btn');
+  const statusGreenBtn = $('admin-status-green-btn');
+  const statusRedBtn = $('admin-status-red-btn');
+
+  if (isAdminUserTestMode()) {
+    if (statusGreyBtn) statusGreyBtn.style.display = 'inline-block';
+    if (statusYellowBtn) statusYellowBtn.style.display = 'inline-block';
+    if (statusGreenBtn) statusGreenBtn.style.display = 'inline-block';
+    if (statusRedBtn) statusRedBtn.style.display = 'inline-block';
+    if (submitBtn) submitBtn.style.display = 'none';
+    updateAdminStatusSymbolState(status);
+  }
+
+  if (isFinalized) {
+    if (checkBtn) checkBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
+    if (saveTaskBtn) saveTaskBtn.style.display = 'none';
+    if (undoBtn) undoBtn.style.display = 'none';
+    if (redoBtn) redoBtn.style.display = 'none';
+    if (attemptsCounter) attemptsCounter.style.display = 'none';
+    if (downloadBtn) downloadBtn.style.display = 'inline-block';
+
+    if (submittedInfo && submittedStatus && submittedDate) {
+      submittedInfo.classList.add('show');
+      submittedStatus.className = `status-${status}`;
+      const completedAt = assignmentState.taskCompletedAt[task.id];
+      submittedDate.textContent = completedAt ? new Date(completedAt).toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      }) : '-';
+      updateSubmittedMeta(task);
+    }
+  } else {
+    if (submittedInfo) submittedInfo.classList.remove('show');
+    if (downloadBtn) downloadBtn.style.display = 'inline-block';
+    if (saveTaskBtn) {
+      saveTaskBtn.style.display = 'inline-block';
+      updateSaveButtonTooltip();
+    }
+    if (undoBtn) undoBtn.style.display = 'inline-block';
+    if (redoBtn) redoBtn.style.display = 'inline-block';
+    if (!isQuizTask) {
+      if (task.test_cases) {
+        if (checkBtn) checkBtn.style.display = 'inline-block';
+      } else if (checkBtn) {
+        checkBtn.style.display = 'none';
+      }
+      if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
+      if (attemptsCounter) attemptsCounter.style.display = 'inline-block';
+    }
+  }
+
+  applyUserTestEditorLockState(task);
+}
+
+function updateAdminStatusSymbolState(currentStatus) {
+  if (!isAdminUserTestMode()) return;
+
+  const statusButtons = [
+    { id: 'admin-status-grey-btn', indicatorId: 'admin-status-grey-indicator', status: 'unbearbeitet' },
+    { id: 'admin-status-yellow-btn', indicatorId: 'admin-status-yellow-indicator', status: 'in-progress' },
+    { id: 'admin-status-green-btn', indicatorId: 'admin-status-green-indicator', status: 'passed' },
+    { id: 'admin-status-red-btn', indicatorId: 'admin-status-red-indicator', status: 'failed' }
+  ];
+
+  statusButtons.forEach(({ id, indicatorId, status }) => {
+    const btn = $(id);
+    const indicator = $(indicatorId);
+    if (!btn && !indicator) return;
+    if (btn && !btn.dataset.defaultTitle) {
+      btn.dataset.defaultTitle = btn.getAttribute('title') || '';
+    }
+    const isCurrent = currentStatus === status;
+    if (btn) {
+      btn.classList.remove('status-current-symbol');
+      btn.disabled = false;
+      btn.style.display = isCurrent ? 'none' : 'inline-block';
+      btn.setAttribute('title', btn.dataset.defaultTitle || 'Status setzen');
+    }
+    if (indicator) {
+      indicator.style.display = isCurrent ? 'inline-flex' : 'none';
+    }
+  });
 }
 
 function escapeHtml(str) {
@@ -408,7 +633,7 @@ async function confirmTaskSwitchWithDrafts(nextTaskId) {
 }
 
 async function requestJson(url, options = {}) {
-  const isTestMode = window.testMode === true;
+  const isTestMode = isAdminTaskLabMode();
   if (isTestMode) {
     // Intercept WRITE operations in test mode - prevent DB writes
     if (url.includes('/api/user_tasks/update.php') || url.includes('/api/user_tasks/heartbeat.php') || url.includes('/api/user_tasks/submit.php')) {
@@ -623,6 +848,9 @@ function showTaskDetails(task, activeTab = 'details') {
   const attempts = assignmentState.taskAttempts[task.id] || 0;
   const maxAttempts = task.max_attempts || 1;
 
+  // Sync top toolbar status symbols/buttons whenever task context changes.
+  refreshCurrentTaskToolbarForStatus(task);
+
   const availableHints = [];
   if (task.hint1) {
     availableHints.push({ id: 1, text: task.hint1 });
@@ -724,7 +952,32 @@ function showTaskDetails(task, activeTab = 'details') {
     </div>`;
   }
 
-  const canShowSolution = window.testMode === true;
+  const userTestStatusSelectId = `user-test-status-select-${task.id}`;
+  const userTestResetChecksId = `user-test-reset-checks-${task.id}`;
+  const userTestApplyBtnId = `user-test-status-apply-${task.id}`;
+  if (isAdminUserTestMode()) {
+    detailsHtml = `
+      <details style="margin:0 0 12px 0; border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--panel);">
+        <summary style="cursor:pointer; font-weight:600;">Admin: Task-Status steuern</summary>
+        <div style="margin-top:10px; display:grid; gap:8px;">
+          <label for="${userTestStatusSelectId}" style="font-size:12px; color:var(--text-secondary);">Status</label>
+          <select id="${userTestStatusSelectId}" style="padding:6px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text-primary);">
+            <option value="unbearbeitet" ${status === 'unbearbeitet' ? 'selected' : ''}>⚪ unbearbeitet</option>
+            <option value="in-progress" ${status === 'in-progress' ? 'selected' : ''}>🟡 in Bearbeitung</option>
+            <option value="passed" ${status === 'passed' ? 'selected' : ''}>🟢 bestanden</option>
+            <option value="failed" ${status === 'failed' ? 'selected' : ''}>🔴 failed</option>
+            <option value="missed">🟠 missed (als failed gespeichert)</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary);">
+            <input id="${userTestResetChecksId}" type="checkbox" checked /> Checks auf 0 setzen
+          </label>
+          <button id="${userTestApplyBtnId}" type="button" class="hspf-btn hspf-btn-sm">Status übernehmen</button>
+        </div>
+      </details>
+    ` + detailsHtml;
+  }
+
+  const canShowSolution = isAdminAssignmentTestMode();
   console.log('[SOLUTION CHECK] canShowSolution:', canShowSolution, 'task_type:', task.task_type);
   // Check if solution exists based on task type
   let hasSolution = false;
@@ -749,7 +1002,7 @@ function showTaskDetails(task, activeTab = 'details') {
       console.log('[SOLUTION] Code random complex task - hasSolution:', hasSolution, 'solution_code exists:', !!task.solution_code);
     }
   } else {
-    console.log('[SOLUTION] Cannot show solution - testMode:', window.testMode, 'task_type:', task.task_type);
+    console.log('[SOLUTION] Cannot show solution - adminTestMode:', isAdminAssignmentTestMode(), 'task_type:', task.task_type);
   }
   
   console.log('[SOLUTION RESULT] Final hasSolution:', hasSolution, 'for task', task.id);
@@ -867,6 +1120,7 @@ function showTaskDetails(task, activeTab = 'details') {
       // Refresh the sidebar to update button color
       showTaskDetails(task, 'details');
       updateSaveButtonTooltip();
+      applyUserTestEditorLockState(task);
     });
   }
 
@@ -899,6 +1153,30 @@ function showTaskDetails(task, activeTab = 'details') {
       showTaskDetails(task, 'hints');
     });
   }
+
+  if (isAdminUserTestMode()) {
+    const applyBtn = document.getElementById(userTestApplyBtnId);
+    const statusSelect = document.getElementById(userTestStatusSelectId);
+    const resetChecks = document.getElementById(userTestResetChecksId);
+
+    applyBtn?.addEventListener('click', async () => {
+      if (!statusSelect) return;
+      const newStatus = statusSelect.value;
+
+      applyBtn.disabled = true;
+      const prevLabel = applyBtn.textContent;
+      applyBtn.textContent = 'Speichere...';
+
+      try {
+        await setAdminUserTestTaskStatus(newStatus, !!resetChecks?.checked);
+      } catch (err) {
+        alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
+      } finally {
+        applyBtn.disabled = false;
+        applyBtn.textContent = prevLabel;
+      }
+    });
+  }
 }
 
 // Load solution into main editor/quiz area (not sidebar)
@@ -921,8 +1199,8 @@ async function loadSolutionIntoMainArea(task) {
         // Convert escaped newlines to actual newlines (safeguard for older data)
         const displaySolution = task.solution_code.replace(/\\n/g, '\n');
         editor.setValue(displaySolution);
-        // Make solution code editable in test mode (admin can edit and save)
-        editor.updateOptions({ readOnly: false });
+        // In user-test mode, solution view is read-only (student code only may be edited).
+        editor.updateOptions({ readOnly: isAdminUserTestMode() ? true : false });
         updateSaveButtonTooltip();
       }
     }
@@ -1527,7 +1805,7 @@ function renderTaskNavigation() {
 async function loadSingleAssignment(assignmentId) {
   try {
     const cachebust = `&t=${Date.now()}`;
-    const testModeParam = window.testMode ? '&test_mode=1' : '';
+    const testModeParam = isAdminAssignmentTestMode() ? '&test_mode=1' : '';
     const studentViewParam = getStudentViewQueryParam();
     const [assignmentRes, tasksRes] = await Promise.all([
       requestJson(`../api/assignments/get.php?id=${assignmentId}${studentViewParam}${testModeParam}${cachebust}`),
@@ -1537,7 +1815,7 @@ async function loadSingleAssignment(assignmentId) {
     assignmentState.assignmentDetails[assignmentId] = assignmentRes.assignment;
     assignmentState.tasksByAssignment[assignmentId] = tasksRes.tasks || [];
 
-    if (window.testMode === true) {
+    if (isAdminTaskLabMode()) {
       assignmentState.tasksByAssignment[assignmentId].forEach((task) => {
         if (assignmentState.taskStatuses[task.id] === undefined) {
           assignmentState.taskStatuses[task.id] = 'unbearbeitet';
@@ -1557,7 +1835,7 @@ async function loadSingleAssignment(assignmentId) {
     }
     
     // In admin test mode, do not load persisted user_tasks progress from DB.
-    if (window.testMode !== true) {
+    if (!isAdminTaskLabMode()) {
       try {
         const testUserParam = getTestUserQueryParam();
         const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
@@ -1622,7 +1900,7 @@ async function loadAssignments() {
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
         // In admin test mode, do not load persisted user_tasks progress from DB.
-        if (window.testMode !== true) {
+        if (!isAdminTaskLabMode()) {
           try {
             const testUserParam = getTestUserQueryParam();
             const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
@@ -1842,12 +2120,14 @@ function renderAssignmentList() {
         </div>
 
         <!-- Bewertungsstatus (assignment-level, Admin/Lehrendenstatus mit Fallback) -->
-        <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;">
           <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Bewertungsstatus:</span>
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${assignmentMeta.background};color:${assignmentMeta.color};font-weight:600;display:inline-flex;align-items:center;gap:6px;">
             ${isAssignmentPassed ? '<span aria-hidden="true" style="color:#15803d;font-weight:800;">✓</span>' : ''}
             <span>${escapeHtml(assignmentMeta.label)}</span>
           </span>
+          ${item.is_late ? `<span title="Verspätet abgegeben" style="font-size:12px;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#b45309;font-weight:600;border:1px solid #fcd34d;">⏰ verspätet</span>` : ''}
+          ${item.is_rework ? `<span title="Zur Nacharbeit eingereicht" style="font-size:12px;padding:2px 8px;border-radius:999px;background:#fef9c3;color:#854d0e;font-weight:600;border:1px solid #fde047;">🔨 Nacharbeit</span>` : ''}
         </div>
 
         ${(() => {
@@ -2662,10 +2942,14 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.currentTask = task;
   assignmentState.currentAssignmentId = assignmentId;
   assignmentState.currentTaskId = taskId;
+  if (isAdminUserTestMode()) {
+    assignmentState.userTestEditorUnlockedByTask[taskId] = false;
+  }
   showTaskDetails(task);
   showTaskQuestionAboveEditor(task);
   renderTaskNavigation();
   updateAttemptsCounter(task);
+  refreshCurrentTaskToolbarForStatus(task);
 
   // For code tasks, wait for editor to be ready
   if (!isQuizTask) {
@@ -2949,6 +3233,8 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     });
     task._changeListenerAdded = true;
   }
+
+  applyUserTestEditorLockState(task);
 }
 
 function updateAttemptsCounter(task) {
@@ -3063,6 +3349,8 @@ async function saveCode(options = {}) {
 
   const { setStatus = true, persist = true } = options;
   const isAdminTestMode = isAdminAssignmentTestMode();
+  const isTaskLabMode = isAdminTaskLabMode();
+  const isUserTestMode = isAdminUserTestMode();
 
   if (!persist) {
     return true;
@@ -3106,9 +3394,9 @@ async function saveCode(options = {}) {
       saveTaskBtn.disabled = true;
     }
 
-    // In admin test mode, save must always target tasks/update.php explicitly
+    // In task-lab mode, save must always target tasks/update.php explicitly
     // so template/solution are persisted reliably (independent of currentFile state).
-    if (isAdminTestMode && assignmentState.solutionMode === true) {
+    if (isTaskLabMode && assignmentState.solutionMode === true) {
       const allowSave = confirmIfTemplateAndSolutionIdentical(task, code, 'solution');
       if (!allowSave) {
         if (saveTaskBtn) {
@@ -3156,9 +3444,9 @@ async function saveCode(options = {}) {
       return true;
     }
 
-    // In admin test mode, regular editor saves task template code.
+    // In task-lab mode, regular editor saves task template code.
     // For folder tasks, keep file-save path only when editing a non-init file.
-    if (isAdminTestMode) {
+    if (isTaskLabMode) {
       const isFolderTask = task && (
         task.folderstructure === 1 ||
         task.folderstructure === true ||
@@ -3221,8 +3509,13 @@ async function saveCode(options = {}) {
       return true;
     }
 
-    // Check if we're editing a folder structure file
-    if (window.currentFile && window.currentFile.taskId) {
+    if (isUserTestMode && assignmentState.solutionMode === true) {
+      throw new Error('Im User-Test-Modus kann nur Studentencode gespeichert werden (nicht Template/Lösung).');
+    }
+
+    // Outside user-test mode, folder-file editing can persist via file API.
+    // In user-test mode we must always save student code via user_tasks/update.
+    if (!isUserTestMode && window.currentFile && window.currentFile.taskId) {
       return await saveTaskFile();
     }
 
@@ -5970,6 +6263,12 @@ function bindAssignmentsEvents() {
   const checkBtn = $('check-btn');
   const submitBtn = $('submit-btn');
   const backToListBtn = $('back-to-list-btn');
+  const adminResetTaskBtn = $('admin-reset-task-btn');
+  const userTestLockBtn = $('user-test-lock-btn');
+  const adminStatusGreyBtn = $('admin-status-grey-btn');
+  const adminStatusYellowBtn = $('admin-status-yellow-btn');
+  const adminStatusGreenBtn = $('admin-status-green-btn');
+  const adminStatusRedBtn = $('admin-status-red-btn');
 
   // Back to list button
   backToListBtn?.addEventListener('click', () => {
@@ -5984,6 +6283,197 @@ function bindAssignmentsEvents() {
   // Submit button
   submitBtn?.addEventListener('click', () => {
     submitTask();
+  });
+
+  if (adminResetTaskBtn && window.TEST_USER_ID && isAdminUserTestMode()) {
+    adminResetTaskBtn.style.display = 'inline-block';
+  }
+
+  if (isAdminUserTestMode()) {
+    if (submitBtn) submitBtn.style.display = 'none';
+    if (adminStatusGreyBtn) adminStatusGreyBtn.style.display = 'inline-block';
+    if (adminStatusYellowBtn) adminStatusYellowBtn.style.display = 'inline-block';
+    if (adminStatusGreenBtn) adminStatusGreenBtn.style.display = 'inline-block';
+    if (adminStatusRedBtn) adminStatusRedBtn.style.display = 'inline-block';
+    const currentStatus = assignmentState.currentTask
+      ? (assignmentState.taskStatuses[assignmentState.currentTask.id] || 'unbearbeitet')
+      : 'unbearbeitet';
+    updateAdminStatusSymbolState(currentStatus);
+  }
+
+  if (userTestLockBtn && isAdminUserTestMode()) {
+    userTestLockBtn.style.display = 'inline-flex';
+    updateUserTestLockButton();
+  }
+
+  userTestLockBtn?.addEventListener('click', () => {
+    if (!isAdminUserTestMode()) return;
+    const taskId = Number(assignmentState.currentTaskId || 0);
+    if (!taskId) return;
+    const current = assignmentState.userTestEditorUnlockedByTask[taskId] === true;
+    assignmentState.userTestEditorUnlockedByTask[taskId] = !current;
+    applyUserTestEditorLockState(assignmentState.currentTask);
+  });
+
+  adminStatusGreyBtn?.addEventListener('click', async () => {
+    if (!isAdminUserTestMode()) return;
+    const task = assignmentState.currentTask;
+    const taskType = task?.task_type || 'code';
+    const isIterative = taskType === 'code_reading' || taskType === 'code_random_complex';
+    const isMC = !['code', 'code_ui', 'code_reading', 'code_random_complex'].includes(taskType);
+    let warning = 'Achtung: ';
+    if (isIterative) {
+      warning += 'Code und alle Iterationen werden zurückgesetzt.';
+    } else if (isMC) {
+      warning += 'Alle bisherigen Antworten werden gelöscht.';
+    } else {
+      warning += 'Der Code wird komplett zurückgesetzt.';
+    }
+    warning += '\n\nFortfahren?';
+    if (!window.confirm(warning)) return;
+    adminStatusGreyBtn.disabled = true;
+    try {
+      await setAdminUserTestTaskStatus('unbearbeitet', true, true, true);
+    } catch (err) {
+      alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
+    } finally {
+      adminStatusGreyBtn.disabled = false;
+    }
+  });
+
+  adminStatusYellowBtn?.addEventListener('click', async () => {
+    if (!isAdminUserTestMode()) return;
+    adminStatusYellowBtn.disabled = true;
+    const task = assignmentState.currentTask;
+    const isIterative = task?.task_type === 'code_reading' || task?.task_type === 'code_random_complex';
+    try {
+      // For iterative tasks reload editor to show last iteration state
+      await setAdminUserTestTaskStatus('in-progress', true, false, isIterative);
+    } catch (err) {
+      alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
+    } finally {
+      adminStatusYellowBtn.disabled = false;
+    }
+  });
+
+  adminStatusGreenBtn?.addEventListener('click', async () => {
+    if (!isAdminUserTestMode()) return;
+    adminStatusGreenBtn.disabled = true;
+    try {
+      await setAdminUserTestTaskStatus('passed', true);
+    } catch (err) {
+      alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
+    } finally {
+      adminStatusGreenBtn.disabled = false;
+    }
+  });
+
+  adminStatusRedBtn?.addEventListener('click', async () => {
+    if (!isAdminUserTestMode()) return;
+    adminStatusRedBtn.disabled = true;
+    try {
+      await setAdminUserTestTaskStatus('failed', true);
+    } catch (err) {
+      alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
+    } finally {
+      adminStatusRedBtn.disabled = false;
+    }
+  });
+
+  adminResetTaskBtn?.addEventListener('click', async () => {
+    const assignmentId = Number(assignmentState.currentAssignmentId || window.ASSIGNMENT_ID || 0);
+    const taskId = Number(assignmentState.currentTaskId || window.TASK_ID || 0);
+    const userId = Number(window.TEST_USER_ID || 0);
+
+    if (!assignmentId || !taskId || !userId) {
+      alert('Reset nicht möglich: Assignment, Task oder Test-User fehlt.');
+      return;
+    }
+
+    const allTasks = assignmentState.tasksByAssignment[assignmentId] || [];
+    const task = (assignmentState.currentTask && Number(assignmentState.currentTask.id) === taskId)
+      ? assignmentState.currentTask
+      : allTasks.find((t) => Number(t.id) === taskId);
+    const taskTitle = task?.title || `#${taskId}`;
+    const userLabel = window.TEST_USER_INFO?.name || window.TEST_USER_INFO?.email || `#${userId}`;
+
+    const confirmed = window.confirm(
+      `Sind Sie sicher?\n\n` +
+      `Teilnehmer: ${userLabel}\n` +
+      `Task: ${taskTitle}\n\n` +
+      `Es werden nur die Checks dieses einen Tasks dieses einen Users auf 0 gesetzt.\n` +
+      `Der Task-Status bleibt unverändert.`
+    );
+    if (!confirmed) return;
+
+    const previousText = adminResetTaskBtn.textContent;
+    adminResetTaskBtn.disabled = true;
+    adminResetTaskBtn.textContent = '...';
+
+    try {
+      const response = await requestJson('../api/admin/assignments/users/reset-task-progress.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          assignment_id: assignmentId,
+          user_id: userId,
+          task_id: taskId
+        })
+      });
+
+      const statusAfter = response.status_after || assignmentState.taskStatuses[taskId] || 'unbearbeitet';
+      assignmentState.taskAttempts[taskId] = 0;
+      assignmentState.taskStatuses[taskId] = statusAfter;
+
+      const isQuizTask = !!(task && task.task_type && !['code', 'code_ui'].includes(task.task_type));
+      const editor = window.editorInstance;
+
+      const saveTaskBtn = $('save-task-btn');
+      const downloadBtn = $('download-btn');
+      const undoBtn = $('undo-btn');
+      const redoBtn = $('redo-btn');
+      const attemptsCounter = $('attempts-counter');
+      const submittedInfo = $('submitted-info');
+
+      if (submittedInfo && !['passed', 'failed'].includes(String(statusAfter))) {
+        submittedInfo.classList.remove('show');
+      }
+      if (editor) editor.updateOptions({ readOnly: false });
+
+      if (saveTaskBtn) {
+        saveTaskBtn.style.display = 'inline-block';
+        updateSaveButtonTooltip();
+      }
+      if (downloadBtn) downloadBtn.style.display = 'inline-block';
+      if (undoBtn) undoBtn.style.display = 'inline-block';
+      if (redoBtn) redoBtn.style.display = 'inline-block';
+
+      if (!isQuizTask) {
+        if (task && task.test_cases) {
+          if (checkBtn) checkBtn.style.display = 'inline-block';
+        } else {
+          if (checkBtn) checkBtn.style.display = 'none';
+        }
+        if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
+        if (attemptsCounter) attemptsCounter.style.display = 'inline-block';
+      }
+
+      if (task) {
+        updateAttemptsCounter(task);
+        updateTaskStatusDisplay(task);
+        updateSubmittedMeta(task);
+        refreshCurrentTaskToolbarForStatus(task);
+      } else {
+        renderTaskNavigation();
+      }
+
+      startActivityTracking(taskId);
+      alert('Checks wurden für diesen Task dieses Users auf 0 gesetzt.');
+    } catch (err) {
+      alert('Reset dieses einzelnen Tasks ist fehlgeschlagen: ' + (err?.message || err));
+    } finally {
+      adminResetTaskBtn.disabled = false;
+      adminResetTaskBtn.textContent = previousText;
+    }
   });
 
   // Save task button - Only bind for non-task cases (when task is not loaded)
@@ -6019,7 +6509,7 @@ function bindAssignmentsEvents() {
     }
     
     const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
-    const shareUrl = `${baseUrl}editor_assignment_test.php?assignment_id=${assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
+    const shareUrl = `${baseUrl}editor_assignment_user_test.php?assignment_id=${assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
     
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -6109,8 +6599,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  // Auto-load assignments if on assignments.php or assignment_editor.php or editor_assignment_test.php
-  if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor') || window.location.pathname.includes('editor_assignment_test')) {
+  // Auto-load assignments if on assignments.php or assignment editor/test views
+  if (window.location.pathname.includes('assignments.php') || window.location.pathname.includes('assignment_editor') || window.location.pathname.includes('editor_assignment_test') || window.location.pathname.includes('editor_assignment_user_test')) {
     console.log('On assignments page - loading assignments');
     
     // If in editor mode with assignment ID, load only that assignment (optimized)

@@ -931,6 +931,6 @@ exit;
     });
   </script>
   <script type="module" src="js/projects.js"></script>
-  <script type="module" src="js/assignments.js?v=20260430b"></script>
+  <script type="module" src="js/assignments.js?v=20260512h"></script>
 </body>
 </html>

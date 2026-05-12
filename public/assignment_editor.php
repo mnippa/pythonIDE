@@ -1336,7 +1336,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20260506b"></script>
+  <script type="module" src="js/assignments.js?v=20260512h"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

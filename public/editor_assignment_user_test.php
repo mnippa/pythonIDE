@@ -1,7 +1,7 @@
 <?php
 /**
- * Assignment Test Editor - Admin test view (no DB persistence)
- * Uses the same layout and script order as assignment_editor.php
+ * Assignment User Test Editor - Admin user-specific mirror view
+ * 1:1 view of one student's task context with admin intervention controls.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -26,18 +26,21 @@ if (!$assignmentId) {
 
 $taskId = isset($_GET['task_id']) ? intval($_GET['task_id']) : null;
 
-// Support test_user_id for admin simulation of student view
 $testUserId = isset($_GET['test_user_id']) ? intval($_GET['test_user_id']) : null;
-$testUserInfo = null;
+if (!$testUserId) {
+  die('test_user_id required');
+}
 
-if ($testUserId) {
-  $redirectUrl = 'editor_assignment_user_test.php?assignment_id=' . (int)$assignmentId;
-  if ($taskId) {
-    $redirectUrl .= '&task_id=' . (int)$taskId;
-  }
-  $redirectUrl .= '&test_user_id=' . (int)$testUserId;
-  header('Location: ' . $redirectUrl);
-  exit;
+$testUserInfo = null;
+$conn = getDbConnection();
+$stmt = $conn->prepare('SELECT id, email, first_name, last_name FROM users WHERE id = ?');
+$stmt->bind_param('i', $testUserId);
+$stmt->execute();
+$result = $stmt->get_result();
+$testUserInfo = $result->fetch_assoc();
+
+if (!$testUserInfo) {
+  die('Test user not found');
 }
 
 $displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
@@ -45,8 +48,17 @@ if ($displayName === '') {
   $displayName = $user['email'] ?? 'Admin';
 }
 
-$isUserTestView = false;
-$isTaskLabView = true;
+// Override display name if testing as student
+if ($testUserId && $testUserInfo) {
+  $studentName = trim(($testUserInfo['first_name'] ?? '') . ' ' . ($testUserInfo['last_name'] ?? ''));
+  if ($studentName === '') {
+    $studentName = $testUserInfo['email'];
+  }
+  $displayName = 'AS ' . $studentName;
+}
+
+$isUserTestView = true;
+$isTaskLabView = false;
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -106,6 +118,30 @@ $isTaskLabView = true;
     .toolbar button{ padding:6px 10px; font-size:13px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; white-space: nowrap; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
     .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
+    .toolbar .icon-btn.status-current-symbol{
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      width: auto !important;
+      min-width: 16px;
+      height: 24px !important;
+      padding: 0 2px !important;
+      border-radius: 0 !important;
+      cursor: default !important;
+      pointer-events: none !important;
+      opacity: 1 !important;
+    }
+    .toolbar .status-icon-current{
+      display:none;
+      align-items:center;
+      justify-content:center;
+      font-size:16px;
+      line-height:1;
+      width:20px;
+      height:24px;
+      margin:0 2px;
+      user-select:none;
+    }
     .toolbar .save-mode-indicator{
       display:none;
       align-items:center;
@@ -926,6 +962,11 @@ $isTaskLabView = true;
   $userInfo = [];
   
   $displayNameEscaped = htmlspecialchars($displayName);
+  $studentDisplayName = trim(($testUserInfo['first_name'] ?? '') . ' ' . ($testUserInfo['last_name'] ?? ''));
+  if ($studentDisplayName === '') {
+    $studentDisplayName = $testUserInfo['email'] ?? ('User #' . (int)$testUserId);
+  }
+  $studentDisplayNameEscaped = htmlspecialchars($studentDisplayName);
   $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
   $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
   
@@ -940,25 +981,32 @@ $isTaskLabView = true;
       <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
       <button id="run-btn">Run</button>
       <button id="check-btn" style="background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
-      <button id="admin-reset-task-btn" class="icon-btn" style="{$adminResetTaskBtnStyle}" title="Nur diesen Task dieses Users resetten (Status/Checks)">↺</button>
-      <button id="submit-btn" style="display:none; background:#10b981; color:#fff; border-color:transparent;">📤 Abgeben</button>
+      <button id="admin-status-grey-btn" class="icon-btn" style="display:none; background:#9ca3af; color:#fff; border-color:#6b7280;" title="Status: unbearbeitet (Code zurücksetzen)">⚪</button>
+      <span id="admin-status-grey-indicator" class="status-icon-current" title="Aktueller Status: unbearbeitet">⚪</span>
+      <button id="admin-status-yellow-btn" class="icon-btn" style="display:none; background:#fbbf24; color:#78350f; border-color:#f59e0b;" title="Status: in Bearbeitung">🟡</button>
+      <span id="admin-status-yellow-indicator" class="status-icon-current" title="Aktueller Status: in Bearbeitung">🟡</span>
+      <button id="admin-status-green-btn" class="icon-btn" style="display:none; background:#10b981; color:#fff; border-color:#059669;" title="Status: bestanden">🟢</button>
+      <span id="admin-status-green-indicator" class="status-icon-current" title="Aktueller Status: bestanden">🟢</span>
+      <button id="admin-status-red-btn" class="icon-btn" style="display:none; background:#ef4444; color:#fff; border-color:#dc2626;" title="Status: failed">🔴</button>
+      <span id="admin-status-red-indicator" class="status-icon-current" title="Aktueller Status: nicht bestanden">🔴</span>
+      <button id="admin-reset-task-btn" class="icon-btn" style="{$adminResetTaskBtnStyle}" title="Nur die Checks dieses Tasks dieses Users auf 0 setzen">↺</button>
       <span id="attempts-counter" style="display:none;"></span>
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
+      <button id="user-test-lock-btn" class="icon-btn" style="display:inline-flex;" title="Editor gesperrt - zum Bearbeiten entsperren">🔒</button>
       <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
       <span id="save-mode-indicator" class="save-mode-indicator"></span>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
-      <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
+      <div id="submitted-info" style="margin:0 8px; font-weight:500; font-size:11px; color:var(--text-primary); align-items:center; gap:6px;">
         <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
-        <span>Abgegeben: <span id="submitted-date"></span></span>
+        <span id="submitted-date" style="font-size:11px;"></span>
         <span>Checks <span id="submitted-checks"></span></span>
         <span>Hints <span id="submitted-hints"></span></span>
       </div>
       <div style="flex:1"></div>
       <div class="user-bar">
         <div class="user-info"{$toolbarTextColor}>
-          <span>{$displayNameEscaped}</span>
-          {$adminBadge}
+          <span>{$studentDisplayNameEscaped}</span>
         </div>
         {$adminLink}
         <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
@@ -1053,8 +1101,8 @@ HTML;
 
     window.ADMIN_TASK_LAB_VIEW = <?php echo $isTaskLabView ? 'true' : 'false'; ?>;
     window.ADMIN_USER_TEST_VIEW = <?php echo $isUserTestView ? 'true' : 'false'; ?>;
-    window.testMode = window.ADMIN_TASK_LAB_VIEW === true;
-    window.TEST_MODE = window.ADMIN_TASK_LAB_VIEW === true;
+    window.testMode = window.ADMIN_TASK_LAB_VIEW === true || window.ADMIN_USER_TEST_VIEW === true;
+    window.TEST_MODE = window.ADMIN_TASK_LAB_VIEW === true || window.ADMIN_USER_TEST_VIEW === true;
     window.ADMIN_ASSIGNMENT_TEST = true;
     window.EDITOR_MODE = true;
     window.ASSIGNMENT_ID = <?= $assignmentId ?>;

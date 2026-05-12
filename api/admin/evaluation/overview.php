@@ -100,10 +100,14 @@ function calcAssignmentTiming(array $row): array {
 
 function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskStats): array {
     $rawStatus = (string)($row['raw_status'] ?? 'assigned');
-    $totalTasks = (int)($taskStats['total_tasks'] ?? 0);
-    $workedTasks = (int)($taskStats['worked_tasks'] ?? 0);
-    $passedTasks = (int)($taskStats['passed_tasks'] ?? 0);
-    $finalizedTasks = (int)($taskStats['finalized_tasks'] ?? 0);
+    $statusMap = [
+        'assigned' => 'Zugewiesen',
+        'in_progress' => 'In Bearbeitung',
+        'submitted' => 'Eingereicht',
+        'passed' => 'Bestanden',
+        'failed' => 'Nicht bestanden',
+        'rework' => 'Nacharbeit',
+    ];
 
     $isLate = !empty($row['is_late']);
     if (!$isLate && !empty($row['submitted_at']) && !empty($row['effective_due_date'])) {
@@ -112,61 +116,11 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         $isLate = $submittedAt !== null && $dueDate !== null && $submittedAt > $dueDate;
     }
 
-    $allPassed = $totalTasks > 0 && $passedTasks >= $totalTasks;
-    $allWorked = $totalTasks > 0 && $finalizedTasks >= $totalTasks;
-    $isRework = isReworkState($row, $rawStatus, $allPassed, $allWorked);
-
-    if ($isRework) {
-        return [
-            'status' => 'rework',
-            'label' => 'Nacharbeit',
-            'is_late_completion' => false,
-            'is_rework' => true,
-        ];
-    }
-
-    if ($rawStatus === 'passed' || $allPassed) {
-        $status = $isLate ? 'passed_delayed' : 'passed';
-        return [
-            'status' => $status,
-            'label' => $isLate ? 'Bestanden (verspaetet)' : 'Bestanden',
-            'is_late_completion' => $isLate,
-            'is_rework' => false,
-        ];
-    }
-
-    if (($rawStatus === 'submitted' && $workedTasks > 0) || $allWorked) {
-        return [
-            'status' => $isLate ? 'late_completed' : 'completed',
-            'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
-            'is_late_completion' => $isLate,
-            'is_rework' => false,
-        ];
-    }
-
-    if ($timing['phase'] === 'closed') {
-        return [
-            'status' => 'missed',
-            'label' => 'Verpasst',
-            'is_late_completion' => false,
-            'is_rework' => false,
-        ];
-    }
-
-    if ($workedTasks > 0 || in_array($rawStatus, ['in_progress', 'submitted', 'failed'], true)) {
-        return [
-            'status' => 'in_progress',
-            'label' => 'In Bearbeitung',
-            'is_late_completion' => false,
-            'is_rework' => false,
-        ];
-    }
-
     return [
-        'status' => 'assigned',
-        'label' => 'Zugewiesen',
+        'status' => in_array($rawStatus, array_keys($statusMap), true) ? $rawStatus : 'assigned',
+        'label' => $statusMap[$rawStatus] ?? 'Zugewiesen',
         'is_late_completion' => false,
-        'is_rework' => false,
+        'is_rework' => $rawStatus === 'rework',
     ];
 }
 
@@ -209,6 +163,7 @@ try {
             ua.status AS raw_status,
             ua.submitted_at,
             ua.is_late,
+            ua.is_rework,
             ua.due_date AS user_due_date,
             a.due_date AS assignment_due_date,
             COALESCE(ua.due_date, a.due_date) AS effective_due_date,
@@ -234,6 +189,7 @@ try {
                 ua.status AS raw_status,
                 ua.submitted_at,
                 ua.is_late,
+                ua.is_rework,
                 ua.due_date AS user_due_date,
                 a.due_date AS assignment_due_date,
                 COALESCE(ua.due_date, a.due_date) AS effective_due_date,

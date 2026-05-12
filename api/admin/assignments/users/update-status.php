@@ -50,7 +50,7 @@ try {
         if ($existing) {
             $update = $conn->prepare(
                 'UPDATE user_assignments
-                 SET status = ?, due_date = ?, submitted_at = NULL, is_late = 0
+                 SET status = ?, due_date = ?, submitted_at = NULL, is_rework = 1
                  WHERE id = ?'
             );
             $mappedStatus = 'rework';
@@ -61,8 +61,8 @@ try {
             }
         } else {
             $insert = $conn->prepare(
-                'INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by, due_date, submitted_at, is_late)
-                 VALUES (?, ?, ?, ?, ?, NULL, 0)'
+                'INSERT INTO user_assignments (user_id, assignment_id, status, assigned_by, due_date, submitted_at, is_late, is_rework)
+                 VALUES (?, ?, ?, ?, ?, NULL, 0, 1)'
             );
             $mappedStatus = 'rework';
             $adminId = (int)$admin['id'];
@@ -102,12 +102,11 @@ try {
     }
 
     // passed_delayed is not a DB value; it maps to passed + is_late=1
+    // Keep flags independent from regular grading actions.
     $isLate = null; // null = do not touch is_late
     if ($status === 'passed_delayed') {
         $status = 'passed';
         $isLate = 1;
-    } elseif ($status === 'passed') {
-        $isLate = 0; // explicitly clear is_late when setting plain passed
     }
 
     // General alias map for other lifecycle labels that may arrive

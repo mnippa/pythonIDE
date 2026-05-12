@@ -586,17 +586,41 @@ if ($stmt->execute()) {
         $ivUpdateStmt->execute();
     }
 
-    $assignmentStatus = $status === 'passed' ? 'submitted' : 'in_progress';
     $assignmentId = (int)$schedule['assignment_id'];
     $assignedByForProgress = (int)$userId;
+
+    // Derive assignment status from actual task completion state
+    $openTasksStmt = $conn->prepare(
+        'SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("unbearbeitet", "in-progress") THEN 1 ELSE 0 END) AS open_cnt,
+            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("passed", "failed") THEN 1 ELSE 0 END) AS done_cnt
+         FROM tasks t
+         LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
+         WHERE t.assignment_id = ?'
+    );
+    $openTasksStmt->bind_param('ii', $userId, $assignmentId);
+    $openTasksStmt->execute();
+    $openRow = $openTasksStmt->get_result()->fetch_assoc();
+    $aTotal  = (int)($openRow['total']    ?? 0);
+    $aOpen   = (int)($openRow['open_cnt'] ?? 0);
+    $aDone   = (int)($openRow['done_cnt'] ?? 0);
+
+    if ($aTotal === 0 || $aOpen === $aTotal) {
+        $assignmentStatus = 'assigned';
+    } elseif ($aDone === $aTotal) {
+        $assignmentStatus = 'submitted';
+    } else {
+        $assignmentStatus = 'in_progress';
+    }
 
     $assignmentUpsert = $conn->prepare(
         'INSERT INTO user_assignments (assignment_id, user_id, status, submitted_at, is_late, assigned_by)
          VALUES (?, ?, ?, NOW(), ?, ?)
          ON DUPLICATE KEY UPDATE
             status = VALUES(status),
-            submitted_at = NOW(),
-            is_late = VALUES(is_late)'
+            submitted_at = IF(VALUES(status) = "submitted", NOW(), submitted_at),
+            is_late = GREATEST(COALESCE(is_late, 0), VALUES(is_late))'
     );
     if ($assignmentUpsert) {
         $lateInt = $isLateSubmission ? 1 : 0;

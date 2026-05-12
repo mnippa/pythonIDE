@@ -545,7 +545,7 @@ function bindEvents() {
     if (testViewBtn) {
       const userId = parseInt(testViewBtn.dataset.userId, 10);
       if (!userId || !state.assignmentId) return;
-      const url = `editor_assignment_test.php?assignment_id=${state.assignmentId}&test_user_id=${userId}`;
+      const url = `editor_assignment_user_test.php?assignment_id=${state.assignmentId}&test_user_id=${userId}`;
       window.open(url, '_blank');
       return;
     }
@@ -579,7 +579,7 @@ function bindEvents() {
       const userId = parseInt(testTaskBtn.dataset.userId, 10);
       const taskId = parseInt(testTaskBtn.dataset.taskId, 10);
       if (!userId || !taskId || !state.assignmentId) return;
-      const url = `editor_assignment_test.php?assignment_id=${state.assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
+      const url = `editor_assignment_user_test.php?assignment_id=${state.assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
       window.open(url, '_blank');
       return;
     }
