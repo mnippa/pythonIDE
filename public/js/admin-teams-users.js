@@ -52,6 +52,179 @@ let teamsData = [];
 let semestersData = [];
 let teamMembersData = [];
 let teamAssignmentsData = [];
+let teamMatrixDetailCache = new Map();
+let teamMatrixDetailBox = null;
+let teamMatrixHideTimer = null;
+let teamMatrixActiveTrigger = null;
+
+function formatMinutes(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  return String(Math.round(total / 60));
+}
+
+function ensureTeamMatrixDetailBox() {
+  if (teamMatrixDetailBox) return teamMatrixDetailBox;
+  const box = document.createElement('div');
+  box.id = 'team-matrix-detail-box';
+  box.style.position = 'fixed';
+  box.style.zIndex = '3000';
+  box.style.minWidth = '420px';
+  box.style.maxWidth = '560px';
+  box.style.padding = '14px 16px';
+  box.style.borderRadius = '10px';
+  box.style.border = '1px solid rgba(148,163,184,0.5)';
+  box.style.background = 'rgba(15,23,42,0.6)';
+  box.style.backdropFilter = 'blur(4px)';
+  box.style.color = '#f8fafc';
+  box.style.boxShadow = '0 10px 24px rgba(2,6,23,0.25)';
+  box.style.display = 'none';
+  box.style.fontSize = '13px';
+  box.style.lineHeight = '1.5';
+
+  box.addEventListener('mouseenter', () => {
+    if (teamMatrixHideTimer) {
+      clearTimeout(teamMatrixHideTimer);
+      teamMatrixHideTimer = null;
+    }
+  });
+  box.addEventListener('mouseleave', () => {
+    hideTeamMatrixDetailBox();
+  });
+
+  document.body.appendChild(box);
+  teamMatrixDetailBox = box;
+  return box;
+}
+
+function hideTeamMatrixDetailBox() {
+  if (!teamMatrixDetailBox) return;
+  teamMatrixDetailBox.style.display = 'none';
+  teamMatrixDetailBox.innerHTML = '';
+  teamMatrixActiveTrigger = null;
+}
+
+function scheduleHideTeamMatrixDetailBox() {
+  if (teamMatrixHideTimer) {
+    clearTimeout(teamMatrixHideTimer);
+  }
+  teamMatrixHideTimer = setTimeout(() => {
+    const boxHovered = teamMatrixDetailBox && teamMatrixDetailBox.matches(':hover');
+    const triggerHovered = teamMatrixActiveTrigger && teamMatrixActiveTrigger.matches(':hover');
+    if (!boxHovered && !triggerHovered) {
+      hideTeamMatrixDetailBox();
+    }
+  }, 120);
+}
+
+function positionTeamMatrixDetailBox(trigger) {
+  const box = ensureTeamMatrixDetailBox();
+  const rect = trigger.getBoundingClientRect();
+  const margin = 10;
+
+  box.style.left = '0px';
+  box.style.top = '0px';
+  box.style.display = 'block';
+
+  const boxRect = box.getBoundingClientRect();
+  let left = rect.left + rect.width + margin;
+  let top = rect.top - 4;
+
+  if (left + boxRect.width > window.innerWidth - 8) {
+    left = rect.left - boxRect.width - margin;
+  }
+  if (left < 8) left = 8;
+
+  if (top + boxRect.height > window.innerHeight - 8) {
+    top = window.innerHeight - boxRect.height - 8;
+  }
+  if (top < 8) top = 8;
+
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+}
+
+function buildTeamMatrixDetailHtml(detail) {
+  const user = detail?.user || {};
+  const tasks = Array.isArray(detail?.tasks) ? detail.tasks : [];
+  let passed = 0;
+  let failed = 0;
+  let inProgress = 0;
+  let open = 0;
+  for (const task of tasks) {
+    const s = task?.status || 'unbearbeitet';
+    if (s === 'passed') passed++;
+    else if (s === 'failed') failed++;
+    else if (s === 'in-progress') inProgress++;
+    else open++;
+  }
+
+  const checksTotal = tasks.reduce((sum, t) => sum + (Number(t.attempts) || 0), 0);
+  const runsTotal = tasks.reduce((sum, t) => sum + (Number(t.run_count) || 0), 0);
+  const hintsTotal = tasks.reduce((sum, t) => sum + (Number(t.hints_count) || 0), 0);
+  const activeSecondsTotal = tasks.reduce((sum, t) => sum + (Number(t.active_seconds) || 0), 0);
+
+  const flags = [
+    user.is_late ? '🕐 verspätet' : null,
+    user.is_rework ? '🔨 Nacharbeit' : null,
+  ].filter(Boolean).join(' · ');
+
+  return `
+    <div style="font-weight:700;font-size:14px;margin-bottom:6px;">${escapeHtml(detail.assignment_title || 'Assignment')} (${tasks.length} Tasks)</div>
+    <div style="margin-bottom:4px;">${escapeHtml(user.full_name || user.email || '-')} (${escapeHtml(user.email || '-')})</div>
+    <div style="margin-bottom:4px;">Status: <strong>${escapeHtml(user.status_label || user.status || '-')}</strong></div>
+    <div style="margin-bottom:4px;">Hints: <strong>${hintsTotal}</strong> · Checks: <strong>${checksTotal}</strong> · Runs: <strong>${runsTotal}</strong></div>
+    <div style="margin-bottom:4px;">Zeit: <strong>${formatMinutes(activeSecondsTotal)} min</strong></div>
+    <div style="margin-bottom:2px;">Tasks: ⚪${open} · 🟡${inProgress} · 🟢${passed} · 🔴${failed}</div>
+    ${flags ? `<div style="margin-top:4px;">${flags}</div>` : ''}
+  `;
+}
+
+async function showTeamMatrixDetail(triggerEl) {
+  const userId = Number(triggerEl.dataset.userId || 0);
+  const assignmentId = Number(triggerEl.dataset.assignmentId || 0);
+  if (!userId || !assignmentId) return;
+
+  if (teamMatrixHideTimer) {
+    clearTimeout(teamMatrixHideTimer);
+    teamMatrixHideTimer = null;
+  }
+
+  teamMatrixActiveTrigger = triggerEl;
+  const box = ensureTeamMatrixDetailBox();
+  box.innerHTML = 'Lade Details...';
+  positionTeamMatrixDetailBox(triggerEl);
+
+  const cacheKey = `${assignmentId}:${userId}`;
+  if (!teamMatrixDetailCache.has(cacheKey)) {
+    try {
+      const detail = await teamsUsersRequestJson(`../api/admin/evaluation/user-detail.php?assignment_id=${encodeURIComponent(assignmentId)}&user_id=${encodeURIComponent(userId)}`);
+      teamMatrixDetailCache.set(cacheKey, { ok: true, data: detail });
+    } catch (err) {
+      teamMatrixDetailCache.set(cacheKey, { ok: false, error: err.message || 'Fehler beim Laden' });
+    }
+  }
+
+  if (teamMatrixActiveTrigger !== triggerEl) return;
+  const entry = teamMatrixDetailCache.get(cacheKey);
+  box.innerHTML = entry?.ok
+    ? buildTeamMatrixDetailHtml(entry.data)
+    : `<div style="color:#fecaca;">Detailansicht konnte nicht geladen werden: ${escapeHtml(entry?.error || 'Unbekannter Fehler')}</div>`;
+  positionTeamMatrixDetailBox(triggerEl);
+}
+
+function bindTeamMatrixDetailHover() {
+  const triggers = document.querySelectorAll('.team-matrix-dot-trigger[data-user-id][data-assignment-id]');
+  triggers.forEach((trigger) => {
+    if (trigger.dataset.boundHover === '1') return;
+    trigger.dataset.boundHover = '1';
+    trigger.addEventListener('mouseenter', () => {
+      showTeamMatrixDetail(trigger);
+    });
+    trigger.addEventListener('mouseleave', () => {
+      scheduleHideTeamMatrixDetailBox();
+    });
+  });
+}
 
 function toMysqlDateTime(localValue) {
   if (!localValue) return null;
@@ -233,6 +406,7 @@ async function loadTeamMembers(teamId) {
 function renderTeamMatrix(data, errorMessage = null) {
   const head = $('team-matrix-head');
   const body = $('team-matrix-body');
+  hideTeamMatrixDetailBox();
   
   if (!head || !body) return;
 
@@ -286,7 +460,10 @@ function renderTeamMatrix(data, errorMessage = null) {
       let flags = '';
       if (isLate) flags += '<span title="Verspätet" style="margin-left:2px;">🕐</span>';
       if (isRework) flags += '<span title="Nacharbeit" style="margin-left:2px;">🔨</span>';
-      return `<td style="text-align:center;white-space:nowrap;">${status ? ampelDot(status) : '<span style="color:#e5e7eb;">–</span>'}${flags}</td>`;
+      const dotHtml = status
+        ? `<span class="team-matrix-dot-trigger" data-user-id="${u.id}" data-assignment-id="${a.id}" style="display:inline-flex;align-items:center;cursor:help;">${ampelDot(status)}</span>`
+        : '<span style="color:#e5e7eb;">–</span>';
+      return `<td style="text-align:center;white-space:nowrap;">${dotHtml}${flags}</td>`;
     }).join('');
     const summaryColor = u.passed > 0 && u.passed === u.total ? '#15803d' : (u.passed > 0 ? '#b45309' : '#6b7280');
     const summary = `<span style="font-weight:700;color:${summaryColor};">${u.passed}/${u.total}</span>`;
@@ -296,6 +473,8 @@ function renderTeamMatrix(data, errorMessage = null) {
       <td style="text-align:center;">${summary}</td>
     </tr>`;
   }).join('');
+
+  bindTeamMatrixDetailHover();
 }
 
 async function loadTeamAssignments(teamId) {

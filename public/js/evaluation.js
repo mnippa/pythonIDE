@@ -336,12 +336,15 @@ function renderParticipants() {
         <span style="width:${Math.round(inProgress/total*100)}%;background:#facc15;"></span>
       </div>` : '';
 
+    const failedTitle = currentRawStatus === 'rework' ? 'nacharbeit offen' : 'nicht bestanden';
+    const failedEmoji = currentRawStatus === 'rework' ? '🟡' : '🔴';
+
     const taskCounts = total > 0
       ? `${taskBar}<span style="font-size:11px;color:#6b7280;">
           ${untouched > 0 ? `<span title="unbearbeitet">⚪${untouched}</span> ` : ''}
           ${inProgress > 0 ? `<span title="laufend">🟡${inProgress}</span> ` : ''}
           ${passed > 0 ? `<span title="bestanden">🟢${passed}</span> ` : ''}
-          ${failed > 0 ? `<span title="nacharbeit offen">🔴${failed}</span> ` : ''}
+          ${failed > 0 ? `<span title="${failedTitle}">${failedEmoji}${failed}</span> ` : ''}
         </span>`
       : '<span style="font-size:11px;color:#9ca3af;">–</span>';
 
@@ -411,6 +414,7 @@ function getStatusDot(status) {
     in_progress: 'status-in-progress',
     'in-progress': 'status-in-progress',
     rework: 'status-in-progress',
+    rework_open: 'status-in-progress',
     submitted: 'status-in-progress',
     completed: 'status-completed',
     late_completed: 'status-late-completed',
@@ -443,10 +447,12 @@ async function openUserDetail(userId) {
     const tr = document.createElement('tr');
     const activeSeconds = task.active_seconds || 0;
     const timeFormatted = formatTime(activeSeconds);
+    const isReworkOpenTask = task.status === 'failed' && /nacharbeit offen/i.test(task.status_label || '');
+    const dotStatus = isReworkOpenTask ? 'rework_open' : task.status;
     tr.innerHTML = `
       <td class="mono">${task.position}</td>
       <td>${escapeHtml(task.title)}</td>
-      <td>${getStatusDot(task.status)} ${task.status_label}</td>
+      <td>${getStatusDot(dotStatus)} ${task.status_label}</td>
       <td class="num-right">${task.attempts}</td>
       <td class="num-right">${task.run_count}</td>
       <td class="num-right">${timeFormatted}</td>

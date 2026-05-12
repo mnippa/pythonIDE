@@ -100,7 +100,7 @@ try {
         $isLate = !empty($row['is_late']);
         $rework = !empty($row['is_rework']);
         $userMap[$uid]['statuses'][$aid] = [
-            'status' => mapStatus($raw, $isLate),
+            'status' => mapStatus($raw, $isLate, $rework),
             'is_late' => $isLate,
             'is_rework' => $rework,
         ];
@@ -134,7 +134,8 @@ try {
     jsonResponse(['ok' => false, 'error' => 'Failed to load team matrix'], 500);
 }
 
-function mapStatus(string $raw, bool $late): string {
+function mapStatus(string $raw, bool $late, bool $isRework): string {
+    if ($isRework) return 'rework';
     if ($raw === 'passed') return $late ? 'passed_delayed' : 'passed';
     if ($raw === 'rework') return 'rework';
     if ($raw === 'failed') return 'failed';

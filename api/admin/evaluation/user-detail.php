@@ -151,6 +151,7 @@ try {
     $hasAssignmentTeamId = $columnExists($conn, 'user_assignments', 'team_id');
     $hasUserTasks = $tableExists($conn, 'user_tasks');
     $hasRunCount = $hasUserTasks && $columnExists($conn, 'user_tasks', 'run_count');
+    $hasHintsRevealed = $hasUserTasks && $columnExists($conn, 'user_tasks', 'hints_revealed');
     $hasActiveSeconds = $hasUserTasks && $columnExists($conn, 'user_tasks', 'active_seconds');
 
     $sql = '
@@ -237,10 +238,11 @@ try {
     $tasks = [];
     if ($hasUserTasks) {
         $runSelect = $hasRunCount ? ', ut.run_count' : '';
+        $hintsSelect = $hasHintsRevealed ? ', IFNULL(JSON_LENGTH(ut.hints_revealed), 0) AS hints_count' : ', 0 AS hints_count';
         $activeSelect = $hasActiveSeconds ? ', ut.active_seconds' : '';
         $taskSql = '
             SELECT t.id, t.title, t.position,
-                   ut.status, ut.attempts' . $runSelect . $activeSelect . '
+                   ut.status, ut.attempts' . $runSelect . $hintsSelect . $activeSelect . '
             FROM tasks t
             LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
             WHERE t.assignment_id = ?
@@ -265,6 +267,7 @@ try {
         $taskStatus = $hasUserTasks ? ($row['status'] ?? 'unbearbeitet') : 'unbearbeitet';
         $taskStatusLabel = $taskStatusLabelMap[$taskStatus] ?? $taskStatus;
         $runCount = $hasRunCount && isset($row['run_count']) ? (int)$row['run_count'] : 0;
+        $hintsCount = isset($row['hints_count']) ? (int)$row['hints_count'] : 0;
         $activeSeconds = $hasActiveSeconds && isset($row['active_seconds']) ? (int)$row['active_seconds'] : 0;
         $tasks[] = [
             'id' => (int)$row['id'],
@@ -274,6 +277,7 @@ try {
             'status_label' => $taskStatusLabel,
             'attempts' => $hasUserTasks && $row['attempts'] !== null ? (int)$row['attempts'] : 0,
             'run_count' => $runCount,
+            'hints_count' => $hintsCount,
             'active_seconds' => $activeSeconds
         ];
     }
