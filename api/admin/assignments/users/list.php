@@ -380,7 +380,7 @@ try {
             'graded_at' => $row['graded_at'] ?? null,
             'graded_by_last_name' => $row['graded_by_last_name'] ?? null,
             'effective_due_date' => $row['effective_due_date'] ?? null,
-            'is_late' => !empty($row['is_late']),
+            'is_late' => $displayStatus['is_late'] ?? !empty($row['is_late']),
             'is_late_completion' => $displayStatus['is_late_completion'],
             'is_rework' => $displayStatus['is_rework'],
             'timing_phase' => $timing['phase'],

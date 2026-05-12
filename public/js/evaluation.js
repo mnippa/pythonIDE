@@ -350,6 +350,12 @@ function renderParticipants() {
     const subFmt = fmtDateOnly(u.submitted_at);
     const gradFmtDate = fmtDateOnly(u.graded_at);
     const graderLastName = cleanLastName(u.graded_by_last_name);
+    const flagsHtml = `
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        ${u.is_late ? '<span title="Verspätet abgegeben" style="font-size:11px;padding:2px 7px;border-radius:999px;background:#fef3c7;color:#b45309;font-weight:700;border:1px solid #fcd34d;">🕐 verspätet</span>' : ''}
+        ${u.is_rework ? '<span title="Nacharbeit angefordert" style="font-size:11px;padding:2px 7px;border-radius:999px;background:#fef9c3;color:#854d0e;font-weight:700;border:1px solid #fde047;">🔨 Nacharbeit</span>' : ''}
+      </div>
+    `;
     const rel = fmtRelativeToDue(u.submitted_at, u.effective_due_date);
     const relBadge = rel
       ? `<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;background:${rel.late ? '#fef3c7' : '#f0fdf4'};color:${rel.late ? '#b45309' : '#166534'};">${escapeHtml(rel.label)}</span>`
@@ -382,6 +388,7 @@ function renderParticipants() {
           <option value="passed_delayed"${currentRawStatus === 'passed_delayed'? 'selected' : ''}>Bestanden (verspaetet)</option>
           <option value="failed"        ${currentRawStatus === 'failed'        ? 'selected' : ''}>Nicht bestanden</option>
         </select>
+        ${flagsHtml}
         ${gradedInfoHtml}
       </td>
       <td class="mono num-right">${formatInt(u.run_count)}</td>

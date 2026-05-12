@@ -119,6 +119,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
     return [
         'status' => in_array($rawStatus, array_keys($statusMap), true) ? $rawStatus : 'assigned',
         'label' => $statusMap[$rawStatus] ?? 'Zugewiesen',
+        'is_late' => $isLate,
         'is_late_completion' => false,
         'is_rework' => $rawStatus === 'rework',
     ];
@@ -317,6 +318,7 @@ try {
     $user['status_label'] = $displayStatus['label'];
     $user['is_late_completion'] = $displayStatus['is_late_completion'];
     $user['raw_status'] = $rawStatus;
+    $user['is_late'] = $displayStatus['is_late'] ?? false;
     $user['is_rework'] = $displayStatus['is_rework'];
 
     jsonResponse([

@@ -418,6 +418,6 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
     </div>
   </div>
 
-  <script src="js/evaluation.js?v=4"></script>
+  <script src="js/evaluation.js?v=5"></script>
 </body>
 </html>

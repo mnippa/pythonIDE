@@ -176,6 +176,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         return [
             'status' => 'rework',
             'label' => 'Nacharbeit',
+            'is_late' => $isLate,
             'is_late_completion' => false,
             'is_rework' => true,
         ];
@@ -186,6 +187,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         return [
             'status' => $status,
             'label' => $isLate ? 'Bestanden (verspaetet)' : 'Bestanden',
+            'is_late' => $isLate,
             'is_late_completion' => $isLate,
             'is_rework' => false,
         ];
@@ -195,6 +197,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         return [
             'status' => $isLate ? 'late_completed' : 'completed',
             'label' => $isLate ? 'Verspaetet abgeschlossen' : 'Abgeschlossen',
+            'is_late' => $isLate,
             'is_late_completion' => $isLate,
             'is_rework' => false,
         ];
@@ -204,6 +207,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         return [
             'status' => 'missed',
             'label' => 'Verpasst',
+            'is_late' => $isLate,
             'is_late_completion' => false,
             'is_rework' => false,
         ];
@@ -213,6 +217,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
         return [
             'status' => 'in_progress',
             'label' => 'In Bearbeitung',
+            'is_late' => $isLate,
             'is_late_completion' => false,
             'is_rework' => false,
         ];
@@ -221,6 +226,7 @@ function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskSta
     return [
         'status' => 'assigned',
         'label' => 'Zugewiesen',
+        'is_late' => $isLate,
         'is_late_completion' => false,
         'is_rework' => false,
     ];
@@ -340,7 +346,7 @@ foreach ($rows as $row) {
         'due_date' => $row['effective_due_date'],
         'hard_deadline' => $row['hard_deadline'],
         'allow_late_submission' => isset($row['allow_late_submission']) ? (bool)$row['allow_late_submission'] : true,
-        'is_late' => isset($row['is_late']) ? (bool)$row['is_late'] : false,
+        'is_late' => $displayStatus['is_late'] ?? (isset($row['is_late']) ? (bool)$row['is_late'] : false),
         'is_rework' => isset($row['is_rework']) ? (bool)$row['is_rework'] : false,
         'timing_phase' => $timing['phase'],
         'days_remaining' => $timing['days_remaining'],
