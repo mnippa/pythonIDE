@@ -1083,7 +1083,7 @@ if ($displayName === '') {
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
       <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>
-      <button id="share-btn" class="icon-btn" style="display:none;" title="Mit Admin teilen">🔗</button>
+      <button id="share-btn" class="icon-btn" style="display:none;" title="Support Ticket erstellen & Link teilen">🎫</button>
       <div id="submitted-info" style="margin:0 12px; font-weight:600; color:var(--text-primary);">
         <span id="submitted-status" style="width:12px; height:12px; border-radius:50%; flex-shrink:0;"></span>
         <span>Abgegeben: <span id="submitted-date"></span></span>

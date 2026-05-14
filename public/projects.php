@@ -227,8 +227,9 @@ if ($displayName === '') {
     .project-navigation {
       border-bottom: 2px solid var(--border);
       background: var(--panel);
-      flex: 0 0 220px;
-      min-height: 180px;
+      flex: 0 0 auto;
+      min-height: 140px;
+      max-height: 38vh;
       overflow-y: auto;
       overflow-x: hidden;
       padding: 8px;
@@ -242,8 +243,8 @@ if ($displayName === '') {
       background: var(--bg);
       display: flex;
       flex-direction: column;
-      flex: 1 1 auto;
-      min-height: 220px;
+      flex: 1 1 0;
+      min-height: 0;
       overflow: hidden;
       font-size: 13px;
     }
@@ -327,12 +328,12 @@ if ($displayName === '') {
     
     /* Project Details (bottom) */
     .project-details-content {
-      flex: 0 0 180px;
+      flex: 0 0 auto;
+      min-height: 120px;
       padding: 12px;
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.6;
-      min-height: 0;
       display: block;
     }
     

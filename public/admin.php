@@ -320,6 +320,29 @@ if ($displayName === '') {
       background-color: #fee2e2;
       color: #991b1b;
     }
+
+    .ticket-note {
+      max-width: 320px;
+      color: var(--hspf-text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ticket-token {
+      font-family: var(--hspf-font-mono);
+      font-size: 12px;
+      color: var(--hspf-text-muted);
+    }
+
+    .ticket-open-btn {
+      color: #047857;
+    }
+
+    .ticket-open-btn:hover {
+      background-color: #d1fae5;
+      color: #065f46;
+    }
     
     /* Modal Styles */
     .modal {
@@ -545,6 +568,7 @@ if ($displayName === '') {
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="projects">Meine Projekte</button>
       <button class="tab" data-tab="assignments">Assignments</button>
+      <button class="tab" data-tab="tickets">Tickets</button>
       <button class="tab" data-tab="teams">Teams</button>
       <button class="tab" data-tab="users">Users</button>
     </div>
@@ -719,6 +743,43 @@ if ($displayName === '') {
         </div>
       </div>
 
+    </section>
+
+    <section class="panel" id="tab-tickets">
+      <div class="admin-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md); gap: var(--hspf-spacing-md); flex-wrap: wrap;">
+          <div>
+            <h2 style="margin: 0;">Support Tickets</h2>
+            <div class="admin-card-subtitle" id="tickets-status">Eingehende Hilfsanfragen aus dem Assignment-Editor.</div>
+          </div>
+          <div style="display: flex; gap: var(--hspf-spacing-sm);">
+            <button class="hspf-btn hspf-btn-primary" type="button" id="tickets-refresh-btn">Aktualisieren</button>
+            <button class="hspf-btn hspf-btn-danger" type="button" id="tickets-delete-all-btn">Alle löschen</button>
+          </div>
+        </div>
+
+        <div class="search-filter">
+          <input type="text" id="tickets-search" placeholder="Nach User, E-Mail, Assignment, Token oder Notiz suchen..." />
+        </div>
+
+        <div style="overflow:auto;">
+          <table id="tickets-table">
+            <thead>
+              <tr>
+                <th>Zeit</th>
+                <th>User</th>
+                <th>E-Mail</th>
+                <th>Assignment</th>
+                <th>Notiz</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tickets-body">
+              <tr><td colspan="6" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Tickets werden geladen...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="tab-teams">

@@ -1,6 +1,7 @@
 const state = {
   assignments: [],
   projects: [],
+  tickets: [],
   users: [],
   tasks: [],
   currentAssignmentId: null,
@@ -22,6 +23,8 @@ const state = {
   projectsTotal: 0,
   projectsLimit: 50,
   projectsLoaded: false,
+  ticketsFilter: '',
+  ticketsLoaded: false,
   deploySyncBusy: false,
   deploySyncPendingPayload: null
 };
@@ -317,6 +320,151 @@ function setActiveTab(tab) {
     // Show tasks section when returning to assignments if an assignment was selected
     if (tasksSection) tasksSection.style.display = 'block';
   }
+
+  if (tab === 'tickets' && !state.ticketsLoaded) {
+    loadTickets().catch((err) => {
+      console.error('Failed to load tickets:', err);
+    });
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  window.history.replaceState({}, '', url.toString());
+}
+
+function formatRelativeTicketTime(dateTimeStr) {
+  if (!dateTimeStr) return '-';
+  const date = new Date(String(dateTimeStr).replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const now = new Date();
+  const diffSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+  if (diffSeconds < 60) return 'gerade eben';
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h`;
+  return `${formatCompactDate(dateTimeStr)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function getFilteredTickets() {
+  const query = (state.ticketsFilter || '').trim().toLowerCase();
+  if (!query) return [...state.tickets];
+
+  return state.tickets.filter((ticket) => [
+    ticket.user_name,
+    ticket.user_email,
+    ticket.assignment_title,
+    ticket.token,
+    ticket.description
+  ].some((value) => String(value || '').toLowerCase().includes(query)));
+}
+
+function renderTickets() {
+  const body = $('tickets-body');
+  const statusEl = $('tickets-status');
+  if (!body) return;
+
+  const tickets = getFilteredTickets();
+  if (statusEl) {
+    statusEl.textContent = tickets.length === state.tickets.length
+      ? `${state.tickets.length} offene Tickets.`
+      : `${tickets.length} von ${state.tickets.length} Tickets sichtbar.`;
+  }
+
+  if (!tickets.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine offenen Tickets gefunden.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = tickets.map((ticket) => `
+    <tr data-ticket-id="${ticket.id}">
+      <td>${escapeHtml(formatRelativeTicketTime(ticket.created_at))}</td>
+      <td>${escapeHtml(ticket.user_name || '-')}</td>
+      <td>${escapeHtml(ticket.user_email || '-')}</td>
+      <td>${escapeHtml(ticket.assignment_title || '-')}</td>
+      <td class="ticket-note" title="${escapeHtml(ticket.description || '')}">${escapeHtml(ticket.description || '-')}</td>
+      <td>
+        <div class="row-actions">
+          <button class="icon-btn ticket-open-btn" type="button" data-action="open-ticket" data-user-id="${ticket.user_id}" data-assignment-id="${ticket.assignment_id}" title="Testview öffnen">↗</button>
+          <button class="icon-btn danger" type="button" data-action="delete-ticket" data-ticket-id="${ticket.id}" title="Ticket löschen">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function loadTickets() {
+  const body = $('tickets-body');
+  const statusEl = $('tickets-status');
+  if (body) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Tickets werden geladen...</td></tr>';
+  }
+  if (statusEl) {
+    statusEl.textContent = 'Tickets werden geladen...';
+  }
+
+  const data = await requestJson('../api/support_tickets/list.php');
+  state.tickets = Array.isArray(data.tickets) ? data.tickets : [];
+  state.ticketsLoaded = true;
+  renderTickets();
+}
+
+function openTicketTestView(userId, assignmentId) {
+  if (!userId || !assignmentId) return;
+  window.open(`editor_assignment_user_test.php?assignment_id=${encodeURIComponent(assignmentId)}&test_user_id=${encodeURIComponent(userId)}`, '_blank');
+}
+
+async function deleteAllTickets() {
+  const count = state.tickets ? state.tickets.length : 0;
+  if (!window.confirm(`Alle ${count} Ticket(s) wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+
+  const statusEl = $('tickets-status');
+  if (statusEl) statusEl.textContent = 'Lösche alle Tickets...';
+
+  const formData = new FormData();
+  formData.append('all', '1');
+  try {
+    const response = await fetch('../api/support_tickets/delete.php', {
+      method: 'POST',
+      body: formData,
+      credentials: 'include'
+    });
+    const raw = await response.text();
+    let data = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch(e) { data = null; }
+    if (!response.ok || !data || data.ok === false) {
+      alert((data && data.error) ? data.error : 'Fehler beim Löschen aller Tickets');
+    }
+    await loadTickets();
+  } catch (err) {
+    alert('Fehler: ' + err.message);
+  }
+}
+
+async function deleteTicket(ticketId) {
+  if (!ticketId) return;
+
+  const formData = new FormData();
+  formData.append('ticket_id', String(ticketId));
+
+  const response = await fetch('../api/support_tickets/delete.php', {
+    method: 'POST',
+    body: formData,
+    credentials: 'include'
+  });
+  const raw = await response.text();
+  let data = null;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    data = null;
+  }
+
+  if (!response.ok || !data || data.ok === false) {
+    throw new Error((data && data.error) ? data.error : 'Ticket konnte nicht gelöscht werden');
+  }
+
+  state.tickets = state.tickets.filter((ticket) => ticket.id !== ticketId);
+  renderTickets();
 }
 
 function setActiveTaskTab(form, tabName) {
@@ -2544,6 +2692,17 @@ function bindEvents() {
       });
       await loadUsers();
     }
+
+    if (action === 'open-ticket') {
+      const userId = parseInt(btn.dataset.userId || '0', 10);
+      const assignmentId = parseInt(btn.dataset.assignmentId || '0', 10);
+      openTicketTestView(userId, assignmentId);
+    }
+
+    if (action === 'delete-ticket') {
+      const ticketId = parseInt(btn.dataset.ticketId || '0', 10);
+      await deleteTicket(ticketId);
+    }
   });
 
 }
@@ -2552,6 +2711,10 @@ async function init() {
   bindEvents();
   resetProjectFilters();
   await Promise.all([loadAssignments()]);
+  const initialTab = new URLSearchParams(window.location.search).get('tab');
+  if (initialTab && document.querySelector(`.tab[data-tab="${initialTab}"]`)) {
+    setActiveTab(initialTab);
+  }
 }
 
 init().catch((err) => {
@@ -4458,6 +4621,28 @@ document.addEventListener('DOMContentLoaded', () => {
     nextBtn.addEventListener('click', () => {
       state.assignmentsPage++;
       renderAssignments();
+    });
+  }
+
+  const ticketsSearch = $('tickets-search');
+  if (ticketsSearch) {
+    ticketsSearch.addEventListener('input', (e) => {
+      state.ticketsFilter = e.target.value || '';
+      renderTickets();
+    });
+  }
+
+  const ticketsRefreshBtn = $('tickets-refresh-btn');
+  if (ticketsRefreshBtn) {
+    ticketsRefreshBtn.addEventListener('click', async () => {
+      await loadTickets();
+    });
+  }
+
+  const ticketsDeleteAllBtn = $('tickets-delete-all-btn');
+  if (ticketsDeleteAllBtn) {
+    ticketsDeleteAllBtn.addEventListener('click', async () => {
+      await deleteAllTickets();
     });
   }
   

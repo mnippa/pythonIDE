@@ -1082,10 +1082,11 @@ if "idegui" not in sys.modules:
     // Initialize file tree for project mode or in projects.php
     const treeWrapper = document.getElementById('file-tree-wrapper');
     if (treeWrapper && window.FileTreeManager) {
-      // In projects.php: start expanded, in assignment_editor: start collapsed
-      const isProjectsPage = window.location.pathname.includes('projects.php');
-      const treeManager = new window.FileTreeManager('file-tree-wrapper', isProjectsPage);
-      window.fileTreeManager = treeManager;
+      // File tree is created by projects.js with a valid projectId once a project is loaded.
+      // Avoid creating an unconfigured instance here (projectId would be missing).
+      if (typeof window.fileTreeManager === 'undefined') {
+        window.fileTreeManager = null;
+      }
     }
 
     // Initialize validator

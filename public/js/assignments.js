@@ -6491,12 +6491,12 @@ function bindAssignmentsEvents() {
     downloadCode();
   });
 
-  // Share button - Generate admin test link
+  // Share button - Betrachterlink kopieren + Support Ticket erstellen
   const shareBtn = $('share-btn');
   shareBtn?.addEventListener('click', async () => {
     const assignmentId = window.assignmentState?.currentAssignmentId;
     const taskId = window.assignmentState?.currentTask?.id;
-    const userId = window.userId; // Should be set from PHP session
+    const userId = window.userId;
     
     if (!assignmentId || !taskId) {
       alert('Keine Aufgabe geladen. Bitte öffnen Sie eine Aufgabe.');
@@ -6511,29 +6511,158 @@ function bindAssignmentsEvents() {
     const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
     const shareUrl = `${baseUrl}editor_assignment_user_test.php?assignment_id=${assignmentId}&task_id=${taskId}&test_user_id=${userId}`;
     
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      
-      // Visual feedback
-      const originalTitle = shareBtn.title;
-      const originalText = shareBtn.textContent;
-      shareBtn.textContent = '✓';
-      shareBtn.title = 'Link kopiert!';
-      shareBtn.style.background = '#10b981';
-      shareBtn.style.color = '#fff';
-      
-      setTimeout(() => {
-        shareBtn.textContent = originalText;
-        shareBtn.title = originalTitle;
-        shareBtn.style.background = '';
-        shareBtn.style.color = '';
-      }, 2000);
-    } catch (err) {
-      console.error('Failed to copy link:', err);
-      // Fallback: Show link in prompt
-      prompt('Link kopieren (Strg+C):', shareUrl);
-    }
+    // Show inline ticket dialog
+    showTicketDialog(shareUrl, assignmentId, shareBtn);
   });
+
+  function showTicketDialog(shareUrl, assignmentId, triggerBtn) {
+    // Remove existing dialog
+    const existing = document.getElementById('ticket-share-dialog');
+    if (existing) { existing.remove(); return; }
+    
+    const dialog = document.createElement('div');
+    dialog.id = 'ticket-share-dialog';
+    dialog.style.cssText = `
+      position: fixed;
+      bottom: 60px;
+      right: 20px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      padding: 16px;
+      width: 320px;
+      z-index: 9999;
+      font-family: system-ui, sans-serif;
+    `;
+    dialog.innerHTML = `
+      <div style="font-weight:600; font-size:14px; margin-bottom:10px; color:#1f2937;">🎫 Ticket erstellen & Link teilen</div>
+      <div style="font-size:12px; color:#6b7280; margin-bottom:12px;">
+        Der Betrachterlink wird in die Zwischenablage kopiert und ein Support-Ticket wird automatisch angelegt.
+      </div>
+      <label style="display:block; font-size:13px; font-weight:500; color:#374151; margin-bottom:6px;">Problem (optional)</label>
+      <input id="ticket-desc-input" type="text" value="Tutorium"
+        style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; box-sizing:border-box; margin-bottom:12px;"
+        maxlength="200" placeholder="Kurze Beschreibung...">
+      <div style="display:flex; gap:8px;">
+        <button id="ticket-cancel-btn"
+          style="flex:1; padding:8px; border:1px solid #d1d5db; border-radius:4px; background:white; color:#374151; font-size:13px; cursor:pointer;">
+          Abbrechen
+        </button>
+        <button id="ticket-submit-btn"
+          style="flex:2; padding:8px; border:none; border-radius:4px; background:#0ea5e9; color:white; font-size:13px; font-weight:600; cursor:pointer;">
+          🔗 Kopieren &amp; Ticket erstellen
+        </button>
+      </div>
+      <div id="ticket-status" style="margin-top:10px; font-size:12px; display:none;"></div>
+    `;
+    
+    document.body.appendChild(dialog);
+    
+    // Focus input, select all
+    const input = dialog.querySelector('#ticket-desc-input');
+    input.focus();
+    input.select();
+    
+    // Close on outside click
+    function onOutsideClick(e) {
+      if (!dialog.contains(e.target) && e.target !== triggerBtn) {
+        dialog.remove();
+        document.removeEventListener('mousedown', onOutsideClick);
+      }
+    }
+    setTimeout(() => document.addEventListener('mousedown', onOutsideClick), 100);
+    
+    dialog.querySelector('#ticket-cancel-btn').addEventListener('click', () => {
+      dialog.remove();
+      document.removeEventListener('mousedown', onOutsideClick);
+    });
+    
+    dialog.querySelector('#ticket-submit-btn').addEventListener('click', async () => {
+      const description = input.value.trim();
+      const submitBtn = dialog.querySelector('#ticket-submit-btn');
+      const statusDiv = dialog.querySelector('#ticket-status');
+      
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Wird erstellt...';
+      
+      // 1. Copy URL to clipboard
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+      } catch (err) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = shareUrl;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e2) {
+          console.warn('Clipboard fallback failed:', e2);
+        }
+      }
+      
+      // 2. Create ticket
+      try {
+        const formData = new FormData();
+        formData.append('assignment_id', assignmentId);
+        if (description) formData.append('description', description);
+        
+        const response = await fetch('../api/support_tickets/create.php', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        const rawResponse = await response.text();
+        let data;
+
+        try {
+          data = JSON.parse(rawResponse);
+        } catch (parseError) {
+          throw new Error('Ungueltige Server-Antwort beim Ticket-Erstellen');
+        }
+        
+        if (response.ok && data.ok) {
+          statusDiv.style.display = 'block';
+          statusDiv.style.color = '#059669';
+          statusDiv.textContent = '✓ Link kopiert & Ticket erstellt!';
+          
+          // Visual feedback on share button
+          const origText = triggerBtn.textContent;
+          const origTitle = triggerBtn.title;
+          triggerBtn.textContent = '✓';
+          triggerBtn.style.background = '#10b981';
+          triggerBtn.style.color = '#fff';
+          setTimeout(() => {
+            triggerBtn.textContent = origText;
+            triggerBtn.title = origTitle;
+            triggerBtn.style.background = '';
+            triggerBtn.style.color = '';
+          }, 2000);
+          
+          setTimeout(() => {
+            dialog.remove();
+            document.removeEventListener('mousedown', onOutsideClick);
+          }, 1500);
+        } else {
+          throw new Error(data.error || 'Unbekannter Fehler');
+        }
+      } catch (err) {
+        console.error('Ticket creation failed:', err);
+        statusDiv.style.display = 'block';
+        statusDiv.style.color = '#dc2626';
+        statusDiv.textContent = 'Fehler: ' + err.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🔗 Kopieren & Ticket erstellen';
+      }
+    });
+    
+    // Submit on Enter
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') dialog.querySelector('#ticket-submit-btn').click();
+      if (e.key === 'Escape') { dialog.remove(); document.removeEventListener('mousedown', onOutsideClick); }
+    });
+  }
 
   // Undo button
   const undoBtn = $('undo-btn');

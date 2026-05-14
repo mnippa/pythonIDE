@@ -329,10 +329,11 @@ function renderParticipants() {
     const inProgress = Math.max(0, worked - finalized);
     const untouched  = Math.max(0, total - worked);
 
+    const failedBarColor = currentRawStatus === 'rework' ? '#facc15' : '#ef4444';
     const taskBar = total > 0 ? `
       <div style="display:flex;height:5px;border-radius:3px;overflow:hidden;background:#e5e7eb;margin-bottom:4px;">
         <span style="width:${Math.round(passed/total*100)}%;background:#22c55e;"></span>
-        <span style="width:${Math.round(failed/total*100)}%;background:#ef4444;"></span>
+        <span style="width:${Math.round(failed/total*100)}%;background:${failedBarColor};"></span>
         <span style="width:${Math.round(inProgress/total*100)}%;background:#facc15;"></span>
       </div>` : '';
 

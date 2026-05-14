@@ -101,6 +101,8 @@ class FileTreeManager {
     `;
 
     this.container.innerHTML = html;
+    // Reset listenersAttached flag before reattaching, since innerHTML replaced the DOM
+    this.listenersAttached = false;
     this.attachEventListeners();
     
     // Restore selection after re-render

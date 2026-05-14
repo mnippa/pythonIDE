@@ -363,6 +363,7 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
 
     // Load stats on page load
     loadStats();
+    
   </script>
 </body>
 </html>

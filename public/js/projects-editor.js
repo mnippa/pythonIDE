@@ -24,6 +24,7 @@ let projectsEditorInitPromise = null;
 let projectsEditorInitialized = false;
 let loadProjectPromise = null;
 let loadProjectIdInFlight = null;
+let loadProjectRunToken = 0;
 
 async function waitForEditorInstance() {
   for (let attempt = 0; attempt < 200; attempt++) {
@@ -1810,6 +1811,9 @@ async function loadProject(projectId) {
     return;
   }
 
+  const runToken = ++loadProjectRunToken;
+  const isStaleRun = () => runToken !== loadProjectRunToken;
+
   if (loadProjectPromise && loadProjectIdInFlight === normalizedProjectId) {
     console.log('[projects-editor] loadProject already running for project:', normalizedProjectId, '- skipping duplicate trigger');
     return loadProjectPromise;
@@ -1819,6 +1823,8 @@ async function loadProject(projectId) {
 
   loadProjectPromise = (async () => {
   try {
+    if (isStaleRun()) return;
+
     window.currentProject = null;
     updateWebHelpButton(null);
     setProjectsRightPanelMode(false);
@@ -1830,12 +1836,16 @@ async function loadProject(projectId) {
     const response = await fetch(`../api/projects/load.php?id=${normalizedProjectId}`, {
       credentials: 'include'
     });
+
+    if (isStaleRun()) return;
     
     if (!response.ok) {
       throw new Error('Failed to load project');
     }
     
     const data = await response.json();
+    if (isStaleRun()) return;
+
     const project = data.project;
     const access = data.access;
     
@@ -1856,6 +1866,7 @@ async function loadProject(projectId) {
     projectFileNamesById = {};
 
     await ensureInitPyExists(normalizedProjectId, project.name, project.code || '');
+    if (isStaleRun()) return;
     
     // Update UI
     const projectTitleEl = document.getElementById('project-page-title');
@@ -1874,9 +1885,13 @@ async function loadProject(projectId) {
     // Load editor code from init.py (fallback to project.code)
     console.log('[projects-editor] Loading project code...');
     const editorReady = await waitForEditorInstance();
+    if (isStaleRun()) return;
+
     if (editorReady) {
       try {
         const preferredFile = await loadPreferredProjectFile(normalizedProjectId, project.code || '');
+        if (isStaleRun()) return;
+
         setEditorContent(editorReady, preferredFile.content || '');
         window.editor = editorReady;
         currentOpenFileId = preferredFile.fileId ? Number(preferredFile.fileId) : null;
@@ -1914,6 +1929,8 @@ async function loadProject(projectId) {
     console.log('[projects-editor] FileTreeManager available:', typeof window.FileTreeManager !== 'undefined');
     if (typeof window.FileTreeManager !== 'undefined') {
       try {
+        if (isStaleRun()) return;
+
         console.log('[projects-editor] Creating FileTreeManager instance...');
         projectFileManager = new window.FileTreeManager('project-file-tree', {
           projectId: normalizedProjectId,
@@ -1958,6 +1975,8 @@ async function loadProject(projectId) {
         console.log('[projects-editor] FileTreeManager instance created, calling init()...');
         if (typeof projectFileManager.init === 'function') {
           await projectFileManager.init();
+          if (isStaleRun()) return;
+
           console.log('[projects-editor] FileTreeManager init() completed successfully');
           setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
         } else {
@@ -2004,11 +2023,16 @@ async function loadProject(projectId) {
     
     // Save as last opened project (DB + localStorage fallback)
     await persistLastOpenedProject(normalizedProjectId);
+    if (isStaleRun()) return;
     
     // Auto-open init.py after FileTreeManager is ready
     setTimeout(async () => {
       try {
+        if (isStaleRun()) return;
+
         const initFile = await readProjectFileByName(projectId, 'init.py');
+        if (isStaleRun()) return;
+
         if (!currentProject || Number(currentProject.id) !== normalizedProjectId) {
           return;
         }
@@ -2035,7 +2059,7 @@ async function loadProject(projectId) {
   try {
     return await loadProjectPromise;
   } finally {
-    if (loadProjectIdInFlight === normalizedProjectId) {
+    if (loadProjectIdInFlight === normalizedProjectId && runToken === loadProjectRunToken) {
       loadProjectPromise = null;
       loadProjectIdInFlight = null;
     }
