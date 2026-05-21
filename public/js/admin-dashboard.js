@@ -2298,7 +2298,7 @@ function bindEvents() {
       
       try {
         // Process import with new importer
-        const { tasks, images, manifest, folderFilesMap } = await window.taskImporter.processImport(file);
+        const { tasks, images, manifest, folderFilesMap, solutionFilesMap } = await window.taskImporter.processImport(file);
         
         // Add assignment ID to each task (ensure it's an integer)
         tasks.forEach(task => {
@@ -2306,7 +2306,7 @@ function bindEvents() {
         });
         
         // Import tasks with images and folder files
-        const results = await window.taskImporter.importTasks(tasks, images, folderFilesMap || {});
+        const results = await window.taskImporter.importTasks(tasks, images, folderFilesMap || {}, solutionFilesMap || {});
         
         // Show results
         const createdCount = results.created.length;
@@ -4047,11 +4047,19 @@ function sanitizeFilename(name) {
 
 // Auto-generate description from test cases
 function generateAutoDescription(testCasesData, descFieldId) {
+  const manualReviewCheckboxId = descFieldId.startsWith('edit-')
+    ? 'edit-task-manual-review-required'
+    : 'task-manual-review-required';
+  const isManualReview = !!document.getElementById(manualReviewCheckboxId)?.checked;
+
   if (!Array.isArray(testCasesData) || testCasesData.length === 0) {
-    alert('Keine Test Cases vorhanden um Beschreibung zu generieren');
-    return;
+    if (!isManualReview) {
+      alert('Keine Test Cases vorhanden um Beschreibung zu generieren');
+      return;
+    }
+    testCasesData = [];
   }
-  
+
   const descField = document.getElementById(descFieldId);
   if (!descField) return;
   
@@ -4157,7 +4165,8 @@ function generateAutoDescription(testCasesData, descFieldId) {
   
   // Build single table with all rows
   let description = '';
-  if (tableRows) {
+  if (tableRows || isManualReview) {
+    tableRows += `<tr><td>Prüfung</td><td>${isManualReview ? 'manuell durch Admin' : 'automatisch'}</td></tr>`;
     description += `<div class="test-requirements-section"><h3>Test-Anforderungen</h3>`;
     description += `<table class="test-requirements-table"><thead><tr><th>Aspekt</th><th>Details</th></tr></thead><tbody>`;
     description += tableRows;

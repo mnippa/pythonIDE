@@ -13,6 +13,15 @@ $user = requireAdmin(); // Only admins can manage task files
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
+$rawInput = json_decode(file_get_contents('php://input'), true);
+$solutionMode = false;
+if (isset($_GET['solution_mode']) && (string)$_GET['solution_mode'] === '1') {
+    $solutionMode = true;
+} elseif (isset($_POST['solution_mode']) && (string)$_POST['solution_mode'] === '1') {
+    $solutionMode = true;
+} elseif (is_array($rawInput) && isset($rawInput['solution_mode']) && (int)$rawInput['solution_mode'] === 1) {
+    $solutionMode = true;
+}
 
 if (!$action) {
     jsonResponse(['ok' => false, 'error' => 'Action required'], 400);
@@ -24,8 +33,7 @@ if (isset($_GET['task_id'])) {
 } elseif (isset($_POST['task_id'])) {
     $taskId = (int)$_POST['task_id'];
 } else {
-    $input = json_decode(file_get_contents('php://input'), true);
-    $taskId = isset($input['task_id']) ? (int)$input['task_id'] : null;
+    $taskId = is_array($rawInput) && isset($rawInput['task_id']) ? (int)$rawInput['task_id'] : null;
 }
 
 if (!$taskId) {
@@ -39,7 +47,7 @@ try {
     // SAVE TEMPLATE (can be called without folderstructure)
     // ============================================
     if ($action === 'save_template') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $content = isset($input['content']) ? $input['content'] : '';
 
         // Reuse centralized task access validation.
@@ -72,6 +80,7 @@ try {
     }
 
     $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+    $solutionFolderPath = $folderPath . '/.solution';
     $taskType = (string)($task['task_type'] ?? '');
     $allowStudentWebEdit = (int)($task['allow_code_ui_web_edit'] ?? 1) === 1;
 
@@ -144,7 +153,7 @@ try {
     // SET READONLY FLAG
     // ============================================
     if ($action === 'set_readonly') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $path = $normalizedInputPath((string)($input['path'] ?? ''));
         $readOnly = (int)(bool)($input['read_only'] ?? 0) === 1;
 
@@ -179,7 +188,7 @@ try {
     // CREATE FOLDER
     // ============================================
     if ($action === 'create_folder') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $name = trim($input['name'] ?? '');
         $parentPath = trim($input['parent_path'] ?? '');
         
@@ -216,7 +225,7 @@ try {
     // CREATE FILE
     // ============================================
     elseif ($action === 'create_file') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $name = trim($input['name'] ?? '');
         $parentPath = trim($input['parent_path'] ?? '');
         $content = $input['content'] ?? '';
@@ -294,7 +303,7 @@ try {
     // RENAME
     // ============================================
     elseif ($action === 'rename') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $oldPath = trim($input['old_path'] ?? '');
         $newName = trim($input['new_name'] ?? '');
         
@@ -343,7 +352,7 @@ try {
     // DELETE
     // ============================================
     elseif ($action === 'delete') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $path = trim($input['path'] ?? '');
         
         if (empty($path)) {
@@ -396,17 +405,42 @@ try {
     // READ FILE
     // ============================================
     elseif ($action === 'read') {
-        $path = trim($_GET['path'] ?? '');
+        $path = '';
+        if (is_array($rawInput) && isset($rawInput['path'])) {
+            $path = trim((string)$rawInput['path']);
+        } elseif (isset($_POST['path'])) {
+            $path = trim((string)$_POST['path']);
+        } elseif (isset($_GET['path'])) {
+            $path = trim((string)$_GET['path']);
+        }
         
         if (!$path) {
             jsonResponse(['ok' => false, 'error' => 'Path required'], 400);
         }
+
+        $path = $normalizedInputPath($path);
+        if ($path === '') {
+            jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
+        }
         
-        $fullPath = $folderPath . '/' . ltrim($path, '/');
+        $fullPath = ($solutionMode ? $solutionFolderPath : $folderPath) . '/' . ltrim($path, '/');
+        if ($solutionMode && !is_file($fullPath)) {
+            // Fallback: until overridden, read from template folder.
+            $fullPath = $folderPath . '/' . ltrim($path, '/');
+        }
         
         // Security check: prevent directory traversal
         $real = realpath($fullPath);
-        if (!$real || strpos($real, realpath($folderPath)) !== 0) {
+        $realTemplateRoot = realpath($folderPath);
+        $realSolutionRoot = realpath($solutionFolderPath);
+        $allowed = false;
+        if ($real && $realTemplateRoot && strpos($real, $realTemplateRoot) === 0) {
+            $allowed = true;
+        }
+        if ($real && $realSolutionRoot && strpos($real, $realSolutionRoot) === 0) {
+            $allowed = true;
+        }
+        if (!$allowed) {
             jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
         }
         
@@ -426,7 +460,7 @@ try {
     // READ FILE (get content for export)
     // ============================================
     elseif ($action === 'read') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $path = '';
         if (isset($input['path'])) {
             $path = trim((string)$input['path']);
@@ -474,7 +508,7 @@ try {
     // SAVE FILE (update content)
     // ============================================
     elseif ($action === 'save') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = is_array($rawInput) ? $rawInput : [];
         $path = isset($input['path']) ? trim($input['path']) : '';
         $content = isset($input['content']) ? $input['content'] : '';
 
@@ -487,16 +521,22 @@ try {
             jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
         }
 
+        if ($solutionMode && strtolower($path) === 'init.py') {
+            jsonResponse(['ok' => false, 'error' => 'init.py wird im Lösungsmodus über solution_code gespeichert'], 400);
+        }
+
         $policies = $loadPolicies($folderPath);
         if ($resolveReadOnly($path, $policies)) {
             jsonResponse(['ok' => false, 'error' => 'Datei ist schreibgeschützt'], 403);
         }
 
-        $fullPath = $folderPath . '/' . $path;
+        $basePath = $solutionMode ? $solutionFolderPath : $folderPath;
+        $fullPath = $basePath . '/' . $path;
 
         // Security check: prevent directory traversal
-        $real = realpath(dirname($fullPath));
-        if (!$real || strpos($real, realpath($folderPath)) !== 0) {
+        $normalizedBasePath = rtrim(str_replace('\\', '/', $basePath), '/');
+        $normalizedFullPath = rtrim(str_replace('\\', '/', $fullPath), '/');
+        if (strpos($normalizedFullPath, $normalizedBasePath . '/') !== 0 && $normalizedFullPath !== $normalizedBasePath) {
             jsonResponse(['ok' => false, 'error' => 'Invalid path'], 400);
         }
 

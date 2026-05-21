@@ -97,6 +97,7 @@ function ensureRunEntryIndicator() {
 function updateRunEntryIndicator(task = assignmentState.currentTask) {
   const indicator = ensureRunEntryIndicator();
   if (!indicator) return;
+  const runBtn = $('run-btn');
 
   // Only show in assignment/test editors, never in project editor context.
   if (window.currentProject) {
@@ -106,6 +107,9 @@ function updateRunEntryIndicator(task = assignmentState.currentTask) {
 
   if (!task) {
     indicator.style.display = 'none';
+    if (runBtn) {
+      runBtn.title = 'Run';
+    }
     return;
   }
 
@@ -114,35 +118,9 @@ function updateRunEntryIndicator(task = assignmentState.currentTask) {
     ? getFolderTaskRunEntryPath(task)
     : String(window.currentFile?.path || 'init.py');
 
-  const isInitEntry = String(entryPath || '').toLowerCase() === 'init.py';
-  const isNonFolderCustomEntry = !hasFolderStructure && !isInitEntry;
-
-  let entrySuffix = 'neutral';
-  if (hasFolderStructure && isInitEntry) {
-    entrySuffix = 'Standard';
-  } else if (isNonFolderCustomEntry) {
-    entrySuffix = 'abweichend';
-  }
-
-  indicator.textContent = `RUN Entry: ${entryPath} (${entrySuffix})`;
-  indicator.title = 'Datei, die beim Run ausgefuehrt wird';
-  indicator.style.display = 'inline-flex';
-  indicator.style.alignItems = 'center';
-
-  indicator.style.fontWeight = '700';
-  indicator.style.borderWidth = '2px';
-  if (hasFolderStructure && isInitEntry) {
-    indicator.style.background = '#2563eb';
-    indicator.style.color = '#ffffff';
-    indicator.style.border = '2px solid #1d4ed8';
-  } else if (!hasFolderStructure && !isInitEntry) {
-    indicator.style.background = '#f59e0b';
-    indicator.style.color = '#111827';
-    indicator.style.border = '2px solid #d97706';
-  } else {
-    indicator.style.background = 'var(--panel)';
-    indicator.style.color = 'var(--text-secondary)';
-    indicator.style.border = '2px solid var(--border)';
+  indicator.style.display = 'none';
+  if (runBtn) {
+    runBtn.title = `Run (Entry: ${entryPath})`;
   }
 }
 
@@ -168,6 +146,10 @@ function isAdminAssignmentTestMode() {
   if (window.ADMIN_ASSIGNMENT_TEST === true) return true;
   const pathname = String(window.location.pathname || '');
   return pathname.includes('editor_assignment_test') || pathname.includes('editor_assignment_user_test');
+}
+
+function shouldShowTaskDownloadButton(task) {
+  return !!task && String(task.task_type || '') === 'code';
 }
 
 function updateSaveButtonTooltip() {
@@ -320,6 +302,7 @@ function refreshCurrentTaskToolbarForStatus(task) {
   const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
   const isFinalized = status === 'passed' || status === 'failed' || status === 'submitted';
   const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
+  const showDownload = shouldShowTaskDownloadButton(task);
 
   const checkBtn = $('check-btn');
   const submitBtn = $('submit-btn');
@@ -352,7 +335,7 @@ function refreshCurrentTaskToolbarForStatus(task) {
     if (undoBtn) undoBtn.style.display = 'none';
     if (redoBtn) redoBtn.style.display = 'none';
     if (attemptsCounter) attemptsCounter.style.display = 'none';
-    if (downloadBtn) downloadBtn.style.display = 'inline-block';
+    if (downloadBtn) downloadBtn.style.display = showDownload ? 'inline-block' : 'none';
 
     if (submittedInfo && submittedStatus && submittedDate) {
       submittedInfo.classList.add('show');
@@ -365,7 +348,7 @@ function refreshCurrentTaskToolbarForStatus(task) {
     }
   } else {
     if (submittedInfo) submittedInfo.classList.remove('show');
-    if (downloadBtn) downloadBtn.style.display = 'inline-block';
+    if (downloadBtn) downloadBtn.style.display = showDownload ? 'inline-block' : 'none';
     if (saveTaskBtn) {
       saveTaskBtn.style.display = 'inline-block';
       updateSaveButtonTooltip();
@@ -451,8 +434,29 @@ function fmtRelativeToDue(submittedStr, dueDateStr) {
 const taskDraftFiles = {};
 const taskSavedSnapshots = {};
 
+function getTaskModeScope() {
+  return assignmentState.solutionMode === true ? 'solution' : 'template';
+}
+
+function getTaskStateKey(taskId, scope = getTaskModeScope()) {
+  return `${String(taskId)}::${scope}`;
+}
+
+function normalizeLegacyEscapedCode(content) {
+  const text = String(content ?? '');
+  const hasRealLineBreaks = /\r|\n/.test(text);
+  const hasEscapedLineBreaks = /\\r\\n|\\n/.test(text);
+  if (!hasRealLineBreaks && hasEscapedLineBreaks) {
+    return text
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t');
+  }
+  return text;
+}
+
 function ensureTaskFileMaps(taskId) {
-  const key = String(taskId);
+  const key = getTaskStateKey(taskId);
   taskDraftFiles[key] = taskDraftFiles[key] || {};
   taskSavedSnapshots[key] = taskSavedSnapshots[key] || {};
   return key;
@@ -467,7 +471,7 @@ function setTaskDraftContent(taskId, path, content) {
 
 function getTaskDraftContent(taskId, path) {
   if (!taskId || !path) return null;
-  const key = String(taskId);
+  const key = getTaskStateKey(taskId);
   const taskDraft = taskDraftFiles[key] || {};
   return Object.prototype.hasOwnProperty.call(taskDraft, path) ? taskDraft[path] : null;
 }
@@ -479,17 +483,38 @@ function setTaskSavedSnapshot(taskId, path, content) {
   updateTaskFileDirtyIndicator(taskId, path);
 }
 
+function getTaskSavedSnapshot(taskId, path) {
+  if (!taskId || !path) return null;
+  const key = getTaskStateKey(taskId);
+  const taskSnapshots = taskSavedSnapshots[key] || {};
+  return Object.prototype.hasOwnProperty.call(taskSnapshots, path) ? taskSnapshots[path] : null;
+}
+
 function clearTaskDrafts(taskId) {
   if (!taskId) return;
   const key = String(taskId);
-  delete taskDraftFiles[key];
+  const prefix = `${key}::`;
+  Object.keys(taskDraftFiles).forEach((stateKey) => {
+    if (stateKey === key || stateKey.startsWith(prefix)) {
+      delete taskDraftFiles[stateKey];
+    }
+  });
+  Object.keys(taskSavedSnapshots).forEach((stateKey) => {
+    if (stateKey === key || stateKey.startsWith(prefix)) {
+      delete taskSavedSnapshots[stateKey];
+    }
+  });
+}
+
+function clearTaskModeState(taskId, scope) {
+  if (!taskId || !scope) return;
+  const stateKey = getTaskStateKey(taskId, scope);
+  delete taskDraftFiles[stateKey];
+  delete taskSavedSnapshots[stateKey];
 }
 
 function cacheCurrentEditorDraft() {
   if (!window.editorInstance || !window.currentFile) return;
-  // In admin assignment test solution mode, editor content represents solution_code,
-  // not init.py/template content. Do not mirror it into file draft maps.
-  if (isAdminAssignmentTestMode() && assignmentState.solutionMode === true) return;
   const { taskId, path } = window.currentFile;
   if (!taskId || !path) return;
   setTaskDraftContent(taskId, path, window.editorInstance.getValue());
@@ -497,7 +522,7 @@ function cacheCurrentEditorDraft() {
 
 function hasUnsavedDraftsForTask(taskId) {
   if (!taskId) return false;
-  const key = String(taskId);
+  const key = getTaskStateKey(taskId);
   const drafts = taskDraftFiles[key] || {};
   const snapshots = taskSavedSnapshots[key] || {};
   return Object.keys(drafts).some((path) => {
@@ -509,7 +534,7 @@ function hasUnsavedDraftsForTask(taskId) {
 
 function isTaskPathDirty(taskId, path) {
   if (!taskId || !path) return false;
-  const key = String(taskId);
+  const key = getTaskStateKey(taskId);
   const drafts = taskDraftFiles[key] || {};
   const snapshots = taskSavedSnapshots[key] || {};
   if (!Object.prototype.hasOwnProperty.call(drafts, path)) return false;
@@ -578,17 +603,31 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
       }
     }
   } else if (isVirtual && path === 'init.py') {
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task_id: taskId, content })
-    });
-    const result = await response.json();
-    if (!response.ok || !result.ok) {
-      throw new Error(result?.error || 'Speichern fehlgeschlagen');
+    if (assignmentState.solutionMode === true) {
+      const response = await fetch('../api/tasks/update.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId, solution_code: content })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result?.error || 'Speichern fehlgeschlagen');
+      }
+    } else {
+      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, content })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result?.error || 'Speichern fehlgeschlagen');
+      }
     }
   } else {
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save`, {
+    const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save${solutionModeParam}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId, path, content })
@@ -597,10 +636,6 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
     if (!response.ok || !result.ok) {
       throw new Error(result?.error || 'Speichern fehlgeschlagen');
     }
-  }
-
-  if (window.taskInitPyContent && path === 'init.py') {
-    window.taskInitPyContent[taskId] = content;
   }
 
   setTaskSavedSnapshot(taskId, path, content);
@@ -613,7 +648,7 @@ async function saveAllTaskDrafts(taskId) {
 
   cacheCurrentEditorDraft();
 
-  const key = String(taskId);
+  const key = getTaskStateKey(taskId);
   const drafts = taskDraftFiles[key] || {};
   const snapshots = taskSavedSnapshots[key] || {};
 
@@ -724,12 +759,39 @@ async function requestJson(url, options = {}) {
     ...options
   });
 
-  const data = await response.json();
+  const rawText = await response.text();
+  let data = null;
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch (error) {
+      const snippet = rawText.trim().slice(0, 120).replace(/\s+/g, ' ');
+      throw new Error(`Unerwartete Serverantwort: ${snippet || response.statusText}`);
+    }
+  }
+
   if (!response.ok || (data && data.ok === false)) {
     const msg = data && data.error ? data.error : response.statusText;
     throw new Error(msg);
   }
   return data;
+}
+
+async function readJsonResponse(response, fallbackLabel) {
+  const rawText = await response.text();
+  if (!rawText) {
+    if (!response.ok) {
+      throw new Error(fallbackLabel || response.statusText || 'Unerwartete Serverantwort');
+    }
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    const snippet = rawText.trim().slice(0, 120).replace(/\s+/g, ' ');
+    throw new Error(`${fallbackLabel || 'Unerwartete Serverantwort'}: ${snippet || response.statusText}`);
+  }
 }
 
 function statusClass(status) {
@@ -1200,14 +1262,24 @@ function showTaskDetails(task, activeTab = 'details') {
   const solToggleBtn = $('solution-toggle-btn');
   if (solToggleBtn && hasSolution) {
     solToggleBtn.addEventListener('click', async () => {
+      const currentFilePath = String(window.currentFile?.path || '');
       if (assignmentState.solutionMode) {
         // Turn OFF solution mode - restore original
         assignmentState.solutionMode = false;
-        loadTaskIntoEditor(assignmentState.currentAssignmentId, task.id);
+        await loadTaskIntoEditor(assignmentState.currentAssignmentId, task.id);
+        if ((task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') && currentFilePath && currentFilePath !== 'init.py') {
+          await openTaskFileInEditor(task.id, currentFilePath);
+        }
       } else {
         // Turn ON solution mode
         assignmentState.solutionMode = true;
         await loadSolutionIntoMainArea(task);
+        if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+          const currentPathAfterLoad = String(window.currentFile?.path || currentFilePath || 'init.py');
+          if (currentPathAfterLoad) {
+            await openTaskFileInEditor(task.id, currentPathAfterLoad);
+          }
+        }
       }
       // Refresh the sidebar to update button color
       showTaskDetails(task, 'details');
@@ -1278,6 +1350,8 @@ async function loadSolutionIntoMainArea(task) {
   task = assignmentState.currentTask || task;
   
   assignmentState.solutionMode = true;
+  console.log(`[LOAD_SOLUTION_AREA] Task ${task.id}: solutionMode set to TRUE`);
+  clearTaskModeState(task.id, 'solution');
   
   if (task.task_type === 'code' || task.task_type === 'code_ui') {
     // Save current code before showing solution
@@ -1291,6 +1365,9 @@ async function loadSolutionIntoMainArea(task) {
         // Convert escaped newlines to actual newlines (safeguard for older data)
         const displaySolution = task.solution_code.replace(/\\n/g, '\n');
         editor.setValue(displaySolution);
+        window.currentFile = { taskId: task.id, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false };
+        setTaskSavedSnapshot(task.id, 'init.py', displaySolution);
+        setTaskDraftContent(task.id, 'init.py', displaySolution);
         // In user-test mode, solution view is read-only (student code only may be edited).
         editor.updateOptions({ readOnly: isAdminUserTestMode() ? true : false });
         updateSaveButtonTooltip();
@@ -2916,7 +2993,7 @@ async function renderCodeUiHtml(taskId) {
       throw new Error(`${path} nicht gefunden`);
     }
 
-    const result = await response.json();
+    const result = await readJsonResponse(response, `Fehler beim Lesen der Datei: ${path}`);
     const content = String(result?.content || '');
     setTaskSavedSnapshot(taskId, path, content);
     return content;
@@ -3050,6 +3127,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Clear solution mode when loading a task normally
   assignmentState.solutionMode = false;
+  console.log(`[LOAD_TASK_EDITOR] Task ${taskId}: solutionMode set to FALSE`);
 
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
@@ -3067,7 +3145,12 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   if (isAdminUserTestMode()) {
     assignmentState.userTestEditorUnlockedByTask[taskId] = false;
   }
-  showTaskDetails(task);
+  const hasFolderStructure = task && (
+    task.folderstructure === 1 ||
+    task.folderstructure === true ||
+    task.folderstructure === '1'
+  );
+  showTaskDetails(task, hasFolderStructure ? 'folders' : 'details');
   showTaskQuestionAboveEditor(task);
   renderTaskNavigation();
   updateAttemptsCounter(task);
@@ -3240,6 +3323,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   const submittedInfo = document.getElementById('submitted-info');
   const submittedStatus = document.getElementById('submitted-status');
   const submittedDate = document.getElementById('submitted-date');
+  const showDownload = shouldShowTaskDownloadButton(task);
   
   if (isFinalized) {
     // Task finalized - hide buttons (but keep download), lock editor, show submitted info
@@ -3329,7 +3413,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     }
 
     if (downloadBtn) {
-      downloadBtn.style.display = 'inline-block';
+      downloadBtn.style.display = showDownload ? 'inline-block' : 'none';
     }
 
     // Show share button (only in non-test mode)
@@ -3550,6 +3634,16 @@ async function saveCode(options = {}) {
     // In task-lab mode, save must always target tasks/update.php explicitly
     // so template/solution are persisted reliably (independent of currentFile state).
     if (isTaskLabMode && assignmentState.solutionMode === true) {
+      const isEditingNonInitFile = !!(
+        window.currentFile &&
+        window.currentFile.taskId &&
+        String(window.currentFile.path || '') !== 'init.py'
+      );
+
+      if (isEditingNonInitFile) {
+        return await saveTaskFile();
+      }
+
       const allowSave = confirmIfTemplateAndSolutionIdentical(task, code, 'solution');
       if (!allowSave) {
         if (saveTaskBtn) {
@@ -3784,6 +3878,13 @@ async function saveCode(options = {}) {
       }, 3000);
     }
     return false;
+  } finally {
+    // Some branches return early (e.g. saveTaskFile for folder subfiles).
+    // Always unlock save button to prevent it from getting stuck disabled.
+    if (saveTaskBtn) {
+      saveTaskBtn.disabled = false;
+      saveTaskBtn.style.opacity = '1';
+    }
   }
 }
 
@@ -3845,7 +3946,8 @@ async function beforeAssignmentRunExecution() {
 window.beforeRunExecution = beforeAssignmentRunExecution;
 window.incrementTaskRunCount = incrementRunCount;
 
-function showSuccessModal(task, attempts, maxAttempts) {
+function showSuccessModal(task, attempts, maxAttempts, options = {}) {
+  const mode = options.mode === 'submitted' ? 'submitted' : 'passed';
   // Calculate elapsed time
   const startTime = assignmentState.taskStartTimes[task.id];
   let elapsedSeconds = 0;
@@ -3865,10 +3967,12 @@ function showSuccessModal(task, attempts, maxAttempts) {
   const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
 
   // Build stats HTML (4 stats in 2x2 grid)
+  const statusSymbol = mode === 'submitted' ? '🔵' : '✓';
+  const statusLabel = mode === 'submitted' ? 'Abgegeben' : 'Gelöst';
   const statsHtml = `
     <div class="success-stat">
-      <div class="success-stat-value">✓</div>
-      <div class="success-stat-label">Gelöst</div>
+      <div class="success-stat-value">${statusSymbol}</div>
+      <div class="success-stat-label">${statusLabel}</div>
     </div>
     <div class="success-stat">
       <div class="success-stat-value">${attempts}/${maxAttempts}</div>
@@ -3887,7 +3991,11 @@ function showSuccessModal(task, attempts, maxAttempts) {
   document.getElementById('success-stats').innerHTML = statsHtml;
 
   // Set message
-  document.getElementById('success-message').textContent = `Glückwunsch! Du hast die Aufgabe "${task.title}" erfolgreich gelöst!`;
+  if (mode === 'submitted') {
+    document.getElementById('success-message').textContent = `Aufgabe "${task.title}" wurde abgegeben und wird manuell geprüft.`;
+  } else {
+    document.getElementById('success-message').textContent = `Glückwunsch! Du hast die Aufgabe "${task.title}" erfolgreich gelöst!`;
+  }
 
   // Check if there are more tasks in this assignment
   const tasks = assignmentState.tasksByAssignment[assignmentState.currentAssignmentId] || [];
@@ -3905,7 +4013,7 @@ function showSuccessModal(task, attempts, maxAttempts) {
   // Check if all tasks in current assignment are done
   const allTasksDone = tasks.every(t => {
     const status = assignmentState.taskStatuses[t.id];
-    return status === 'passed' || status === 'failed';
+    return status === 'passed' || status === 'failed' || status === 'submitted';
   });
 
   // Show/hide next assignment button
@@ -4038,11 +4146,12 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   const isAdminFolderMode = isAdminTaskLabMode();
   cacheCurrentEditorDraft();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+  const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
   const listUrl = isAdminFolderMode
-    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1`
+    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1${solutionModeParam}`
     : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
   const listResponse = await fetch(listUrl, { credentials: 'include' });
-  const listData = await listResponse.json();
+  const listData = await readJsonResponse(listResponse, 'Task-Dateiliste konnte nicht geladen werden');
 
   if (!listResponse.ok || (listData && listData.ok === false)) {
     throw new Error(listData?.error || 'Task-Dateiliste konnte nicht geladen werden');
@@ -4070,7 +4179,28 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   };
   walk(listData.files || []);
 
-  const runtimeRoot = '/task_runtime';
+  const modeScope = (isAdminFolderMode && assignmentState.solutionMode === true) ? 'solution' : 'template';
+  const runtimeRoot = `/task_runtime/${modeScope}/task_${safeTaskId}`;
+
+  const removeFsPathRecursively = (fs, targetPath) => {
+    try {
+      const stat = fs.stat(targetPath);
+      if (fs.isDir(stat.mode)) {
+        const entries = fs.readdir(targetPath).filter((name) => name !== '.' && name !== '..');
+        entries.forEach((name) => {
+          removeFsPathRecursively(fs, `${targetPath}/${name}`);
+        });
+        fs.rmdir(targetPath);
+      } else {
+        fs.unlink(targetPath);
+      }
+    } catch (_e) {
+      // path does not exist
+    }
+  };
+
+  // Always start from a clean per-mode runtime root to avoid cross-mode bleed-through.
+  removeFsPathRecursively(pyodide.FS, runtimeRoot);
   try {
     pyodide.FS.mkdirTree(runtimeRoot);
   } catch (_e) {
@@ -4081,8 +4211,17 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
     const relPath = fileEntry.path;
     if (!relPath) continue;
     let content = null;
+    const isSolutionAdminMode = isAdminFolderMode && assignmentState.solutionMode === true;
 
-    if (typeof window.getTaskDraftContent === 'function') {
+    // In solution mode, avoid stale cross-file drafts for real files.
+    // Keep draft override only for the currently opened file.
+    const draftAllowed = !isSolutionAdminMode || (
+      window.currentFile
+      && Number(window.currentFile.taskId) === Number(safeTaskId)
+      && String(window.currentFile.path || '') === String(relPath)
+    );
+
+    if (draftAllowed && typeof window.getTaskDraftContent === 'function') {
       const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
       if (draftContent !== null && draftContent !== undefined) {
         content = String(draftContent || '');
@@ -4095,13 +4234,13 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
 
     if (content === null) {
       if (isAdminFolderMode) {
-        const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}`, {
+        const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${solutionModeParam}`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: relPath })
         });
-        const readData = await readResponse.json();
+        const readData = await readJsonResponse(readResponse, `Datei konnte nicht gelesen werden: ${relPath}`);
         if (!readResponse.ok || (readData && readData.ok === false)) {
           throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
         }
@@ -4109,7 +4248,7 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
       } else {
         const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
         const readResponse = await fetch(readUrl, { credentials: 'include' });
-        const readData = await readResponse.json();
+        const readData = await readJsonResponse(readResponse, `Datei konnte nicht gelesen werden: ${relPath}`);
         if (!readResponse.ok || (readData && readData.ok === false)) {
           throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
         }
@@ -4130,6 +4269,17 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
     pyodide.FS.writeFile(absPath, content, { encoding: 'utf8' });
   }
 
+  // Ensure imported task modules are reloaded after file changes.
+  // Otherwise Python may reuse stale entries from sys.modules.
+  const moduleNames = Array.from(new Set(fileEntries
+    .map((entry) => String(entry.path || '').replace(/\\/g, '/'))
+    .filter((relPath) => relPath.toLowerCase().endsWith('.py'))
+    .map((relPath) => relPath.replace(/^\/+/, '').replace(/\.py$/i, ''))
+    .map((relPath) => relPath.replace(/\//g, '.'))
+    .map((name) => name.endsWith('.__init__') ? name.slice(0, -9) : name)
+    .filter((name) => !!name)
+  ));
+
   const mainPath = String(preferredMainPath || 'init.py').replace(/\\/g, '/').replace(/^\/+/, '') || 'init.py';
   await pyodide.runPythonAsync(`
 import os
@@ -4138,6 +4288,7 @@ import importlib
 
 runtime_root = ${JSON.stringify(runtimeRoot)}
 main_rel = ${JSON.stringify(mainPath)}
+module_names = ${JSON.stringify(moduleNames)}
 
 if runtime_root not in sys.path:
     sys.path.insert(0, runtime_root)
@@ -4145,6 +4296,13 @@ if runtime_root not in sys.path:
 main_dir = os.path.dirname(os.path.join(runtime_root, main_rel))
 if main_dir and main_dir not in sys.path:
     sys.path.insert(0, main_dir)
+
+for module_name in module_names:
+    if not module_name:
+        continue
+    stale = [k for k in list(sys.modules.keys()) if k == module_name or k.startswith(module_name + '.')]
+    for k in stale:
+        sys.modules.pop(k, None)
 
 importlib.invalidate_caches()
 `);
@@ -4323,6 +4481,7 @@ async function checkTask() {
     // Save attempts to database
     try {
       const editor = window.editorInstance;
+      const showDownload = shouldShowTaskDownloadButton(task);
       const code = editor ? editor.getValue() : '';
       const savePayload = {
         task_id: task.id,
@@ -4403,7 +4562,9 @@ async function submitTask() {
     updateSubmittedMeta(task);
     refreshCurrentTaskToolbarForStatus(task);
     if (window.renderTaskNavigation) renderTaskNavigation();
-    showSuccessModal(task, 0, 0);
+    const currentAttempts = assignmentState.taskAttempts[task.id] || 0;
+    const maxAttempts = Number(task.max_attempts || 1);
+    showSuccessModal(task, currentAttempts, maxAttempts, { mode: 'submitted' });
     return;
   }
 
@@ -4413,7 +4574,7 @@ async function submitTask() {
     if (!confirmed) return;
     await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
-    // Mark task as passed (teacher will review)
+    // Submit task for manual review
     if (!isAdminAssignmentTestMode()) {
       const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
       await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
@@ -4422,12 +4583,12 @@ async function submitTask() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task_id: task.id,
-          status: 'passed',
+          status: 'submitted',
           submission_comment: submissionComment || null
         })
       }).catch(err => console.error('[Submit] Failed to update status:', err));
     }
-    assignmentState.taskStatuses[task.id] = 'passed';
+    assignmentState.taskStatuses[task.id] = 'submitted';
     flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     const nowNoTest = new Date();
@@ -4439,13 +4600,15 @@ async function submitTask() {
     const siDate = $('submitted-date');
     if (siInfo && siStatus && siDate) {
       siInfo.classList.add('show');
-      siStatus.className = 'status-passed';
+      siStatus.className = 'status-submitted';
       siDate.textContent = nowNoTest.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       updateSubmittedMeta(task);
     }
     updateTaskStatusDisplay(task);
     if (window.renderTaskNavigation) renderTaskNavigation();
-    showSuccessModal(task, 0, 0);
+    const currentAttempts = assignmentState.taskAttempts[task.id] || 0;
+    const maxAttempts = Number(task.max_attempts || 1);
+    showSuccessModal(task, currentAttempts, maxAttempts, { mode: 'submitted' });
     return;
   }
 
@@ -6668,7 +6831,7 @@ function bindAssignmentsEvents() {
         saveTaskBtn.style.display = 'inline-block';
         updateSaveButtonTooltip();
       }
-      if (downloadBtn) downloadBtn.style.display = 'inline-block';
+      if (downloadBtn) downloadBtn.style.display = showDownload ? 'inline-block' : 'none';
       if (undoBtn) undoBtn.style.display = 'inline-block';
       if (redoBtn) redoBtn.style.display = 'inline-block';
 
@@ -6701,14 +6864,9 @@ function bindAssignmentsEvents() {
     }
   });
 
-  // Save task button - Only bind for non-task cases (when task is not loaded)
-  // When a task is loaded, loadTaskIntoEditor will override with saveCode()
-  const saveTaskBtn = $('save-task-btn');
-  if (saveTaskBtn && !saveTaskBtn.onclick) {
-    saveTaskBtn.addEventListener('click', () => {
-      saveCode();
-    });
-  }
+  // Save handler is assigned per-task in loadTaskIntoEditor via saveTaskBtn.onclick.
+  // Avoid additional addEventListener bindings here, otherwise one click can trigger
+  // multiple concurrent saves after repeated task renders.
 
   // Download button
   const downloadBtn = $('download-btn');
@@ -6992,8 +7150,9 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
 
   const isAdminFolderMode = isAdminTaskLabMode();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+  const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
   const listEndpoint = isAdminFolderMode
-    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`
+    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}${solutionModeParam}`
     : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${taskId}${testUserParam}`;
   
   try {
@@ -7030,13 +7189,12 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     const initPy = allFiles.find(f => f.name === 'init.py' && f.virtual);
     const filesystemFiles = allFiles.filter(f => !f.virtual);
     
-    // Store init.py content in window for openTaskFileInEditor to access
+    // Store init.py content in the current mode-scoped cache so template and solution keep separate DOM state
     if (initPy) {
-      window.taskInitPyContent = window.taskInitPyContent || {};
-      window.taskInitPyContent[taskId] = initPy.content || '';
-      setTaskSavedSnapshot(taskId, 'init.py', initPy.content || '');
+      const normalizedInitContent = normalizeLegacyEscapedCode(initPy.content || '');
+      setTaskSavedSnapshot(taskId, 'init.py', normalizedInitContent);
       if (getTaskDraftContent(taskId, 'init.py') === null) {
-        setTaskDraftContent(taskId, 'init.py', initPy.content || '');
+        setTaskDraftContent(taskId, 'init.py', normalizedInitContent);
       }
     }
     
@@ -7050,20 +7208,20 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
       }
     }
     
+    const structureMutationsAllowed = isAdminFolderMode && assignmentState.solutionMode !== true;
     const disabledStyle = 'opacity: 0.45; cursor: not-allowed;';
-    const createFolderBtnAttrs = isAdminFolderMode
+    const createFolderBtnAttrs = structureMutationsAllowed
       ? `onclick="createTaskFolder(${taskId}, '${currentPath}')" title="Neuer Ordner"`
       : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
-    const createFileBtnAttrs = isAdminFolderMode
+    const createFileBtnAttrs = structureMutationsAllowed
       ? `onclick="createTaskFile(${taskId}, '${currentPath}')" title="Neue Datei"`
       : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
-    const uploadBtnAttrs = isAdminFolderMode
+    const uploadBtnAttrs = structureMutationsAllowed
       ? `onclick="uploadTaskFile(${taskId}, '${currentPath}')" title="Datei hochladen"`
       : `title="Nur im Testmodus" disabled style="padding: 2px 6px; font-size: 11px; ${disabledStyle}"`;
     const resetCodeUiBtnAttrs = (!isAdminFolderMode && isCodeUiTask)
       ? `onclick="resetCodeUiTemplate(${taskId}, '${currentPath}')" title="Code-UI Template zurücksetzen" style="padding: 2px 6px; font-size: 11px;"`
       : `style="display:none;"`;
-
     // Build UI with toolbar and file tree
     let html = `
       <div style="display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); background: var(--bg);">
@@ -7089,7 +7247,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     }
     
     html += `<div id="task-file-tree-${taskId}" style="font-size: 12px; background: var(--panel);" data-current-path="${currentPath}" data-task-id="${taskId}">`;
-    if (isAdminFolderMode) {
+    if (structureMutationsAllowed) {
       html += `<input type="file" id="task-file-upload-${taskId}" style="display: none;" onchange="handleTaskFileUpload(${taskId}, this, '${currentPath}')" />`;
     }
     
@@ -7111,44 +7269,57 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     
     panel.innerHTML = html;
     
-    // Add event listeners for file items
-    setTimeout(() => {
-      const fileItems = panel.querySelectorAll('.task-file-item');
-      fileItems.forEach(item => {
-        const path = item.getAttribute('data-path');
-        const type = item.getAttribute('data-type');
-        const isVirtual = item.getAttribute('data-virtual') === 'true';
-        const isReadOnly = item.getAttribute('data-read-only') === 'true';
-        
-        // Single click - open file in editor or navigate folder
-        item.addEventListener('click', (e) => {
-          if (e.detail === 1) {
-            if (type === 'folder') {
-              loadAndDisplayTaskFiles(panelId, taskId, path);
-            } else if (type === 'file') {
-              openTaskFileInEditor(taskId, path);
-            }
-          }
-        });
-        
-        // Double click - rename (nur nicht-virtuelle, nicht-readonly Dateien)
-        if (isAdminFolderMode && !isVirtual && !isReadOnly) {
-          item.addEventListener('dblclick', (e) => {
-            const fileName = path.split('/').pop();
-            const fileNameEl = item.querySelector('.file-name');
-            startInlineEdit(fileNameEl, taskId, path);
-          });
-        }
+    // Delegate file-tree interactions directly on the panel to avoid delayed binding races.
+    panel.onclick = null;
+    panel.ondblclick = null;
+    panel.oncontextmenu = null;
 
-        // Right click - context menu (nur nicht-virtuelle Dateien)
-        if (isAdminFolderMode && !isVirtual) {
-          item.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            showTaskFileContextMenu(e, taskId, path, type, isReadOnly);
-          });
-        }
-      });
-    }, 100);
+    panel.onclick = (e) => {
+      const item = e.target.closest('.task-file-item');
+      if (!item || !panel.contains(item)) return;
+
+      const path = item.getAttribute('data-path') || '';
+      const type = item.getAttribute('data-type') || '';
+      if (!path) return;
+
+      if (type === 'folder') {
+        loadAndDisplayTaskFiles(panelId, taskId, path);
+      } else if (type === 'file') {
+        openTaskFileInEditor(taskId, path);
+      }
+    };
+
+    panel.ondblclick = (e) => {
+      if (!structureMutationsAllowed) return;
+      const item = e.target.closest('.task-file-item');
+      if (!item || !panel.contains(item)) return;
+
+      const type = item.getAttribute('data-type') || '';
+      const isVirtual = item.getAttribute('data-virtual') === 'true';
+      const isReadOnly = item.getAttribute('data-read-only') === 'true';
+      const path = item.getAttribute('data-path') || '';
+      if (type !== 'file' || isVirtual || isReadOnly || !path) return;
+
+      const fileNameEl = item.querySelector('.file-name');
+      if (fileNameEl) {
+        startInlineEdit(fileNameEl, taskId, path);
+      }
+    };
+
+    panel.oncontextmenu = (e) => {
+      if (!structureMutationsAllowed) return;
+      const item = e.target.closest('.task-file-item');
+      if (!item || !panel.contains(item)) return;
+
+      const path = item.getAttribute('data-path') || '';
+      const type = item.getAttribute('data-type') || '';
+      const isVirtual = item.getAttribute('data-virtual') === 'true';
+      const isReadOnly = item.getAttribute('data-read-only') === 'true';
+      if (!path || isVirtual) return;
+
+      e.preventDefault();
+      showTaskFileContextMenu(e, taskId, path, type, isReadOnly);
+    };
     
   } catch (error) {
     console.error('Error loading folder files:', error);
@@ -7190,6 +7361,20 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
   const displayName = isDirty ? `${item.name} *` : item.name;
   const isClickable = item.type === 'file'; // Dateien klickbar machen
   const cursorStyle = isClickable ? 'cursor: pointer;' : 'cursor: default;';
+  const inSolutionMode = isAdminAssignmentTestMode() && assignmentState.solutionMode === true;
+  const isInitFile = String(itemPath || '').toLowerCase() === 'init.py';
+  const isSolutionOverlayFile = inSolutionMode && !isInitFile && item.type === 'file';
+  const nameColor = isInitFile
+    ? '#1d4ed8'
+    : isSolutionOverlayFile
+      ? '#15803d'
+      : 'var(--text-primary)';
+  const nameWeight = (isInitFile || isSolutionOverlayFile || item.type === 'folder') ? '700' : '400';
+  const modeBadge = isInitFile
+    ? ' <span style="font-size: 9px; color: #1d4ed8; font-weight: 700;">INIT</span>'
+    : isSolutionOverlayFile
+      ? ' <span style="font-size: 9px; color: #15803d; font-weight: 700;">SOL</span>'
+      : '';
   
   let html = `
     <div class="task-file-item" 
@@ -7200,7 +7385,7 @@ function renderTaskFileItem(item, taskId, depth, currentPath = '') {
          data-read-only="${readOnly}"
          style="padding: 2px 4px; padding-left: ${indent}px; user-select: none; display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; ${cursorStyle} ${item.type === 'folder' ? 'font-weight: 500;' : ''}">
       <span style="width: 16px; display: flex; justify-content: center;">${icon}</span>
-      <span class="file-name" data-base-name="${escapeHtml(item.name)}">${escapeHtml(displayName)}</span>${virtualBadge}${lockBadge}
+      <span class="file-name" data-base-name="${escapeHtml(item.name)}" style="color: ${nameColor}; font-weight: ${nameWeight};">${escapeHtml(displayName)}</span>${modeBadge}${virtualBadge}${lockBadge}
     </div>
   `;
   
@@ -7545,9 +7730,11 @@ async function openTaskFileInEditor(taskId, path) {
       const draftContent = getTaskDraftContent(taskId, 'init.py');
       if (draftContent !== null) {
         content = draftContent;
-      } else if (window.taskInitPyContent && Object.prototype.hasOwnProperty.call(window.taskInitPyContent, taskId)) {
-        content = window.taskInitPyContent[taskId] || '';
-        setTaskSavedSnapshot(taskId, 'init.py', content);
+      } else {
+        const savedContent = getTaskSavedSnapshot(taskId, 'init.py');
+        if (savedContent !== null) {
+          content = savedContent;
+        }
       }
       
       // Dispose old model
@@ -7578,16 +7765,18 @@ async function openTaskFileInEditor(taskId, path) {
     
     const isAdminFolderMode = isAdminTaskLabMode();
     const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+    const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
     const readEndpoint = isAdminFolderMode
-      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
+      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`
       : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
-    const draftContent = getTaskDraftContent(taskId, path);
+    const isSolutionAdminMode = isAdminFolderMode && assignmentState.solutionMode === true;
+    const draftContent = isSolutionAdminMode ? null : getTaskDraftContent(taskId, path);
     if (draftContent !== null) {
       content = draftContent;
     } else {
       // Real file handling
-      const response = await fetch(readEndpoint);
+      const response = await fetch(readEndpoint, { credentials: 'include' });
       if (isStaleFileOpen()) {
         return;
       }
@@ -7596,7 +7785,7 @@ async function openTaskFileInEditor(taskId, path) {
         throw new Error('Datei nicht gefunden: ' + path);
       }
       
-      const result = await response.json();
+      const result = await readJsonResponse(response, `Datei nicht gefunden: ${path}`);
       if (isStaleFileOpen()) {
         return;
       }
@@ -7824,9 +8013,12 @@ async function duplicateTaskItem(taskId, path) {
     
     if (isFile) {
       try {
-        const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+        const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
+        const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
+          credentials: 'include'
+        });
         if (response.ok) {
-          const result = await response.json();
+          const result = await readJsonResponse(response, `Fehler beim Lesen der Datei: ${path}`);
           content = result.content || '';
         }
       } catch (e) {
@@ -7869,13 +8061,16 @@ async function duplicateTaskItem(taskId, path) {
 async function downloadTaskFile(taskId, path) {
   try {
     // Fetch file content
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`);
+    const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
+    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
+      credentials: 'include'
+    });
     
     if (!response.ok) {
       throw new Error('Fehler beim Abrufen der Datei');
     }
     
-    const result = await response.json();
+    const result = await readJsonResponse(response, 'Fehler beim Abrufen der Datei');
     const content = result.content || '';
     const fileName = path.split('/').pop();
     

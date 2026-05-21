@@ -151,9 +151,6 @@ $questionText = trim($input['question_text'] ?? '');
 if (empty($taskText)) {
     $taskText = $questionText;
 }
-if (in_array($taskType, ['code_reading', 'code_random_complex'], true)) {
-    $manualReviewRequired = 0;
-}
 $imageUrl = trim($input['image_url'] ?? '') ?: null;
 $correctAnswer = trim($input['correct_answer'] ?? '') ?: null;
 $variableOverrides = $input['variable_overrides'] ?? null;

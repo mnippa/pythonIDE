@@ -9,7 +9,7 @@ function ensureModalStyles() {
     const style = document.createElement('style');
     style.id = 'ticket-modal-styles';
     style.innerHTML = `
-        .modal-overlay {
+        .ticket-modal-overlay {
             position: fixed;
             top: 0;
             left: 0;
@@ -21,7 +21,7 @@ function ensureModalStyles() {
             justify-content: center;
             z-index: 10000;
         }
-        .modal-content {
+        .ticket-modal-overlay .ticket-modal-content {
             background: white;
             border-radius: 8px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -29,19 +29,19 @@ function ensureModalStyles() {
             max-height: 90vh;
             overflow: auto;
         }
-        .modal-header {
+        .ticket-modal-overlay .ticket-modal-header {
             padding: 20px;
             border-bottom: 1px solid #e5e7eb;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
-        .modal-header h2 {
+        .ticket-modal-overlay .ticket-modal-header h2 {
             margin: 0;
             font-size: 18px;
             font-weight: 600;
         }
-        .close-btn {
+        .ticket-modal-overlay .ticket-close-btn {
             background: none;
             border: none;
             font-size: 24px;
@@ -55,13 +55,13 @@ function ensureModalStyles() {
             justify-content: center;
             transition: color 0.2s;
         }
-        .close-btn:hover {
+        .ticket-modal-overlay .ticket-close-btn:hover {
             color: #1f2937;
         }
-        .modal-body {
+        .ticket-modal-overlay .ticket-modal-body {
             padding: 20px;
         }
-        .btn {
+        .ticket-modal-overlay .ticket-btn {
             display: inline-block;
             padding: 10px 16px;
             border: none;
@@ -71,14 +71,14 @@ function ensureModalStyles() {
             cursor: pointer;
             transition: all 0.2s;
         }
-        .btn-primary {
+        .ticket-modal-overlay .ticket-btn-primary {
             background: #0ea5e9;
             color: white;
         }
-        .btn-primary:hover {
+        .ticket-modal-overlay .ticket-btn-primary:hover {
             background: #0284c7;
         }
-        .btn-primary:disabled {
+        .ticket-modal-overlay .ticket-btn-primary:disabled {
             background: #cbd5e1;
             cursor: not-allowed;
         }
@@ -92,15 +92,15 @@ function ensureModalStyles() {
 function openCreateTicketModal(assignmentId) {
     ensureModalStyles();
     const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
+    modal.className = 'ticket-modal-overlay';
     modal.id = 'createTicketModal';
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
+        <div class="ticket-modal-content" style="max-width: 500px;">
+            <div class="ticket-modal-header">
                 <h2>Support Ticket erstellen</h2>
-                <button class="close-btn" onclick="document.getElementById('createTicketModal').remove()">&times;</button>
+                <button class="ticket-close-btn" onclick="document.getElementById('createTicketModal').remove()">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="ticket-modal-body">
                 <p>Mit diesem Ticket kannst du deinen Code einem Admin zeigen.</p>
                 <p style="font-size: 13px; color: #666; margin: 15px 0;">
                     Der Admin erhält einen Link zu deinem aktuellen Testview-Status. Das Ticket wird nach dem Besuch automatisch gelöscht.
@@ -109,7 +109,7 @@ function openCreateTicketModal(assignmentId) {
                     <strong style="color: #0369a1;">✓ Ticket erstellt!</strong>
                     <div id="tokenDisplay" style="margin-top: 10px; word-break: break-all; font-family: monospace; font-size: 12px; background: white; padding: 8px; border-radius: 3px; border: 1px solid #d1d5db;">
                     </div>
-                    <button class="btn btn-primary" style="margin-top: 10px; width: 100%;" onclick="copyToClipboard(document.getElementById('tokenDisplay').textContent)">
+                    <button class="ticket-btn ticket-btn-primary" style="margin-top: 10px; width: 100%;" onclick="copyToClipboard(document.getElementById('tokenDisplay').textContent)">
                         Token kopieren
                     </button>
                 </div>
@@ -123,7 +123,7 @@ function openCreateTicketModal(assignmentId) {
                             style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; font-family: system-ui; resize: vertical; min-height: 70px; max-height: 150px; box-sizing: border-box;"></textarea>
                         <p style="font-size: 12px; color: #999; margin: 6px 0 0 0;">Max. 200 Zeichen</p>
                     </div>
-                    <button class="btn btn-primary" onclick="createSupportTicket(${assignmentId})" style="width: 100%;">
+                    <button class="ticket-btn ticket-btn-primary" onclick="createSupportTicket(${assignmentId})" style="width: 100%;">
                         Ticket generieren
                     </button>
                 </div>

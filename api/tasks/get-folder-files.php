@@ -13,6 +13,7 @@ $user = requireAuth();
 
 $isAdmin = (($user['role'] ?? '') === 'admin');
 $includeContent = isset($_GET['include_content']) && (string)$_GET['include_content'] === '1' && $isAdmin;
+$solutionMode = isset($_GET['solution_mode']) && (string)$_GET['solution_mode'] === '1' && $isAdmin;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
@@ -25,7 +26,7 @@ if (!$taskId) {
 
 // Get task from database to check folderstructure flag and code_template
 $conn = getDbConnection();
-$stmt = $conn->prepare('SELECT id, folderstructure, code_template, task_type, allow_code_ui_web_edit FROM tasks WHERE id = ?');
+$stmt = $conn->prepare('SELECT id, folderstructure, code_template, solution_code, task_type, allow_code_ui_web_edit FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -43,6 +44,7 @@ if (!$task['folderstructure']) {
 $files = [];
 
 $folderPath = __DIR__ . '/../../storage/tasks/folders/task_' . $taskId;
+$solutionFolderPath = $folderPath . '/.solution';
 $isCodeUiTask = ($task['task_type'] ?? '') === 'code_ui';
 $allowStudentWebEdit = (int)($task['allow_code_ui_web_edit'] ?? 1) === 1;
 
@@ -91,18 +93,45 @@ $resolveReadOnly = function (string $relativePath, array $policies, bool $codeUi
 
 $policies = $loadPolicies($folderPath);
 
+$getOverlayFileContent = function (string $relativePath) use ($folderPath, $solutionFolderPath, $solutionMode): ?string {
+    $normalized = ltrim(str_replace('\\', '/', $relativePath), '/');
+    if ($normalized === '' || strpos($normalized, '..') !== false) {
+        return null;
+    }
+
+    if ($solutionMode) {
+        $solutionFile = $solutionFolderPath . '/' . $normalized;
+        if (is_file($solutionFile)) {
+            $content = @file_get_contents($solutionFile);
+            if ($content !== false) {
+                return $content;
+            }
+        }
+    }
+
+    $templateFile = $folderPath . '/' . $normalized;
+    if (is_file($templateFile)) {
+        $content = @file_get_contents($templateFile);
+        if ($content !== false) {
+            return $content;
+        }
+    }
+
+    return null;
+};
+
 // Add virtual init.py file
 $files[] = [
     'name' => 'init.py',
     'type' => 'file',
     'virtual' => true,
-    'content' => $task['code_template'] ?? '',
+    'content' => $solutionMode ? ($task['solution_code'] ?? '') : ($task['code_template'] ?? ''),
     'path' => 'init.py',
     'read_only' => false
 ];
 
 // List real files and folders from folder (recursive)
-$scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryWithPolicy, $resolveReadOnly, $policies, $isCodeUiTask, $allowStudentWebEdit, $includeContent) {
+$scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryWithPolicy, $resolveReadOnly, $policies, $isCodeUiTask, $allowStudentWebEdit, $includeContent, $getOverlayFileContent) {
     $items = [];
     
     if (!is_dir($dir)) {
@@ -138,8 +167,8 @@ $scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryW
             ];
 
             if ($includeContent) {
-                $content = @file_get_contents($filePath);
-                if ($content !== false) {
+                $content = $getOverlayFileContent($relativePath);
+                if ($content !== null) {
                     $item['content'] = $content;
                 }
             }

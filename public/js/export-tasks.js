@@ -40,6 +40,9 @@ class TaskExporter {
       version: '3.0',
       task_type: taskType,
       task_difficulty: taskDifficulty,
+      manual_review_required: typeof task.manual_review_required === 'number'
+        ? task.manual_review_required
+        : (task.manual_review_required ? 1 : 0),
       title: task.title,
       task_text: task.task_text || '',
       description: task.description || '',
@@ -69,9 +72,10 @@ class TaskExporter {
    * Fetch all real files from a folder-based task via API
    * Returns array of { path, content } objects
    */
-  async fetchFolderFiles(taskId) {
+  async fetchFolderFiles(taskId, solutionMode = false) {
     try {
-      const res = await fetch(`../api/tasks/get-folder-files.php?task_id=${taskId}&include_content=1`);
+      const modeParam = solutionMode ? '&solution_mode=1' : '';
+      const res = await fetch(`../api/tasks/get-folder-files.php?task_id=${taskId}&include_content=1${modeParam}`);
       if (!res.ok) return [];
       const data = await res.json();
       if (!data.ok || !Array.isArray(data.files)) return [];
@@ -229,6 +233,11 @@ class TaskExporter {
         for (const { path, content } of folderFiles) {
           zip.file(`folder_files/${path}`, content);
         }
+
+        const solutionFiles = await this.fetchFolderFiles(task.id, true);
+        for (const { path, content } of solutionFiles) {
+          zip.file(`solution_files/${path}`, content);
+        }
       }
 
       // Add task JSON
@@ -309,6 +318,15 @@ class TaskExporter {
           }
           if (folderFiles.length > 0) {
             taskExport._folder_files_dir = taskFolderFilesDir;
+          }
+
+          const solutionFiles = await this.fetchFolderFiles(task.id, true);
+          const taskSolutionFilesDir = `solution_files/task_${i + 1}/`;
+          for (const { path, content } of solutionFiles) {
+            zip.file(taskSolutionFilesDir + path, content);
+          }
+          if (solutionFiles.length > 0) {
+            taskExport._solution_files_dir = taskSolutionFilesDir;
           }
         }
 

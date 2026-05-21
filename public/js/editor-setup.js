@@ -1251,8 +1251,17 @@ if "idegui" not in sys.modules:
       const safeTaskId = Number(taskId || 0);
       if (!safeTaskId) return null;
 
+      const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
+      const inSolutionMode = isTaskLabMode && window.assignmentState?.solutionMode === true;
+      const solutionModeParam = inSolutionMode ? '&solution_mode=1' : '';
       const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-      const listUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+
+      console.log(`[BUILD_PAYLOAD] Task ${safeTaskId}: isTaskLabMode=${isTaskLabMode}, solutionMode=${window.assignmentState?.solutionMode}, inSolutionMode=${inSolutionMode}, solutionModeParam='${solutionModeParam}'`);
+
+      const listUrl = isTaskLabMode
+        ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1${solutionModeParam}`
+        : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+
       const listResponse = await fetch(listUrl, { credentials: 'include' });
       const listData = await listResponse.json();
 
@@ -1271,7 +1280,12 @@ if "idegui" not in sys.modules:
           }
           if (item.type === 'file' && item.virtual !== true && item.is_text !== false) {
             const relPath = String(item.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
-            if (relPath) fileEntries.push(relPath);
+            if (relPath) {
+              fileEntries.push({
+                path: relPath,
+                content: typeof item.content === 'string' ? String(item.content || '') : null,
+              });
+            }
           }
         }
       };
@@ -1279,36 +1293,70 @@ if "idegui" not in sys.modules:
       walk(listData.files || []);
 
       const files = [];
-      for (const relPath of fileEntries) {
+      for (const entry of fileEntries) {
+        const relPath = entry.path;
         let content = null;
 
-        if (typeof window.getTaskDraftContent === 'function') {
+        const allowDraft = !inSolutionMode || (
+          window.currentFile
+          && Number(window.currentFile.taskId) === Number(safeTaskId)
+          && String(window.currentFile.path || '') === String(relPath)
+        );
+
+        if (allowDraft && typeof window.getTaskDraftContent === 'function') {
           const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
           if (draftContent !== null && draftContent !== undefined) {
             content = String(draftContent || '');
           }
         }
 
-        if (content === null) {
-          const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
-          const readResponse = await fetch(readUrl, { credentials: 'include' });
-          const readData = await readResponse.json();
-
-          if (!readResponse.ok || (readData && readData.ok === false)) {
-            throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
-          }
-
-          content = String(readData.content || '');
+        if (content === null && entry.content !== null) {
+          content = String(entry.content || '');
         }
 
-        files.push({ path: relPath, content });
+        if (content === null) {
+          if (isTaskLabMode) {
+            const readUrl = `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${solutionModeParam}`;
+            const readResponse = await fetch(readUrl, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: relPath }),
+            });
+            const readData = await readResponse.json();
+            if (!readResponse.ok || (readData && readData.ok === false)) {
+              throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+            }
+            content = String(readData.content || '');
+          } else {
+            const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
+            const readResponse = await fetch(readUrl, { credentials: 'include' });
+            const readData = await readResponse.json();
+            if (!readResponse.ok || (readData && readData.ok === false)) {
+              throw new Error(readData?.error || `Datei konnte nicht gelesen werden: ${relPath}`);
+            }
+            content = String(readData.content || '');
+          }
+        }
+
+        files.push({ path: relPath, content: String(content || '') });
       }
 
       if (files.length === 0) return null;
 
+      const modeScope = inSolutionMode ? 'solution' : (isTaskLabMode ? 'template' : 'user');
       const mainPath = String(preferredMainPath || 'init.py').replace(/\\/g, '/').replace(/^\/+/, '') || 'init.py';
+      
+      // DEBUG: Log files being synced
+      console.log(`[BUILD_PAYLOAD] Syncing to runtime root: /task_runtime/${modeScope}/task_${safeTaskId}`);
+      console.log(`[BUILD_PAYLOAD] Files: ${files.map(f => f.path).join(', ')}`);
+      for (const f of files) {
+        const preview = (f.content || '').substring(0, 100).replace(/\n/g, '\\n');
+        console.log(`[BUILD_PAYLOAD] ${f.path}: "${preview}..."`);
+      }
+      
       return {
-        root: '/task_runtime',
+        root: `/task_runtime/${modeScope}/task_${safeTaskId}`,
         mainPath,
         files,
       };
@@ -2051,7 +2099,8 @@ compile(code, "<usercode>", "exec")
             } else {
               const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
               if (isTaskLabMode) {
-                const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}`, {
+                const solutionModeParam = window.assignmentState?.solutionMode === true ? '&solution_mode=1' : '';
+                const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}${solutionModeParam}`, {
                   method: 'POST',
                   credentials: 'include',
                   headers: { 'Content-Type': 'application/json' },
@@ -2341,17 +2390,26 @@ if isinstance(project_runtime, dict):
   runtime_files = project_runtime.get('files') or []
 
   if runtime_files:
-    # Clean up old VFS to remove stale .py files from previous project folders.
-    # shutil.rmtree can fail with EBUSY on Emscripten when a dir is still mounted,
-    # so we fall back to walking and removing individual .py files.
+    other_mode_root = None
+    # Clean up current VFS root to remove stale files from previous runs.
+    # Cross-mode contamination is handled via sys.path pruning and module cleanup below.
     try:
-      import shutil, stat
+      import shutil, stat, os
+    
+      other_mode_root = None
+      current_mode = 'template' if 'template' in runtime_root else ('solution' if 'solution' in runtime_root else 'user')
+    
+      if current_mode == 'template':
+        other_mode_root = runtime_root.replace('/template/', '/solution/')
+      elif current_mode == 'solution':
+        other_mode_root = runtime_root.replace('/solution/', '/template/')
+    
+      # Clean current mode
       if os.path.exists(runtime_root):
         try:
           shutil.rmtree(runtime_root)
           print(f"[VFS Cleanup] Removed VFS root: {runtime_root}")
         except Exception:
-          # Fallback: delete only .py files to avoid stale module resolution
           for dirpath, dirnames, filenames in os.walk(runtime_root):
             for fname in filenames:
               if fname.endswith('.py'):
@@ -2360,9 +2418,12 @@ if isinstance(project_runtime, dict):
                 except Exception:
                   pass
           print(f"[VFS Cleanup] Removed stale .py files under: {runtime_root}")
+    
+      # Do not delete the other mode's runtime root here. Removing it during a fast
+      # toggle/save sequence can wipe files unexpectedly while the UI is switching modes.
+    
     except Exception as e:
       print(f"[VFS Cleanup] Warning: {e}")
-    
     try:
       os.makedirs(runtime_root, exist_ok=True)
     except Exception:
@@ -2404,29 +2465,45 @@ if isinstance(project_runtime, dict):
     if runtime_root not in sys.path:
       sys.path.insert(0, runtime_root)
 
+    # Remove OTHER mode's paths from sys.path to prevent Python finding stale modules
+    # after mode toggles
+    if other_mode_root:
+      sys.path[:] = [p for p in sys.path if not p.startswith(other_mode_root.rstrip('/'))]
+
     # Ensure updated project modules are re-imported on each RUN.
+    # CRITICAL: Clean modules from ALL task runtime roots (template+solution),
+    # not just current root, to prevent stale modules when toggling between modes.
     try:
       import importlib
-      abs_root = os.path.abspath(runtime_root)
-      prefix = abs_root + os.sep
       stale_modules = []
+      
       for mod_name, mod in list(sys.modules.items()):
-        mod_file = getattr(mod, '__file__', None)
+        try:
+          mod_file = getattr(mod, '__file__', None)
+        except Exception:
+          # Some injected dummy modules (e.g. idegui blocker) can raise on attribute access.
+          # Skip them so cleanup still runs for real runtime modules.
+          continue
         if not mod_file:
           continue
         try:
           mod_abs = os.path.abspath(str(mod_file))
         except Exception:
           continue
-        if mod_abs.startswith(prefix):
+        
+        # Remove if it points to ANY /task_runtime/ path (template, solution, or user)
+        # This ensures old modules from previous modes don't persist
+        if '/task_runtime/' in mod_abs:
           stale_modules.append(mod_name)
 
-      for mod_name in stale_modules:
-        sys.modules.pop(mod_name, None)
-
+      if stale_modules:
+        print(f"[MODULE_CLEANUP] Removing {len(stale_modules)} stale modules: {', '.join(stale_modules)}")
+        for mod_name in stale_modules:
+          sys.modules.pop(mod_name, None)
+      
       importlib.invalidate_caches()
-    except Exception:
-      pass
+    except Exception as e:
+      print(f"[MODULE_CLEANUP] Warning: {e}")
 
 _js_output_write = js_window.__pyideOutputWrite
 _js_output_flush = js_window.__pyideOutputFlush

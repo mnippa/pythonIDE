@@ -338,9 +338,6 @@ if (isset($input['task_type'])) {
         }
     }
 
-    if (in_array($taskType, ['code_reading', 'code_random_complex'], true) && !array_key_exists('manual_review_required', $input)) {
-        $updates[] = 'manual_review_required = 0';
-    }
 }
 
 $effectiveTaskType = $taskTypeInput ?? $existingTaskType;

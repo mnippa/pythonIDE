@@ -118,7 +118,8 @@ class TaskImporter {
           resolve({
             tasks,
             images: {}, // No images in JSON
-            folderFilesMap: {}
+            folderFilesMap: {},
+            solutionFilesMap: {}
           });
         } catch (err) {
           reject(new Error('Invalid JSON format: ' + err.message));
@@ -158,6 +159,19 @@ class TaskImporter {
               // Strip leading 'folder_files/'
               const relativePath = path.replace(/^folder_files\//, '');
               folderFilesMap[relativePath] = content;
+            })
+        );
+      }
+
+      const solutionFilesMap = {}; // Maps 'task_N/path' or 'path' => content string
+      if (zip.folder('solution_files')) {
+        await Promise.all(
+          Object.entries(zip.files)
+            .filter(([path]) => path.startsWith('solution_files/') && !zip.files[path].dir)
+            .map(async ([path, file]) => {
+              const content = await file.async('text');
+              const relativePath = path.replace(/^solution_files\//, '');
+              solutionFilesMap[relativePath] = content;
             })
         );
       }
@@ -215,7 +229,7 @@ class TaskImporter {
         throw new Error('No tasks found in ZIP file');
       }
 
-      return { tasks, images, manifest, folderFilesMap };
+      return { tasks, images, manifest, folderFilesMap, solutionFilesMap };
     } catch (err) {
       if (err.message.includes('No tasks found')) {
         throw err;
@@ -292,7 +306,7 @@ class TaskImporter {
   /**
    * Import tasks
    */
-  async importTasks(tasks, images, folderFilesMap = {}) {
+  async importTasks(tasks, images, folderFilesMap = {}, solutionFilesMap = {}) {
     const results = {
       created: [],
       failed: []
@@ -371,6 +385,7 @@ class TaskImporter {
           max_iterations: maxIterationsForPayload,
           show_solution: taskWithImages.show_solution !== undefined ? parseInt(taskWithImages.show_solution, 10) : 1,
           show_solution_code: taskWithImages.show_solution_code !== undefined ? parseInt(taskWithImages.show_solution_code, 10) : 0,
+          manual_review_required: taskWithImages.manual_review_required !== undefined ? parseInt(taskWithImages.manual_review_required, 10) : 0,
           min_keywords_required: taskWithImages.min_keywords_required ? parseInt(taskWithImages.min_keywords_required, 10) : null,
           task_type: taskType,
           task_difficulty: taskDifficulty,
@@ -411,6 +426,7 @@ class TaskImporter {
           // Restore folder files if present
           if (taskWithImages.folderstructure) {
             await this.restoreFolderFiles(taskWithImages.id, i, taskWithImages._folder_files_dir, folderFilesMap);
+            await this.restoreSolutionFiles(taskWithImages.id, i, taskWithImages._solution_files_dir, solutionFilesMap);
           }
 
           results.created.push({
@@ -434,6 +450,7 @@ class TaskImporter {
           // Restore folder files for newly created task
           if (taskWithImages.folderstructure && newTaskId) {
             await this.restoreFolderFiles(newTaskId, i, taskWithImages._folder_files_dir, folderFilesMap);
+            await this.restoreSolutionFiles(newTaskId, i, taskWithImages._solution_files_dir, solutionFilesMap);
           }
 
           results.created.push({
@@ -491,6 +508,42 @@ class TaskImporter {
         }
       } catch (e) {
         console.warn(`Could not restore folder file ${filePath} for task ${taskId}:`, e);
+      }
+    }
+  }
+
+  /**
+   * Restore solution files for a task after create/update
+   * solutionFilesMap keys are either 'task_N/path' (multi-task export) or 'path' (single-task export)
+   */
+  async restoreSolutionFiles(taskId, taskIndex, solutionFilesDirHint, solutionFilesMap) {
+    if (!solutionFilesMap || Object.keys(solutionFilesMap).length === 0) return;
+
+    const multiPrefix = `task_${taskIndex + 1}/`;
+
+    for (const [mapKey, content] of Object.entries(solutionFilesMap)) {
+      let filePath = null;
+
+      if (mapKey.startsWith(multiPrefix)) {
+        filePath = mapKey.slice(multiPrefix.length);
+      } else if (!mapKey.includes('/task_')) {
+        filePath = mapKey;
+      }
+
+      if (!filePath || filePath === 'init.py') continue;
+
+      try {
+        const res = await fetch(`../api/tasks/folder-manage.php?action=save&task_id=${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filePath, content, solution_mode: 1 })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || (data && data.ok === false)) {
+          console.warn(`restoreSolutionFiles: save failed for ${filePath} (task ${taskId}):`, data?.error || res.status);
+        }
+      } catch (e) {
+        console.warn(`Could not restore solution file ${filePath} for task ${taskId}:`, e);
       }
     }
   }
