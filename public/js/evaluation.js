@@ -416,7 +416,7 @@ function getStatusDot(status) {
     'in-progress': 'status-in-progress',
     rework: 'status-in-progress',
     rework_open: 'status-in-progress',
-    submitted: 'status-in-progress',
+    submitted: 'status-submitted',
     completed: 'status-completed',
     late_completed: 'status-late-completed',
     passed: 'status-passed',
@@ -450,9 +450,13 @@ async function openUserDetail(userId) {
     const timeFormatted = formatTime(activeSeconds);
     const isReworkOpenTask = task.status === 'failed' && /nacharbeit offen/i.test(task.status_label || '');
     const dotStatus = isReworkOpenTask ? 'rework_open' : task.status;
+    const submissionComment = String(task.submission_comment || '').trim();
+    const commentHtml = submissionComment
+      ? `<div style="margin-top:4px;font-size:11px;color:#6b7280;white-space:pre-wrap;">Kommentar: ${escapeHtml(submissionComment)}</div>`
+      : '';
     tr.innerHTML = `
       <td class="mono">${task.position}</td>
-      <td>${escapeHtml(task.title)}</td>
+      <td>${escapeHtml(task.title)}${commentHtml}</td>
       <td>${getStatusDot(dotStatus)} ${task.status_label}</td>
       <td class="num-right">${task.attempts}</td>
       <td class="num-right">${task.run_count}</td>

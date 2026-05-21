@@ -101,7 +101,21 @@ class FileTreeManager {
     `;
 
     this.container.innerHTML = html;
-    // Reset listenersAttached flag before reattaching, since innerHTML replaced the DOM
+    // Remove old listeners explicitly before re-attaching (innerHTML only replaces children,
+    // NOT event listeners on the container element itself – so without this, every render()
+    // call accumulates another listener, causing N clicks per user interaction after N renders).
+    if (this._onClick) {
+      this.container.removeEventListener('click', this._onClick);
+      this._onClick = null;
+    }
+    if (this._onDblClick) {
+      this.container.removeEventListener('dblclick', this._onDblClick);
+      this._onDblClick = null;
+    }
+    if (this._onContextMenu) {
+      this.container.removeEventListener('contextmenu', this._onContextMenu);
+      this._onContextMenu = null;
+    }
     this.listenersAttached = false;
     this.attachEventListeners();
     

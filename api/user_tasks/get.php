@@ -54,11 +54,13 @@ $hasCurrentIteration = $columnExists($conn, 'user_tasks', 'current_iteration');
 $iterationSelect = $hasCurrentIteration ? ', current_iteration' : '';
 $hasIterationValues = $columnExists($conn, 'user_tasks', 'iteration_values');
 $iterationValuesSelect = $hasIterationValues ? ', iteration_values' : '';
+$hasSubmissionComment = $columnExists($conn, 'user_tasks', 'submission_comment');
+$submissionCommentSelect = $hasSubmissionComment ? ', submission_comment' : '';
 
 if ($taskId) {
     // Get single task progress
     $stmt = $conn->prepare(
-        'SELECT id, user_id, task_id, status, attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
+        'SELECT id, user_id, task_id, status, attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
          FROM user_tasks 
          WHERE user_id = ? AND task_id = ?'
     );
@@ -80,6 +82,9 @@ if ($taskId) {
         }
         if ($hasIterationValues && isset($task['iteration_values'])) {
             $task['iteration_values'] = $task['iteration_values'] ? json_decode($task['iteration_values'], true) : null;
+        }
+        if ($hasSubmissionComment) {
+            $task['submission_comment'] = $task['submission_comment'] ?? null;
         }
         $task['hints_revealed'] = $task['hints_revealed'] ? json_decode($task['hints_revealed'], true) : [];
         jsonResponse(['ok' => true, 'task' => $task]);
@@ -113,6 +118,9 @@ if ($taskId) {
         }
         if ($hasIterationValues && isset($row['iteration_values'])) {
             $row['iteration_values'] = $row['iteration_values'] ? json_decode($row['iteration_values'], true) : null;
+        }
+        if ($hasSubmissionComment) {
+            $row['submission_comment'] = $row['submission_comment'] ?? null;
         }
         $row['hints_revealed'] = $row['hints_revealed'] ? json_decode($row['hints_revealed'], true) : [];
         $tasks[] = $row;

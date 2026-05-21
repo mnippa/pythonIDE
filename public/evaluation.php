@@ -189,6 +189,7 @@ $headerActions = '<button class="hspf-btn hspf-btn-ghost" id="back-to-admin">Bac
 
     .status-unstarted { background: #d1d5db; }
     .status-in-progress { background: #facc15; }
+    .status-submitted { background: #38bdf8; }
     .status-completed { background: #38bdf8; }
     .status-late-completed { background: #f59e0b; }
     .status-passed { background: #22c55e; }

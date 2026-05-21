@@ -210,6 +210,13 @@ if (isset($input['show_solution_code'])) {
     $types .= 'i';
 }
 
+if (array_key_exists('manual_review_required', $input)) {
+    $manualReviewRequired = (int)(bool)$input['manual_review_required'];
+    $updates[] = 'manual_review_required = ?';
+    $params[] = $manualReviewRequired;
+    $types .= 'i';
+}
+
 if (isset($input['folderstructure'])) {
     $folderstructure = (int)(bool)$input['folderstructure'];
     $updates[] = 'folderstructure = ?';
@@ -329,6 +336,10 @@ if (isset($input['task_type'])) {
             $params[] = getCodeUiDefaultCodeTemplate();
             $types .= 's';
         }
+    }
+
+    if (in_array($taskType, ['code_reading', 'code_random_complex'], true) && !array_key_exists('manual_review_required', $input)) {
+        $updates[] = 'manual_review_required = 0';
     }
 }
 

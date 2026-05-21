@@ -13,6 +13,7 @@ function formatRemainingTime(?DateTimeImmutable $deadline): ?string {
     if ($deadline === null) {
         return null;
     }
+    $hasSubmissionComment = $hasUserTasks && $columnExists($conn, 'user_tasks', 'submission_comment');
 
     $now = new DateTimeImmutable('now');
     if ($now >= $deadline) {
@@ -100,6 +101,7 @@ function calcAssignmentTiming(array $row): array {
 
 function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskStats): array {
     $rawStatus = (string)($row['raw_status'] ?? 'assigned');
+        $commentSelect = $hasSubmissionComment ? ', ut.submission_comment' : '';
     $statusMap = [
         'assigned' => 'Zugewiesen',
         'in_progress' => 'In Bearbeitung',
@@ -153,6 +155,7 @@ try {
     $hasRunCount = $hasUserTasks && $columnExists($conn, 'user_tasks', 'run_count');
     $hasHintsRevealed = $hasUserTasks && $columnExists($conn, 'user_tasks', 'hints_revealed');
     $hasActiveSeconds = $hasUserTasks && $columnExists($conn, 'user_tasks', 'active_seconds');
+    $hasSubmissionComment = $hasUserTasks && $columnExists($conn, 'user_tasks', 'submission_comment');
 
     $sql = '
         SELECT
@@ -231,6 +234,7 @@ try {
     $taskStatusLabelMap = [
         'unbearbeitet' => 'unbearbeitet',
         'in-progress' => 'in Bearbeitung',
+        'submitted' => 'Abgegeben',
         'passed' => 'Bestanden',
         'failed' => $rawStatus === 'rework' ? 'Nacharbeit offen' : 'Nicht bestanden'
     ];
@@ -240,9 +244,10 @@ try {
         $runSelect = $hasRunCount ? ', ut.run_count' : '';
         $hintsSelect = $hasHintsRevealed ? ', IFNULL(JSON_LENGTH(ut.hints_revealed), 0) AS hints_count' : ', 0 AS hints_count';
         $activeSelect = $hasActiveSeconds ? ', ut.active_seconds' : '';
+        $commentSelect = $hasSubmissionComment ? ', ut.submission_comment' : '';
         $taskSql = '
             SELECT t.id, t.title, t.position,
-                   ut.status, ut.attempts' . $runSelect . $hintsSelect . $activeSelect . '
+                   ut.status, ut.attempts' . $runSelect . $hintsSelect . $activeSelect . $commentSelect . '
             FROM tasks t
             LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
             WHERE t.assignment_id = ?
@@ -278,7 +283,8 @@ try {
             'attempts' => $hasUserTasks && $row['attempts'] !== null ? (int)$row['attempts'] : 0,
             'run_count' => $runCount,
             'hints_count' => $hintsCount,
-            'active_seconds' => $activeSeconds
+            'active_seconds' => $activeSeconds,
+            'submission_comment' => $hasSubmissionComment ? ($row['submission_comment'] ?? null) : null
         ];
     }
 

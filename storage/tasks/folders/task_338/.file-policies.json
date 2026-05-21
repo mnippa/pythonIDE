@@ -1,0 +1,19 @@
+{
+    "policies": [
+        {
+            "path": "spielfeld.py",
+            "readonly": true,
+            "reason": "Spielfeld-Datenstruktur"
+        },
+        {
+            "path": "function.py",
+            "readonly": true,
+            "reason": "Renderer-Funktion"
+        },
+        {
+            "path": "README.md",
+            "readonly": true,
+            "reason": "Aufgabenbeschreibung"
+        }
+    ]
+}

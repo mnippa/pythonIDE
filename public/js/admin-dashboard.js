@@ -784,6 +784,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
     const taskTypeLabel = t.task_type || 'code';
     const difficulty = getTaskDifficultyMeta(t.task_difficulty);
     const isQuizType = !['code', 'code_ui'].includes(taskTypeLabel);
+    const manualReviewBadge = t.manual_review_required ? '<span class="tag" style="background:#dbeafe;color:#1d4ed8;">manuell</span>' : '';
 
     // Testtypen-Icons
     const testTypeIcons = {
@@ -823,7 +824,7 @@ async function loadTasks(assignmentId, assignmentTitle) {
         <span class="mono">${t.position}</span>
       </td>
       <td>${escapeHtml(t.title)}</td>
-      <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span></td>
+      <td><span class="tag ${isQuizType ? 'quiz' : ''}">${escapeHtml(taskTypeLabel)}</span> ${manualReviewBadge}</td>
       <td><span class="tag" title="${difficulty.level}">${difficulty.stars} ${difficulty.level}</span></td>
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
@@ -1170,6 +1171,7 @@ async function handleTaskSubmit(e) {
     max_attempts: $('task-max-attempts').value ? parseInt($('task-max-attempts').value, 10) : 1,
     show_solution: $('task-show-solution').checked ? 1 : 0,
     show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
+    manual_review_required: $('task-manual-review-required')?.checked ? 1 : 0,
     folderstructure: $('task-folderstructure').checked ? 1 : 0,
     allowDownload: $('task-allowDownload').checked ? 1 : 0,
     allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
@@ -1893,6 +1895,13 @@ async function openEditTaskModal(taskId) {
       task.show_solution_code === '1' ||
       task.show_solution_code === 'true';
   }
+  if ($('edit-task-manual-review-required')) {
+    $('edit-task-manual-review-required').checked =
+      task.manual_review_required === 1 ||
+      task.manual_review_required === true ||
+      task.manual_review_required === '1' ||
+      task.manual_review_required === 'true';
+  }
   
   if ($('edit-task-folderstructure')) {
     $('edit-task-folderstructure').checked =
@@ -2070,6 +2079,7 @@ async function handleEditTaskSubmit(e) {
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
+    manual_review_required: $('edit-task-manual-review-required')?.checked ? 1 : 0,
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };

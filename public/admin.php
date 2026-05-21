@@ -1306,6 +1306,14 @@ if ($displayName === '') {
               <span>Code anzeigen (für code_random_complex und code_reading)</span>
             </label>
           </div>
+
+          <div class="field checkbox-field">
+            <label>
+              <input id="task-manual-review-required" type="checkbox" />
+              <span>Manuelle Prüfung nach Abgabe</span>
+            </label>
+            <div class="hint">Nur für nicht-iterative Aufgaben: Nach Abgabe bleibt der Task blau bis ein Admin ihn bewertet.</div>
+          </div>
           
           <!-- Options Builder (for single/multiple choice) -->
           <div class="field" data-field="options-builder">
@@ -1573,6 +1581,14 @@ if ($displayName === '') {
               <input id="edit-task-show-solution-code" type="checkbox" />
               <span>Code anzeigen (für code_random_complex und code_reading)</span>
             </label>
+          </div>
+
+          <div class="field checkbox-field">
+            <label>
+              <input id="edit-task-manual-review-required" type="checkbox" />
+              <span>Manuelle Prüfung nach Abgabe</span>
+            </label>
+            <div class="hint">Nur für nicht-iterative Aufgaben: Nach Abgabe bleibt der Task blau bis ein Admin ihn bewertet.</div>
           </div>
           
           <!-- Dynamic Fields -->

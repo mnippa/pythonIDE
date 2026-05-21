@@ -43,7 +43,7 @@ try {
 
     requireAdminOwnedAssignment($conn, $assignmentId, $admin);
 
-    $allowed = ['unbearbeitet', 'in-progress', 'passed', 'failed', 'missed'];
+    $allowed = ['unbearbeitet', 'in-progress', 'submitted', 'passed', 'failed', 'missed'];
     if (!in_array($statusRequested, $allowed, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);
     }
@@ -74,8 +74,14 @@ try {
     $utSelect->execute();
     $utRow = $utSelect->get_result()->fetch_assoc();
 
+    $hasSubmissionComment = false;
+    $commentColumnCheck = $conn->query("SHOW COLUMNS FROM user_tasks LIKE 'submission_comment'");
+    if ($commentColumnCheck && $commentColumnCheck->num_rows > 0) {
+        $hasSubmissionComment = true;
+    }
+
     $attemptsAfter = $setAttempts !== null ? $setAttempts : (int)($utRow['attempts'] ?? 0);
-    $isFinal = in_array($statusEffective, ['passed', 'failed'], true);
+    $isFinal = in_array($statusEffective, ['submitted', 'passed', 'failed'], true);
     $now = date('Y-m-d H:i:s');
 
     if ($fullReset && $statusEffective === 'unbearbeitet') {
@@ -94,14 +100,14 @@ try {
             if ($isIterative) {
                 $upd = $conn->prepare(
                     'UPDATE user_tasks SET status = "unbearbeitet", attempts = 0, current_iteration = 1,
-                     variable_values = NULL, hints_revealed = "[]", completed_at = NULL, started_at = NULL
+                     variable_values = NULL, hints_revealed = "[]", completed_at = NULL, started_at = NULL' . ($hasSubmissionComment ? ', submission_comment = NULL' : '') . '
                      WHERE id = ?'
                 );
                 $upd->bind_param('i', $utId);
             } elseif ($isCode) {
                 $upd = $conn->prepare(
                     'UPDATE user_tasks SET status = "unbearbeitet", attempts = 0, current_code = NULL,
-                     hints_revealed = "[]", completed_at = NULL, started_at = NULL
+                     hints_revealed = "[]", completed_at = NULL, started_at = NULL' . ($hasSubmissionComment ? ', submission_comment = NULL' : '') . '
                      WHERE id = ?'
                 );
                 $upd->bind_param('i', $utId);
@@ -110,7 +116,7 @@ try {
                 $upd = $conn->prepare(
                     'UPDATE user_tasks SET status = "unbearbeitet", attempts = 0,
                      selected_options = NULL, text_answer = NULL,
-                     hints_revealed = "[]", completed_at = NULL, started_at = NULL
+                     hints_revealed = "[]", completed_at = NULL, started_at = NULL' . ($hasSubmissionComment ? ', submission_comment = NULL' : '') . '
                      WHERE id = ?'
                 );
                 $upd->bind_param('i', $utId);
@@ -123,14 +129,16 @@ try {
     } elseif ($utRow) {
         $utId = (int)$utRow['id'];
         if ($setAttempts !== null) {
-            $upd = $conn->prepare('UPDATE user_tasks SET status = ?, attempts = ?, completed_at = ? WHERE id = ?');
+            $commentSuffix = ($hasSubmissionComment && $statusEffective === 'unbearbeitet') ? ', submission_comment = NULL' : '';
+            $upd = $conn->prepare('UPDATE user_tasks SET status = ?, attempts = ?, completed_at = ?' . $commentSuffix . ' WHERE id = ?');
             $completedAt = $isFinal ? $now : null;
             $upd->bind_param('sisi', $statusEffective, $attemptsAfter, $completedAt, $utId);
             if (!$upd->execute()) {
                 jsonResponse(['ok' => false, 'error' => 'Failed to update user task'], 500);
             }
         } else {
-            $upd = $conn->prepare('UPDATE user_tasks SET status = ?, completed_at = ? WHERE id = ?');
+            $commentSuffix = ($hasSubmissionComment && $statusEffective === 'unbearbeitet') ? ', submission_comment = NULL' : '';
+            $upd = $conn->prepare('UPDATE user_tasks SET status = ?, completed_at = ?' . $commentSuffix . ' WHERE id = ?');
             $completedAt = $isFinal ? $now : null;
             $upd->bind_param('ssi', $statusEffective, $completedAt, $utId);
             if (!$upd->execute()) {
@@ -172,6 +180,7 @@ try {
         $st = (string)($r['status'] ?? 'unbearbeitet');
         if ($st === 'unbearbeitet') $cntUn++;
         elseif ($st === 'in-progress') $cntIn++;
+        elseif ($st === 'submitted') $cntPass++;
         elseif ($st === 'passed') $cntPass++;
         elseif ($st === 'failed') $cntFail++;
         else $cntUn++;

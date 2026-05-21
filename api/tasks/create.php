@@ -124,6 +124,7 @@ $maxAttempts = isset($input['max_attempts']) ? (int)$input['max_attempts'] : 1;
 $maxIterationsInput = isset($input['max_iterations']) ? (int)$input['max_iterations'] : null;  // API param is max_iterations, but DB column is iterations_count
 $showSolution = isset($input['show_solution']) ? (int)$input['show_solution'] : 1;
 $showSolutionCode = isset($input['show_solution_code']) ? (int)$input['show_solution_code'] : 0;
+$manualReviewRequired = isset($input['manual_review_required']) ? (int)(bool)$input['manual_review_required'] : 0;
 $minKeywordsRequired = isset($input['min_keywords_required']) ? (int)$input['min_keywords_required'] : null;
 $problemType = $input['problem_type'] ?? 'code_completion';
 $codeTemplate = $input['code_template'] ?? null;
@@ -149,6 +150,9 @@ $questionText = trim($input['question_text'] ?? '');
 // If task_text not provided, fallback to question_text for backward compatibility
 if (empty($taskText)) {
     $taskText = $questionText;
+}
+if (in_array($taskType, ['code_reading', 'code_random_complex'], true)) {
+    $manualReviewRequired = 0;
 }
 $imageUrl = trim($input['image_url'] ?? '') ?: null;
 $correctAnswer = trim($input['correct_answer'] ?? '') ?: null;
@@ -320,8 +324,8 @@ $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -337,6 +341,7 @@ $types .= 'i';     // max_attempts
 $types .= 'i';     // iterations_count
 $types .= 'i';     // show_solution
 $types .= 'i';     // show_solution_code
+$types .= 'i';     // manual_review_required
 $types .= 'i';     // min_keywords_required
 $types .= 's';     // problem_type
 $types .= 's';     // code_template
@@ -369,6 +374,7 @@ $bindResult = @$stmt->bind_param(
     $maxIterations,
     $showSolution,
     $showSolutionCode,
+    $manualReviewRequired,
     $minKeywordsRequired,
     $problemType,
     $codeTemplate,

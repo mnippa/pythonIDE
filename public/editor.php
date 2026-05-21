@@ -171,6 +171,10 @@ exit;
       background-color: #fbbf24;
       border-color: #f59e0b;
     }
+    .task-nav-status.status-submitted {
+      background-color: #38bdf8;
+      border-color: #0ea5e9;
+    }
     .task-nav-status.status-passed {
       background-color: #34d399;
       border-color: #10b981;

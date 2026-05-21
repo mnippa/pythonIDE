@@ -155,6 +155,7 @@ $isTaskLabView = false;
     }
     #submitted-info{ display:none; margin:0 12px; font-weight:600; color:var(--text-primary); align-items:center; gap:8px; }
     #submitted-info.show{ display:flex; }
+    #submitted-status.status-submitted{ background-color:#38bdf8; }
     #submitted-status.status-passed{ background-color:#34d399; }
     #submitted-status.status-failed{ background-color:#f87171; }
     #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
@@ -332,6 +333,10 @@ $isTaskLabView = false;
     .task-nav-status.status-in-progress {
       background-color: #fbbf24;
       border-color: #f59e0b;
+    }
+    .task-nav-status.status-submitted {
+      background-color: #38bdf8;
+      border-color: #0ea5e9;
     }
     .task-nav-status.status-passed {
       background-color: #34d399;

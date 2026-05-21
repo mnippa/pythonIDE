@@ -430,6 +430,7 @@ function renderTeamMatrix(data, errorMessage = null) {
       failed:          { bg: '#ef4444', title: 'Nicht bestanden' },
       rework:          { bg: '#f97316', title: 'Nacharbeit' },
       in_progress:     { bg: '#facc15', title: 'In Bearbeitung' },
+      submitted:       { bg: '#38bdf8', title: 'Eingereicht' },
       assigned:        { bg: '#d1d5db', title: 'Zugewiesen' },
     };
     const s = map[status] || map.assigned;

@@ -146,6 +146,7 @@ if ($displayName === '') {
     .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
     #submitted-info{ display:none; margin:0 12px; font-weight:600; color:var(--text-primary); align-items:center; gap:8px; }
     #submitted-info.show{ display:flex; }
+    #submitted-status.status-submitted{ background-color:#38bdf8; }
     #submitted-status.status-passed{ background-color:#34d399; }
     #submitted-status.status-failed{ background-color:#f87171; }
     #theme-toggle{ width:40px; height:24px; border-radius:999px; border:1px solid var(--border); background:var(--panel); cursor:pointer; display:flex; align-items:center; padding:2px; transition:background 0.3s; }
@@ -323,6 +324,10 @@ if ($displayName === '') {
     .task-nav-status.status-in-progress {
       background-color: #fbbf24;
       border-color: #f59e0b;
+    }
+    .task-nav-status.status-submitted {
+      background-color: #38bdf8;
+      border-color: #0ea5e9;
     }
     .task-nav-status.status-passed {
       background-color: #34d399;
@@ -863,7 +868,7 @@ if ($displayName === '') {
     }
     .status-assigned { background: #e0f2fe; color: #0369a1; }
     .status-in_progress { background: #fef3c7; color: #92400e; }
-    .status-submitted { background: #ddd6fe; color: #5b21b6; }
+    .status-submitted { background: #38bdf8; color: #fff; }
     .status-passed { background: #dcfce7; color: #166534; }
     .status-failed { background: #fee2e2; color: #b91c1c; }
     .assignment-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }

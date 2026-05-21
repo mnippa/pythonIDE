@@ -1082,11 +1082,10 @@ if "idegui" not in sys.modules:
     // Initialize file tree for project mode or in projects.php
     const treeWrapper = document.getElementById('file-tree-wrapper');
     if (treeWrapper && window.FileTreeManager) {
-      // File tree is created by projects.js with a valid projectId once a project is loaded.
-      // Avoid creating an unconfigured instance here (projectId would be missing).
-      if (typeof window.fileTreeManager === 'undefined') {
-        window.fileTreeManager = null;
-      }
+      // In projects.php: start expanded, in assignment_editor: start collapsed
+      const isProjectsPage = window.location.pathname.includes('projects.php');
+      const treeManager = new window.FileTreeManager('file-tree-wrapper', isProjectsPage);
+      window.fileTreeManager = treeManager;
     }
 
     // Initialize validator
@@ -2013,7 +2012,7 @@ compile(code, "<usercode>", "exec")
         currentTask.folderstructure === true ||
         currentTask.folderstructure === '1'
       );
-      const runInitOnly = window.testMode !== true && hasFolderStructure;
+      const runInitOnly = hasFolderStructure;
 
       const projectRunContext = currentProject && typeof window.getProjectRunContext === 'function'
         ? await window.getProjectRunContext()
@@ -2029,30 +2028,52 @@ compile(code, "<usercode>", "exec")
         window.cacheCurrentEditorDraft();
       }
 
+      if (runInitOnly && typeof window.syncFolderTaskFilesToPyodide === 'function') {
+        const entryPath = typeof window.getFolderTaskRunEntryPath === 'function'
+          ? String(window.getFolderTaskRunEntryPath(currentTask) || 'init.py')
+          : 'init.py';
+        await window.syncFolderTaskFilesToPyodide(pyodide, currentTask.id, entryPath);
+      }
+
       if (runWithProvidedCode) {
         try {
           if (runInitOnly) {
-            if (activeIsPython) {
-              code = editor.getValue();
-            } else {
-              const draftInit = typeof window.getTaskDraftContent === 'function'
-                ? window.getTaskDraftContent(currentTask.id, 'init.py')
-                : null;
+            const entryPath = typeof window.getFolderTaskRunEntryPath === 'function'
+              ? String(window.getFolderTaskRunEntryPath(currentTask) || 'init.py')
+              : 'init.py';
 
-              if (draftInit !== null && draftInit !== undefined) {
-                code = String(draftInit || '');
+            const draftEntry = typeof window.getTaskDraftContent === 'function'
+              ? window.getTaskDraftContent(currentTask.id, entryPath)
+              : null;
+
+            if (draftEntry !== null && draftEntry !== undefined) {
+              code = String(draftEntry || '');
+            } else {
+              const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
+              if (isTaskLabMode) {
+                const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: entryPath })
+                });
+                const readData = await readResponse.json();
+                if (!readResponse.ok || (readData && readData.ok === false)) {
+                  throw new Error(readData?.error || readResponse.statusText || `${entryPath} konnte nicht geladen werden`);
+                }
+                code = String(readData.content || '');
               } else {
                 const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-                const initResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent('init.py')}${testUserParam}`, {
+                const entryResponse = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}${testUserParam}`, {
                   credentials: 'include'
                 });
-                const initData = await initResponse.json();
+                const entryData = await entryResponse.json();
 
-                if (!initResponse.ok || (initData && initData.ok === false)) {
-                  throw new Error(initData?.error || initResponse.statusText || 'init.py konnte nicht geladen werden');
+                if (!entryResponse.ok || (entryData && entryData.ok === false)) {
+                  throw new Error(entryData?.error || entryResponse.statusText || `${entryPath} konnte nicht geladen werden`);
                 }
 
-                code = initData.content || '';
+                code = String(entryData.content || '');
               }
             }
           } else {

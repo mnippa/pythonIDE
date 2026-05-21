@@ -55,6 +55,7 @@ try {
             u.email,
             a.id AS assignment_id,
             COALESCE(ua_direct.status, ua_team.status, \'assigned\') AS raw_status,
+            COALESCE(ua_direct.submitted_at, ua_team.submitted_at) AS submitted_at,
             COALESCE(ua_direct.is_late, ua_team.is_late, 0) AS is_late,
             COALESCE(ua_direct.is_rework, ua_team.is_rework, 0) AS is_rework
         FROM (
@@ -96,11 +97,13 @@ try {
         }
         $aid = (int)$row['assignment_id'];
         $raw = (string)$row['raw_status'];
+        $submittedAt = trim((string)($row['submitted_at'] ?? ''));
         // is_late is now correctly set by migration 054 backfill
         $isLate = !empty($row['is_late']);
         $rework = !empty($row['is_rework']);
         $userMap[$uid]['statuses'][$aid] = [
-            'status' => mapStatus($raw, $isLate, $rework),
+            'status' => mapStatus($raw, $submittedAt, $isLate, $rework),
+            'submitted_at' => $submittedAt,
             'is_late' => $isLate,
             'is_rework' => $rework,
         ];
@@ -134,12 +137,14 @@ try {
     jsonResponse(['ok' => false, 'error' => 'Failed to load team matrix'], 500);
 }
 
-function mapStatus(string $raw, bool $late, bool $isRework): string {
+function mapStatus(string $raw, string $submittedAt, bool $late, bool $isRework): string {
     if ($isRework) return 'rework';
     if ($raw === 'passed') return $late ? 'passed_delayed' : 'passed';
     if ($raw === 'rework') return 'rework';
     if ($raw === 'failed') return 'failed';
-    if (in_array($raw, ['submitted', 'in_progress', 'completed', 'late_completed'], true)) return 'in_progress';
+    if ($submittedAt !== '' && in_array($raw, ['assigned', 'in_progress', 'completed', 'late_completed', 'submitted'], true)) return 'submitted';
+    if ($raw === 'submitted') return 'submitted';
+    if (in_array($raw, ['in_progress', 'completed', 'late_completed'], true)) return 'in_progress';
     return 'assigned';
 }
 

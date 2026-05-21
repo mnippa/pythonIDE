@@ -31,6 +31,14 @@ try {
 
     requireAdminOwnedAssignment($conn, $assignmentId, $admin);
 
+    $hasSubmissionComment = false;
+    $commentColumnCheck = $conn->query("SHOW COLUMNS FROM user_tasks LIKE 'submission_comment'");
+    if ($commentColumnCheck && $commentColumnCheck->num_rows > 0) {
+        $hasSubmissionComment = true;
+    }
+
+    $submissionCommentSql = $hasSubmissionComment ? ',
+             ut.submission_comment = NULL' : '';
     $stmt = $conn->prepare(
         'UPDATE user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
@@ -42,7 +50,7 @@ try {
              ut.text_answer = NULL,
              ut.variable_values = NULL,
              ut.hints_revealed = NULL,
-             ut.completed_at = NULL
+             ut.completed_at = NULL' . $submissionCommentSql . '
          WHERE t.assignment_id = ?
            AND ut.user_id = ?'
     );

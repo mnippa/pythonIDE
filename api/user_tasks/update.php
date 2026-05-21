@@ -41,6 +41,88 @@ if ($assignmentStmt) {
     }
 }
 
+$columnExists = function (mysqli $conn, string $table, string $column): bool {
+    $safeTable = $conn->real_escape_string($table);
+    $safeColumn = $conn->real_escape_string($column);
+    $check = $conn->query("SHOW COLUMNS FROM `{$safeTable}` LIKE '{$safeColumn}'");
+    return $check && $check->num_rows > 0;
+};
+
+$hasSubmissionComment = $columnExists($conn, 'user_tasks', 'submission_comment');
+
+$syncAssignmentStatus = function () use ($conn, $userId, $assignmentId) {
+    if (!$assignmentId) {
+        return;
+    }
+
+    $statusStmt = $conn->prepare(
+        'SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") = "unbearbeitet" THEN 1 ELSE 0 END) AS unstarted_cnt,
+            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") = "in-progress" THEN 1 ELSE 0 END) AS in_progress_cnt,
+            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("submitted", "passed", "failed") THEN 1 ELSE 0 END) AS done_cnt
+         FROM tasks t
+         LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
+         WHERE t.assignment_id = ?'
+    );
+    if (!$statusStmt) {
+        return;
+    }
+
+    $statusStmt->bind_param('ii', $userId, $assignmentId);
+    $statusStmt->execute();
+    $row = $statusStmt->get_result()->fetch_assoc();
+
+    $total = (int)($row['total'] ?? 0);
+    $unstartedCount = (int)($row['unstarted_cnt'] ?? 0);
+    $inProgressCount = (int)($row['in_progress_cnt'] ?? 0);
+    $doneCount = (int)($row['done_cnt'] ?? 0);
+
+    if ($total === 0 || $unstartedCount === $total) {
+        $assignmentStatus = 'assigned';
+    } elseif ($doneCount === $total) {
+        $assignmentStatus = 'submitted';
+    } else {
+        $assignmentStatus = 'in_progress';
+    }
+
+    $uaStmt = $conn->prepare('SELECT id, submitted_at FROM user_assignments WHERE user_id = ? AND assignment_id = ? LIMIT 1');
+    if (!$uaStmt) {
+        return;
+    }
+
+    $uaStmt->bind_param('ii', $userId, $assignmentId);
+    $uaStmt->execute();
+    $uaRow = $uaStmt->get_result()->fetch_assoc();
+
+    if ($uaRow) {
+        $uaId = (int)$uaRow['id'];
+        if ($assignmentStatus === 'submitted') {
+            $submittedAt = $uaRow['submitted_at'] ?: date('Y-m-d H:i:s');
+            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ?, submitted_at = ? WHERE id = ?');
+            if ($uaUpd) {
+                $uaUpd->bind_param('ssi', $assignmentStatus, $submittedAt, $uaId);
+                $uaUpd->execute();
+            }
+        } else {
+            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
+            if ($uaUpd) {
+                $uaUpd->bind_param('si', $assignmentStatus, $uaId);
+                $uaUpd->execute();
+            }
+        }
+        return;
+    }
+
+    $submittedAt = $assignmentStatus === 'submitted' ? date('Y-m-d H:i:s') : null;
+    $assignedBy = $userId;
+    $uaIns = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, assigned_by, status, submitted_at) VALUES (?, ?, ?, ?, ?)');
+    if ($uaIns) {
+        $uaIns->bind_param('iiiss', $userId, $assignmentId, $assignedBy, $assignmentStatus, $submittedAt);
+        $uaIns->execute();
+    }
+};
+
 // Mark assignment as in_progress when the first task is edited
 $markAssignmentInProgress = function () use ($conn, $userId, $assignmentId) {
     if (!$assignmentId) {
@@ -91,7 +173,7 @@ $types = '';
 
 // Status
 if (isset($input['status'])) {
-    $allowedStatus = ['unbearbeitet', 'in-progress', 'passed', 'failed'];
+    $allowedStatus = ['unbearbeitet', 'in-progress', 'submitted', 'passed', 'failed'];
     if (!in_array($input['status'], $allowedStatus, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);
     }
@@ -100,7 +182,7 @@ if (isset($input['status'])) {
     $types .= 's';
     
     // Set completed_at if status is passed or failed
-    if (in_array($input['status'], ['passed', 'failed'])) {
+    if (in_array($input['status'], ['submitted', 'passed', 'failed'])) {
         $updates[] = 'completed_at = ?';
         // Use client-provided completed_at if available, otherwise use server time
         $completedAt = isset($input['completed_at']) ? $input['completed_at'] : date('Y-m-d H:i:s');
@@ -149,6 +231,14 @@ if (array_key_exists('current_code', $input)) {
     $types .= 's';
 }
 
+// Optional submission comment
+if ($hasSubmissionComment && array_key_exists('submission_comment', $input)) {
+    $updates[] = 'submission_comment = ?';
+    $comment = trim((string)$input['submission_comment']);
+    $params[] = $comment !== '' ? $comment : null;
+    $types .= 's';
+}
+
 // Hints revealed
 if (isset($input['hints_revealed']) && is_array($input['hints_revealed'])) {
     $updates[] = 'hints_revealed = ?';
@@ -186,6 +276,7 @@ if ($existing) {
     
     if ($stmt->execute()) {
         $markAssignmentInProgress();
+        $syncAssignmentStatus();
         jsonResponse(['ok' => true, 'message' => 'User task updated', 'id' => $existing['id']]);
     } else {
         jsonResponse(['ok' => false, 'error' => 'Failed to update user task'], 500);
@@ -198,19 +289,33 @@ if ($existing) {
     $attempts = isset($input['attempts']) ? (int)$input['attempts'] : 0;
     $runCount = isset($input['run_count']) ? (int)$input['run_count'] : 0;
     $currentCode = isset($input['current_code']) ? $input['current_code'] : null;
+    $submissionComment = $hasSubmissionComment && array_key_exists('submission_comment', $input)
+        ? (trim((string)$input['submission_comment']) !== '' ? trim((string)$input['submission_comment']) : null)
+        : null;
     $hintsRevealed = isset($input['hints_revealed']) ? json_encode($input['hints_revealed']) : '[]';
     $variableValues = array_key_exists('variable_values', $input) ? (json_encode($input['variable_values']) ?: null) : null;
     $startedAt = isset($input['started_at']) ? $input['started_at'] : date('Y-m-d H:i:s');
     $currentIteration = isset($input['current_iteration']) ? (int)$input['current_iteration'] : 1;
-    
+
+    $insertColumns = 'user_id, task_id, status, attempts, current_iteration, run_count, current_code, hints_revealed, variable_values, started_at';
+    $insertPlaceholders = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
+    $bindValues = [$userId, $taskId, $status, $attempts, $currentIteration, $runCount, $currentCode, $hintsRevealed, $variableValues, $startedAt];
+    $bindTypes = 'iisiiissss';
+    if ($hasSubmissionComment) {
+        $insertColumns .= ', submission_comment';
+        $insertPlaceholders .= ', ?';
+        $bindValues[] = $submissionComment;
+        $bindTypes .= 's';
+    }
+
     $stmt = $conn->prepare(
-        'INSERT INTO user_tasks (user_id, task_id, status, attempts, current_iteration, run_count, current_code, hints_revealed, variable_values, started_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        "INSERT INTO user_tasks ({$insertColumns}) VALUES ({$insertPlaceholders})"
     );
-    $stmt->bind_param('iisiiissss', $userId, $taskId, $status, $attempts, $currentIteration, $runCount, $currentCode, $hintsRevealed, $variableValues, $startedAt);
+    $stmt->bind_param($bindTypes, ...$bindValues);
     
     if ($stmt->execute()) {
         $markAssignmentInProgress();
+        $syncAssignmentStatus();
         jsonResponse(['ok' => true, 'message' => 'User task created', 'id' => $conn->insert_id]);
     } else {
         jsonResponse(['ok' => false, 'error' => 'Failed to create user task'], 500);

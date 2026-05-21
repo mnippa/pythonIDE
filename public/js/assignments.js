@@ -15,6 +15,7 @@ const assignmentState = {
   taskRuns: {},
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
+  taskSubmissionComments: {}, // Optional submit comments per task: { taskId: string }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
   solutionVisible: {}, // Track solution visibility per task: { taskId: boolean }
@@ -69,6 +70,80 @@ function logActivityDebug(message, data) {
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function ensureRunEntryIndicator() {
+  const runBtn = $('run-btn');
+  if (!runBtn || !runBtn.parentElement) return null;
+
+  let indicator = $('run-entry-indicator');
+  if (!indicator) {
+    indicator = document.createElement('span');
+    indicator.id = 'run-entry-indicator';
+    indicator.style.fontSize = '12px';
+    indicator.style.fontWeight = '600';
+    indicator.style.color = 'var(--text-secondary)';
+    indicator.style.background = 'var(--panel)';
+    indicator.style.border = '1px solid var(--border)';
+    indicator.style.borderRadius = '999px';
+    indicator.style.padding = '4px 10px';
+    indicator.style.whiteSpace = 'nowrap';
+    runBtn.parentElement.insertBefore(indicator, runBtn.nextSibling);
+  }
+
+  return indicator;
+}
+
+function updateRunEntryIndicator(task = assignmentState.currentTask) {
+  const indicator = ensureRunEntryIndicator();
+  if (!indicator) return;
+
+  // Only show in assignment/test editors, never in project editor context.
+  if (window.currentProject) {
+    indicator.style.display = 'none';
+    return;
+  }
+
+  if (!task) {
+    indicator.style.display = 'none';
+    return;
+  }
+
+  const hasFolderStructure = task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1';
+  const entryPath = hasFolderStructure
+    ? getFolderTaskRunEntryPath(task)
+    : String(window.currentFile?.path || 'init.py');
+
+  const isInitEntry = String(entryPath || '').toLowerCase() === 'init.py';
+  const isNonFolderCustomEntry = !hasFolderStructure && !isInitEntry;
+
+  let entrySuffix = 'neutral';
+  if (hasFolderStructure && isInitEntry) {
+    entrySuffix = 'Standard';
+  } else if (isNonFolderCustomEntry) {
+    entrySuffix = 'abweichend';
+  }
+
+  indicator.textContent = `RUN Entry: ${entryPath} (${entrySuffix})`;
+  indicator.title = 'Datei, die beim Run ausgefuehrt wird';
+  indicator.style.display = 'inline-flex';
+  indicator.style.alignItems = 'center';
+
+  indicator.style.fontWeight = '700';
+  indicator.style.borderWidth = '2px';
+  if (hasFolderStructure && isInitEntry) {
+    indicator.style.background = '#2563eb';
+    indicator.style.color = '#ffffff';
+    indicator.style.border = '2px solid #1d4ed8';
+  } else if (!hasFolderStructure && !isInitEntry) {
+    indicator.style.background = '#f59e0b';
+    indicator.style.color = '#111827';
+    indicator.style.border = '2px solid #d97706';
+  } else {
+    indicator.style.background = 'var(--panel)';
+    indicator.style.color = 'var(--text-secondary)';
+    indicator.style.border = '2px solid var(--border)';
+  }
 }
 
 function getTestUserQueryParam() {
@@ -218,7 +293,7 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
   assignmentState.taskStatuses[taskId] = response.status_effective || newStatus;
   assignmentState.taskAttempts[taskId] = Number(response.attempts_after || 0);
 
-  if (['passed', 'failed'].includes(String(assignmentState.taskStatuses[taskId]))) {
+  if (['passed', 'failed', 'submitted'].includes(String(assignmentState.taskStatuses[taskId]))) {
     assignmentState.taskCompletedAt[taskId] = response.completed_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
   } else {
     delete assignmentState.taskCompletedAt[taskId];
@@ -243,7 +318,7 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
 function refreshCurrentTaskToolbarForStatus(task) {
   if (!task) return;
   const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
-  const isFinalized = status === 'passed' || status === 'failed';
+  const isFinalized = status === 'passed' || status === 'failed' || status === 'submitted';
   const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
 
   const checkBtn = $('check-btn');
@@ -303,7 +378,7 @@ function refreshCurrentTaskToolbarForStatus(task) {
       } else if (checkBtn) {
         checkBtn.style.display = 'none';
       }
-      if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
+        if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
       if (attemptsCounter) attemptsCounter.style.display = 'inline-block';
     }
   }
@@ -465,7 +540,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
     return true;
   }
 
-  const isAdminFolderMode = window.testMode === true;
+  const isAdminFolderMode = isAdminTaskLabMode();
 
   // Find the current task to check if it has folderstructure
   const allTasks = Object.values(assignmentState.tasksByAssignment || {}).flat();
@@ -923,6 +998,7 @@ function showTaskDetails(task, activeTab = 'details') {
   }
 
   // Determine attempts label before using it
+  const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
   const isIterative = task.task_type === 'code_reading' || task.task_type === 'code_random_complex';
   const attemptsLabel = isIterative ? 'Fehlversuche' : 'Versuche';
 
@@ -949,6 +1025,15 @@ function showTaskDetails(task, activeTab = 'details') {
     detailsHtml += `<div class="stoff-section">
       <h4>📚 Lerninhalt (Stoff)</h4>
       <div>${task.stoff}</div>
+    </div>`;
+  }
+
+  if (!isQuizTask) {
+    const savedSubmissionComment = assignmentState.taskSubmissionComments[task.id] || '';
+    detailsHtml += `<div class="submission-comment-section" style="margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
+      <label for="submission-comment" style="display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">Abgabe-Kommentar (optional)</label>
+      <textarea id="submission-comment" rows="3" placeholder="Optionaler Kommentar für den Admin" style="width:100%;resize:vertical;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-primary);font:inherit;">${escapeHtml(savedSubmissionComment)}</textarea>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-secondary);">Wird bei der Abgabe gespeichert und ist für Admins sichtbar.</div>
     </div>`;
   }
 
@@ -1082,6 +1167,13 @@ function showTaskDetails(task, activeTab = 'details') {
   }
 
   contentEl.innerHTML = html;
+
+  const submissionCommentField = contentEl.querySelector('#submission-comment');
+  if (submissionCommentField) {
+    submissionCommentField.addEventListener('input', () => {
+      assignmentState.taskSubmissionComments[task.id] = submissionCommentField.value || '';
+    });
+  }
   
   // Load folder files if this is a folder structure task
   if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
@@ -1683,6 +1775,7 @@ function getStatusLabel(status, assignmentRawStatus = null) {
   const labels = {
     'unbearbeitet': 'Unbearbeitet',
     'in-progress': 'In Bearbeitung',
+    'submitted': 'Abgegeben',
     'passed': 'Bestanden ✓',
     'failed': assignmentRawStatus === 'rework' ? 'Nacharbeit offen' : 'Nicht bestanden'
   };
@@ -1693,10 +1786,30 @@ function getStatusEmoji(status) {
   const emojis = {
     'unbearbeitet': '⚪',
     'in-progress': '🟡',
+    'submitted': '🔵',
     'passed': '🟢',
     'failed': '🔴'
   };
   return emojis[status] || '⚪';
+}
+
+function isIterativeTask(task) {
+  return !!task && (task.task_type === 'code_reading' || task.task_type === 'code_random_complex');
+}
+
+function isManualReviewTask(task) {
+  return !!task && Number(task.manual_review_required || 0) === 1 && !isIterativeTask(task);
+}
+
+function getCurrentSubmissionComment(taskId = null) {
+  const field = $('submission-comment');
+  if (field) {
+    return String(field.value || '').trim();
+  }
+  if (taskId !== null && taskId !== undefined) {
+    return String(assignmentState.taskSubmissionComments[taskId] || '').trim();
+  }
+  return '';
 }
 
 function getTaskDifficultyMeta(levelRaw) {
@@ -1855,6 +1968,9 @@ async function loadSingleAssignment(assignmentId) {
             variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
             iteration_values: Array.isArray(ut.iteration_values) ? ut.iteration_values : null
           };
+          if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
+            assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
+          }
           if (ut.run_count !== undefined && ut.run_count !== null) {
             assignmentState.taskRuns[ut.task_id] = ut.run_count;
           }
@@ -1920,6 +2036,9 @@ async function loadAssignments() {
                 variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
                 iteration_values: Array.isArray(ut.iteration_values) ? ut.iteration_values : null
               };
+              if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
+                assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
+              }
               if (ut.run_count !== undefined && ut.run_count !== null) {
                 assignmentState.taskRuns[ut.task_id] = ut.run_count;
               }
@@ -2024,9 +2143,10 @@ function renderAssignmentList() {
       return !s || s === 'unbearbeitet';
     }).length;
     const inProgressCount = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'in-progress').length;
+    const submittedCount = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'submitted').length;
     const passedCount    = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'passed').length;
     const failedCount    = tasks.filter(t => assignmentState.taskStatuses[t.id] === 'failed').length;
-    const workedCount = inProgressCount + passedCount + failedCount;
+    const workedCount = inProgressCount + submittedCount + passedCount + failedCount;
 
     const phase = item.timing_phase || 'open';
     const allTasksFinalized = tasks.length > 0 && untouchedCount === 0 && inProgressCount === 0;
@@ -2102,17 +2222,19 @@ function renderAssignmentList() {
             <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);">Aufgabenstatus:</span>
             <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${taskMeta.background};color:${taskMeta.color};font-weight:600;">${escapeHtml(taskMeta.label)}</span>
           </div>
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);margin-bottom:5px;">Aufgaben (${passedCount + failedCount}/${tasks.length})</div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-secondary);margin-bottom:5px;">Aufgaben (${passedCount + failedCount + submittedCount}/${tasks.length})</div>
           <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:#e5e7eb;margin-bottom:5px;">
             ${tasks.length > 0 ? `
               <span style="width:${Math.round(passedCount/tasks.length*100)}%;background:#22c55e;"></span>
               <span style="width:${Math.round(failedCount/tasks.length*100)}%;background:#ef4444;"></span>
+              <span style="width:${Math.round(submittedCount/tasks.length*100)}%;background:#38bdf8;"></span>
               <span style="width:${Math.round(inProgressCount/tasks.length*100)}%;background:#facc15;"></span>
             ` : ''}
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary);">
             ${untouchedCount > 0 ? `<span><span style="color:#9ca3af;">●</span> ${untouchedCount} unber.</span>` : ''}
             ${inProgressCount > 0 ? `<span><span style="color:#facc15;">●</span> ${inProgressCount} lfd.</span>` : ''}
+            ${submittedCount > 0 ? `<span><span style="color:#38bdf8;">●</span> ${submittedCount} abgeg.</span>` : ''}
             ${passedCount > 0 ? `<span><span style="color:#22c55e;">●</span> ${passedCount} best.</span>` : ''}
             ${failedCount > 0 ? `<span><span style="color:#ef4444;">●</span> ${failedCount} ${item.raw_status === 'rework' ? 'nacharb.' : 'nicht best.'}</span>` : ''}
             ${tasks.length === 0 ? `<span>–</span>` : ''}
@@ -2776,7 +2898,7 @@ async function renderCodeUiHtml(taskId) {
   const requestedTaskId = Number(taskId);
   if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
 
-  const isAdminFolderMode = window.testMode === true;
+  const isAdminFolderMode = isAdminTaskLabMode();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
 
   const readTaskFile = async (path) => {
@@ -2950,6 +3072,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   renderTaskNavigation();
   updateAttemptsCounter(task);
   refreshCurrentTaskToolbarForStatus(task);
+  updateRunEntryIndicator(task);
 
   // For code tasks, wait for editor to be ready
   if (!isQuizTask) {
@@ -2990,8 +3113,8 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   if (isStaleLoad()) return;
 
   // Start activity tracking for new task (only if not finalized)
-  const currentStatus = assignmentState.taskStatuses[task.id];
-  const isFinalized = currentStatus === 'passed' || currentStatus === 'failed';
+  const currentStatus = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
+  const isFinalized = currentStatus === 'passed' || currentStatus === 'failed' || currentStatus === 'submitted';
   if (!isFinalized) {
     startActivityTracking(taskId);
   } else {
@@ -3169,9 +3292,14 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
       updateSaveButtonTooltip();
     }
 
+    const manualReviewTask = isManualReviewTask(task);
+
     // Show check button if test cases exist (code tasks only)
     if (!isQuizTask && checkBtn) {
-      if (task.test_cases) {
+      if (manualReviewTask) {
+        checkBtn.style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'inline-block';
+      } else if (task.test_cases) {
         const attempts = assignmentState.taskAttempts[task.id] || 0;
         const maxAttempts = task.max_attempts || 10;
         const reachedMaxAttempts = attempts >= maxAttempts;
@@ -3341,6 +3469,31 @@ function confirmIfTemplateAndSolutionIdentical(task, code, targetField) {
   return window.confirm('Template-Code und Lösungscode sind identisch. Trotzdem speichern?');
 }
 
+function confirmTemplateSaveImpact(task, isEditingNonInitFile = false, currentFilePath = '') {
+  if (!task) return true;
+
+  const isFolderTask = task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1';
+  if (isFolderTask) {
+    if (isEditingNonInitFile) {
+      const fileLabel = currentFilePath ? ` (${currentFilePath})` : '';
+      return window.confirm(
+        'Template-Speichern wirkt global auf die Aufgabenvorlage und damit auf alle Nutzer.\n\n' +
+        `Es wird die aktuell geoeffnete Template-Datei${fileLabel} aktualisiert. Fortfahren?`
+      );
+    }
+
+    return window.confirm(
+      'Template-Speichern wirkt global auf die Aufgabenvorlage und damit auf alle Nutzer.\n\n' +
+      'Bei Aufgaben mit Ordnerstruktur wird die Hauptdatei init.py im Template aktualisiert. Fortfahren?'
+    );
+  }
+
+  return window.confirm(
+    'Template-Speichern wirkt global auf die Aufgabenvorlage und damit auf alle Nutzer.\n\n' +
+    'Bei Aufgaben ohne Ordnerstruktur wird nur init.py aktualisiert. Fortfahren?'
+  );
+}
+
 async function saveCode(options = {}) {
   // In test mode, skip API persistence (keep changes in DOM only)
   if (window.TEST_MODE_NO_PERSIST === true) {
@@ -3458,6 +3611,19 @@ async function saveCode(options = {}) {
         String(window.currentFile.path || '') !== 'init.py'
       );
 
+      const confirmedTemplateImpact = confirmTemplateSaveImpact(
+        task,
+        isEditingNonInitFile,
+        String(window.currentFile?.path || '')
+      );
+      if (!confirmedTemplateImpact) {
+        if (saveTaskBtn) {
+          saveTaskBtn.style.opacity = '1';
+          saveTaskBtn.disabled = false;
+        }
+        return false;
+      }
+
       if (isFolderTask && isEditingNonInitFile) {
         if (Number(window.currentFile.taskId) !== Number(taskId)) {
           throw new Error('Datei/Task-Kontext inkonsistent. Bitte Aufgabe neu laden und erneut speichern.');
@@ -3513,9 +3679,9 @@ async function saveCode(options = {}) {
       throw new Error('Im User-Test-Modus kann nur Studentencode gespeichert werden (nicht Template/Lösung).');
     }
 
-    // Outside user-test mode, folder-file editing can persist via file API.
-    // In user-test mode we must always save student code via user_tasks/update.
-    if (!isUserTestMode && window.currentFile && window.currentFile.taskId) {
+    // For folder tasks, saving from an opened file should use file APIs.
+    // In user-test mode this persists as student override via test_user_id.
+    if (window.currentFile && window.currentFile.taskId) {
       return await saveTaskFile();
     }
 
@@ -3799,6 +3965,21 @@ function detectEditorFileType() {
   return 'text';
 }
 
+function getFolderTaskRunEntryPath(task) {
+  const hasFolderStructure = !!task && (
+    task.folderstructure === 1 ||
+    task.folderstructure === true ||
+    task.folderstructure === '1'
+  );
+
+  if (!hasFolderStructure) {
+    return String(window.currentFile?.path || 'init.py');
+  }
+
+  // Folder-based assignments run from a single canonical entrypoint.
+  return 'init.py';
+}
+
 function renderNonPythonCheckResult(fileType, code, outputEl) {
   if (!outputEl) return;
 
@@ -3854,7 +4035,8 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   const safeTaskId = Number(taskId || 0);
   if (!safeTaskId || !pyodide || !pyodide.FS) return;
 
-  const isAdminFolderMode = window.testMode === true;
+  const isAdminFolderMode = isAdminTaskLabMode();
+  cacheCurrentEditorDraft();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
   const listUrl = isAdminFolderMode
     ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1`
@@ -3975,6 +4157,11 @@ async function checkTask() {
     return;
   }
 
+  if (isManualReviewTask(task)) {
+    alert('Diese Aufgabe wird manuell geprüft. Bitte auf Abgeben klicken.');
+    return;
+  }
+
   // Ensure CHECK feedback is immediately visible in the Output panel.
   switchAssignmentOutputTab();
 
@@ -4039,7 +4226,7 @@ async function checkTask() {
     );
     if (hasFolderStructure) {
       try {
-        await syncFolderTaskFilesToPyodide(pyodide, task.id, String(window.currentFile?.path || 'init.py'));
+        await syncFolderTaskFilesToPyodide(pyodide, task.id, getFolderTaskRunEntryPath(task));
       } catch (syncErr) {
         outputEl.innerHTML = `<span style="color:#c00;">Task-Dateien konnten nicht in Pyodide geladen werden: ${escapeHtml(String(syncErr.message || syncErr))}</span>`;
         return;
@@ -4182,13 +4369,50 @@ async function submitTask() {
     return;
   }
 
+  const manualReviewTask = isManualReviewTask(task);
+  const editor = window.editorInstance;
+  if (!editor) {
+    alert('Editor not ready');
+    return;
+  }
+
+  if (manualReviewTask) {
+    await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+    const submissionComment = getCurrentSubmissionComment(task.id);
+    if (!isAdminAssignmentTestMode()) {
+      const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
+      await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: task.id,
+          status: 'submitted',
+          submission_comment: submissionComment || null
+        })
+      }).catch(err => console.error('[Submit] Failed to update status:', err));
+    }
+
+    assignmentState.taskStatuses[task.id] = 'submitted';
+    flushHeartbeat(task.id);
+    stopActivityTracking(task.id);
+    const nowSubmitted = new Date();
+    assignmentState.taskCompletedAt[task.id] = nowSubmitted.toISOString().slice(0, 19).replace('T', ' ');
+    editor.updateOptions({ readOnly: true });
+    updateTaskStatusDisplay(task);
+    updateSubmittedMeta(task);
+    refreshCurrentTaskToolbarForStatus(task);
+    if (window.renderTaskNavigation) renderTaskNavigation();
+    showSuccessModal(task, 0, 0);
+    return;
+  }
+
   if (!task.test_cases) {
     // No automated check available — direct submit (manual review by teacher)
     const confirmed = confirm('Diese Aufgabe hat keine automatischen Tests. Code jetzt abgeben?');
     if (!confirmed) return;
-    const editorNoTest = window.editorInstance;
-    if (!editorNoTest) { alert('Editor not ready'); return; }
     await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+    const submissionComment = getCurrentSubmissionComment(task.id);
     // Mark task as passed (teacher will review)
     if (!isAdminAssignmentTestMode()) {
       const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
@@ -4196,7 +4420,11 @@ async function submitTask() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: task.id, status: 'passed' })
+        body: JSON.stringify({
+          task_id: task.id,
+          status: 'passed',
+          submission_comment: submissionComment || null
+        })
       }).catch(err => console.error('[Submit] Failed to update status:', err));
     }
     assignmentState.taskStatuses[task.id] = 'passed';
@@ -4204,7 +4432,7 @@ async function submitTask() {
     stopActivityTracking(task.id);
     const nowNoTest = new Date();
     assignmentState.taskCompletedAt[task.id] = nowNoTest.toISOString().slice(0, 19).replace('T', ' ');
-    editorNoTest.updateOptions({ readOnly: true });
+    editor.updateOptions({ readOnly: true });
     [$('check-btn'), $('submit-btn'), $('save-task-btn'), $('undo-btn'), $('redo-btn'), $('attempts-counter')].forEach(el => { if (el) el.style.display = 'none'; });
     const siInfo = $('submitted-info');
     const siStatus = $('submitted-status');
@@ -4218,12 +4446,6 @@ async function submitTask() {
     updateTaskStatusDisplay(task);
     if (window.renderTaskNavigation) renderTaskNavigation();
     showSuccessModal(task, 0, 0);
-    return;
-  }
-
-  const editor = window.editorInstance;
-  if (!editor) {
-    alert('Editor not ready');
     return;
   }
 
@@ -4259,7 +4481,7 @@ async function submitTask() {
     );
     if (hasFolderStructure) {
       try {
-        await syncFolderTaskFilesToPyodide(pyodide, task.id, String(window.currentFile?.path || 'init.py'));
+        await syncFolderTaskFilesToPyodide(pyodide, task.id, getFolderTaskRunEntryPath(task));
       } catch (syncErr) {
         outputEl.innerHTML = `<span style="color:#c00;">Task-Dateien konnten nicht in Pyodide geladen werden: ${escapeHtml(String(syncErr.message || syncErr))}</span>`;
         return;
@@ -6220,6 +6442,7 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
   try {
     const editor = window.editorInstance;
     const code = editor ? editor.getValue() : '';
+    const submissionComment = getCurrentSubmissionComment(task.id);
     
     console.log('[CHECK] Saving after validation - Status:', assignmentState.taskStatuses[task.id], 'Attempts:', currentAttempts);
     
@@ -6228,7 +6451,8 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
       status: assignmentState.taskStatuses[task.id],
       attempts: currentAttempts,
       current_code: code,
-      hints_revealed: assignmentState.hintsRevealed[task.id] || []
+      hints_revealed: assignmentState.hintsRevealed[task.id] || [],
+      submission_comment: submissionComment || null
     };
     
     // Add completed_at if task is finalized
@@ -6257,6 +6481,7 @@ function updateTaskStatusDisplay(task) {
 
   // Update status in task navigation
   renderTaskNavigation();
+  updateRunEntryIndicator(task);
 }
 
 function bindAssignmentsEvents() {
@@ -6285,7 +6510,7 @@ function bindAssignmentsEvents() {
     submitTask();
   });
 
-  if (adminResetTaskBtn && window.TEST_USER_ID && isAdminUserTestMode()) {
+  if (adminResetTaskBtn && typeof window.TEST_USER_ID !== 'undefined' && isAdminAssignmentTestMode()) {
     adminResetTaskBtn.style.display = 'inline-block';
   }
 
@@ -6756,6 +6981,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.flushHeartbeat = flushHeartbeat;
   window.resetHeartbeatCounter = resetHeartbeatCounter;
   window.stopActivityTracking = stopActivityTracking;
+  window.getFolderTaskRunEntryPath = getFolderTaskRunEntryPath;
+  window.syncFolderTaskFilesToPyodide = syncFolderTaskFilesToPyodide;
 });
 
 // Load and display task folder files
@@ -6763,7 +6990,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
   const panel = document.getElementById(panelId);
   if (!panel) return;
 
-  const isAdminFolderMode = window.testMode === true;
+  const isAdminFolderMode = isAdminTaskLabMode();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
   const listEndpoint = isAdminFolderMode
     ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}`
@@ -7345,10 +7572,11 @@ async function openTaskFileInEditor(taskId, path) {
           title.textContent = 'init.py (Hauptdatei)';
         }
       }
+      updateRunEntryIndicator(assignmentState.currentTask);
       return;
     }
     
-    const isAdminFolderMode = window.testMode === true;
+    const isAdminFolderMode = isAdminTaskLabMode();
     const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
     const readEndpoint = isAdminFolderMode
       ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
@@ -7424,6 +7652,7 @@ async function openTaskFileInEditor(taskId, path) {
       if (title) {
         title.textContent = readOnly ? `${fileName} (readonly)` : fileName;
       }
+      updateRunEntryIndicator(assignmentState.currentTask);
     } else {
       console.warn('Editor nicht initialisiert');
     }

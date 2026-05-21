@@ -105,7 +105,7 @@ $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected'])
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
 
 // Determine which columns to fetch based on context
-$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, expected_output, solution_code, randomizer_code';
+$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, expected_output, solution_code, randomizer_code';
 
 // Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
 $sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";
@@ -193,6 +193,7 @@ foreach ($rawTasks as $taskId => $row) {
         'max_iterations' => isset($row['iterations_count']) ? (int)$row['iterations_count'] : null,
         'show_solution' => (int)$row['show_solution'],
         'show_solution_code' => (int)$row['show_solution_code'],
+        'manual_review_required' => (int)$row['manual_review_required'],
         'test_cases' => $row['test_cases'],
         'task_type' => $row['task_type'],
         'task_difficulty' => $row['task_difficulty'] ?: 'medium',
