@@ -1253,6 +1253,7 @@ if "idegui" not in sys.modules:
 
       const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
       const inSolutionMode = isTaskLabMode && window.assignmentState?.solutionMode === true;
+      const modeScope = inSolutionMode ? 'solution' : (isTaskLabMode ? 'template' : 'user');
       const solutionModeParam = inSolutionMode ? '&solution_mode=1' : '';
       const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
 
@@ -1297,14 +1298,17 @@ if "idegui" not in sys.modules:
         const relPath = entry.path;
         let content = null;
 
-        const allowDraft = !inSolutionMode || (
-          window.currentFile
-          && Number(window.currentFile.taskId) === Number(safeTaskId)
-          && String(window.currentFile.path || '') === String(relPath)
-        );
+        // Keep unsaved edits across file switches inside the same task+mode.
+        // Mode separation is enforced by scope-specific draft lookup.
+        const allowDraft = true;
 
-        if (allowDraft && typeof window.getTaskDraftContent === 'function') {
-          const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
+        if (allowDraft) {
+          let draftContent = null;
+          if (isTaskLabMode && typeof window.getTaskDraftContentForScope === 'function') {
+            draftContent = window.getTaskDraftContentForScope(safeTaskId, relPath, modeScope);
+          } else if (typeof window.getTaskDraftContent === 'function') {
+            draftContent = window.getTaskDraftContent(safeTaskId, relPath);
+          }
           if (draftContent !== null && draftContent !== undefined) {
             content = String(draftContent || '');
           }
@@ -1344,7 +1348,6 @@ if "idegui" not in sys.modules:
 
       if (files.length === 0) return null;
 
-      const modeScope = inSolutionMode ? 'solution' : (isTaskLabMode ? 'template' : 'user');
       const mainPath = String(preferredMainPath || 'init.py').replace(/\\/g, '/').replace(/^\/+/, '') || 'init.py';
       
       // DEBUG: Log files being synced
@@ -2055,6 +2058,13 @@ compile(code, "<usercode>", "exec")
 
       const currentTask = window.assignmentState?.currentTask;
       const currentProject = window.currentProject || null;
+      if (!currentProject && currentTask?.task_type === 'code_ui' && typeof window.renderCodeUiHtml === 'function') {
+        try {
+          await window.renderCodeUiHtml(currentTask.id);
+        } catch (codeUiRenderError) {
+          console.warn('[Run] code_ui html render failed before execution:', codeUiRenderError);
+        }
+      }
       const hasFolderStructure = !!currentTask && (
         currentTask.folderstructure === 1 ||
         currentTask.folderstructure === true ||
@@ -2090,6 +2100,14 @@ compile(code, "<usercode>", "exec")
               ? String(window.getFolderTaskRunEntryPath(currentTask) || 'init.py')
               : 'init.py';
 
+            const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
+            const inSolutionMode = isTaskLabMode && window.assignmentState?.solutionMode === true;
+
+            // In admin solution mode, run virtual init.py from solution_code directly to avoid stale template drafts.
+            if (inSolutionMode && entryPath === 'init.py' && currentTask?.solution_code) {
+              code = String(currentTask.solution_code || '');
+            } else {
+
             const draftEntry = typeof window.getTaskDraftContent === 'function'
               ? window.getTaskDraftContent(currentTask.id, entryPath)
               : null;
@@ -2097,7 +2115,6 @@ compile(code, "<usercode>", "exec")
             if (draftEntry !== null && draftEntry !== undefined) {
               code = String(draftEntry || '');
             } else {
-              const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
               if (isTaskLabMode) {
                 const solutionModeParam = window.assignmentState?.solutionMode === true ? '&solution_mode=1' : '';
                 const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}${solutionModeParam}`, {
@@ -2124,6 +2141,7 @@ compile(code, "<usercode>", "exec")
 
                 code = String(entryData.content || '');
               }
+            }
             }
           } else {
             code = String(projectRunContext.code || '');
@@ -2228,6 +2246,49 @@ compile(code, "<usercode>", "exec")
           );
         } catch (taskRuntimeError) {
           console.warn('[Run] task runtime payload fallback to null:', taskRuntimeError);
+        }
+      }
+
+      if (projectRuntimePayload && pyodide && typeof pyodide.runPythonAsync === 'function') {
+        try {
+          const runtimeRootForCleanup = String(projectRuntimePayload.root || '');
+          await pyodide.runPythonAsync(`
+import sys
+import importlib
+
+runtime_root = ${JSON.stringify(runtimeRootForCleanup)}
+is_template_mode = '/task_runtime/template/' in runtime_root
+is_solution_mode = '/task_runtime/solution/' in runtime_root
+
+if is_template_mode:
+  sys.path[:] = [p for p in sys.path if '/task_runtime/solution/task_' not in str(p)]
+elif is_solution_mode:
+  sys.path[:] = [p for p in sys.path if '/task_runtime/template/task_' not in str(p)]
+
+stale = []
+for mod_name, mod in list(sys.modules.items()):
+  try:
+    mod_file = getattr(mod, '__file__', None)
+  except Exception:
+    continue
+  if not mod_file:
+    continue
+  mod_file_str = str(mod_file)
+  if '/task_runtime/' in mod_file_str:
+    if is_template_mode and '/task_runtime/solution/task_' in mod_file_str:
+      stale.append(mod_name)
+    elif is_solution_mode and '/task_runtime/template/task_' in mod_file_str:
+      stale.append(mod_name)
+    elif not is_template_mode and not is_solution_mode:
+      stale.append(mod_name)
+
+for mod_name in stale:
+  sys.modules.pop(mod_name, None)
+
+importlib.invalidate_caches()
+`);
+        } catch (preRunCleanupError) {
+          console.warn('[Run] pre-run runtime cleanup warning:', preRunCleanupError);
         }
       }
 
@@ -2419,8 +2480,21 @@ if isinstance(project_runtime, dict):
                   pass
           print(f"[VFS Cleanup] Removed stale .py files under: {runtime_root}")
     
-      # Do not delete the other mode's runtime root here. Removing it during a fast
-      # toggle/save sequence can wipe files unexpectedly while the UI is switching modes.
+      # Remove opposite mode runtime cache to prevent cross-mode import fallback
+      # (e.g., template run importing stale solution modules).
+      if other_mode_root and os.path.exists(other_mode_root):
+        try:
+          shutil.rmtree(other_mode_root)
+          print(f"[VFS Cleanup] Removed opposite mode root: {other_mode_root}")
+        except Exception:
+          for dirpath, dirnames, filenames in os.walk(other_mode_root):
+            for fname in filenames:
+              if fname.endswith('.py'):
+                try:
+                  os.remove(os.path.join(dirpath, fname))
+                except Exception:
+                  pass
+          print(f"[VFS Cleanup] Removed stale .py files under opposite root: {other_mode_root}")
     
     except Exception as e:
       print(f"[VFS Cleanup] Warning: {e}")
@@ -2462,13 +2536,26 @@ if isinstance(project_runtime, dict):
         except Exception:
           pass
 
-    if runtime_root not in sys.path:
-      sys.path.insert(0, runtime_root)
+    # Keep only the active task runtime root in sys.path.
+    # This prevents fallback imports from stale solution/template roots after toggles.
+    current_runtime_root = runtime_root.rstrip('/')
+    task_runtime_prefixes = (
+      '/task_runtime/template/task_',
+      '/task_runtime/solution/task_',
+      '/task_runtime/user/task_',
+    )
+    pruned_path = []
+    for p in sys.path:
+      p_str = str(p)
+      p_norm = p_str.rstrip('/')
+      is_task_runtime = any(prefix in p_str for prefix in task_runtime_prefixes)
+      if is_task_runtime and p_norm != current_runtime_root:
+        continue
+      pruned_path.append(p)
+    sys.path[:] = pruned_path
 
-    # Remove OTHER mode's paths from sys.path to prevent Python finding stale modules
-    # after mode toggles
-    if other_mode_root:
-      sys.path[:] = [p for p in sys.path if not p.startswith(other_mode_root.rstrip('/'))]
+    if current_runtime_root not in [str(p).rstrip('/') for p in sys.path]:
+      sys.path.insert(0, runtime_root)
 
     # Ensure updated project modules are re-imported on each RUN.
     # CRITICAL: Clean modules from ALL task runtime roots (template+solution),

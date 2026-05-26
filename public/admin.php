@@ -2011,9 +2011,9 @@ if ($displayName === '') {
   <script src="js/task-type-manager.js"></script>
   <script src="js/options-builder.js"></script>
   <script src="js/export-tasks.js"></script>
-  <script src="js/import-tasks.js"></script>
+  <script src="js/import-tasks.js?v=20260526a"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20260506a"></script>
+  <script src="js/admin-dashboard.js?v=20260526a"></script>
   <script src="js/admin-teams-users.js?v=20260423c"></script>
 </body>
 </html>

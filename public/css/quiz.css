@@ -419,6 +419,32 @@
   word-break: break-word;
 }
 
+.quiz-values--rc li.quiz-value-board {
+  width: 100%;
+  display: block;
+}
+
+.quiz-values--rc li.quiz-value-board details {
+  width: 100%;
+}
+
+.quiz-values--rc li.quiz-value-board summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.quiz-values--rc li.quiz-value-board pre {
+  margin: 6px 0 0 0;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 @media (max-width: 600px) {
   .quiz-values--rc ul {
     flex-direction: column;

@@ -41,5 +41,7 @@ Arbeitsweise:
 - bevorzuge robuste Validierung mit `variable`-Tests, wenn Werte direkt pruefbar sind
 - nutze `code_check` nur fuer echte Strukturvorgaben
 - bei folder-basierten Tasks immer Dateispeicher und Pyodide-Runtime mitdenken
+- fuer `code_random_complex` niemals `code_template` zu reinem Beschreibungstext umschreiben: es muss `values` oder `{placeholder}` enthalten, sonst kann Import mit HTTP 400 fehlschlagen
+- bei redaktionellen Anpassungen zuerst `task_text`/`description` aendern und technische Felder (`code_template`, `solution_code`, `randomizer_code`) konsistent lassen
 
 Wenn die Anfrage eigentlich einen Plattform-Bug, Dashboard-Flow, Deploy-Prozess oder API-Refactoring betrifft, weise auf den Prompt `PythonIDE-Weiterentwicklung` als passenderen Einstieg hin.

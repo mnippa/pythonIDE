@@ -152,9 +152,16 @@ The system scans the HTML for `data-run` (full run) and `data-function` (single 
 
 ### Step 3: Python Execution
 When a trigger fires (button click or form submit):
-1. Read trigger metadata from HTML attributes (`name`, `value`) with legacy fallbacks
+1. Read trigger metadata from HTML attributes with the current priority order
+    - Trigger name priority: `data-run-name` -> `data-function` -> `name` -> `id`
+    - Trigger value priority: `value` -> `data-run-value` -> `''`
 2. Run the Python code
 3. Python can read `ui.get('__trigger__')` to know which button was clicked
+
+Notes:
+- In run-driven mode (`data-run-python="true"` or `data-run`), `ui.get('__trigger__')` reads the resolved trigger name above.
+- In event-driven mode (`data-function="..."`), the same resolved trigger metadata is also available as `trigger.name` and `trigger.value`.
+- Toolbar `Run` does not set a trigger by itself. A trigger is only set by a GUI element click or form submit.
 
 ### Step 4: I/O Binding
 As Python runs:

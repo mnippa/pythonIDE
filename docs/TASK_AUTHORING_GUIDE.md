@@ -92,6 +92,19 @@ If the goal is a calculation, prefer variable-based checks.
 
 If a normal code task can be validated with fixed variables, that is usually better.
 
+### Critical import rule for `code_random_complex`
+
+For `code_random_complex`, import into another system will fail with HTTP 400 if `code_template`
+does not contain either:
+- a `values` dict reference, or
+- placeholder syntax like `{start}`, `{goal}`, `{board_lines}`.
+
+Authoring safety rules:
+- Do not replace technical placeholders in `code_template` with prose-only text.
+- Redaction changes should go into `description` and `task_text`, not by removing placeholders.
+- Keep `code_template`, `solution_code`, and `randomizer_code` consistent whenever you edit one of them.
+- Before export/import, quickly check `code_template` still contains `values` or at least one `{placeholder}` token.
+
 ## Folder-based tasks
 
 Use `folderstructure = 1` only when the task really needs extra files.

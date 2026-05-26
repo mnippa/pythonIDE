@@ -965,7 +965,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260511c"></script>
+  <script type="module" src="js/editor-setup.js?v=20260526b"></script>
 
   <script>
     // Theme Toggle

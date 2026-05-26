@@ -8,6 +8,12 @@ class TaskImporter {
     this.zipReady = typeof JSZip !== 'undefined';
   }
 
+  isReadOnlyRuntimeFile(path) {
+    const normalized = String(path || '').replace(/\\/g, '/').toLowerCase();
+    const fileName = normalized.split('/').pop() || '';
+    return fileName === 'idegui.py' || fileName === 'ui-runtime.readonly.js';
+  }
+
   getProblemType(taskType) {
     const map = {
       code: 'code_completion',
@@ -309,7 +315,9 @@ class TaskImporter {
   async importTasks(tasks, images, folderFilesMap = {}, solutionFilesMap = {}) {
     const results = {
       created: [],
-      failed: []
+      failed: [],
+      restored_folder_files: 0,
+      restored_solution_files: 0
     };
 
     for (let i = 0; i < tasks.length; i++) {
@@ -419,14 +427,23 @@ class TaskImporter {
             body: JSON.stringify({ id: taskWithImages.id, ...taskPayload })
           });
 
-          if (!response.ok) throw new Error(`Update failed: ${response.status}`);
+          if (!response.ok) {
+            let details = '';
+            try {
+              const err = await response.json();
+              details = err?.error ? ` - ${err.error}` : '';
+            } catch (_) {
+              // Ignore JSON parse errors and keep status-only fallback.
+            }
+            throw new Error(`Update failed: ${response.status}${details}`);
+          }
           const result = await response.json();
           if (!result.ok) throw new Error(result.error || 'Update failed');
 
           // Restore folder files if present
           if (taskWithImages.folderstructure) {
-            await this.restoreFolderFiles(taskWithImages.id, i, taskWithImages._folder_files_dir, folderFilesMap);
-            await this.restoreSolutionFiles(taskWithImages.id, i, taskWithImages._solution_files_dir, solutionFilesMap);
+            results.restored_folder_files += await this.restoreFolderFiles(taskWithImages.id, i, taskWithImages._folder_files_dir, folderFilesMap);
+            results.restored_solution_files += await this.restoreSolutionFiles(taskWithImages.id, i, taskWithImages._solution_files_dir, solutionFilesMap);
           }
 
           results.created.push({
@@ -441,7 +458,16 @@ class TaskImporter {
             body: JSON.stringify(taskPayload)
           });
 
-          if (!response.ok) throw new Error(`Create failed: ${response.status}`);
+          if (!response.ok) {
+            let details = '';
+            try {
+              const err = await response.json();
+              details = err?.error ? ` - ${err.error}` : '';
+            } catch (_) {
+              // Ignore JSON parse errors and keep status-only fallback.
+            }
+            throw new Error(`Create failed: ${response.status}${details}`);
+          }
           const result = await response.json();
           if (!result.ok) throw new Error(result.error || 'Create failed');
 
@@ -449,8 +475,8 @@ class TaskImporter {
 
           // Restore folder files for newly created task
           if (taskWithImages.folderstructure && newTaskId) {
-            await this.restoreFolderFiles(newTaskId, i, taskWithImages._folder_files_dir, folderFilesMap);
-            await this.restoreSolutionFiles(newTaskId, i, taskWithImages._solution_files_dir, solutionFilesMap);
+            results.restored_folder_files += await this.restoreFolderFiles(newTaskId, i, taskWithImages._folder_files_dir, folderFilesMap);
+            results.restored_solution_files += await this.restoreSolutionFiles(newTaskId, i, taskWithImages._solution_files_dir, solutionFilesMap);
           }
 
           results.created.push({
@@ -477,23 +503,31 @@ class TaskImporter {
    * folderFilesMap keys are either 'task_N/path' (multi-task export) or 'path' (single-task export)
    */
   async restoreFolderFiles(taskId, taskIndex, folderFilesDirHint, folderFilesMap) {
-    if (!folderFilesMap || Object.keys(folderFilesMap).length === 0) return;
+    if (!folderFilesMap || Object.keys(folderFilesMap).length === 0) return 0;
 
     // Determine key prefix: multi-task export uses 'task_N/' prefix
     const multiPrefix = `task_${taskIndex + 1}/`;
 
+    let restoredCount = 0;
+
     for (const [mapKey, content] of Object.entries(folderFilesMap)) {
       let filePath = null;
+      const hasTaskPrefix = /^task_\d+\//.test(mapKey);
 
       if (mapKey.startsWith(multiPrefix)) {
         // Multi-task export: strip the 'task_N/' prefix
         filePath = mapKey.slice(multiPrefix.length);
-      } else if (!mapKey.includes('/task_')) {
+      } else if (!hasTaskPrefix) {
         // Single-task export: key is directly the relative path
         filePath = mapKey;
       }
 
       if (!filePath) continue;
+
+      // These runtime files are intentionally server-side read-only for code_ui tasks.
+      if (this.isReadOnlyRuntimeFile(filePath)) {
+        continue;
+      }
 
       try {
         // Use 'save' action – creates or overwrites, handles parent dirs automatically
@@ -505,11 +539,15 @@ class TaskImporter {
         const data = await res.json().catch(() => null);
         if (!res.ok || (data && data.ok === false)) {
           console.warn(`restoreFolderFiles: save failed for ${filePath} (task ${taskId}):`, data?.error || res.status);
+        } else {
+          restoredCount += 1;
         }
       } catch (e) {
         console.warn(`Could not restore folder file ${filePath} for task ${taskId}:`, e);
       }
     }
+
+    return restoredCount;
   }
 
   /**
@@ -517,20 +555,28 @@ class TaskImporter {
    * solutionFilesMap keys are either 'task_N/path' (multi-task export) or 'path' (single-task export)
    */
   async restoreSolutionFiles(taskId, taskIndex, solutionFilesDirHint, solutionFilesMap) {
-    if (!solutionFilesMap || Object.keys(solutionFilesMap).length === 0) return;
+    if (!solutionFilesMap || Object.keys(solutionFilesMap).length === 0) return 0;
 
     const multiPrefix = `task_${taskIndex + 1}/`;
 
+    let restoredCount = 0;
+
     for (const [mapKey, content] of Object.entries(solutionFilesMap)) {
       let filePath = null;
+      const hasTaskPrefix = /^task_\d+\//.test(mapKey);
 
       if (mapKey.startsWith(multiPrefix)) {
         filePath = mapKey.slice(multiPrefix.length);
-      } else if (!mapKey.includes('/task_')) {
+      } else if (!hasTaskPrefix) {
         filePath = mapKey;
       }
 
       if (!filePath || filePath === 'init.py') continue;
+
+      // These runtime files are intentionally server-side read-only for code_ui tasks.
+      if (this.isReadOnlyRuntimeFile(filePath)) {
+        continue;
+      }
 
       try {
         const res = await fetch(`../api/tasks/folder-manage.php?action=save&task_id=${taskId}`, {
@@ -541,11 +587,15 @@ class TaskImporter {
         const data = await res.json().catch(() => null);
         if (!res.ok || (data && data.ok === false)) {
           console.warn(`restoreSolutionFiles: save failed for ${filePath} (task ${taskId}):`, data?.error || res.status);
+        } else {
+          restoredCount += 1;
         }
       } catch (e) {
         console.warn(`Could not restore solution file ${filePath} for task ${taskId}:`, e);
       }
     }
+
+    return restoredCount;
   }
 }
 

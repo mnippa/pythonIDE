@@ -25,6 +25,17 @@ This document defines the JSON format for importing a single task into an existi
 - `title` (string)
 - `task_type` (string) - One of: `code`, `code_ui`, `single_choice`, `multiple_choice`, `free_text`, `code_reading`, `code_random_complex`.
 
+### Additional required rule for `code_random_complex`
+
+For `task_type = code_random_complex`, `code_template` must include at least one of:
+- `values` dict usage, or
+- placeholder syntax `{varName}`.
+
+Without this, task creation during import fails with HTTP 400 on systems that validate this rule.
+
+Practical recommendation:
+- when doing editorial-only updates, keep `code_template` technical and do text changes in `task_text`/`description`.
+
 ## Optional Fields
 - `problem_type` (string) - Examples: `code_completion`, `code_fix`, `multiple_choice`, `essay`.
 - `description` (string)

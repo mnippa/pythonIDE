@@ -1172,9 +1172,6 @@ async function handleTaskSubmit(e) {
     show_solution: $('task-show-solution').checked ? 1 : 0,
     show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
     manual_review_required: $('task-manual-review-required')?.checked ? 1 : 0,
-    folderstructure: $('task-folderstructure').checked ? 1 : 0,
-    allowDownload: $('task-allowDownload').checked ? 1 : 0,
-    allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     task_difficulty: ($('task-difficulty')?.value || 'medium'),
@@ -1187,6 +1184,19 @@ async function handleTaskSubmit(e) {
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
   };
+
+  const newFolderstructure = $('task-folderstructure');
+  if (newFolderstructure && !newFolderstructure.disabled) {
+    payload.folderstructure = newFolderstructure.checked ? 1 : 0;
+  }
+  const newAllowDownload = $('task-allowDownload');
+  if (newAllowDownload && !newAllowDownload.disabled) {
+    payload.allowDownload = newAllowDownload.checked ? 1 : 0;
+  }
+  const newAllowCodeUiWebEdit = $('task-allowCodeUiWebEdit');
+  if (newAllowCodeUiWebEdit && !newAllowCodeUiWebEdit.disabled) {
+    payload.allowCodeUiWebEdit = newAllowCodeUiWebEdit.checked ? 1 : 0;
+  }
   
   // Get stoff from TinyMCE if available, else from textarea
   const stoffEditor = tinymce.get('task-stoff');
@@ -2067,9 +2077,6 @@ async function handleEditTaskSubmit(e) {
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
     show_solution_code: $('edit-task-show-solution-code').checked ? 1 : 0,
-    folderstructure: $('edit-task-folderstructure').checked ? 1 : 0,
-    allowDownload: $('edit-task-allowDownload').checked ? 1 : 0,
-    allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
     task_difficulty: ($('edit-task-difficulty')?.value || 'medium'),
     problem_type: taskType,  // Keep for backwards compatibility
@@ -2083,6 +2090,19 @@ async function handleEditTaskSubmit(e) {
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
+
+  const editFolderstructure = $('edit-task-folderstructure');
+  if (editFolderstructure && !editFolderstructure.disabled) {
+    payload.folderstructure = editFolderstructure.checked ? 1 : 0;
+  }
+  const editAllowDownload = $('edit-task-allowDownload');
+  if (editAllowDownload && !editAllowDownload.disabled) {
+    payload.allowDownload = editAllowDownload.checked ? 1 : 0;
+  }
+  const editAllowCodeUiWebEdit = $('edit-task-allowCodeUiWebEdit');
+  if (editAllowCodeUiWebEdit && !editAllowCodeUiWebEdit.disabled) {
+    payload.allowCodeUiWebEdit = editAllowCodeUiWebEdit.checked ? 1 : 0;
+  }
   
   // Get stoff from TinyMCE if available, else from textarea
   const editStoffEditor = tinymce.get('edit-task-stoff');
@@ -2312,6 +2332,11 @@ function bindEvents() {
         const createdCount = results.created.length;
         const failedCount = results.failed.length;
         let message = `✓ ${createdCount} task(s) imported successfully`;
+
+        if ((results.restored_folder_files || 0) > 0 || (results.restored_solution_files || 0) > 0) {
+          message += `\n📁 Folder-Dateien wiederhergestellt: ${results.restored_folder_files || 0}`;
+          message += `\n🧩 Solution-Dateien wiederhergestellt: ${results.restored_solution_files || 0}`;
+        }
         
         if (failedCount > 0) {
           message += `\n✗ ${failedCount} task(s) failed:\n`;
@@ -2789,14 +2814,15 @@ function setCodeOnlyOptionVisibility(inputId, isVisible) {
   }
 
   input.disabled = !isVisible;
-  if (!isVisible) {
-    input.checked = false;
-  }
+}
+
+function isCodeLikeTaskType(taskType) {
+  return ['code', 'code_ui', 'code_reading', 'code_random_complex'].includes(taskType);
 }
 
 function updateCodeOnlyOptionsVisibility() {
-  const isNewTaskCode = ($('new-task-type')?.value || 'code') === 'code';
-  const isEditTaskCode = ($('edit-task-type')?.value || 'code') === 'code';
+  const isNewTaskCode = isCodeLikeTaskType($('new-task-type')?.value || 'code');
+  const isEditTaskCode = isCodeLikeTaskType($('edit-task-type')?.value || 'code');
 
   setCodeOnlyOptionVisibility('task-folderstructure', isNewTaskCode);
   setCodeOnlyOptionVisibility('task-allowDownload', isNewTaskCode);

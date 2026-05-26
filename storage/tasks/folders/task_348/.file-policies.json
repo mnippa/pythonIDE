@@ -1,0 +1,24 @@
+{
+    "policies": [
+        {
+            "path": "spielfeld.py",
+            "readonly": true,
+            "reason": "Spielfeld-Datenstruktur"
+        },
+        {
+            "path": "function.py",
+            "readonly": true,
+            "reason": "Spiel-Funktionen"
+        },
+        {
+            "path": "README.md",
+            "readonly": true,
+            "reason": "Aufgabenbeschreibung"
+        },
+        {
+            "path": "reflexion.md",
+            "readonly": true,
+            "reason": "Reflexionsfrage"
+        }
+    ]
+}

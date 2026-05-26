@@ -615,6 +615,42 @@ window.QuizRenderer = {
 
     const answerClass = isCompleted ? (isPassed ? 'user-answer-correct' : 'user-answer-incorrect') : '';
     const valuesHtml = Object.entries(values).map(([key, value]) => {
+      if (key === 'coins') {
+        return '';
+      }
+
+      if (key === 'start_dir') {
+        const arrowMap = {
+          east: '➡️',
+          south: '⬇️',
+          west: '⬅️',
+          north: '⬆️'
+        };
+        const arrow = arrowMap[String(value).toLowerCase()] || String(value);
+        return `<li><code>start_dir = ${this.escapeHtml(arrow)}</code></li>`;
+      }
+
+      if (key === 'board_lines' && Array.isArray(value) && value.every(line => typeof line === 'string')) {
+        const symbolMap = {
+          '#': '⬛',
+          '.': '⬜',
+          'S': '🟦',
+          'C': '🪙',
+          'G': '🚪'
+        };
+        const board = value
+          .map(line => Array.from(line).map(ch => symbolMap[ch] || ch).join(''))
+          .join('\n');
+        return `
+          <li class="quiz-value-board">
+            <details>
+              <summary>Spielfeld anzeigen</summary>
+              <pre>${this.escapeHtml(board)}</pre>
+            </details>
+          </li>
+        `;
+      }
+
       const formatted = typeof value === 'object' ? JSON.stringify(value) : String(value);
       return `<li><code>${this.escapeHtml(key)} = ${this.escapeHtml(formatted)}</code></li>`;
     }).join('');

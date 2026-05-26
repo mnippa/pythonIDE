@@ -22,6 +22,7 @@ const assignmentState = {
   solutionMode: false, // Track if currently in solution mode (readonly)
   // Restore buffer for leaving solution mode on the same task only
   savedCodeBeforeSolution: null, // { taskId, code }
+  savedTemplateInitBeforeSolution: null, // { taskId, code }
   hasAutoLoaded: false, // Flag to prevent multiple auto-loads
   taskLoadToken: 0, // Guards against async race conditions during fast task switching
   fileOpenToken: 0, // Guards against stale async file-open operations
@@ -31,7 +32,8 @@ const assignmentState = {
   taskActivityIntervals: {}, // { taskId: timerId }
   taskLastTickTime: {}, // { taskId: timestamp } - when last heartbeat tick fired
   taskFileMeta: {}, // { taskId: { path: { read_only, ... } } }
-  userTestEditorUnlockedByTask: {} // { taskId: boolean }
+  userTestEditorUnlockedByTask: {}, // { taskId: boolean }
+  editorInitRetryByTask: {} // { taskId: retryCount }
 };
 
 // Export to window for editor-setup.js access
@@ -41,6 +43,105 @@ window.assignmentState = assignmentState;
 const ACTIVITY_HEARTBEAT_INTERVAL = 30000; // Send heartbeat every 30 seconds
 const ACTIVITY_IDLE_TIMEOUT = 90000; // 90 seconds of inactivity = idle
 const ACTIVITY_DEBUG = false;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Pyodide Sync Queue (Option A: Queue-Based Synchronization)
+// ═══════════════════════════════════════════════════════════════════════════════
+// 
+// PURPOSE:
+//   Eliminate race condition where frontend mode change (sync) races with 
+//   Pyodide file sync (async). Queue serializes all Pyodide file operations,
+//   ensuring execution only happens after all pending syncs complete.
+//
+// PROBLEM SOLVED:
+//   Production race: User toggles template→solution, quickly clicks Run
+//   Before: Pyodide file sync races with execution (solution files may still be syncing)
+//   After:  Queue drains before execution, guaranteed file consistency
+//
+// TIMING IMPACT:
+//   Minimal on most systems. Production (50ms API) may see +100-200ms per toggle.
+//   Worth the guarantee of correct code execution.
+//
+class PyodideSyncQueue {
+  constructor() {
+    this.pending = [];
+    this.isProcessing = false;
+    this.debug = true;
+  }
+
+  async enqueue(operation, label = 'unnamed') {
+    this.pending.push({ operation, label, queuedAt: Date.now() });
+    if (this.debug) {
+      console.log(`[sync-queue] Enqueued: ${label} (queue size: ${this.pending.length})`);
+    }
+    
+    if (!this.isProcessing) {
+      await this.process();
+    }
+  }
+
+  async process() {
+    if (this.isProcessing || this.pending.length === 0) return;
+    
+    this.isProcessing = true;
+    const startTime = Date.now();
+
+    try {
+      while (this.pending.length > 0) {
+        const { operation, label, queuedAt } = this.pending.shift();
+        const waitTime = Date.now() - queuedAt;
+        
+        if (this.debug) {
+          console.log(`[sync-queue] Processing: ${label} (waited ${waitTime}ms)`);
+        }
+
+        try {
+          await operation();
+        } catch (err) {
+          console.error(`[sync-queue] Operation failed: ${label}`, err);
+          throw err;
+        }
+      }
+    } finally {
+      this.isProcessing = false;
+      const totalTime = Date.now() - startTime;
+      if (this.debug) {
+        console.log(`[sync-queue] Processing complete (${totalTime}ms total)`);
+      }
+    }
+  }
+
+  async drain() {
+    // Explicit barrier: wait for all pending operations to complete
+    if (this.pending.length === 0 && !this.isProcessing) {
+      if (this.debug) {
+        console.log('[sync-queue] Drain: queue already empty');
+      }
+      return; // Already done
+    }
+
+    if (this.debug) {
+      console.log(`[sync-queue] Drain requested: waiting for ${this.pending.length} ops + processing=${this.isProcessing}`);
+    }
+
+    const startTime = Date.now();
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (!this.isProcessing && this.pending.length === 0) {
+          clearInterval(checkInterval);
+          const elapsed = Date.now() - startTime;
+          if (this.debug) {
+            console.log(`[sync-queue] Drain complete (${elapsed}ms)`);
+          }
+          resolve();
+        }
+      }, 5); // Check every 5ms
+    });
+  }
+}
+
+// Global queue instance
+const pyodideSyncQueue = new PyodideSyncQueue();
 
 // Page Visibility tracking: pause heartbeats while tab is hidden / screen locked
 let _activityPageHidden = document.hidden;
@@ -130,6 +231,15 @@ function getTestUserQueryParam() {
 
 function getStudentViewQueryParam() {
   return window.STUDENT_ASSIGNMENTS_CONTEXT ? '&student_view=1' : '';
+}
+
+function getApiBasePath() {
+  const pathname = String(window.location.pathname || '');
+  const match = pathname.match(/^\/([^/]+)(?:\/|$)/);
+  if (match && /^pythonide/i.test(match[1])) {
+    return `/${match[1]}/api`;
+  }
+  return '/api';
 }
 
 function isAdminTaskLabMode() {
@@ -469,9 +579,25 @@ function setTaskDraftContent(taskId, path, content) {
   updateTaskFileDirtyIndicator(taskId, path);
 }
 
+function setTaskDraftContentForScope(taskId, path, content, scope) {
+  if (!taskId || !path || !scope) return;
+  const key = getTaskStateKey(taskId, scope);
+  taskDraftFiles[key] = taskDraftFiles[key] || {};
+  taskSavedSnapshots[key] = taskSavedSnapshots[key] || {};
+  taskDraftFiles[key][path] = String(content ?? '');
+  updateTaskFileDirtyIndicator(taskId, path);
+}
+
 function getTaskDraftContent(taskId, path) {
   if (!taskId || !path) return null;
   const key = getTaskStateKey(taskId);
+  const taskDraft = taskDraftFiles[key] || {};
+  return Object.prototype.hasOwnProperty.call(taskDraft, path) ? taskDraft[path] : null;
+}
+
+function getTaskDraftContentForScope(taskId, path, scope) {
+  if (!taskId || !path || !scope) return null;
+  const key = getTaskStateKey(taskId, scope);
   const taskDraft = taskDraftFiles[key] || {};
   return Object.prototype.hasOwnProperty.call(taskDraft, path) ? taskDraft[path] : null;
 }
@@ -483,9 +609,25 @@ function setTaskSavedSnapshot(taskId, path, content) {
   updateTaskFileDirtyIndicator(taskId, path);
 }
 
+function setTaskSavedSnapshotForScope(taskId, path, content, scope) {
+  if (!taskId || !path || !scope) return;
+  const key = getTaskStateKey(taskId, scope);
+  taskDraftFiles[key] = taskDraftFiles[key] || {};
+  taskSavedSnapshots[key] = taskSavedSnapshots[key] || {};
+  taskSavedSnapshots[key][path] = String(content ?? '');
+  updateTaskFileDirtyIndicator(taskId, path);
+}
+
 function getTaskSavedSnapshot(taskId, path) {
   if (!taskId || !path) return null;
   const key = getTaskStateKey(taskId);
+  const taskSnapshots = taskSavedSnapshots[key] || {};
+  return Object.prototype.hasOwnProperty.call(taskSnapshots, path) ? taskSnapshots[path] : null;
+}
+
+function getTaskSavedSnapshotForScope(taskId, path, scope) {
+  if (!taskId || !path || !scope) return null;
+  const key = getTaskStateKey(taskId, scope);
   const taskSnapshots = taskSavedSnapshots[key] || {};
   return Object.prototype.hasOwnProperty.call(taskSnapshots, path) ? taskSnapshots[path] : null;
 }
@@ -516,8 +658,9 @@ function clearTaskModeState(taskId, scope) {
 function cacheCurrentEditorDraft() {
   if (!window.editorInstance || !window.currentFile) return;
   const { taskId, path } = window.currentFile;
+  const scope = window.currentFile.scope || getTaskModeScope();
   if (!taskId || !path) return;
-  setTaskDraftContent(taskId, path, window.editorInstance.getValue());
+  setTaskDraftContentForScope(taskId, path, window.editorInstance.getValue(), scope);
 }
 
 function hasUnsavedDraftsForTask(taskId) {
@@ -558,10 +701,11 @@ function isTaskMismatchForFileOperation(taskId) {
   return Number(taskId) !== Number(assignmentState.currentTaskId);
 }
 
-async function persistTaskFileContent(taskId, path, content, isVirtual = false) {
+async function persistTaskFileContent(taskId, path, content, isVirtual = false, scopeOverride = null) {
+  const saveScope = scopeOverride || getTaskModeScope();
   if (window.TEST_MODE_NO_PERSIST === true) {
-    setTaskSavedSnapshot(taskId, path, content);
-    setTaskDraftContent(taskId, path, content);
+    setTaskSavedSnapshotForScope(taskId, path, content, saveScope);
+    setTaskDraftContentForScope(taskId, path, content, saveScope);
     return true;
   }
 
@@ -581,7 +725,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
     
     // If task has no folder structure, use simple update API
     if (!hasFolderStructure) {
-      const response = await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+      const response = await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId, current_code: content })
@@ -592,7 +736,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
       }
     } else {
       // Task has folder structure, use folder-files API
-      const response = await fetch(`/pythonIDE/api/user_tasks/folder-files.php?action=save${testUserParam}`, {
+      const response = await fetch(`${getApiBasePath()}/user_tasks/folder-files.php?action=save${testUserParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId, path, content })
@@ -615,7 +759,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
         throw new Error(result?.error || 'Speichern fehlgeschlagen');
       }
     } else {
-      const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save_template`, {
+      const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=save_template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId, content })
@@ -627,7 +771,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
     }
   } else {
     const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=save${solutionModeParam}`, {
+    const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=save${solutionModeParam}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId, path, content })
@@ -638,8 +782,8 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false) 
     }
   }
 
-  setTaskSavedSnapshot(taskId, path, content);
-  setTaskDraftContent(taskId, path, content);
+  setTaskSavedSnapshotForScope(taskId, path, content, saveScope);
+  setTaskDraftContentForScope(taskId, path, content, saveScope);
   return true;
 }
 
@@ -1261,31 +1405,38 @@ function showTaskDetails(task, activeTab = 'details') {
   // Solution toggle button handler
   const solToggleBtn = $('solution-toggle-btn');
   if (solToggleBtn && hasSolution) {
-    solToggleBtn.addEventListener('click', async () => {
+    // showTaskDetails() runs often; ensure we only keep one active toggle handler.
+    solToggleBtn.onclick = async () => {
+      if (assignmentState._solutionToggleInProgress === true) {
+        return;
+      }
+      assignmentState._solutionToggleInProgress = true;
       const currentFilePath = String(window.currentFile?.path || '');
-      if (assignmentState.solutionMode) {
-        // Turn OFF solution mode - restore original
-        assignmentState.solutionMode = false;
-        await loadTaskIntoEditor(assignmentState.currentAssignmentId, task.id);
-        if ((task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') && currentFilePath && currentFilePath !== 'init.py') {
-          await openTaskFileInEditor(task.id, currentFilePath);
-        }
-      } else {
-        // Turn ON solution mode
-        assignmentState.solutionMode = true;
-        await loadSolutionIntoMainArea(task);
-        if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
-          const currentPathAfterLoad = String(window.currentFile?.path || currentFilePath || 'init.py');
-          if (currentPathAfterLoad) {
-            await openTaskFileInEditor(task.id, currentPathAfterLoad);
+      try {
+        if (assignmentState.solutionMode) {
+          // Turn OFF solution mode - restore original
+          await loadTaskIntoEditor(assignmentState.currentAssignmentId, task.id);
+          if ((task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') && currentFilePath && currentFilePath !== 'init.py') {
+            await openTaskFileInEditor(task.id, currentFilePath);
+          }
+        } else {
+          // Turn ON solution mode
+          await loadSolutionIntoMainArea(task);
+          if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+            const currentPathAfterLoad = String(window.currentFile?.path || currentFilePath || 'init.py');
+            if (currentPathAfterLoad) {
+              await openTaskFileInEditor(task.id, currentPathAfterLoad);
+            }
           }
         }
+      } finally {
+        assignmentState._solutionToggleInProgress = false;
       }
       // Refresh the sidebar to update button color
       showTaskDetails(task, 'details');
       updateSaveButtonTooltip();
       applyUserTestEditorLockState(task);
-    });
+    };
   }
 
   const revealBtn = $('hint-reveal-btn');
@@ -1348,6 +1499,26 @@ async function loadSolutionIntoMainArea(task) {
   // Refresh task data from API to ensure latest solution_code
   await refreshCurrentTaskFromAPI();
   task = assignmentState.currentTask || task;
+
+  const editor = window.editorInstance;
+  const liveTemplateInit = (
+    assignmentState.solutionMode !== true &&
+    editor &&
+    window.currentFile &&
+    Number(window.currentFile.taskId) === Number(task.id) &&
+    String(window.currentFile.path || '') === 'init.py'
+  )
+    ? String(editor.getValue() ?? '')
+    : null;
+
+  const templateInitDraft = getTaskDraftContentForScope(task.id, 'init.py', 'template');
+  const templateInitSnapshot = getTaskSavedSnapshotForScope(task.id, 'init.py', 'template');
+  assignmentState.savedTemplateInitBeforeSolution = {
+    taskId: task.id,
+    code: liveTemplateInit !== null
+      ? liveTemplateInit
+      : (templateInitDraft !== null ? templateInitDraft : (templateInitSnapshot !== null ? templateInitSnapshot : ''))
+  };
   
   assignmentState.solutionMode = true;
   console.log(`[LOAD_SOLUTION_AREA] Task ${task.id}: solutionMode set to TRUE`);
@@ -1355,7 +1526,6 @@ async function loadSolutionIntoMainArea(task) {
   
   if (task.task_type === 'code' || task.task_type === 'code_ui') {
     // Save current code before showing solution
-    const editor = window.editorInstance;
     if (editor) {
       assignmentState.savedCodeBeforeSolution = {
         taskId: task.id,
@@ -1365,9 +1535,9 @@ async function loadSolutionIntoMainArea(task) {
         // Convert escaped newlines to actual newlines (safeguard for older data)
         const displaySolution = task.solution_code.replace(/\\n/g, '\n');
         editor.setValue(displaySolution);
-        window.currentFile = { taskId: task.id, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false };
-        setTaskSavedSnapshot(task.id, 'init.py', displaySolution);
-        setTaskDraftContent(task.id, 'init.py', displaySolution);
+        window.currentFile = { taskId: task.id, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false, scope: 'solution' };
+        setTaskSavedSnapshotForScope(task.id, 'init.py', displaySolution, 'solution');
+        setTaskDraftContentForScope(task.id, 'init.py', displaySolution, 'solution');
         // In user-test mode, solution view is read-only (student code only may be edited).
         editor.updateOptions({ readOnly: isAdminUserTestMode() ? true : false });
         updateSaveButtonTooltip();
@@ -1608,6 +1778,11 @@ async function loadSolutionIntoMainArea(task) {
 
 // Compute solution for code_random_complex tasks
 async function computeRandomComplexSolution(task, varValues) {
+  let solutionCode = String(task?.solution_code || task?.code_template || '');
+  if (!solutionCode.trim()) {
+    throw new Error('Kein solution_code fuer code_random_complex hinterlegt');
+  }
+
   // Wait for Pyodide to be ready
   if (!window.pyodide) {
     let attempts = 0;
@@ -1625,6 +1800,8 @@ async function computeRandomComplexSolution(task, varValues) {
   try {
     // Execute solution code and capture output
     const namespace = window.pyodide.globals.get('dict')();
+    const varsJson = JSON.stringify(varValues || {});
+    const varsJsonLiteral = JSON.stringify(varsJson);
     
     const toPythonLiteral = (value) => {
       if (value === null || value === undefined) return 'None';
@@ -1654,8 +1831,17 @@ async function computeRandomComplexSolution(task, varValues) {
       capturedOutput += args.map(a => String(a)).join(' ') + '\n';
     });
     
-    // Execute the solution code
-    await window.pyodide.runPythonAsync(solutionCode, { globals: namespace });
+    // Execute the solution code with preloaded variables for both styles:
+    // 1) direct variable access (e.g. board_lines)
+    // 2) values dict access (e.g. values["x"])
+    const bootstrapCode = [
+      'import json',
+      `__vars = json.loads(${varsJsonLiteral})`,
+      'values = __vars',
+      'for __k, __v in __vars.items():',
+      '    globals()[__k] = __v'
+    ].join('\n');
+    await window.pyodide.runPythonAsync(bootstrapCode + '\n' + solutionCode, { globals: namespace });
     
     // Restore original print
     window.pyodide.globals.set('print', originalPrint);
@@ -2540,7 +2726,7 @@ async function loadSavedCode(taskId) {
     const testUserParam = getTestUserQueryParam();
     const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}${testUserParam}`);
     if (response && response.task && response.task.current_code) {
-      return response.task.current_code;
+      return normalizeLegacyEscapedCode(response.task.current_code);
     }
     return null;
   } catch (err) {
@@ -2651,6 +2837,35 @@ function waitForEditor(maxAttempts = 20, interval = 100) {
     
     checkEditor();
   });
+}
+
+async function waitForPyodideWithStatus(outputEl, maxAttempts = 80, interval = 100) {
+  if (window.pyodide) {
+    return window.pyodide;
+  }
+
+  if (outputEl) {
+    outputEl.innerHTML = '<span style="color:#666;">Loading Pyodide ...</span>';
+  }
+
+  let attempts = 0;
+  while (!window.pyodide && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, interval));
+    attempts += 1;
+  }
+
+  if (!window.pyodide) {
+    if (outputEl) {
+      outputEl.innerHTML = '<span style="color:#c00;">Pyodide konnte nicht geladen werden</span>';
+    }
+    return null;
+  }
+
+  if (outputEl) {
+    outputEl.innerHTML = '<span style="color:#15803d;">Pyodide-Load successful</span>';
+  }
+
+  return window.pyodide;
 }
 
 function resetAssignmentPlotPanel() {
@@ -2875,10 +3090,10 @@ function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = f
   if (!guiContainer || !triggerElement) return;
 
   const triggerName =
-    triggerElement.getAttribute('name') ||
-    triggerElement.id ||
     triggerElement.getAttribute('data-run-name') ||
     triggerElement.getAttribute('data-function') ||
+    triggerElement.getAttribute('name') ||
+    triggerElement.id ||
     '';
 
   const explicitValueAttr = triggerElement.getAttribute('value');
@@ -2977,6 +3192,7 @@ async function renderCodeUiHtml(taskId) {
 
   const isAdminFolderMode = isAdminTaskLabMode();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
+  const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
 
   const readTaskFile = async (path) => {
     const draft = getTaskDraftContent(taskId, path);
@@ -2984,11 +3200,21 @@ async function renderCodeUiHtml(taskId) {
       return String(draft || '');
     }
 
-    const readEndpoint = isAdminFolderMode
-      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
-      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
+    let response;
+    if (isAdminFolderMode) {
+      const readEndpoint = `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`;
+      response = await fetch(readEndpoint, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+    } else {
+      const readEndpoint = `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
+      response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
+    }
 
-    const response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`${path} nicht gefunden`);
     }
@@ -3079,29 +3305,33 @@ async function renderCodeUiHtml(taskId) {
 function setEditorToInitPy(taskId, content = '') {
   const editor = window.editorInstance;
   const monaco = window.monaco;
+  const normalizedContent = normalizeLegacyEscapedCode(content);
 
   if (!editor) return;
 
   if (monaco) {
-    const oldModel = editor.getModel();
-    if (oldModel) {
-      oldModel.dispose();
+    const modelUri = monaco.Uri.parse(`task://task${taskId}/init.py`);
+    let model = monaco.editor.getModel(modelUri);
+    if (!model) {
+      model = monaco.editor.createModel(normalizedContent, 'python', modelUri);
+    } else {
+      monaco.editor.setModelLanguage(model, 'python');
+      if (model.getValue() !== normalizedContent) {
+        model.setValue(normalizedContent);
+      }
     }
-
-    const model = monaco.editor.createModel(
-      content,
-      'python',
-      monaco.Uri.parse(`task://task${taskId}/init.py`)
-    );
-    editor.setModel(model);
+    if (editor.getModel() !== model) {
+      editor.setModel(model);
+    }
   } else {
-    editor.setValue(content);
+    editor.setValue(normalizedContent);
   }
 
   editor.updateOptions({ readOnly: false });
-  window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true };
-  setTaskSavedSnapshot(taskId, 'init.py', content);
-  setTaskDraftContent(taskId, 'init.py', content);
+  const scopeAtSet = getTaskModeScope();
+  window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true, scope: scopeAtSet };
+  setTaskSavedSnapshotForScope(taskId, 'init.py', normalizedContent, scopeAtSet);
+  setTaskDraftContentForScope(taskId, 'init.py', normalizedContent, scopeAtSet);
 
   const title = document.querySelector('.editor-title');
   if (title) {
@@ -3111,6 +3341,9 @@ function setEditorToInitPy(taskId, content = '') {
 
 async function loadTaskIntoEditor(assignmentId, taskId) {
   const loadToken = ++assignmentState.taskLoadToken;
+  // Invalidate any in-flight file-open operations from prior mode/task state.
+  // Otherwise a late async completion can overwrite the freshly loaded editor model.
+  ++assignmentState.fileOpenToken;
   const isStaleLoad = () => assignmentState.taskLoadToken !== loadToken;
 
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
@@ -3160,11 +3393,37 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   // For code tasks, wait for editor to be ready
   if (!isQuizTask) {
     try {
-      await waitForEditor();
+      await waitForEditor(80, 100);
       if (isStaleLoad()) return;
+      assignmentState.editorInitRetryByTask[taskId] = 0;
     } catch (err) {
-      alert('Editor konnte nicht initialisiert werden. Bitte Seite neu laden.');
-      console.error('Editor initialization failed:', err);
+      const retryCount = Number(assignmentState.editorInitRetryByTask[taskId] || 0);
+      const outputEl = $('output-container');
+      if (outputEl) {
+        outputEl.innerHTML = '<span style="color:#666;">Editor wird geladen ...</span>';
+      }
+      if (
+        retryCount < 2 &&
+        assignmentState.currentAssignmentId === assignmentId &&
+        assignmentState.currentTaskId === taskId
+      ) {
+        assignmentState.editorInitRetryByTask[taskId] = retryCount + 1;
+        setTimeout(() => {
+          if (
+            assignmentState.currentAssignmentId === assignmentId &&
+            assignmentState.currentTaskId === taskId
+          ) {
+            loadTaskIntoEditor(assignmentId, taskId).catch(loadErr => {
+              console.error('Editor retry failed:', loadErr);
+            });
+          }
+        }, 1200);
+      } else {
+        if (outputEl) {
+          outputEl.innerHTML = '<span style="color:#c00;">Editor konnte nicht geladen werden. Bitte Seite neu laden.</span>';
+        }
+      }
+      console.warn('Editor initialization delayed:', err);
       return;
     }
   }
@@ -3268,14 +3527,17 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     
     // Restore saved code if returning from solution mode, otherwise load from DB
     const savedBeforeSolution = assignmentState.savedCodeBeforeSolution;
+    const savedTemplateInitBeforeSolution = assignmentState.savedTemplateInitBeforeSolution;
     if (
-      savedBeforeSolution &&
-      Number(savedBeforeSolution.taskId) === Number(taskId)
+      savedTemplateInitBeforeSolution &&
+      Number(savedTemplateInitBeforeSolution.taskId) === Number(taskId)
     ) {
-      setEditorToInitPy(taskId, String(savedBeforeSolution.code ?? ''));
+      setEditorToInitPy(taskId, String(savedTemplateInitBeforeSolution.code ?? ''));
+      assignmentState.savedTemplateInitBeforeSolution = null;
       assignmentState.savedCodeBeforeSolution = null;
     } else {
       // If buffer belongs to another task, drop it to avoid cross-task code leakage.
+      assignmentState.savedTemplateInitBeforeSolution = null;
       assignmentState.savedCodeBeforeSolution = null;
       // Load saved code from user_tasks if available
       try {
@@ -3674,6 +3936,8 @@ async function saveCode(options = {}) {
       }
 
       task.solution_code = code;
+      setTaskSavedSnapshotForScope(taskId, 'init.py', code, 'solution');
+      setTaskDraftContentForScope(taskId, 'init.py', code, 'solution');
 
       if (saveTaskBtn) {
         saveTaskBtn.style.opacity = '1';
@@ -3752,6 +4016,8 @@ async function saveCode(options = {}) {
       }
 
       task.code_template = code;
+      setTaskSavedSnapshotForScope(taskId, 'init.py', code, 'template');
+      setTaskDraftContentForScope(taskId, 'init.py', code, 'template');
 
       if (saveTaskBtn) {
         saveTaskBtn.style.opacity = '1';
@@ -3922,6 +4188,107 @@ async function incrementRunCount(taskId) {
 }
 
 async function beforeAssignmentRunExecution() {
+  const runDebugEnabled = (
+    window.RUN_DEBUG_OUTPUT === true ||
+    /[?&]debug_run=1(?:&|$)/.test(String(window.location?.search || '')) ||
+    isAdminAssignmentTestMode()
+  );
+
+  const logRunSnapshot = (phase) => {
+    if (!runDebugEnabled) return;
+
+    const outputEl = document.getElementById('output-container');
+    const outputText = (outputEl?.innerText || outputEl?.textContent || '').trim();
+    const outputPreview = outputText.length > 240
+      ? `${outputText.slice(0, 240)}...`
+      : outputText;
+
+    const editorCode = window.editorInstance?.getValue?.() || '';
+    const editorTail = editorCode.length > 160
+      ? `...${editorCode.slice(-160)}`
+      : editorCode;
+
+    const task = assignmentState.currentTask;
+    const modeText = assignmentState.solutionMode === true ? 'solution' : 'template';
+    let scope = modeText;
+    try {
+      scope = getTaskModeScope();
+    } catch (_) {
+      // Keep fallback scope from solutionMode.
+    }
+
+    console.log('[RUN_DEBUG]', {
+      phase,
+      taskId: task?.id || null,
+      taskTitle: task?.title || null,
+      solutionMode: assignmentState.solutionMode === true,
+      mode: modeText,
+      scope,
+      currentFile: window.currentFile?.path || null,
+      outputLength: outputText.length,
+      outputPreview,
+      editorTail
+    });
+  };
+
+  logRunSnapshot('before-run:start');
+  if (runDebugEnabled) {
+    [150, 700, 1800, 3200].forEach((delayMs) => {
+      window.setTimeout(() => logRunSnapshot(`after-run:+${delayMs}ms`), delayMs);
+    });
+  }
+
+  const task = assignmentState.currentTask;
+  const hasFolderStructure = !!(task && (
+    task.folderstructure === 1 ||
+    task.folderstructure === true ||
+    task.folderstructure === '1'
+  ));
+
+  if (hasFolderStructure && window.pyodide && typeof window.pyodide.runPythonAsync === 'function') {
+    try {
+      const modeScope = getTaskModeScope();
+      const taskId = Number(task?.id || 0);
+      if (taskId) {
+        await window.pyodide.runPythonAsync(`
+import sys
+import importlib
+
+task_id = ${taskId}
+mode_scope = ${JSON.stringify(String(modeScope || 'template'))}
+
+if mode_scope == 'template':
+  sys.path[:] = [p for p in sys.path if f'/task_runtime/solution/task_{task_id}' not in str(p)]
+elif mode_scope == 'solution':
+  sys.path[:] = [p for p in sys.path if f'/task_runtime/template/task_{task_id}' not in str(p)]
+
+runtime_scope = mode_scope if mode_scope in ('template', 'solution') else 'user'
+current_runtime_prefix = f'/task_runtime/{runtime_scope}/task_{task_id}'
+
+for mod_name, mod in list(sys.modules.items()):
+  try:
+    mod_file = getattr(mod, '__file__', None)
+  except Exception:
+    continue
+  if not mod_file:
+    continue
+  mod_file_str = str(mod_file)
+  if current_runtime_prefix in mod_file_str:
+    sys.modules.pop(mod_name, None)
+    continue
+  if mode_scope == 'template' and f'/task_runtime/solution/task_{task_id}' in mod_file_str:
+    sys.modules.pop(mod_name, None)
+  elif mode_scope == 'solution' and f'/task_runtime/template/task_{task_id}' in mod_file_str:
+    sys.modules.pop(mod_name, None)
+
+importlib.invalidate_caches()
+`);
+      }
+    } catch (cleanupErr) {
+      console.warn('[RUN_DEBUG] pre-run folder cleanup warning:', cleanupErr);
+    }
+  }
+
   if (window.TEST_MODE_NO_PERSIST === true) {
     return true;
   }
@@ -3930,7 +4297,6 @@ async function beforeAssignmentRunExecution() {
     return true;
   }
 
-  const task = assignmentState.currentTask;
   if (!task) {
     return true;
   }
@@ -4144,12 +4510,24 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   if (!safeTaskId || !pyodide || !pyodide.FS) return;
 
   const isAdminFolderMode = isAdminTaskLabMode();
-  cacheCurrentEditorDraft();
+  const scopeAtSyncStart = getTaskModeScope();
+  if (window.editorInstance && window.currentFile) {
+    const currentFileTaskId = window.currentFile.taskId;
+    const currentFilePath = window.currentFile.path;
+    if (currentFileTaskId && currentFilePath) {
+      setTaskDraftContentForScope(
+        currentFileTaskId,
+        currentFilePath,
+        window.editorInstance.getValue(),
+        scopeAtSyncStart
+      );
+    }
+  }
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-  const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
+  const solutionModeParam = isAdminFolderMode && scopeAtSyncStart === 'solution' ? '&solution_mode=1' : '';
   const listUrl = isAdminFolderMode
-    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1${solutionModeParam}`
-    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
+    ? `${getApiBasePath()}/tasks/get-folder-files.php?task_id=${safeTaskId}&include_content=1${solutionModeParam}`
+    : `${getApiBasePath()}/user_tasks/folder-files.php?action=list&task_id=${safeTaskId}${testUserParam}`;
   const listResponse = await fetch(listUrl, { credentials: 'include' });
   const listData = await readJsonResponse(listResponse, 'Task-Dateiliste konnte nicht geladen werden');
 
@@ -4179,7 +4557,7 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
   };
   walk(listData.files || []);
 
-  const modeScope = (isAdminFolderMode && assignmentState.solutionMode === true) ? 'solution' : 'template';
+  const modeScope = scopeAtSyncStart;
   const runtimeRoot = `/task_runtime/${modeScope}/task_${safeTaskId}`;
 
   const removeFsPathRecursively = (fs, targetPath) => {
@@ -4211,18 +4589,12 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
     const relPath = fileEntry.path;
     if (!relPath) continue;
     let content = null;
-    const isSolutionAdminMode = isAdminFolderMode && assignmentState.solutionMode === true;
+    // Preserve unsaved edits across file switches within the same task+mode.
+    // Cross-mode contamination is prevented by scopeAtSyncStart.
+    const draftAllowed = true;
 
-    // In solution mode, avoid stale cross-file drafts for real files.
-    // Keep draft override only for the currently opened file.
-    const draftAllowed = !isSolutionAdminMode || (
-      window.currentFile
-      && Number(window.currentFile.taskId) === Number(safeTaskId)
-      && String(window.currentFile.path || '') === String(relPath)
-    );
-
-    if (draftAllowed && typeof window.getTaskDraftContent === 'function') {
-      const draftContent = window.getTaskDraftContent(safeTaskId, relPath);
+    if (draftAllowed) {
+      const draftContent = getTaskDraftContentForScope(safeTaskId, relPath, scopeAtSyncStart);
       if (draftContent !== null && draftContent !== undefined) {
         content = String(draftContent || '');
       }
@@ -4234,7 +4606,7 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
 
     if (content === null) {
       if (isAdminFolderMode) {
-        const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${solutionModeParam}`, {
+        const readResponse = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${solutionModeParam}`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -4246,7 +4618,7 @@ async function syncFolderTaskFilesToPyodide(pyodide, taskId, preferredMainPath =
         }
         content = String(readData.content || '');
       } else {
-        const readUrl = `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
+        const readUrl = `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${safeTaskId}&path=${encodeURIComponent(relPath)}${testUserParam}`;
         const readResponse = await fetch(readUrl, { credentials: 'include' });
         const readData = await readJsonResponse(readResponse, `Datei konnte nicht gelesen werden: ${relPath}`);
         if (!readResponse.ok || (readData && readData.ok === false)) {
@@ -4309,6 +4681,12 @@ importlib.invalidate_caches()
 }
 
 async function checkTask() {
+  // CRITICAL: Queue-based sync barrier (Option A)
+  // Wait for all pending Pyodide file operations to complete before execution.
+  // This prevents the race condition where frontend mode state changes race with
+  // Pyodide file sync, causing wrong code to execute on production.
+  await pyodideSyncQueue.drain();
+
   const task = assignmentState.currentTask;
   if (!task) {
     alert('No task loaded');
@@ -4340,10 +4718,21 @@ async function checkTask() {
     return;
   }
 
+  const outputEl = $('output-container');
   const editor = window.editorInstance;
   if (!editor) {
-    alert('Editor not ready');
-    return;
+    if (outputEl) {
+      outputEl.innerHTML = '<span style="color:#666;">Editor wird geladen ...</span>';
+    }
+    try {
+      await waitForEditor(20, 100);
+    } catch (err) {
+      if (outputEl) {
+        outputEl.innerHTML = '<span style="color:#c00;">Editor konnte nicht geladen werden</span>';
+      }
+      return;
+    }
+    return checkTask();
   }
 
   // Auto-save before check only outside admin test mode.
@@ -4354,7 +4743,6 @@ async function checkTask() {
   const activeFileType = detectEditorFileType();
 
   // Run code in Pyodide
-  const outputEl = $('output-container');
   if (outputEl) {
     outputEl.innerHTML = '<span style="color:#666;">Prüfe Code...</span>';
   }
@@ -4366,11 +4754,8 @@ async function checkTask() {
 
   try {
     // Initialize pyodide (assuming it's globally available)
-    let pyodide = window.pyodide;
-    if (!pyodide) {
-      outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
-      return;
-    }
+    const pyodide = await waitForPyodideWithStatus(outputEl);
+    if (!pyodide) return;
 
     await ensureAssignmentPackages(pyodide, code);
     await prepareAssignmentCheckRuntime(pyodide, code);
@@ -4517,6 +4902,12 @@ async function checkTask() {
  * Submit task for grading - runs validation and commits final status
  */
 async function submitTask() {
+  // CRITICAL: Queue-based sync barrier (Option A)
+  // Wait for all pending Pyodide file operations to complete before execution.
+  // This prevents the race condition where frontend mode state changes race with
+  // Pyodide file sync, causing wrong code to execute on production.
+  await pyodideSyncQueue.drain();
+
   // Refresh task data from API before running tests (ensures admin edits are reflected)
   const taskRefreshed = await refreshCurrentTaskFromAPI();
   if (taskRefreshed) {
@@ -4529,10 +4920,21 @@ async function submitTask() {
   }
 
   const manualReviewTask = isManualReviewTask(task);
+  const outputEl = $('output-container');
   const editor = window.editorInstance;
   if (!editor) {
-    alert('Editor not ready');
-    return;
+    if (outputEl) {
+      outputEl.innerHTML = '<span style="color:#666;">Editor wird geladen ...</span>';
+    }
+    try {
+      await waitForEditor(20, 100);
+    } catch (err) {
+      if (outputEl) {
+        outputEl.innerHTML = '<span style="color:#c00;">Editor konnte nicht geladen werden</span>';
+      }
+      return;
+    }
+    return submitTask();
   }
 
   if (manualReviewTask) {
@@ -4540,7 +4942,7 @@ async function submitTask() {
     const submissionComment = getCurrentSubmissionComment(task.id);
     if (!isAdminAssignmentTestMode()) {
       const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
-      await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+      await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -4577,7 +4979,7 @@ async function submitTask() {
     // Submit task for manual review
     if (!isAdminAssignmentTestMode()) {
       const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
-      await fetch(`/pythonIDE/api/user_tasks/update.php${testUserParam}`, {
+      await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -4617,7 +5019,6 @@ async function submitTask() {
 
   const code = editor.getValue();
   const activeFileType = detectEditorFileType();
-  const outputEl = $('output-container');
   if (outputEl) outputEl.innerHTML = '<span style="color:#666;">Überprüfe Code...</span>';
 
   if (activeFileType !== 'py') {
@@ -4626,11 +5027,8 @@ async function submitTask() {
   }
 
   try {
-    let pyodide = window.pyodide;
-    if (!pyodide) {
-      outputEl.innerHTML = '<span style="color:#c00;">Pyodide not ready</span>';
-      return;
-    }
+    const pyodide = await waitForPyodideWithStatus(outputEl);
+    if (!pyodide) return;
 
     await ensureAssignmentPackages(pyodide, code);
     await prepareAssignmentCheckRuntime(pyodide, code);
@@ -7152,8 +7550,8 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
   const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
   const listEndpoint = isAdminFolderMode
-    ? `/pythonIDE/api/tasks/get-folder-files.php?task_id=${taskId}${solutionModeParam}`
-    : `/pythonIDE/api/user_tasks/folder-files.php?action=list&task_id=${taskId}${testUserParam}`;
+    ? `${getApiBasePath()}/tasks/get-folder-files.php?task_id=${taskId}${solutionModeParam}`
+    : `${getApiBasePath()}/user_tasks/folder-files.php?action=list&task_id=${taskId}${testUserParam}`;
   
   try {
     const response = await requestJson(listEndpoint, {
@@ -7187,7 +7585,11 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     
     // Trenne init.py (virtuell) von echten Filesystem-Dateien
     const initPy = allFiles.find(f => f.name === 'init.py' && f.virtual);
-    const filesystemFiles = allFiles.filter(f => !f.virtual);
+    const filesystemFiles = allFiles.filter((f) => {
+      if (f.virtual) return false;
+      if (!isCodeUiTask) return true;
+      return String(f.name || '').toLowerCase() !== 'idegui.py';
+    });
     
     // Store init.py content in the current mode-scoped cache so template and solution keep separate DOM state
     if (initPy) {
@@ -7209,6 +7611,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     }
     
     const structureMutationsAllowed = isAdminFolderMode && assignmentState.solutionMode !== true;
+    const deleteMutationsAllowed = isAdminFolderMode;
     const disabledStyle = 'opacity: 0.45; cursor: not-allowed;';
     const createFolderBtnAttrs = structureMutationsAllowed
       ? `onclick="createTaskFolder(${taskId}, '${currentPath}')" title="Neuer Ordner"`
@@ -7307,7 +7710,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     };
 
     panel.oncontextmenu = (e) => {
-      if (!structureMutationsAllowed) return;
+      if (!deleteMutationsAllowed) return;
       const item = e.target.closest('.task-file-item');
       if (!item || !panel.contains(item)) return;
 
@@ -7318,7 +7721,10 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
       if (!path || isVirtual) return;
 
       e.preventDefault();
-      showTaskFileContextMenu(e, taskId, path, type, isReadOnly);
+      showTaskFileContextMenu(e, taskId, path, type, isReadOnly, {
+        allowStructureMutations: structureMutationsAllowed,
+        allowDelete: deleteMutationsAllowed
+      });
     };
     
   } catch (error) {
@@ -7408,7 +7814,7 @@ async function createTaskFolder(taskId, parentPath = '') {
   }
   
   try {
-    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_folder`, {
+    const response = await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=create_folder`, {
       method: 'POST',
       body: JSON.stringify({
         task_id: taskId,
@@ -7450,7 +7856,7 @@ async function createTaskFile(taskId, parentPath = '') {
   }
   
   try {
-    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_file`, {
+    const response = await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=create_file`, {
       method: 'POST',
       body: JSON.stringify({
         task_id: taskId,
@@ -7505,7 +7911,7 @@ function startInlineEdit(element, taskId, path) {
     
     if (newName && newName !== fileName && newName !== '') {
       try {
-        const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=rename`, {
+        const response = await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=rename`, {
           method: 'POST',
           body: JSON.stringify({
             task_id: taskId,
@@ -7554,7 +7960,7 @@ async function handleTaskFileUpload(taskId, input, parentPath = '') {
   formData.append('parent_path', parentPath);
   
   try {
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=upload`, {
+    const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=upload`, {
       method: 'POST',
       body: formData
     });
@@ -7577,7 +7983,9 @@ async function handleTaskFileUpload(taskId, input, parentPath = '') {
 }
 
 // Context menu
-function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false) {
+function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false, options = {}) {
+  const allowStructureMutations = options.allowStructureMutations !== false;
+  const allowDelete = options.allowDelete !== false;
   // Remove existing context menu
   const existingMenu = document.getElementById('task-file-context-menu');
   if (existingMenu) {
@@ -7602,44 +8010,46 @@ function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false) 
   
   const fileName = path.split('/').pop();
   
-  // Umbenennen
-  const renameItem = document.createElement('div');
-  renameItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
-  renameItem.textContent = '✏️ Umbenennen';
-  renameItem.addEventListener('mouseover', () => renameItem.style.background = 'var(--bg)');
-  renameItem.addEventListener('mouseout', () => renameItem.style.background = 'transparent');
-  renameItem.addEventListener('click', () => {
-    const fileNameEl = document.querySelector(`.task-file-item[data-path="${path}"] .file-name`);
-    if (fileNameEl) {
-      startInlineEdit(fileNameEl, taskId, path);
-    }
-    menu.remove();
-  });
-  menu.appendChild(renameItem);
-  
-  // Duplizieren
-  const dupItem = document.createElement('div');
-  dupItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
-  dupItem.textContent = '📋 Duplizieren';
-  dupItem.addEventListener('mouseover', () => dupItem.style.background = 'var(--bg)');
-  dupItem.addEventListener('mouseout', () => dupItem.style.background = 'transparent');
-  dupItem.addEventListener('click', () => {
-    duplicateTaskItem(taskId, path);
-    menu.remove();
-  });
-  menu.appendChild(dupItem);
-
-  if (type === 'file') {
-    const roItem = document.createElement('div');
-    roItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
-    roItem.textContent = isReadOnly ? '🔓 Schreibschutz deaktivieren' : '🔒 Schreibschutz aktivieren';
-    roItem.addEventListener('mouseover', () => roItem.style.background = 'var(--bg)');
-    roItem.addEventListener('mouseout', () => roItem.style.background = 'transparent');
-    roItem.addEventListener('click', async () => {
-      await toggleTaskFileReadonly(taskId, path, !isReadOnly);
+  if (allowStructureMutations) {
+    // Umbenennen
+    const renameItem = document.createElement('div');
+    renameItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+    renameItem.textContent = '✏️ Umbenennen';
+    renameItem.addEventListener('mouseover', () => renameItem.style.background = 'var(--bg)');
+    renameItem.addEventListener('mouseout', () => renameItem.style.background = 'transparent');
+    renameItem.addEventListener('click', () => {
+      const fileNameEl = document.querySelector(`.task-file-item[data-path="${path}"] .file-name`);
+      if (fileNameEl) {
+        startInlineEdit(fileNameEl, taskId, path);
+      }
       menu.remove();
     });
-    menu.appendChild(roItem);
+    menu.appendChild(renameItem);
+    
+    // Duplizieren
+    const dupItem = document.createElement('div');
+    dupItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+    dupItem.textContent = '📋 Duplizieren';
+    dupItem.addEventListener('mouseover', () => dupItem.style.background = 'var(--bg)');
+    dupItem.addEventListener('mouseout', () => dupItem.style.background = 'transparent');
+    dupItem.addEventListener('click', () => {
+      duplicateTaskItem(taskId, path);
+      menu.remove();
+    });
+    menu.appendChild(dupItem);
+
+    if (type === 'file') {
+      const roItem = document.createElement('div');
+      roItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap;';
+      roItem.textContent = isReadOnly ? '🔓 Schreibschutz deaktivieren' : '🔒 Schreibschutz aktivieren';
+      roItem.addEventListener('mouseover', () => roItem.style.background = 'var(--bg)');
+      roItem.addEventListener('mouseout', () => roItem.style.background = 'transparent');
+      roItem.addEventListener('click', async () => {
+        await toggleTaskFileReadonly(taskId, path, !isReadOnly);
+        menu.remove();
+      });
+      menu.appendChild(roItem);
+    }
   }
   
   // Herunterladen (nur für Dateien)
@@ -7656,17 +8066,19 @@ function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false) 
     menu.appendChild(downItem);
   }
   
-  // Löschen
-  const delItem = document.createElement('div');
-  delItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap; color: red;';
-  delItem.textContent = '🗑️ Löschen';
-  delItem.addEventListener('mouseover', () => delItem.style.background = 'var(--bg)');
-  delItem.addEventListener('mouseout', () => delItem.style.background = 'transparent');
-  delItem.addEventListener('click', () => {
-    deleteTaskItem(taskId, path);
-    menu.remove();
-  });
-  menu.appendChild(delItem);
+  if (allowDelete) {
+    // Löschen
+    const delItem = document.createElement('div');
+    delItem.style.cssText = 'padding: 4px 12px; cursor: pointer; white-space: nowrap; color: red;';
+    delItem.textContent = '🗑️ Löschen';
+    delItem.addEventListener('mouseover', () => delItem.style.background = 'var(--bg)');
+    delItem.addEventListener('mouseout', () => delItem.style.background = 'transparent');
+    delItem.addEventListener('click', () => {
+      deleteTaskItem(taskId, path);
+      menu.remove();
+    });
+    menu.appendChild(delItem);
+  }
   
   document.body.appendChild(menu);
   
@@ -7683,7 +8095,7 @@ function showTaskFileContextMenu(event, taskId, path, type, isReadOnly = false) 
 
 async function toggleTaskFileReadonly(taskId, path, readOnly) {
   try {
-    const response = await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=set_readonly`, {
+    const response = await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=set_readonly`, {
       method: 'POST',
       body: JSON.stringify({
         task_id: taskId,
@@ -7712,10 +8124,23 @@ async function toggleTaskFileReadonly(taskId, path, readOnly) {
 // Open task file in editor
 async function openTaskFileInEditor(taskId, path) {
   const fileOpenToken = ++assignmentState.fileOpenToken;
+  const scopeAtOpenStart = getTaskModeScope();
   const isStaleFileOpen = () => assignmentState.fileOpenToken !== fileOpenToken || isTaskMismatchForFileOperation(taskId);
 
   try {
-    cacheCurrentEditorDraft();
+    if (window.editorInstance && window.currentFile) {
+      const currentFileTaskId = window.currentFile.taskId;
+      const currentFilePath = window.currentFile.path;
+      const currentFileScope = window.currentFile.scope || scopeAtOpenStart;
+      if (currentFileTaskId && currentFilePath) {
+        setTaskDraftContentForScope(
+          currentFileTaskId,
+          currentFilePath,
+          window.editorInstance.getValue(),
+          currentFileScope
+        );
+      }
+    }
 
     if (isStaleFileOpen()) {
       return;
@@ -7727,32 +8152,63 @@ async function openTaskFileInEditor(taskId, path) {
     
     // Special handling for init.py (virtual file from user_tasks.current_code)
     if (path === 'init.py') {
-      const draftContent = getTaskDraftContent(taskId, 'init.py');
+      const draftContent = getTaskDraftContentForScope(taskId, 'init.py', scopeAtOpenStart);
       if (draftContent !== null) {
         content = draftContent;
       } else {
-        const savedContent = getTaskSavedSnapshot(taskId, 'init.py');
+        const savedContent = getTaskSavedSnapshotForScope(taskId, 'init.py', scopeAtOpenStart);
         if (savedContent !== null) {
           content = savedContent;
         }
       }
-      
-      // Dispose old model
-      if (window.editorInstance && window.editorInstance.getModel()) {
-        window.editorInstance.getModel().dispose();
+
+      // Robust fallback: if no scoped cache exists yet, populate virtual init.py from task data.
+      if (String(content || '') === '') {
+        let taskForInit = null;
+        if (assignmentState.currentTask && Number(assignmentState.currentTask.id) === Number(taskId)) {
+          taskForInit = assignmentState.currentTask;
+        } else {
+          for (const taskList of Object.values(assignmentState.tasksByAssignment || {})) {
+            if (!Array.isArray(taskList)) continue;
+            const found = taskList.find((t) => Number(t.id) === Number(taskId));
+            if (found) {
+              taskForInit = found;
+              break;
+            }
+          }
+        }
+
+        if (scopeAtOpenStart === 'solution') {
+          content = String(taskForInit?.solution_code || '');
+        } else {
+          content = String(taskForInit?.code_template || '');
+        }
       }
-      
+
+      content = normalizeLegacyEscapedCode(content);
+
       language = 'python';
       
       if (window.editorInstance && window.monaco) {
         if (isStaleFileOpen()) {
           return;
         }
-        const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/init.py`));
-        window.editorInstance.setModel(editorModel);
+        const modelUri = window.monaco.Uri.parse(`task://task${taskId}/init.py`);
+        let editorModel = window.monaco.editor.getModel(modelUri);
+        if (!editorModel) {
+          editorModel = window.monaco.editor.createModel(content, language, modelUri);
+        } else {
+          window.monaco.editor.setModelLanguage(editorModel, language);
+          if (editorModel.getValue() !== content) {
+            editorModel.setValue(content);
+          }
+        }
+        if (window.editorInstance.getModel() !== editorModel) {
+          window.editorInstance.setModel(editorModel);
+        }
         window.editorInstance.updateOptions({ readOnly: false });
-        window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false };
-        setTaskDraftContent(taskId, 'init.py', content);
+        window.currentFile = { taskId, path: 'init.py', fileName: 'init.py', isVirtual: true, readOnly: false, scope: scopeAtOpenStart };
+        setTaskDraftContentForScope(taskId, 'init.py', content, scopeAtOpenStart);
         
         const title = document.querySelector('.editor-title');
         if (title) {
@@ -7767,11 +8223,12 @@ async function openTaskFileInEditor(taskId, path) {
     const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
     const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
     const readEndpoint = isAdminFolderMode
-      ? `/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`
-      : `/pythonIDE/api/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
+      ? `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`
+      : `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
-    const isSolutionAdminMode = isAdminFolderMode && assignmentState.solutionMode === true;
-    const draftContent = isSolutionAdminMode ? null : getTaskDraftContent(taskId, path);
+    // Keep per-file drafts even in solution mode so unsaved edits survive file switches.
+    // The draft cache is already synchronized from the editor before switching.
+    const draftContent = getTaskDraftContentForScope(taskId, path, scopeAtOpenStart);
     if (draftContent !== null) {
       content = draftContent;
     } else {
@@ -7790,7 +8247,7 @@ async function openTaskFileInEditor(taskId, path) {
         return;
       }
       content = result.content || '';
-      setTaskSavedSnapshot(taskId, path, content);
+      setTaskSavedSnapshotForScope(taskId, path, content, scopeAtOpenStart);
     }
     
     // Language detection
@@ -7816,26 +8273,32 @@ async function openTaskFileInEditor(taskId, path) {
     
     language = languageMap[ext.toLowerCase()] || 'plaintext';
     
-    // Dispose old model
-    if (window.editorInstance && window.editorInstance.getModel()) {
-      window.editorInstance.getModel().dispose();
-    }
-    
     // Set editor content
     if (window.editorInstance && window.monaco) {
       if (isStaleFileOpen()) {
         return;
       }
-      const editorModel = window.monaco.editor.createModel(content, language, window.monaco.Uri.parse(`task://task${taskId}/${path}`));
-      window.editorInstance.setModel(editorModel);
+      const modelUri = window.monaco.Uri.parse(`task://task${taskId}/${path}`);
+      let editorModel = window.monaco.editor.getModel(modelUri);
+      if (!editorModel) {
+        editorModel = window.monaco.editor.createModel(content, language, modelUri);
+      } else {
+        window.monaco.editor.setModelLanguage(editorModel, language);
+        if (editorModel.getValue() !== content) {
+          editorModel.setValue(content);
+        }
+      }
+      if (window.editorInstance.getModel() !== editorModel) {
+        window.editorInstance.setModel(editorModel);
+      }
 
       const taskMeta = assignmentState.taskFileMeta[String(taskId)] || {};
       const fileMeta = taskMeta[path] || {};
       const readOnly = !!fileMeta.read_only;
       window.editorInstance.updateOptions({ readOnly });
 
-      window.currentFile = { taskId, path, fileName, readOnly };
-      setTaskDraftContent(taskId, path, content);
+      window.currentFile = { taskId, path, fileName, readOnly, scope: scopeAtOpenStart };
+      setTaskDraftContentForScope(taskId, path, content, scopeAtOpenStart);
       
       const title = document.querySelector('.editor-title');
       if (title) {
@@ -7859,8 +8322,9 @@ async function saveTaskFile(silent = false) {
     if (window.currentFile && window.editorInstance) {
       const { taskId, path } = window.currentFile;
       const content = window.editorInstance.getValue();
-      setTaskDraftContent(taskId, path, content);
-      setTaskSavedSnapshot(taskId, path, content);
+      const scopeAtSaveStart = getTaskModeScope();
+      setTaskDraftContentForScope(taskId, path, content, scopeAtSaveStart);
+      setTaskSavedSnapshotForScope(taskId, path, content, scopeAtSaveStart);
     }
     return true;
   }
@@ -7871,6 +8335,7 @@ async function saveTaskFile(silent = false) {
   }
 
   const { taskId, path, fileName, isVirtual, readOnly } = window.currentFile;
+  const scopeAtSaveStart = window.currentFile.scope || getTaskModeScope();
 
   if (isTaskMismatchForFileOperation(taskId)) {
     console.warn('[saveTaskFile] Blocked cross-task save attempt', {
@@ -7894,10 +8359,10 @@ async function saveTaskFile(silent = false) {
   }
 
   const content = window.editorInstance.getValue();
-  setTaskDraftContent(taskId, path, content);
+  setTaskDraftContentForScope(taskId, path, content, scopeAtSaveStart);
 
   try {
-    await persistTaskFileContent(taskId, path, content, !!isVirtual);
+    await persistTaskFileContent(taskId, path, content, !!isVirtual, scopeAtSaveStart);
 
     if (!silent) {
       console.log('✅ Datei gespeichert:', fileName);
@@ -7937,11 +8402,14 @@ async function deleteTaskItem(taskId, path) {
   if (!confirm(`Wirklich löschen: ${path}?`)) return;
   
   try {
-    await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=delete`, {
+    const inSolutionMode = isAdminAssignmentTestMode() && assignmentState.solutionMode === true;
+    const solutionModeParam = inSolutionMode ? '&solution_mode=1' : '';
+    await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=delete${solutionModeParam}`, {
       method: 'POST',
       body: JSON.stringify({
         task_id: taskId,
-        path: path
+        path: path,
+        solution_mode: inSolutionMode ? 1 : 0
       })
     });
     
@@ -7961,7 +8429,7 @@ async function resetCodeUiTemplate(taskId, currentPath = '') {
 
   try {
     const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-    const response = await requestJson(`/pythonIDE/api/user_tasks/folder-files.php?action=reset_code_ui${testUserParam}`, {
+    const response = await requestJson(`${getApiBasePath()}/user_tasks/folder-files.php?action=reset_code_ui${testUserParam}`, {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId })
     });
@@ -8014,7 +8482,7 @@ async function duplicateTaskItem(taskId, path) {
     if (isFile) {
       try {
         const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
-        const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
+        const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
           credentials: 'include'
         });
         if (response.ok) {
@@ -8028,7 +8496,7 @@ async function duplicateTaskItem(taskId, path) {
     
     // Create new file/folder
     if (isFile) {
-      await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_file`, {
+      await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=create_file`, {
         method: 'POST',
         body: JSON.stringify({
           task_id: taskId,
@@ -8038,7 +8506,7 @@ async function duplicateTaskItem(taskId, path) {
         })
       });
     } else {
-      await requestJson(`/pythonIDE/api/tasks/folder-manage.php?action=create_folder`, {
+      await requestJson(`${getApiBasePath()}/tasks/folder-manage.php?action=create_folder`, {
         method: 'POST',
         body: JSON.stringify({
           task_id: taskId,
@@ -8062,7 +8530,7 @@ async function downloadTaskFile(taskId, path) {
   try {
     // Fetch file content
     const solutionModeParam = assignmentState.solutionMode === true ? '&solution_mode=1' : '';
-    const response = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
+    const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`, {
       credentials: 'include'
     });
     

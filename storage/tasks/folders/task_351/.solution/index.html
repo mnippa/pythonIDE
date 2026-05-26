@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BMI-Rechner (einfach)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card">
+    <h2>BMI-Rechner</h2>
+    <p class="intro">Ergaenze die fehlenden data-Attribute und den Input fuer Groesse in cm.</p>
+
+    <label for="gewicht">Gewicht (kg)</label>
+    <input id="gewicht" data-element="gewicht" type="number" step="any" placeholder="z.B. 72">
+
+    <label for="groesse_cm">Groesse (cm)</label>
+    <input id="groesse_cm" data-element="groesse_cm" type="number" step="any" placeholder="z.B. 180">
+
+    <button id="berechnen" data-run-python="true" data-run-name="bmi">BMI berechnen</button>
+
+    <div class="result-box">
+      <strong>Ergebnis:</strong>
+      <div id="ausgabe" data-element="ausgabe">---</div>
+    </div>
+  </div>
+</body>
+</html>

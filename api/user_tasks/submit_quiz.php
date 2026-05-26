@@ -27,6 +27,7 @@ function normalizeAnswerText($value, bool $caseSensitive = false) {
     $value = str_replace(["\r\n", "\r"], "\n", (string)$value);
     $value = str_replace(['"', "'", '“', '”', '„', '‚', '‘', '’', '`', '´'], '', $value);
     $value = preg_replace('/\s*,\s*/u', ', ', $value);
+    $value = preg_replace('/\s*;\s*/u', ';', $value);
     $value = preg_replace('/\s+/u', ' ', $value);
     $value = trim($value);
 
