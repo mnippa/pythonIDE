@@ -1204,7 +1204,7 @@ HTML;
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260526b"></script>
+  <script type="module" src="js/editor-setup.js?v=20260527a"></script>
 
   <script>
     // Theme Toggle
@@ -1341,7 +1341,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20260526c"></script>
+  <script type="module" src="js/assignments.js?v=20260527a"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

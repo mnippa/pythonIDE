@@ -2057,8 +2057,10 @@ compile(code, "<usercode>", "exec")
       clearTimeout(liveTimer);
 
       const currentTask = window.assignmentState?.currentTask;
+      const runFromCodeUiTrigger = window.__codeUiRunFromTrigger === true;
+      window.__codeUiRunFromTrigger = false;
       const currentProject = window.currentProject || null;
-      if (!currentProject && currentTask?.task_type === 'code_ui' && typeof window.renderCodeUiHtml === 'function') {
+      if (!runFromCodeUiTrigger && !currentProject && currentTask?.task_type === 'code_ui' && typeof window.renderCodeUiHtml === 'function') {
         try {
           await window.renderCodeUiHtml(currentTask.id);
         } catch (codeUiRenderError) {

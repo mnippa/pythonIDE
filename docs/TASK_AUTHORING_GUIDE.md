@@ -44,6 +44,17 @@ Good pattern:
 - Use for constraints, variable names, rounding, allowed structures, and examples.
 - Also use it to explain what the automatic checks expect.
 
+### UI wording rule (Title vs Details)
+
+- Keep `title` short and precise (navigation label).
+- Put technical implementation guidance into `description` (shown as details in admin/student views).
+- Keep `task_text` as the concise assignment action, not as the technical checklist.
+
+Recommended split:
+- `title`: what the task is in one short phrase.
+- `task_text`: what the student should do now (one core action).
+- `description` (Details): technical specifics, required attributes, trigger names, variable names, and constraints.
+
 ### `stoff`
 
 - Learning support and didactic explanation.

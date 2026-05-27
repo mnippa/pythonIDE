@@ -3000,6 +3000,8 @@ except Exception:
 function triggerCodeUiPythonRun() {
   const runButton = document.getElementById('run-btn');
   if (!runButton) return;
+  // Mark this run as coming from a code_ui trigger click to preserve trigger context.
+  window.__codeUiRunFromTrigger = true;
   runButton.click();
 }
 

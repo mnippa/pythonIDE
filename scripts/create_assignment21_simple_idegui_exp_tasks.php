@@ -107,24 +107,54 @@ PY;
 </html>
 HTML;
 
+        $codeDrivenSolutionHtml = <<<'HTML'
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code-Driven Taschenrechner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="calculator">
+        <h2>Code-Driven Taschenrechner</h2>
+        <p class="hint">Loesung: EXP-Button ist bereits ergaenzt.</p>
+
+        <div class="input-group">
+            <label>Zahl a</label>
+            <input type="number" data-element="a" step="any" value="2">
+        </div>
+
+        <div class="input-group">
+            <label>Zahl b</label>
+            <input type="number" data-element="b" step="any" value="3">
+        </div>
+
+        <div class="button-group">
+            <button class="btn" data-run-python="true" data-run-name="plus">+ Addition</button>
+            <button class="btn" data-run-python="true" data-run-name="minus">- Subtraktion</button>
+            <button class="btn" data-run-python="true" data-run-name="mal">* Multiplikation</button>
+            <button class="btn" data-run-python="true" data-run-name="geteilt">/ Division</button>
+            <button class="btn" data-run-python="true" data-run-name="exp">EXP (a^b)</button>
+        </div>
+
+        <div class="result" data-element="result">---</div>
+    </div>
+</body>
+</html>
+HTML;
+
     $codeDrivenTemplate = <<<'PY'
 import idegui as ui
 
-def lese_zahlen():
-    try:
-        a = float(ui.get('a', '0'))
-        b = float(ui.get('b', '0'))
-        return a, b
-    except ValueError:
-        ui.set('result', 'Fehler: Bitte gueltige Zahlen eingeben.')
-        return None, None
-
-
-werte = lese_zahlen()
-if werte[0] is None:
+try:
+    a = float(ui.get('a', '0'))
+    b = float(ui.get('b', '0'))
+except ValueError:
+    ui.set('result', 'Fehler: Bitte gueltige Zahlen eingeben.')
     raise SystemExit
 
-a, b = werte
 trigger = ui.get('__trigger__')
 
 if trigger == 'plus':
@@ -145,21 +175,13 @@ PY;
     $codeDrivenSolution = <<<'PY'
 import idegui as ui
 
-def lese_zahlen():
-    try:
-        a = float(ui.get('a', '0'))
-        b = float(ui.get('b', '0'))
-        return a, b
-    except ValueError:
-        ui.set('result', 'Fehler: Bitte gueltige Zahlen eingeben.')
-        return None, None
-
-
-werte = lese_zahlen()
-if werte[0] is None:
+try:
+    a = float(ui.get('a', '0'))
+    b = float(ui.get('b', '0'))
+except ValueError:
+    ui.set('result', 'Fehler: Bitte gueltige Zahlen eingeben.')
     raise SystemExit
 
-a, b = werte
 trigger = ui.get('__trigger__')
 
 if trigger == 'plus':
@@ -176,6 +198,20 @@ elif trigger == 'geteilt':
 elif trigger == 'exp':
     ui.set('result', f'{a} ** {b} = {a ** b}')
 PY;
+
+    $codeDrivenStoff = <<<'HTML'
+<div class="stoff-block">
+<h4>IDEGUI-Befehle (Kurzuebersicht)</h4>
+<ul>
+<li><code>ui.get("a", "0")</code> / <code>ui.get("b", "0")</code>: Liest die Eingabewerte aus HTML-Elementen mit <code>data-element</code>.</li>
+<li><code>ui.set("result", wert)</code>: Schreibt das Ergebnis in das Ausgabefeld mit <code>data-element="result"</code>.</li>
+<li><code>ui.get("__trigger__")</code>: Liefert im code-driven Modus den Namen des geklickten Buttons.</li>
+<li><code>data-element="..."</code> (HTML): Verbindet HTML-Felder mit Python.</li>
+<li><code>data-run-python="true"</code> (HTML): Startet Python beim Klick auf den Button.</li>
+<li><code>data-run-name="..."</code> (HTML): Setzt den Trigger-Namen (z. B. <code>plus</code>, <code>exp</code>).</li>
+</ul>
+</div>
+HTML;
 
     $eventDrivenHtml = <<<'HTML'
 <!DOCTYPE html>
@@ -210,6 +246,44 @@ PY;
 
     <div class="result" data-element="result">---</div>
   </div>
+</body>
+</html>
+HTML;
+
+        $eventDrivenSolutionHtml = <<<'HTML'
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event-Driven Taschenrechner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="calculator">
+        <h2>Event-Driven Taschenrechner</h2>
+        <p class="hint">Loesung: EXP-Button ist bereits ergaenzt.</p>
+
+        <div class="input-group">
+            <label>Zahl a</label>
+            <input type="number" data-element="a" step="any" value="2">
+        </div>
+
+        <div class="input-group">
+            <label>Zahl b</label>
+            <input type="number" data-element="b" step="any" value="3">
+        </div>
+
+        <div class="button-group">
+            <button class="btn" data-function="plus">+ Addition</button>
+            <button class="btn" data-function="minus">- Subtraktion</button>
+            <button class="btn" data-function="mal">* Multiplikation</button>
+            <button class="btn" data-function="geteilt">/ Division</button>
+            <button class="btn" data-function="exp">EXP (a^b)</button>
+        </div>
+
+        <div class="result" data-element="result">---</div>
+    </div>
 </body>
 </html>
 HTML;
@@ -310,25 +384,30 @@ PY;
 
     $tasks = [
         [
-            'title' => 'IDEGUI Code-Driven: EXP-Taste',
-            'description' => 'Einfacher Code-Driven Taschenrechner. Erweitere HTML und Python um eine EXP-Taste (a hoch b).',
-            'task_text' => 'Fuege im HTML per Copy/Paste einen EXP-Button mit data-run-python="true" und data-run-name="exp" hinzu. Ergaenze danach in Python den Trigger-Fall fuer exp mit a ** b.',
+            'task_id' => 349,
+            'title' => 'EXP-Taste (Code-Driven)',
+            'description' => 'Fuege im HTML einen EXP-Button mit data-run-python="true" und data-run-name="exp" hinzu. Ergaenze danach in Python den Trigger-Fall fuer exp mit a ** b.',
+            'task_text' => 'Ergaenze den Rechner um die EXP-Taste (a hoch b).',
             'hint1' => 'Code-Driven nutzt den Trigger ueber ui.get("__trigger__").',
             'hint2' => 'Der neue HTML-Button braucht data-run-name="exp".',
             'hint3' => 'In Python reicht ein neuer elif-Zweig fuer exp mit ui.set(...).',
-            'stoff' => 'Trigger-Dispatch (code-driven), HTML-Buttons, Potenzoperator ** in Python. Diese Aufgabe ist manuell zu pruefen.',
+            'stoff' => $codeDrivenStoff,
             'files' => [
                 'index.html' => $codeDrivenHtml,
                 'style.css' => $styleCss,
                 'idegui.py' => $ideguiPy,
             ],
+            'solution_files' => [
+                'index.html' => $codeDrivenSolutionHtml,
+            ],
             'code_template' => $codeDrivenTemplate,
             'solution_code' => $codeDrivenSolution,
         ],
         [
-            'title' => 'IDEGUI Event-Driven: EXP-Taste',
-            'description' => 'Einfacher Event-Driven Taschenrechner. Erweitere HTML und Python minimal um eine EXP-Funktion.',
-            'task_text' => 'Fuege im HTML per Copy/Paste einen EXP-Button mit data-function="exp" hinzu. Ergaenze in Python eine kleine Funktion exp(trigger), die a ** b berechnet.',
+            'task_id' => 350,
+            'title' => 'EXP-Taste (Event-Driven)',
+            'description' => 'Fuege im HTML einen EXP-Button mit data-function="exp" hinzu. Ergaenze in Python eine Funktion exp(trigger), die a ** b berechnet.',
+            'task_text' => 'Ergaenze den Rechner um eine Event-Driven EXP-Taste (a hoch b).',
             'hint1' => 'Event-Driven Buttons verwenden data-function="funktionsname".',
             'hint2' => 'Ergaenze nur eine neue Funktion exp(trigger), die lese_zahlen() nutzt.',
             'hint3' => 'Setze das Ergebnis mit ui.set("result", ...).',
@@ -338,6 +417,9 @@ PY;
                 'style.css' => $styleCss,
                 'idegui.py' => $ideguiPy,
             ],
+            'solution_files' => [
+                'index.html' => $eventDrivenSolutionHtml,
+            ],
             'code_template' => $eventDrivenTemplate,
             'solution_code' => $eventDrivenSolution,
         ],
@@ -346,7 +428,8 @@ PY;
     $pdo->beginTransaction();
 
     $posStmt = $pdo->prepare('SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM tasks WHERE assignment_id = ?');
-    $findStmt = $pdo->prepare('SELECT id FROM tasks WHERE assignment_id = ? AND title = ? LIMIT 1');
+    $findByIdStmt = $pdo->prepare('SELECT id, title FROM tasks WHERE assignment_id = ? AND id = ? LIMIT 1');
+    $findByTitleStmt = $pdo->prepare('SELECT id, title FROM tasks WHERE assignment_id = ? AND title = ? LIMIT 1');
 
     $insertSql = 'INSERT INTO tasks (
         assignment_id, title, description, task_text, position,
@@ -379,8 +462,15 @@ PY;
     $results = [];
 
     foreach ($tasks as $cfg) {
-        $findStmt->execute([$assignmentId, $cfg['title']]);
-        $existing = $findStmt->fetch(PDO::FETCH_ASSOC);
+        $existing = null;
+        if (isset($cfg['task_id'])) {
+            $findByIdStmt->execute([$assignmentId, (int)$cfg['task_id']]);
+            $existing = $findByIdStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if (!$existing) {
+            $findByTitleStmt->execute([$assignmentId, $cfg['title']]);
+            $existing = $findByTitleStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
 
         if ($existing) {
             $taskId = (int)$existing['id'];
@@ -446,9 +536,19 @@ PY;
             file_put_contents($folder . '/' . $name, $content);
         }
 
+        if (!empty($cfg['solution_files']) && is_array($cfg['solution_files'])) {
+            $solutionFolder = $folder . '/.solution';
+            if (!is_dir($solutionFolder) && !mkdir($solutionFolder, 0755, true) && !is_dir($solutionFolder)) {
+                throw new RuntimeException('Solution-Ordner konnte nicht erstellt werden: ' . $solutionFolder);
+            }
+            foreach ($cfg['solution_files'] as $name => $content) {
+                file_put_contents($solutionFolder . '/' . $name, $content);
+            }
+        }
+
         $results[] = [
             'id' => $taskId,
-            'title' => $cfg['title'],
+            'title' => (string)($existing['title'] ?? $cfg['title']),
             'mode' => $mode,
         ];
     }
