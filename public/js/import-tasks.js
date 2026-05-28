@@ -8,6 +8,25 @@ class TaskImporter {
     this.zipReady = typeof JSZip !== 'undefined';
   }
 
+  getTaskOrderFromPath(path) {
+    const normalized = String(path || '').replace(/\\/g, '/');
+    const match = normalized.match(/(?:^|\/)task_(\d+)(?:_|\.json$)/i);
+    if (!match) return Number.POSITIVE_INFINITY;
+    const value = Number.parseInt(match[1], 10);
+    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+  }
+
+  normalizeHintPrefix(dirHint) {
+    let value = String(dirHint || '').trim().replace(/\\/g, '/');
+    if (!value) return '';
+
+    value = value.replace(/^\/+/, '').replace(/\/+$/, '');
+    value = value.replace(/^folder_files\//i, '').replace(/^solution_files\//i, '');
+    if (!value) return '';
+
+    return value.endsWith('/') ? value : `${value}/`;
+  }
+
   isReadOnlyRuntimeFile(path) {
     const normalized = String(path || '').replace(/\\/g, '/').toLowerCase();
     const fileName = normalized.split('/').pop() || '';
@@ -209,8 +228,14 @@ class TaskImporter {
           }
         });
 
-        // Sort by path to maintain order
-        taskFiles.sort((a, b) => a.path.localeCompare(b.path));
+        // Sort by numeric task index from file name (task_1..., task_2..., task_10...)
+        // to avoid lexicographic mis-ordering when 10+ tasks are exported.
+        taskFiles.sort((a, b) => {
+          const ai = this.getTaskOrderFromPath(a.path);
+          const bi = this.getTaskOrderFromPath(b.path);
+          if (ai !== bi) return ai - bi;
+          return a.path.localeCompare(b.path);
+        });
 
         for (const { file } of taskFiles) {
           const taskData = await file.async('text');
@@ -505,7 +530,8 @@ class TaskImporter {
   async restoreFolderFiles(taskId, taskIndex, folderFilesDirHint, folderFilesMap) {
     if (!folderFilesMap || Object.keys(folderFilesMap).length === 0) return 0;
 
-    // Determine key prefix: multi-task export uses 'task_N/' prefix
+    // Prefer explicit export hint from task JSON; fallback to index prefix for legacy exports.
+    const hintPrefix = this.normalizeHintPrefix(folderFilesDirHint);
     const multiPrefix = `task_${taskIndex + 1}/`;
 
     let restoredCount = 0;
@@ -514,7 +540,9 @@ class TaskImporter {
       let filePath = null;
       const hasTaskPrefix = /^task_\d+\//.test(mapKey);
 
-      if (mapKey.startsWith(multiPrefix)) {
+      if (hintPrefix && mapKey.startsWith(hintPrefix)) {
+        filePath = mapKey.slice(hintPrefix.length);
+      } else if (mapKey.startsWith(multiPrefix)) {
         // Multi-task export: strip the 'task_N/' prefix
         filePath = mapKey.slice(multiPrefix.length);
       } else if (!hasTaskPrefix) {
@@ -557,6 +585,7 @@ class TaskImporter {
   async restoreSolutionFiles(taskId, taskIndex, solutionFilesDirHint, solutionFilesMap) {
     if (!solutionFilesMap || Object.keys(solutionFilesMap).length === 0) return 0;
 
+    const hintPrefix = this.normalizeHintPrefix(solutionFilesDirHint);
     const multiPrefix = `task_${taskIndex + 1}/`;
 
     let restoredCount = 0;
@@ -565,7 +594,9 @@ class TaskImporter {
       let filePath = null;
       const hasTaskPrefix = /^task_\d+\//.test(mapKey);
 
-      if (mapKey.startsWith(multiPrefix)) {
+      if (hintPrefix && mapKey.startsWith(hintPrefix)) {
+        filePath = mapKey.slice(hintPrefix.length);
+      } else if (mapKey.startsWith(multiPrefix)) {
         filePath = mapKey.slice(multiPrefix.length);
       } else if (!hasTaskPrefix) {
         filePath = mapKey;
