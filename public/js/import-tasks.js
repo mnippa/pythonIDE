@@ -39,6 +39,8 @@ class TaskImporter {
       code_ui: 'code_completion',
       code_reading: 'code_completion',
       code_random_complex: 'code_completion',
+      db_model: 'essay',
+      file_submission: 'essay',
       single_choice: 'multiple_choice',
       multiple_choice: 'multiple_choice',
       free_text: 'essay'
@@ -60,7 +62,7 @@ class TaskImporter {
       throw new Error(`Unsupported export version: ${version}`);
     }
 
-    const allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+    const allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
     if (!allowedTaskTypes.includes(task.task_type)) {
       throw new Error(`Invalid task_type: ${task.task_type}`);
     }
@@ -75,9 +77,17 @@ class TaskImporter {
       throw new Error('Missing title');
     }
 
-    if (['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'code_reading'].includes(task.task_type)) {
+    if (['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'code_reading', 'db_model', 'file_submission'].includes(task.task_type)) {
       if (!task.task_text || String(task.task_text).trim() === '') {
         throw new Error(`Missing task_text for ${task.task_type}`);
+      }
+    }
+
+    if (task.task_type === 'file_submission') {
+      const size = Number.parseInt(task.file_submission_max_size_bytes ?? 102400, 10);
+      const allowedSizes = [51200, 102400, 256000, 1048576, 2097152, 5242880];
+      if (!allowedSizes.includes(size)) {
+        throw new Error('Invalid file_submission_max_size_bytes');
       }
     }
 

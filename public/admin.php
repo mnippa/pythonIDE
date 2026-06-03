@@ -713,6 +713,8 @@ if ($displayName === '') {
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code-Lesequest</option>
             <option value="code_random_complex">Code (versteckt)</option>
+            <option value="db_model">Datenbank-Modell</option>
+            <option value="file_submission">Dateiabgabe</option>
           </select>
         </div>
         <div style="overflow:auto;">
@@ -1128,6 +1130,8 @@ if ($displayName === '') {
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code Reading</option>
             <option value="code_random_complex">Random Complex</option>
+            <option value="db_model">Datenbank-Modell</option>
+            <option value="file_submission">Dateiabgabe</option>
           </select>
         </div>
         
@@ -1185,6 +1189,8 @@ if ($displayName === '') {
               <option value="free_text">Freitext</option>
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
+              <option value="db_model">Datenbank-Modell</option>
+              <option value="file_submission">Dateiabgabe</option>
             </select>
           </div>
 
@@ -1268,6 +1274,22 @@ if ($displayName === '') {
             <input type="file" id="task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
             <div id="task-image-preview"></div>
             <input type="hidden" id="task-image-url" />
+          </div>
+
+          <div class="field" data-field="file-submission-config">
+            <label for="task-file-allowed-types">Dateitypen (CSV)</label>
+            <input id="task-file-allowed-types" value="zip,png,jpg,jpeg,gif,webp" placeholder="z.B. zip,png,jpg,jpeg" />
+            <div class="hint">Nur Dateiendungen, kommagetrennt. Beispiel: zip,png,jpg,jpeg.</div>
+
+            <label for="task-file-max-size" style="margin-top:8px; display:block;">Max Dateigroesse</label>
+            <select id="task-file-max-size">
+              <option value="51200">50 KB</option>
+              <option value="102400" selected>100 KB (Standard)</option>
+              <option value="256000">250 KB</option>
+              <option value="1048576">1 MB</option>
+              <option value="2097152">2 MB</option>
+              <option value="5242880">5 MB</option>
+            </select>
           </div>
           
           <!-- Hints -->
@@ -1464,6 +1486,8 @@ if ($displayName === '') {
               <option value="free_text">Freitext</option>
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
+              <option value="db_model">Datenbank-Modell</option>
+              <option value="file_submission">Dateiabgabe</option>
             </select>
           </div>
 
@@ -1544,6 +1568,22 @@ if ($displayName === '') {
             <input type="file" id="edit-task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
             <div id="edit-task-image-preview"></div>
             <input type="hidden" id="edit-task-image-url" />
+          </div>
+
+          <div class="field" data-field="file-submission-config">
+            <label for="edit-task-file-allowed-types">Dateitypen (CSV)</label>
+            <input id="edit-task-file-allowed-types" value="zip,png,jpg,jpeg,gif,webp" placeholder="z.B. zip,png,jpg,jpeg" />
+            <div class="hint">Nur Dateiendungen, kommagetrennt. Beispiel: zip,png,jpg,jpeg.</div>
+
+            <label for="edit-task-file-max-size" style="margin-top:8px; display:block;">Max Dateigroesse</label>
+            <select id="edit-task-file-max-size">
+              <option value="51200">50 KB</option>
+              <option value="102400" selected>100 KB (Standard)</option>
+              <option value="256000">250 KB</option>
+              <option value="1048576">1 MB</option>
+              <option value="2097152">2 MB</option>
+              <option value="5242880">5 MB</option>
+            </select>
           </div>
           
           <!-- Hints -->
@@ -1898,6 +1938,8 @@ if ($displayName === '') {
                 <option value="free_text">📄 Freitext</option>
                 <option value="code_reading">👀 Code-Lesequest</option>
                 <option value="code_random_complex">🎲 Code (versteckt)</option>
+                <option value="db_model">🗄️ Datenbank-Modell</option>
+                <option value="file_submission">📎 Dateiabgabe</option>
               </select>
             </div>
 

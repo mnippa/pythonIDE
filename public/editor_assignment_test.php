@@ -150,16 +150,19 @@ $isTaskLabView = true;
       }
     }
 
-    /* Mobile: Navigation collapsible, Code 70%, Output 30% - NO SPLITTER */
+    /* Mobile: Keep task navigation visible when active, no draggable splitter */
     @media (max-width: 768px) {
       .app {
         grid-template-columns: 1fr 30%;
       }
       .app.with-task-details {
-        grid-template-columns: 1fr 30% !important;
+        grid-template-columns: minmax(220px, 42%) 1fr 30% !important;
       }
       #task-details-panel {
         display: none !important;
+      }
+      #task-details-panel.active {
+        display: flex !important;
       }
       .column-splitter {
         display: none !important;
@@ -1092,7 +1095,7 @@ HTML;
   <script src="js/quiz-renderer.js?v=20250224"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260527a"></script>
+  <script type="module" src="js/editor-setup.js?v=20260601a"></script>
 
   <script>
     // Theme Toggle
@@ -1264,6 +1267,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260527a"></script>
+  <script type="module" src="js/assignments.js?v=20260601a"></script>
 </body>
 </html>

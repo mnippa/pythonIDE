@@ -123,10 +123,10 @@ function buildAssignmentTaskStatsMap(mysqli $conn, int $userId, array $assignmen
         SELECT
             t.assignment_id,
             COUNT(*) AS total_tasks,
-            SUM(CASE WHEN ut.status IN ('in-progress', 'passed', 'failed') THEN 1 ELSE 0 END) AS worked_tasks,
+            SUM(CASE WHEN ut.status IN ('in-progress', 'submitted', 'passed', 'failed') THEN 1 ELSE 0 END) AS worked_tasks,
             SUM(CASE WHEN ut.status = 'passed' THEN 1 ELSE 0 END) AS passed_tasks,
             SUM(CASE WHEN ut.status = 'failed' THEN 1 ELSE 0 END) AS failed_tasks,
-            SUM(CASE WHEN ut.status IN ('passed', 'failed') THEN 1 ELSE 0 END) AS finalized_tasks
+            SUM(CASE WHEN ut.status IN ('submitted', 'passed', 'failed') THEN 1 ELSE 0 END) AS finalized_tasks
         FROM tasks t
         LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
         WHERE t.assignment_id IN ($placeholders)

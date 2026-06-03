@@ -94,7 +94,7 @@ if ($taskId) {
 } elseif ($assignmentId) {
     // Get all tasks progress for assignment
     $stmt = $conn->prepare(
-        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
+        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
          FROM user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
          WHERE ut.user_id = ? AND t.assignment_id = ?

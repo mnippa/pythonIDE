@@ -229,6 +229,18 @@ function getTestUserQueryParam() {
   return window.TEST_USER_ID ? `&test_user_id=${encodeURIComponent(window.TEST_USER_ID)}` : '';
 }
 
+function getTestUserRequestParam(prefix = '?') {
+  return window.TEST_USER_ID ? `${prefix}test_user_id=${encodeURIComponent(window.TEST_USER_ID)}` : '';
+}
+
+function getUserTasksUpdateUrl() {
+  return `${getApiBasePath()}/user_tasks/update.php${getTestUserRequestParam('?')}`;
+}
+
+function getUserTasksHeartbeatUrl() {
+  return `${getApiBasePath()}/user_tasks/heartbeat.php${getTestUserRequestParam('?')}`;
+}
+
 function getStudentViewQueryParam() {
   return window.STUDENT_ASSIGNMENTS_CONTEXT ? '&student_view=1' : '';
 }
@@ -703,9 +715,16 @@ function isTaskMismatchForFileOperation(taskId) {
 
 async function persistTaskFileContent(taskId, path, content, isVirtual = false, scopeOverride = null) {
   const saveScope = scopeOverride || getTaskModeScope();
+  const normalizedContent = String(content ?? '');
   if (window.TEST_MODE_NO_PERSIST === true) {
-    setTaskSavedSnapshotForScope(taskId, path, content, saveScope);
-    setTaskDraftContentForScope(taskId, path, content, saveScope);
+    setTaskSavedSnapshotForScope(taskId, path, normalizedContent, saveScope);
+    setTaskDraftContentForScope(taskId, path, normalizedContent, saveScope);
+    if (String(path) === 'init.py') {
+      assignmentState.taskUserAnswers[taskId] = {
+        ...(assignmentState.taskUserAnswers[taskId] || {}),
+        current_code: normalizedContent
+      };
+    }
     return true;
   }
 
@@ -728,7 +747,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
       const response = await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, current_code: content })
+        body: JSON.stringify({ task_id: taskId, current_code: normalizedContent })
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -739,7 +758,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
       const response = await fetch(`${getApiBasePath()}/user_tasks/folder-files.php?action=save${testUserParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, path, content })
+        body: JSON.stringify({ task_id: taskId, path, content: normalizedContent })
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -752,7 +771,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: taskId, solution_code: content })
+        body: JSON.stringify({ id: taskId, solution_code: normalizedContent })
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -762,7 +781,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
       const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=save_template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, content })
+        body: JSON.stringify({ task_id: taskId, content: normalizedContent })
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -774,7 +793,7 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
     const response = await fetch(`${getApiBasePath()}/tasks/folder-manage.php?action=save${solutionModeParam}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task_id: taskId, path, content })
+      body: JSON.stringify({ task_id: taskId, path, content: normalizedContent })
     });
     const result = await response.json();
     if (!response.ok || !result.ok) {
@@ -782,8 +801,14 @@ async function persistTaskFileContent(taskId, path, content, isVirtual = false, 
     }
   }
 
-  setTaskSavedSnapshotForScope(taskId, path, content, saveScope);
-  setTaskDraftContentForScope(taskId, path, content, saveScope);
+  setTaskSavedSnapshotForScope(taskId, path, normalizedContent, saveScope);
+  setTaskDraftContentForScope(taskId, path, normalizedContent, saveScope);
+  if (String(path) === 'init.py') {
+    assignmentState.taskUserAnswers[taskId] = {
+      ...(assignmentState.taskUserAnswers[taskId] || {}),
+      current_code: normalizedContent
+    };
+  }
   return true;
 }
 
@@ -887,8 +912,8 @@ async function confirmTaskSwitchWithDrafts(nextTaskId) {
 }
 
 async function requestJson(url, options = {}) {
-  const isTestMode = isAdminTaskLabMode();
-  if (isTestMode) {
+  const isNoPersistMode = window.TEST_MODE_NO_PERSIST === true;
+  if (isNoPersistMode) {
     // Intercept WRITE operations in test mode - prevent DB writes
     if (url.includes('/api/user_tasks/update.php') || url.includes('/api/user_tasks/heartbeat.php') || url.includes('/api/user_tasks/submit.php')) {
       // Just return success without writing to DB
@@ -1067,7 +1092,7 @@ function stopActivityTracking(taskId) {
 async function sendActivityHeartbeat(taskId, deltaSeconds, isActive) {
   logActivityDebug('sendActivityHeartbeat', { taskId, deltaSeconds, isActive });
   try {
-    const response = await fetch('../api/user_tasks/heartbeat.php', {
+    const response = await fetch(getUserTasksHeartbeatUrl(), {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -1456,7 +1481,7 @@ function showTaskDetails(task, activeTab = 'details') {
           hints_revealed: assignmentState.hintsRevealed[task.id]
         };
         console.log('[HINT] Revealing hint - Payload:', payload);
-        const response = await requestJson('../api/user_tasks/update.php', {
+        const response = await requestJson(getUserTasksUpdateUrl(), {
           method: 'POST',
           body: JSON.stringify(payload)
         });
@@ -2210,8 +2235,8 @@ async function loadSingleAssignment(assignmentId) {
       });
     }
     
-    // In admin test mode, do not load persisted user_tasks progress from DB.
-    if (!isAdminTaskLabMode()) {
+    // Load persisted user_tasks progress unless this view explicitly disables persistence.
+    if (window.TEST_MODE_NO_PERSIST !== true) {
       try {
         const testUserParam = getTestUserQueryParam();
         const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
@@ -2226,6 +2251,7 @@ async function loadSingleAssignment(assignmentId) {
           }
           // Store user answers
           assignmentState.taskUserAnswers[ut.task_id] = {
+            current_code: ut.current_code || '',
             selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
             text_answer: ut.text_answer || '',
             variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
@@ -2278,8 +2304,8 @@ async function loadAssignments() {
         assignmentState.assignmentDetails[item.assignment_id] = assignmentRes.assignment;
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
-        // In admin test mode, do not load persisted user_tasks progress from DB.
-        if (!isAdminTaskLabMode()) {
+        // Load persisted user_tasks progress unless this view explicitly disables persistence.
+        if (window.TEST_MODE_NO_PERSIST !== true) {
           try {
             const testUserParam = getTestUserQueryParam();
             const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
@@ -2294,6 +2320,7 @@ async function loadAssignments() {
               }
               // Store user answers
               assignmentState.taskUserAnswers[ut.task_id] = {
+                current_code: ut.current_code || '',
                 selected_options: (ut.selected_options && ut.selected_options !== 'null') ? JSON.parse(ut.selected_options) : [],
                 text_answer: ut.text_answer || '',
                 variable_values: (ut.variable_values && ut.variable_values !== 'null') ? JSON.parse(ut.variable_values) : {},
@@ -2723,13 +2750,27 @@ function renderAssignmentDetail(assignmentId, assignment, tasks) {
 
 async function loadSavedCode(taskId) {
   try {
+    const cachedTaskAnswer = assignmentState.taskUserAnswers?.[taskId];
+    if (cachedTaskAnswer && cachedTaskAnswer.current_code) {
+      return normalizeLegacyEscapedCode(cachedTaskAnswer.current_code);
+    }
+
     const testUserParam = getTestUserQueryParam();
     const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}${testUserParam}`);
     if (response && response.task && response.task.current_code) {
+      assignmentState.taskUserAnswers[taskId] = {
+        ...(assignmentState.taskUserAnswers[taskId] || {}),
+        current_code: response.task.current_code
+      };
       return normalizeLegacyEscapedCode(response.task.current_code);
     }
     return null;
   } catch (err) {
+    const cachedTaskAnswer = assignmentState.taskUserAnswers?.[taskId];
+    if (cachedTaskAnswer && cachedTaskAnswer.current_code) {
+      return normalizeLegacyEscapedCode(cachedTaskAnswer.current_code);
+    }
+
     console.warn('Failed to load saved code:', err);
     return null;
   }
@@ -3000,8 +3041,6 @@ except Exception:
 function triggerCodeUiPythonRun() {
   const runButton = document.getElementById('run-btn');
   if (!runButton) return;
-  // Mark this run as coming from a code_ui trigger click to preserve trigger context.
-  window.__codeUiRunFromTrigger = true;
   runButton.click();
 }
 
@@ -3092,10 +3131,10 @@ function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = f
   if (!guiContainer || !triggerElement) return;
 
   const triggerName =
-    triggerElement.getAttribute('data-run-name') ||
-    triggerElement.getAttribute('data-function') ||
     triggerElement.getAttribute('name') ||
     triggerElement.id ||
+    triggerElement.getAttribute('data-run-name') ||
+    triggerElement.getAttribute('data-function') ||
     '';
 
   const explicitValueAttr = triggerElement.getAttribute('value');
@@ -3194,7 +3233,6 @@ async function renderCodeUiHtml(taskId) {
 
   const isAdminFolderMode = isAdminTaskLabMode();
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
-  const solutionModeParam = isAdminFolderMode && assignmentState.solutionMode === true ? '&solution_mode=1' : '';
 
   const readTaskFile = async (path) => {
     const draft = getTaskDraftContent(taskId, path);
@@ -3202,21 +3240,11 @@ async function renderCodeUiHtml(taskId) {
       return String(draft || '');
     }
 
-    let response;
-    if (isAdminFolderMode) {
-      const readEndpoint = `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`;
-      response = await fetch(readEndpoint, {
-        method: 'POST',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path })
-      });
-    } else {
-      const readEndpoint = `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
-      response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
-    }
+    const readEndpoint = isAdminFolderMode
+      ? `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
+      : `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
+    const response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`${path} nicht gefunden`);
     }
@@ -3938,6 +3966,10 @@ async function saveCode(options = {}) {
       }
 
       task.solution_code = code;
+      assignmentState.taskUserAnswers[taskId] = {
+        ...(assignmentState.taskUserAnswers[taskId] || {}),
+        current_code: code
+      };
       setTaskSavedSnapshotForScope(taskId, 'init.py', code, 'solution');
       setTaskDraftContentForScope(taskId, 'init.py', code, 'solution');
 
@@ -4018,6 +4050,10 @@ async function saveCode(options = {}) {
       }
 
       task.code_template = code;
+      assignmentState.taskUserAnswers[taskId] = {
+        ...(assignmentState.taskUserAnswers[taskId] || {}),
+        current_code: code
+      };
       setTaskSavedSnapshotForScope(taskId, 'init.py', code, 'template');
       setTaskDraftContentForScope(taskId, 'init.py', code, 'template');
 
@@ -4096,6 +4132,11 @@ async function saveCode(options = {}) {
         }, 3000);
       }
 
+      assignmentState.taskUserAnswers[taskId] = {
+        ...(assignmentState.taskUserAnswers[taskId] || {}),
+        current_code: code
+      };
+
       return true;
     }
 
@@ -4118,12 +4159,17 @@ async function saveCode(options = {}) {
     console.log('[SAVE] Saving task:', taskId, 'Code length:', code.length, 'chars');
     console.log('[SAVE] Payload:', payload);
 
-    const response = await requestJson('../api/user_tasks/update.php', {
+    const response = await requestJson(getUserTasksUpdateUrl(), {
       method: 'POST',
       body: JSON.stringify(payload)
     });
 
     console.log('[SAVE] API Response:', response);
+
+    assignmentState.taskUserAnswers[taskId] = {
+      ...(assignmentState.taskUserAnswers[taskId] || {}),
+      current_code: code
+    };
 
     if (saveTaskBtn) {
       saveTaskBtn.style.opacity = '1';
@@ -4179,7 +4225,7 @@ async function incrementRunCount(taskId) {
     }
 
     console.log('[RUN_COUNT] Incrementing run count - Payload:', payload);
-    const response = await requestJson('../api/user_tasks/update.php', {
+    const response = await requestJson(getUserTasksUpdateUrl(), {
       method: 'POST',
       body: JSON.stringify(payload)
     });
@@ -4738,7 +4784,7 @@ async function checkTask() {
   }
 
   // Auto-save before check only outside admin test mode.
-  await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+  await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
 
   // Get code from editor
   const code = editor.getValue();
@@ -4879,7 +4925,7 @@ async function checkTask() {
       };
       
       console.log('[CHECK] Saving attempts - Payload:', savePayload);
-      const saveResponse = await requestJson('../api/user_tasks/update.php', {
+      const saveResponse = await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
         body: JSON.stringify(savePayload)
       });
@@ -4940,20 +4986,17 @@ async function submitTask() {
   }
 
   if (manualReviewTask) {
-    await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+    await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
-    if (!isAdminAssignmentTestMode()) {
-      const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
-      await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
+    if (window.TEST_MODE_NO_PERSIST !== true) {
+      await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task_id: task.id,
           status: 'submitted',
           submission_comment: submissionComment || null
         })
-      }).catch(err => console.error('[Submit] Failed to update status:', err));
+      });
     }
 
     assignmentState.taskStatuses[task.id] = 'submitted';
@@ -4976,21 +5019,18 @@ async function submitTask() {
     // No automated check available — direct submit (manual review by teacher)
     const confirmed = confirm('Diese Aufgabe hat keine automatischen Tests. Code jetzt abgeben?');
     if (!confirmed) return;
-    await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+    await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
     // Submit task for manual review
-    if (!isAdminAssignmentTestMode()) {
-      const testUserParam = window.TEST_USER_ID ? `?test_user_id=${window.TEST_USER_ID}` : '';
-      await fetch(`${getApiBasePath()}/user_tasks/update.php${testUserParam}`, {
+    if (window.TEST_MODE_NO_PERSIST !== true) {
+      await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task_id: task.id,
           status: 'submitted',
           submission_comment: submissionComment || null
         })
-      }).catch(err => console.error('[Submit] Failed to update status:', err));
+      });
     }
     assignmentState.taskStatuses[task.id] = 'submitted';
     flushHeartbeat(task.id);
@@ -5017,7 +5057,7 @@ async function submitTask() {
   }
 
   // Auto-save code before submitting (no status change)
-  await saveCode({ setStatus: false, persist: !isAdminAssignmentTestMode() });
+  await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
 
   const code = editor.getValue();
   const activeFileType = detectEditorFileType();
@@ -7025,7 +7065,7 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
     
     console.log('[CHECK] Save payload:', savePayload);
     
-    const saveResponse = await requestJson('../api/user_tasks/update.php', {
+    const saveResponse = await requestJson(getUserTasksUpdateUrl(), {
       method: 'POST',
       body: JSON.stringify(savePayload)
     });
@@ -7587,11 +7627,7 @@ async function loadAndDisplayTaskFiles(panelId, taskId, currentPath = '') {
     
     // Trenne init.py (virtuell) von echten Filesystem-Dateien
     const initPy = allFiles.find(f => f.name === 'init.py' && f.virtual);
-    const filesystemFiles = allFiles.filter((f) => {
-      if (f.virtual) return false;
-      if (!isCodeUiTask) return true;
-      return String(f.name || '').toLowerCase() !== 'idegui.py';
-    });
+    const filesystemFiles = allFiles.filter(f => !f.virtual);
     
     // Store init.py content in the current mode-scoped cache so template and solution keep separate DOM state
     if (initPy) {
@@ -8163,30 +8199,6 @@ async function openTaskFileInEditor(taskId, path) {
           content = savedContent;
         }
       }
-
-      // Robust fallback: if no scoped cache exists yet, populate virtual init.py from task data.
-      if (String(content || '') === '') {
-        let taskForInit = null;
-        if (assignmentState.currentTask && Number(assignmentState.currentTask.id) === Number(taskId)) {
-          taskForInit = assignmentState.currentTask;
-        } else {
-          for (const taskList of Object.values(assignmentState.tasksByAssignment || {})) {
-            if (!Array.isArray(taskList)) continue;
-            const found = taskList.find((t) => Number(t.id) === Number(taskId));
-            if (found) {
-              taskForInit = found;
-              break;
-            }
-          }
-        }
-
-        if (scopeAtOpenStart === 'solution') {
-          content = String(taskForInit?.solution_code || '');
-        } else {
-          content = String(taskForInit?.code_template || '');
-        }
-      }
-
       content = normalizeLegacyEscapedCode(content);
 
       language = 'python';

@@ -106,6 +106,33 @@ function ensureCodeUiScaffold(int $taskId, bool $overwrite = false): void {
     }
 }
 
+function normalizeFileSubmissionAllowedTypes($rawValue): string {
+    $raw = is_string($rawValue) ? $rawValue : '';
+    $parts = preg_split('/\s*,\s*/', strtolower(trim($raw))) ?: [];
+    $normalized = [];
+    foreach ($parts as $part) {
+        $ext = ltrim(trim($part), '.');
+        if ($ext === '') {
+            continue;
+        }
+        if (!preg_match('/^[a-z0-9]+$/', $ext)) {
+            continue;
+        }
+        $normalized[$ext] = true;
+    }
+
+    if (empty($normalized)) {
+        return 'zip,png,jpg,jpeg,gif,webp';
+    }
+
+    return implode(',', array_keys($normalized));
+}
+
+function isAllowedFileSubmissionSize(int $sizeBytes): bool {
+    $allowed = [51200, 102400, 256000, 1048576, 2097152, 5242880];
+    return in_array($sizeBytes, $allowed, true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -159,6 +186,8 @@ $folderstructure = isset($input['folderstructure']) ? (int)(bool)$input['folders
 $allowDownload = isset($input['allowDownload']) ? (int)(bool)$input['allowDownload'] : 0;
 $allowCodeUiWebEdit = isset($input['allowCodeUiWebEdit']) ? (int)(bool)$input['allowCodeUiWebEdit'] : 1;
 $taskDifficulty = strtolower(trim((string)($input['task_difficulty'] ?? 'medium')));
+$fileSubmissionAllowedTypes = $input['file_submission_allowed_types'] ?? null;
+$fileSubmissionMaxSizeBytes = isset($input['file_submission_max_size_bytes']) ? (int)$input['file_submission_max_size_bytes'] : null;
 
 $problemTypeMap = [
     'code' => 'code_completion',
@@ -167,7 +196,9 @@ $problemTypeMap = [
     'code_random_complex' => 'code_completion',
     'single_choice' => 'multiple_choice',
     'multiple_choice' => 'multiple_choice',
-    'free_text' => 'essay'
+    'free_text' => 'essay',
+    'db_model' => 'essay',
+    'file_submission' => 'essay'
 ];
 
 if (isset($problemTypeMap[$problemType])) {
@@ -195,7 +226,7 @@ if (!in_array($problemType, $allowedTypes, true)) {
 }
 
 // Validate task_type
-$allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+$allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
 if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
 }
@@ -213,8 +244,22 @@ if ($taskType === 'code_ui') {
 }
 
 // Validate quiz tasks have task_text
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_random_complex']) && empty($taskText)) {
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'db_model', 'file_submission']) && empty($taskText)) {
     jsonResponse(['ok' => false, 'error' => 'task_text required for ' . $taskType], 400);
+}
+
+if ($taskType === 'file_submission') {
+    $manualReviewRequired = 1;
+    $fileSubmissionAllowedTypes = normalizeFileSubmissionAllowedTypes($fileSubmissionAllowedTypes);
+    if ($fileSubmissionMaxSizeBytes === null || $fileSubmissionMaxSizeBytes <= 0) {
+        $fileSubmissionMaxSizeBytes = 102400;
+    }
+    if (!isAllowedFileSubmissionSize($fileSubmissionMaxSizeBytes)) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid file_submission_max_size_bytes'], 400);
+    }
+} else {
+    $fileSubmissionAllowedTypes = null;
+    $fileSubmissionMaxSizeBytes = 102400;
 }
 
 if ($taskType === 'code_random_complex' && empty($codeTemplate)) {
@@ -321,8 +366,8 @@ $solutionCode = is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, file_submission_allowed_types, file_submission_max_size_bytes, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -354,6 +399,8 @@ $types .= 's';     // image_url
 $types .= 's';     // correct_answer
 $types .= 's';     // variable_overrides
 $types .= 's';     // randomizer_code
+$types .= 's';     // file_submission_allowed_types
+$types .= 'i';     // file_submission_max_size_bytes
 $types .= 'i';     // folderstructure
 $types .= 'i';     // allowDownload
 $types .= 'i';     // allow_code_ui_web_edit
@@ -389,6 +436,8 @@ $bindResult = @$stmt->bind_param(
     $correctAnswer,
     $variableOverridesJson,
     $randomizerCode,
+    $fileSubmissionAllowedTypes,
+    $fileSubmissionMaxSizeBytes,
     $folderstructure,
     $allowDownload,
     $allowCodeUiWebEdit,

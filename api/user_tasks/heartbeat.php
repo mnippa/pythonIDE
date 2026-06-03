@@ -40,8 +40,39 @@ $active_seconds_delta = isset($data['active_seconds_delta']) ? (int)$data['activ
 $is_active = isset($data['is_active']) ? (int)$data['is_active'] : 0;
 $user_id = $_SESSION['user_id'];
 
+if (isset($_GET['test_user_id'])) {
+    $testUserId = (int)$_GET['test_user_id'];
+
+    if (($_SESSION['role'] ?? 'user') !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['error' => 'Unauthorized: Admin access required for test_user_id']);
+        exit;
+    }
+
+    if ($testUserId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid test_user_id']);
+        exit;
+    }
+}
+
 try {
     $conn = getDbConnection();
+
+    if (isset($testUserId)) {
+        $userCheckStmt = $conn->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+        $userCheckStmt->bind_param('i', $testUserId);
+        $userCheckStmt->execute();
+        $exists = $userCheckStmt->get_result()->fetch_assoc();
+
+        if (!$exists) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Test user not found']);
+            exit;
+        }
+
+        $user_id = $testUserId;
+    }
 
     // Check if active_seconds column exists
     $checkCol = $conn->query("SHOW COLUMNS FROM user_tasks WHERE Field = 'active_seconds'");

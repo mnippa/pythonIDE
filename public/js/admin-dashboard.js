@@ -956,6 +956,8 @@ function resetTaskForm() {
   if ($('task-keywords')) $('task-keywords').value = '';
   if ($('task-correct-answer')) $('task-correct-answer').value = '';
   if ($('task-var-overrides')) $('task-var-overrides').value = '';
+  if ($('task-file-allowed-types')) $('task-file-allowed-types').value = 'zip,png,jpg,jpeg,gif,webp';
+  if ($('task-file-max-size')) $('task-file-max-size').value = '102400';
   if (overridesBuilders.task) {
     overridesBuilders.task.iterations = [{ vars: [{ key: '', value: '' }] }];
     renderOverridesBuilder('task');
@@ -979,10 +981,25 @@ function resetTaskForm() {
   if (window.TaskTypeManager && taskForm) {
     TaskTypeManager.updateFieldVisibility(taskForm, 'code');
   }
+  enforceFileSubmissionManualReview('task');
 
   // Only set active tab if tabs exist in the form
   if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
     setActiveTaskTab(taskForm, 'base');
+  }
+}
+
+function enforceFileSubmissionManualReview(formPrefix) {
+  const taskTypeEl = formPrefix === 'edit-task' ? $('edit-task-type') : $('new-task-type');
+  const checkboxEl = formPrefix === 'edit-task' ? $('edit-task-manual-review-required') : $('task-manual-review-required');
+  if (!taskTypeEl || !checkboxEl) return;
+
+  const isFileSubmission = taskTypeEl.value === 'file_submission';
+  if (isFileSubmission) {
+    checkboxEl.checked = true;
+    checkboxEl.disabled = true;
+  } else {
+    checkboxEl.disabled = false;
   }
 }
 
@@ -1176,6 +1193,8 @@ async function handleTaskSubmit(e) {
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     task_difficulty: ($('task-difficulty')?.value || 'medium'),
     image_url: $('task-image-url') ? ($('task-image-url').value.trim() || null) : null,
+    file_submission_allowed_types: $('task-file-allowed-types') ? ($('task-file-allowed-types').value.trim() || null) : null,
+    file_submission_max_size_bytes: $('task-file-max-size') ? parseInt($('task-file-max-size').value, 10) : null,
     code_template: $('task-template').value,
     randomizer_code: $('task-randomizer-code').value.trim() || null,
     hint1: $('task-hint1').value,
@@ -1285,6 +1304,8 @@ async function handleTaskSubmit(e) {
     payload.max_iterations = $('task-max-iterations').value
       ? parseInt($('task-max-iterations').value, 10)
       : 3;
+  } else if (taskType === 'file_submission') {
+    payload.manual_review_required = 1;
   }
 
   // If builder has data, prefer it over manual JSON (for code tasks)
@@ -1940,6 +1961,13 @@ async function openEditTaskModal(taskId) {
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
+  if ($('edit-task-file-allowed-types')) {
+    $('edit-task-file-allowed-types').value = task.file_submission_allowed_types || 'zip,png,jpg,jpeg,gif,webp';
+  }
+  if ($('edit-task-file-max-size')) {
+    const value = task.file_submission_max_size_bytes ? String(task.file_submission_max_size_bytes) : '102400';
+    $('edit-task-file-max-size').value = value;
+  }
   if ($('edit-task-difficulty')) {
     $('edit-task-difficulty').value = task.task_difficulty || 'medium';
   }
@@ -2034,6 +2062,7 @@ async function openEditTaskModal(taskId) {
   if (window.TaskTypeManager && editForm) {
     window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
   }
+  enforceFileSubmissionManualReview('edit-task');
   updateTestTypeVisibility(); // Update test type selector visibility for free_text
   
   // Only set active tab if tabs exist in the form
@@ -2081,6 +2110,8 @@ async function handleEditTaskSubmit(e) {
     task_difficulty: ($('edit-task-difficulty')?.value || 'medium'),
     problem_type: taskType,  // Keep for backwards compatibility
     image_url: $('edit-task-image-url') ? ($('edit-task-image-url').value.trim() || null) : null,
+    file_submission_allowed_types: $('edit-task-file-allowed-types') ? ($('edit-task-file-allowed-types').value.trim() || null) : null,
+    file_submission_max_size_bytes: $('edit-task-file-max-size') ? parseInt($('edit-task-file-max-size').value, 10) : null,
     code_template: $('edit-task-template').value,
     randomizer_code: $('edit-task-randomizer-code').value.trim() || null,
     hint1: $('edit-task-hint1').value,
@@ -2175,6 +2206,8 @@ async function handleEditTaskSubmit(e) {
     payload.max_iterations = $('edit-task-max-iterations')?.value
       ? parseInt($('edit-task-max-iterations').value, 10)
       : 3;
+  } else if (taskType === 'file_submission') {
+    payload.manual_review_required = 1;
   }
   
   // Handle options for Single/Multiple Choice
@@ -2890,6 +2923,8 @@ function updateRandomButtonVisibility() {
   // Show only for code_random_complex OR for code tasks with intelligent tests
   updateSolutionCodeVisibility();
   updateCodeOnlyOptionsVisibility();
+  enforceFileSubmissionManualReview('task');
+  enforceFileSubmissionManualReview('edit-task');
 }
 
 // ===================================================================

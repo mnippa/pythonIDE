@@ -32,6 +32,14 @@
     code_random_complex: {
       label: 'Code mit zufälligen Werten',
       fields: ['code_template', 'randomizer_code', 'variable_overrides', 'solution', 'hints', 'max_iterations', 'show-solution-code']
+    },
+    db_model: {
+      label: 'Datenbank-Modell',
+      fields: ['image', 'test_cases', 'hints']
+    },
+    file_submission: {
+      label: 'Dateiabgabe',
+      fields: ['image', 'file_submission_config', 'hints']
     }
   };
 
@@ -68,6 +76,7 @@
       this.hideField(form, 'correct-answer');
       this.hideField(form, 'max-iterations');
       this.hideField(form, 'show-solution-code');
+      this.hideField(form, 'file-submission-config');
       
       // Show required fields
       config.fields.forEach(field => {
@@ -104,6 +113,9 @@
             break;
           case 'max_iterations':
             this.showField(form, 'max-iterations');
+            break;
+          case 'file_submission_config':
+            this.showField(form, 'file-submission-config');
             break;
         }
       });

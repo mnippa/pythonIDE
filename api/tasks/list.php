@@ -61,6 +61,27 @@ function calcTimingPhaseForAccess(array $row): string {
     return 'open';
 }
 
+function getTableColumns(mysqli $conn, string $table): array {
+    $columns = [];
+    $safeTable = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW COLUMNS FROM `{$safeTable}`");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            if (isset($row['Field'])) {
+                $columns[$row['Field']] = true;
+            }
+        }
+    }
+    return $columns;
+}
+
+function selectExpr(array $columns, string $name, string $fallback = 'NULL'): string {
+    if (isset($columns[$name])) {
+        return "`{$name}`";
+    }
+    return "{$fallback} AS `{$name}`";
+}
+
 $assignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : null;
 if (!$assignmentId) {
     jsonResponse(['ok' => false, 'error' => 'Assignment ID required'], 400);
@@ -104,8 +125,40 @@ if ($isStudentView) {
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
 
-// Determine which columns to fetch based on context
-$selectColumns = 'id, assignment_id, title, description, position, problem_type, code_template, hint1, hint2, hint3, stoff, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, test_cases, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, expected_output, solution_code, randomizer_code';
+// Build column selection dynamically so older/live schemas don't break with 500.
+$taskColumns = getTableColumns($conn, 'tasks');
+$selectColumns = implode(', ', [
+    selectExpr($taskColumns, 'id', '0'),
+    selectExpr($taskColumns, 'assignment_id', '0'),
+    selectExpr($taskColumns, 'title', "''"),
+    selectExpr($taskColumns, 'description', "''"),
+    selectExpr($taskColumns, 'position', '0'),
+    selectExpr($taskColumns, 'problem_type', "''"),
+    selectExpr($taskColumns, 'code_template', "''"),
+    selectExpr($taskColumns, 'hint1', 'NULL'),
+    selectExpr($taskColumns, 'hint2', 'NULL'),
+    selectExpr($taskColumns, 'hint3', 'NULL'),
+    selectExpr($taskColumns, 'stoff', 'NULL'),
+    selectExpr($taskColumns, 'max_attempts', '1'),
+    selectExpr($taskColumns, 'iterations_count', 'NULL'),
+    selectExpr($taskColumns, 'show_solution', '0'),
+    selectExpr($taskColumns, 'show_solution_code', '0'),
+    selectExpr($taskColumns, 'manual_review_required', '0'),
+    selectExpr($taskColumns, 'test_cases', 'NULL'),
+    selectExpr($taskColumns, 'task_type', "'code'"),
+    selectExpr($taskColumns, 'task_text', "''"),
+    selectExpr($taskColumns, 'question_text', 'NULL'),
+    selectExpr($taskColumns, 'image_url', 'NULL'),
+    selectExpr($taskColumns, 'correct_answer', 'NULL'),
+    selectExpr($taskColumns, 'variable_overrides', 'NULL'),
+    selectExpr($taskColumns, 'folderstructure', '0'),
+    selectExpr($taskColumns, 'allowDownload', '0'),
+    selectExpr($taskColumns, 'allow_code_ui_web_edit', '0'),
+    selectExpr($taskColumns, 'task_difficulty', "'medium'"),
+    selectExpr($taskColumns, 'expected_output', 'NULL'),
+    selectExpr($taskColumns, 'solution_code', 'NULL'),
+    selectExpr($taskColumns, 'randomizer_code', 'NULL')
+]);
 
 // Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
 $sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";
@@ -134,43 +187,56 @@ foreach ($rawTasks as $taskId => $row) {
 $optionsMap = [];  // taskId => [options]
 $userAttemptsMap = [];  // taskId => attempt data
 
-if (!empty($choiceTaskIds)) {
+if (!empty($choiceTaskIds) && function_exists('dbTableExists') && dbTableExists($conn, 'task_options')) {
+    $taskOptionColumns = getTableColumns($conn, 'task_options');
+    $taskOptionOrderExpr = isset($taskOptionColumns['order_num']) ? '`order_num`' : '`id`';
     // Batch load: Get ALL options for ALL choice tasks in ONE query
     $placeholders = implode(',', array_fill(0, count($choiceTaskIds), '?'));
     $optionsStmt = $conn->prepare(
-        "SELECT task_id, id, option_text, image_url, is_correct, order_num 
+        "SELECT " .
+        selectExpr($taskOptionColumns, 'task_id', '0') . ', ' .
+        selectExpr($taskOptionColumns, 'id', '0') . ', ' .
+        selectExpr($taskOptionColumns, 'option_text', "''") . ', ' .
+        selectExpr($taskOptionColumns, 'image_url', 'NULL') . ', ' .
+        selectExpr($taskOptionColumns, 'is_correct', '0') . ', ' .
+        selectExpr($taskOptionColumns, 'order_num', '`id`') .
+        " 
          FROM task_options 
          WHERE task_id IN ($placeholders) 
-         ORDER BY task_id, order_num ASC"
+         ORDER BY task_id, {$taskOptionOrderExpr} ASC"
     );
-    $optionsStmt->bind_param(str_repeat('i', count($choiceTaskIds)), ...$choiceTaskIds);
-    $optionsStmt->execute();
-    $optionsResult = $optionsStmt->get_result();
-    
-    while ($optionRow = $optionsResult->fetch_assoc()) {
-        $taskId = (int)$optionRow['task_id'];
-        if (!isset($optionsMap[$taskId])) {
-            $optionsMap[$taskId] = [];
+    if ($optionsStmt) {
+        $optionsStmt->bind_param(str_repeat('i', count($choiceTaskIds)), ...$choiceTaskIds);
+        $optionsStmt->execute();
+        $optionsResult = $optionsStmt->get_result();
+        
+        while ($optionRow = $optionsResult->fetch_assoc()) {
+            $taskId = (int)$optionRow['task_id'];
+            if (!isset($optionsMap[$taskId])) {
+                $optionsMap[$taskId] = [];
+            }
+            $optionsMap[$taskId][] = $optionRow;
         }
-        $optionsMap[$taskId][] = $optionRow;
+        $optionsStmt->close();
     }
-    $optionsStmt->close();
     
     // Batch load: Get user attempts for ALL choice tasks in ONE query (if not admin)
-    if ($user['role'] !== 'admin') {
+    if ($user['role'] !== 'admin' && function_exists('dbTableExists') && dbTableExists($conn, 'user_tasks')) {
         $attemptsStmt = $conn->prepare(
             "SELECT task_id, status FROM user_tasks 
              WHERE user_id = ? AND task_id IN ($placeholders)"
         );
-        $params = array_merge([$user['id']], $choiceTaskIds);
-        $attemptsStmt->bind_param(str_repeat('i', count($params)), ...$params);
-        $attemptsStmt->execute();
-        $attemptsResult = $attemptsStmt->get_result();
-        
-        while ($attemptRow = $attemptsResult->fetch_assoc()) {
-            $userAttemptsMap[(int)$attemptRow['task_id']] = $attemptRow;
+        if ($attemptsStmt) {
+            $params = array_merge([$user['id']], $choiceTaskIds);
+            $attemptsStmt->bind_param(str_repeat('i', count($params)), ...$params);
+            $attemptsStmt->execute();
+            $attemptsResult = $attemptsStmt->get_result();
+            
+            while ($attemptRow = $attemptsResult->fetch_assoc()) {
+                $userAttemptsMap[(int)$attemptRow['task_id']] = $attemptRow;
+            }
+            $attemptsStmt->close();
         }
-        $attemptsStmt->close();
     }
 }
 

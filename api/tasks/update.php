@@ -106,6 +106,33 @@ function ensureCodeUiScaffold(int $taskId, bool $overwrite = false): void {
     }
 }
 
+function normalizeFileSubmissionAllowedTypes($rawValue): string {
+    $raw = is_string($rawValue) ? $rawValue : '';
+    $parts = preg_split('/\s*,\s*/', strtolower(trim($raw))) ?: [];
+    $normalized = [];
+    foreach ($parts as $part) {
+        $ext = ltrim(trim($part), '.');
+        if ($ext === '') {
+            continue;
+        }
+        if (!preg_match('/^[a-z0-9]+$/', $ext)) {
+            continue;
+        }
+        $normalized[$ext] = true;
+    }
+
+    if (empty($normalized)) {
+        return 'zip,png,jpg,jpeg,gif,webp';
+    }
+
+    return implode(',', array_keys($normalized));
+}
+
+function isAllowedFileSubmissionSize(int $sizeBytes): bool {
+    $allowed = [51200, 102400, 256000, 1048576, 2097152, 5242880];
+    return in_array($sizeBytes, $allowed, true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 }
@@ -142,7 +169,9 @@ $problemTypeMap = [
     'code_random_complex' => 'code_completion',
     'single_choice' => 'multiple_choice',
     'multiple_choice' => 'multiple_choice',
-    'free_text' => 'essay'
+    'free_text' => 'essay',
+    'db_model' => 'essay',
+    'file_submission' => 'essay'
 ];
 
 $updates = [];
@@ -314,7 +343,7 @@ if (array_key_exists('solution_code', $input)) {
 // New fields for quiz-style tasks
 if (isset($input['task_type'])) {
     $taskType = $input['task_type'];
-    $allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'];
+    $allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
     if (!in_array($taskType, $allowedTaskTypes, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
     }
@@ -369,6 +398,41 @@ if ($effectiveTaskType === 'code_random_complex') {
 
 if ($effectiveTaskType === 'code_reading' && !$hasOverrides) {
     jsonResponse(['ok' => false, 'error' => 'variable_overrides required for code_reading'], 400);
+}
+
+if ($effectiveTaskType === 'file_submission') {
+    // File-submission tasks are always manually reviewed.
+    if (!in_array('manual_review_required = ?', $updates, true)) {
+        $updates[] = 'manual_review_required = ?';
+        $params[] = 1;
+        $types .= 'i';
+    }
+
+    $allowedTypesRaw = array_key_exists('file_submission_allowed_types', $input)
+        ? $input['file_submission_allowed_types']
+        : ($existingTask['file_submission_allowed_types'] ?? null);
+    $normalizedAllowedTypes = normalizeFileSubmissionAllowedTypes($allowedTypesRaw);
+
+    if (array_key_exists('file_submission_allowed_types', $input) || empty($existingTask['file_submission_allowed_types'])) {
+        $updates[] = 'file_submission_allowed_types = ?';
+        $params[] = $normalizedAllowedTypes;
+        $types .= 's';
+    }
+
+    $maxSize = array_key_exists('file_submission_max_size_bytes', $input)
+        ? (int)$input['file_submission_max_size_bytes']
+        : (int)($existingTask['file_submission_max_size_bytes'] ?? 102400);
+    if ($maxSize <= 0) {
+        $maxSize = 102400;
+    }
+    if (!isAllowedFileSubmissionSize($maxSize)) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid file_submission_max_size_bytes'], 400);
+    }
+    if (array_key_exists('file_submission_max_size_bytes', $input) || !isset($existingTask['file_submission_max_size_bytes'])) {
+        $updates[] = 'file_submission_max_size_bytes = ?';
+        $params[] = $maxSize;
+        $types .= 'i';
+    }
 }
 
 if (array_key_exists('task_text', $input)) {
@@ -430,6 +494,25 @@ if (array_key_exists('randomizer_code', $input)) {
     $updates[] = 'randomizer_code = ?';
     $params[] = $input['randomizer_code'] ?? null;
     $types .= 's';
+}
+
+if (array_key_exists('file_submission_allowed_types', $input) && $effectiveTaskType !== 'file_submission') {
+    $updates[] = 'file_submission_allowed_types = ?';
+    $params[] = normalizeFileSubmissionAllowedTypes($input['file_submission_allowed_types'] ?? null);
+    $types .= 's';
+}
+
+if (array_key_exists('file_submission_max_size_bytes', $input) && $effectiveTaskType !== 'file_submission') {
+    $maxSize = (int)$input['file_submission_max_size_bytes'];
+    if ($maxSize <= 0) {
+        $maxSize = 102400;
+    }
+    if (!isAllowedFileSubmissionSize($maxSize)) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid file_submission_max_size_bytes'], 400);
+    }
+    $updates[] = 'file_submission_max_size_bytes = ?';
+    $params[] = $maxSize;
+    $types .= 'i';
 }
 
 if (array_key_exists('task_difficulty', $input)) {

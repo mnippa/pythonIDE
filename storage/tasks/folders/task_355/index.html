@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goldspiel 6x6 Zufallsfeld</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card">
+    <h2>Goldspiel: 6x6 Zufallsfeld</h2>
+    <p class="hint">Rand ist komplett blockiert. Innen: 3 Hindernisse, 5 Muenzen, Start und Ziel.</p>
+
+    <button class="btn" data-run-python="true" data-run-name="neu">Neu erzeugen</button>
+
+    <pre class="board" data-element="board">Lade Spielfeld...</pre>
+    <div class="meta" data-element="meta">---</div>
+
+    <div class="legend">
+      <span><code>#</code> Wand/Hindernis</span>
+      <span><code>S</code> Start</span>
+      <span><code>E</code> Ende</span>
+      <span><code>M</code> Muenze</span>
+      <span><code>.</code> frei</span>
+    </div>
+  </div>
+</body>
+</html>

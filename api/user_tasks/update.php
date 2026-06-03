@@ -29,6 +29,29 @@ if (!$taskId) {
 
 $userId = (int)$user['id'];
 
+if (isset($_GET['test_user_id'])) {
+    $testUserId = (int)$_GET['test_user_id'];
+
+    if (($user['role'] ?? '') !== 'admin') {
+        jsonResponse(['ok' => false, 'error' => 'Unauthorized: Admin access required for test_user_id'], 403);
+    }
+
+    if ($testUserId <= 0) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid test_user_id'], 400);
+    }
+
+    $userCheckStmt = $conn->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+    $userCheckStmt->bind_param('i', $testUserId);
+    $userCheckStmt->execute();
+    $exists = $userCheckStmt->get_result()->fetch_assoc();
+
+    if (!$exists) {
+        jsonResponse(['ok' => false, 'error' => 'Test user not found'], 404);
+    }
+
+    $userId = $testUserId;
+}
+
 // Resolve assignment_id for this task so we can update assignment status
 $assignmentId = null;
 $assignmentStmt = $conn->prepare('SELECT assignment_id FROM tasks WHERE id = ?');
