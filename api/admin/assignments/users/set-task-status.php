@@ -1,7 +1,7 @@
 <?php
 /**
  * Admin: Set single user task status and keep assignment status in sync.
- * POST { assignment_id, user_id, task_id, status, attempts?, reset_checks? }
+ * POST { assignment_id, user_id, task_id, status, attempts?, reset_checks?, admin_feedback_comment? }
  */
 
 require_once __DIR__ . '/../../../../config/database.php';
@@ -78,6 +78,19 @@ try {
     $commentColumnCheck = $conn->query("SHOW COLUMNS FROM user_tasks LIKE 'submission_comment'");
     if ($commentColumnCheck && $commentColumnCheck->num_rows > 0) {
         $hasSubmissionComment = true;
+    }
+
+    $hasAdminFeedbackComment = false;
+    $adminFeedbackColumnCheck = $conn->query("SHOW COLUMNS FROM user_tasks LIKE 'admin_feedback_comment'");
+    if ($adminFeedbackColumnCheck && $adminFeedbackColumnCheck->num_rows > 0) {
+        $hasAdminFeedbackComment = true;
+    }
+
+    $hasAdminFeedbackInput = array_key_exists('admin_feedback_comment', $input);
+    $adminFeedbackComment = null;
+    if ($hasAdminFeedbackInput) {
+        $rawFeedback = trim((string)$input['admin_feedback_comment']);
+        $adminFeedbackComment = $rawFeedback !== '' ? $rawFeedback : null;
     }
 
     $attemptsAfter = $setAttempts !== null ? $setAttempts : (int)($utRow['attempts'] ?? 0);
@@ -232,6 +245,23 @@ try {
         $uaIns->execute();
     }
 
+    if ($hasAdminFeedbackComment && $hasAdminFeedbackInput) {
+        $feedbackUpd = $conn->prepare('UPDATE user_tasks SET admin_feedback_comment = ? WHERE user_id = ? AND task_id = ?');
+        $feedbackUpd->bind_param('sii', $adminFeedbackComment, $userId, $taskId);
+        if (!$feedbackUpd->execute()) {
+            jsonResponse(['ok' => false, 'error' => 'Failed to update admin feedback comment'], 500);
+        }
+    }
+
+    $adminFeedbackCommentCurrent = null;
+    if ($hasAdminFeedbackComment) {
+        $feedbackRead = $conn->prepare('SELECT admin_feedback_comment FROM user_tasks WHERE user_id = ? AND task_id = ? LIMIT 1');
+        $feedbackRead->bind_param('ii', $userId, $taskId);
+        $feedbackRead->execute();
+        $feedbackRow = $feedbackRead->get_result()->fetch_assoc();
+        $adminFeedbackCommentCurrent = $feedbackRow['admin_feedback_comment'] ?? null;
+    }
+
     jsonResponse([
         'ok' => true,
         'assignment_id' => $assignmentId,
@@ -239,6 +269,7 @@ try {
         'task_id' => $taskId,
         'status_requested' => $statusRequested,
         'status_effective' => $statusEffective,
+        'admin_feedback_comment' => $adminFeedbackCommentCurrent,
         'attempts_after' => $attemptsAfter,
         'completed_at' => $isFinal ? $now : null,
         'assignment_status' => $assignmentStatus,

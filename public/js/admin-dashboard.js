@@ -946,6 +946,8 @@ function resetTaskForm() {
   if ($('task-solution')) $('task-solution').value = '';
   if ($('task-max-attempts')) $('task-max-attempts').value = '1';
   if ($('task-max-iterations')) $('task-max-iterations').value = '3';
+  if ($('task-file-submission-types')) $('task-file-submission-types').value = 'zip,png';
+  if ($('task-file-submission-max-size')) $('task-file-submission-max-size').value = '102400';
   
   // NEW: Reset quiz fields
   if ($('new-task-type')) $('new-task-type').value = 'code';
@@ -956,8 +958,6 @@ function resetTaskForm() {
   if ($('task-keywords')) $('task-keywords').value = '';
   if ($('task-correct-answer')) $('task-correct-answer').value = '';
   if ($('task-var-overrides')) $('task-var-overrides').value = '';
-  if ($('task-file-allowed-types')) $('task-file-allowed-types').value = 'zip,png,jpg,jpeg,gif,webp';
-  if ($('task-file-max-size')) $('task-file-max-size').value = '102400';
   if (overridesBuilders.task) {
     overridesBuilders.task.iterations = [{ vars: [{ key: '', value: '' }] }];
     renderOverridesBuilder('task');
@@ -981,25 +981,10 @@ function resetTaskForm() {
   if (window.TaskTypeManager && taskForm) {
     TaskTypeManager.updateFieldVisibility(taskForm, 'code');
   }
-  enforceFileSubmissionManualReview('task');
 
   // Only set active tab if tabs exist in the form
   if (taskForm && taskForm.querySelectorAll('.task-tab').length > 0) {
     setActiveTaskTab(taskForm, 'base');
-  }
-}
-
-function enforceFileSubmissionManualReview(formPrefix) {
-  const taskTypeEl = formPrefix === 'edit-task' ? $('edit-task-type') : $('new-task-type');
-  const checkboxEl = formPrefix === 'edit-task' ? $('edit-task-manual-review-required') : $('task-manual-review-required');
-  if (!taskTypeEl || !checkboxEl) return;
-
-  const isFileSubmission = taskTypeEl.value === 'file_submission';
-  if (isFileSubmission) {
-    checkboxEl.checked = true;
-    checkboxEl.disabled = true;
-  } else {
-    checkboxEl.disabled = false;
   }
 }
 
@@ -1189,33 +1174,23 @@ async function handleTaskSubmit(e) {
     show_solution: $('task-show-solution').checked ? 1 : 0,
     show_solution_code: $('task-show-solution-code').checked ? 1 : 0,
     manual_review_required: $('task-manual-review-required')?.checked ? 1 : 0,
+    folderstructure: $('task-folderstructure').checked ? 1 : 0,
+    allowDownload: $('task-allowDownload').checked ? 1 : 0,
+    allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
     problem_type: $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     task_difficulty: ($('task-difficulty')?.value || 'medium'),
     image_url: $('task-image-url') ? ($('task-image-url').value.trim() || null) : null,
-    file_submission_allowed_types: $('task-file-allowed-types') ? ($('task-file-allowed-types').value.trim() || null) : null,
-    file_submission_max_size_bytes: $('task-file-max-size') ? parseInt($('task-file-max-size').value, 10) : null,
     code_template: $('task-template').value,
     randomizer_code: $('task-randomizer-code').value.trim() || null,
     hint1: $('task-hint1').value,
     hint2: $('task-hint2').value,
     hint3: $('task-hint3').value,
+    file_submission_allowed_types: $('task-file-submission-types') ? ($('task-file-submission-types').value.trim() || null) : null,
+    file_submission_max_size_bytes: $('task-file-submission-max-size') ? parseInt($('task-file-submission-max-size').value || '102400', 10) : null,
     test_cases: $('task-test-cases').value.trim() || null,
     solution_code: $('task-solution').value.trim() || null
   };
-
-  const newFolderstructure = $('task-folderstructure');
-  if (newFolderstructure && !newFolderstructure.disabled) {
-    payload.folderstructure = newFolderstructure.checked ? 1 : 0;
-  }
-  const newAllowDownload = $('task-allowDownload');
-  if (newAllowDownload && !newAllowDownload.disabled) {
-    payload.allowDownload = newAllowDownload.checked ? 1 : 0;
-  }
-  const newAllowCodeUiWebEdit = $('task-allowCodeUiWebEdit');
-  if (newAllowCodeUiWebEdit && !newAllowCodeUiWebEdit.disabled) {
-    payload.allowCodeUiWebEdit = newAllowCodeUiWebEdit.checked ? 1 : 0;
-  }
   
   // Get stoff from TinyMCE if available, else from textarea
   const stoffEditor = tinymce.get('task-stoff');
@@ -1304,8 +1279,6 @@ async function handleTaskSubmit(e) {
     payload.max_iterations = $('task-max-iterations').value
       ? parseInt($('task-max-iterations').value, 10)
       : 3;
-  } else if (taskType === 'file_submission') {
-    payload.manual_review_required = 1;
   }
 
   // If builder has data, prefer it over manual JSON (for code tasks)
@@ -1961,13 +1934,6 @@ async function openEditTaskModal(taskId) {
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
-  if ($('edit-task-file-allowed-types')) {
-    $('edit-task-file-allowed-types').value = task.file_submission_allowed_types || 'zip,png,jpg,jpeg,gif,webp';
-  }
-  if ($('edit-task-file-max-size')) {
-    const value = task.file_submission_max_size_bytes ? String(task.file_submission_max_size_bytes) : '102400';
-    $('edit-task-file-max-size').value = value;
-  }
   if ($('edit-task-difficulty')) {
     $('edit-task-difficulty').value = task.task_difficulty || 'medium';
   }
@@ -2002,6 +1968,12 @@ async function openEditTaskModal(taskId) {
   
   $('edit-task-test-cases').value = task.test_cases || '';
   $('edit-task-solution').value = task.solution_code || '';
+  if ($('edit-task-file-submission-types')) {
+    $('edit-task-file-submission-types').value = task.file_submission_allowed_types || 'zip,png';
+  }
+  if ($('edit-task-file-submission-max-size')) {
+    $('edit-task-file-submission-max-size').value = String(task.file_submission_max_size_bytes || 102400);
+  }
   
   if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
   if ($('edit-task-var-overrides')) {
@@ -2062,7 +2034,6 @@ async function openEditTaskModal(taskId) {
   if (window.TaskTypeManager && editForm) {
     window.TaskTypeManager.updateFieldVisibility(editForm, taskType);
   }
-  enforceFileSubmissionManualReview('edit-task');
   updateTestTypeVisibility(); // Update test type selector visibility for free_text
   
   // Only set active tab if tabs exist in the form
@@ -2106,34 +2077,24 @@ async function handleEditTaskSubmit(e) {
     max_attempts: $('edit-task-max-attempts').value ? parseInt($('edit-task-max-attempts').value, 10) : 1,
     show_solution: $('edit-task-show-solution').checked ? 1 : 0,
     show_solution_code: $('edit-task-show-solution-code').checked ? 1 : 0,
+    folderstructure: $('edit-task-folderstructure').checked ? 1 : 0,
+    allowDownload: $('edit-task-allowDownload').checked ? 1 : 0,
+    allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
     task_difficulty: ($('edit-task-difficulty')?.value || 'medium'),
     problem_type: taskType,  // Keep for backwards compatibility
     image_url: $('edit-task-image-url') ? ($('edit-task-image-url').value.trim() || null) : null,
-    file_submission_allowed_types: $('edit-task-file-allowed-types') ? ($('edit-task-file-allowed-types').value.trim() || null) : null,
-    file_submission_max_size_bytes: $('edit-task-file-max-size') ? parseInt($('edit-task-file-max-size').value, 10) : null,
     code_template: $('edit-task-template').value,
     randomizer_code: $('edit-task-randomizer-code').value.trim() || null,
     hint1: $('edit-task-hint1').value,
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
+    file_submission_allowed_types: $('edit-task-file-submission-types') ? ($('edit-task-file-submission-types').value.trim() || null) : null,
+    file_submission_max_size_bytes: $('edit-task-file-submission-max-size') ? parseInt($('edit-task-file-submission-max-size').value || '102400', 10) : null,
     manual_review_required: $('edit-task-manual-review-required')?.checked ? 1 : 0,
     test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
-
-  const editFolderstructure = $('edit-task-folderstructure');
-  if (editFolderstructure && !editFolderstructure.disabled) {
-    payload.folderstructure = editFolderstructure.checked ? 1 : 0;
-  }
-  const editAllowDownload = $('edit-task-allowDownload');
-  if (editAllowDownload && !editAllowDownload.disabled) {
-    payload.allowDownload = editAllowDownload.checked ? 1 : 0;
-  }
-  const editAllowCodeUiWebEdit = $('edit-task-allowCodeUiWebEdit');
-  if (editAllowCodeUiWebEdit && !editAllowCodeUiWebEdit.disabled) {
-    payload.allowCodeUiWebEdit = editAllowCodeUiWebEdit.checked ? 1 : 0;
-  }
   
   // Get stoff from TinyMCE if available, else from textarea
   const editStoffEditor = tinymce.get('edit-task-stoff');
@@ -2206,8 +2167,6 @@ async function handleEditTaskSubmit(e) {
     payload.max_iterations = $('edit-task-max-iterations')?.value
       ? parseInt($('edit-task-max-iterations').value, 10)
       : 3;
-  } else if (taskType === 'file_submission') {
-    payload.manual_review_required = 1;
   }
   
   // Handle options for Single/Multiple Choice
@@ -2847,15 +2806,14 @@ function setCodeOnlyOptionVisibility(inputId, isVisible) {
   }
 
   input.disabled = !isVisible;
-}
-
-function isCodeLikeTaskType(taskType) {
-  return ['code', 'code_ui', 'code_reading', 'code_random_complex'].includes(taskType);
+  if (!isVisible) {
+    input.checked = false;
+  }
 }
 
 function updateCodeOnlyOptionsVisibility() {
-  const isNewTaskCode = isCodeLikeTaskType($('new-task-type')?.value || 'code');
-  const isEditTaskCode = isCodeLikeTaskType($('edit-task-type')?.value || 'code');
+  const isNewTaskCode = ($('new-task-type')?.value || 'code') === 'code';
+  const isEditTaskCode = ($('edit-task-type')?.value || 'code') === 'code';
 
   setCodeOnlyOptionVisibility('task-folderstructure', isNewTaskCode);
   setCodeOnlyOptionVisibility('task-allowDownload', isNewTaskCode);
@@ -2923,8 +2881,6 @@ function updateRandomButtonVisibility() {
   // Show only for code_random_complex OR for code tasks with intelligent tests
   updateSolutionCodeVisibility();
   updateCodeOnlyOptionsVisibility();
-  enforceFileSubmissionManualReview('task');
-  enforceFileSubmissionManualReview('edit-task');
 }
 
 // ===================================================================

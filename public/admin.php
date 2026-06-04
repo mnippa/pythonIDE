@@ -713,8 +713,6 @@ if ($displayName === '') {
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code-Lesequest</option>
             <option value="code_random_complex">Code (versteckt)</option>
-            <option value="db_model">Datenbank-Modell</option>
-            <option value="file_submission">Dateiabgabe</option>
           </select>
         </div>
         <div style="overflow:auto;">
@@ -1231,6 +1229,20 @@ if ($displayName === '') {
             <input id="task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
           </div>
+
+          <div class="field" data-field="file-submission-config">
+            <label for="task-file-submission-types">Dateiabgabe: erlaubte Typen</label>
+            <input id="task-file-submission-types" type="text" value="zip,png" placeholder="zip,png" />
+            <label for="task-file-submission-max-size" style="margin-top:8px;">Dateiabgabe: Max. Dateigröße</label>
+            <select id="task-file-submission-max-size">
+              <option value="51200">50 KB</option>
+              <option value="102400" selected>100 KB (Standard)</option>
+              <option value="256000">250 KB</option>
+              <option value="1048576">1 MB</option>
+              <option value="2097152">2 MB</option>
+              <option value="5242880">5 MB</option>
+            </select>
+          </div>
           
           <div class="field checkbox-field">
             <label>
@@ -1274,22 +1286,6 @@ if ($displayName === '') {
             <input type="file" id="task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
             <div id="task-image-preview"></div>
             <input type="hidden" id="task-image-url" />
-          </div>
-
-          <div class="field" data-field="file-submission-config">
-            <label for="task-file-allowed-types">Dateitypen (CSV)</label>
-            <input id="task-file-allowed-types" value="zip,png,jpg,jpeg,gif,webp" placeholder="z.B. zip,png,jpg,jpeg" />
-            <div class="hint">Nur Dateiendungen, kommagetrennt. Beispiel: zip,png,jpg,jpeg.</div>
-
-            <label for="task-file-max-size" style="margin-top:8px; display:block;">Max Dateigroesse</label>
-            <select id="task-file-max-size">
-              <option value="51200">50 KB</option>
-              <option value="102400" selected>100 KB (Standard)</option>
-              <option value="256000">250 KB</option>
-              <option value="1048576">1 MB</option>
-              <option value="2097152">2 MB</option>
-              <option value="5242880">5 MB</option>
-            </select>
           </div>
           
           <!-- Hints -->
@@ -1525,6 +1521,20 @@ if ($displayName === '') {
             <input id="edit-task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
           </div>
+
+          <div class="field" data-field="file-submission-config">
+            <label for="edit-task-file-submission-types">Dateiabgabe: erlaubte Typen</label>
+            <input id="edit-task-file-submission-types" type="text" value="zip,png" placeholder="zip,png" />
+            <label for="edit-task-file-submission-max-size" style="margin-top:8px;">Dateiabgabe: Max. Dateigröße</label>
+            <select id="edit-task-file-submission-max-size">
+              <option value="51200">50 KB</option>
+              <option value="102400" selected>100 KB (Standard)</option>
+              <option value="256000">250 KB</option>
+              <option value="1048576">1 MB</option>
+              <option value="2097152">2 MB</option>
+              <option value="5242880">5 MB</option>
+            </select>
+          </div>
           
           <div class="field checkbox-field">
             <label>
@@ -1568,22 +1578,6 @@ if ($displayName === '') {
             <input type="file" id="edit-task-image-upload" accept="image/*" style="margin-bottom: 8px;" />
             <div id="edit-task-image-preview"></div>
             <input type="hidden" id="edit-task-image-url" />
-          </div>
-
-          <div class="field" data-field="file-submission-config">
-            <label for="edit-task-file-allowed-types">Dateitypen (CSV)</label>
-            <input id="edit-task-file-allowed-types" value="zip,png,jpg,jpeg,gif,webp" placeholder="z.B. zip,png,jpg,jpeg" />
-            <div class="hint">Nur Dateiendungen, kommagetrennt. Beispiel: zip,png,jpg,jpeg.</div>
-
-            <label for="edit-task-file-max-size" style="margin-top:8px; display:block;">Max Dateigroesse</label>
-            <select id="edit-task-file-max-size">
-              <option value="51200">50 KB</option>
-              <option value="102400" selected>100 KB (Standard)</option>
-              <option value="256000">250 KB</option>
-              <option value="1048576">1 MB</option>
-              <option value="2097152">2 MB</option>
-              <option value="5242880">5 MB</option>
-            </select>
           </div>
           
           <!-- Hints -->
@@ -1938,8 +1932,6 @@ if ($displayName === '') {
                 <option value="free_text">📄 Freitext</option>
                 <option value="code_reading">👀 Code-Lesequest</option>
                 <option value="code_random_complex">🎲 Code (versteckt)</option>
-                <option value="db_model">🗄️ Datenbank-Modell</option>
-                <option value="file_submission">📎 Dateiabgabe</option>
               </select>
             </div>
 
@@ -2053,9 +2045,9 @@ if ($displayName === '') {
   <script src="js/task-type-manager.js"></script>
   <script src="js/options-builder.js"></script>
   <script src="js/export-tasks.js"></script>
-  <script src="js/import-tasks.js?v=20260527b"></script>
+  <script src="js/import-tasks.js"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20260526a"></script>
+  <script src="js/admin-dashboard.js?v=20260506a"></script>
   <script src="js/admin-teams-users.js?v=20260423c"></script>
 </body>
 </html>

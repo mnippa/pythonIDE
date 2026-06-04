@@ -57,10 +57,13 @@ $iterationValuesSelect = $hasIterationValues ? ', iteration_values' : '';
 $hasSubmissionComment = $columnExists($conn, 'user_tasks', 'submission_comment');
 $submissionCommentSelect = $hasSubmissionComment ? ', submission_comment' : '';
 
+$hasAdminFeedbackComment = $columnExists($conn, 'user_tasks', 'admin_feedback_comment');
+$adminFeedbackCommentSelect = $hasAdminFeedbackComment ? ', admin_feedback_comment' : '';
+
 if ($taskId) {
     // Get single task progress
     $stmt = $conn->prepare(
-        'SELECT id, user_id, task_id, status, attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
+        'SELECT id, user_id, task_id, status, attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . $adminFeedbackCommentSelect . ', current_code, selected_options, text_answer, variable_values, hints_revealed, started_at, completed_at, updated_at
          FROM user_tasks 
          WHERE user_id = ? AND task_id = ?'
     );
@@ -86,6 +89,9 @@ if ($taskId) {
         if ($hasSubmissionComment) {
             $task['submission_comment'] = $task['submission_comment'] ?? null;
         }
+        if ($hasAdminFeedbackComment) {
+            $task['admin_feedback_comment'] = $task['admin_feedback_comment'] ?? null;
+        }
         $task['hints_revealed'] = $task['hints_revealed'] ? json_decode($task['hints_revealed'], true) : [];
         jsonResponse(['ok' => true, 'task' => $task]);
     } else {
@@ -94,7 +100,7 @@ if ($taskId) {
 } elseif ($assignmentId) {
     // Get all tasks progress for assignment
     $stmt = $conn->prepare(
-        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
+        'SELECT ut.id, ut.user_id, ut.task_id, ut.status, ut.attempts' . $runSelect . $iterationSelect . $iterationValuesSelect . $submissionCommentSelect . $adminFeedbackCommentSelect . ', ut.current_code, ut.selected_options, ut.text_answer, ut.variable_values, ut.hints_revealed, ut.started_at, ut.completed_at, ut.updated_at
          FROM user_tasks ut
          INNER JOIN tasks t ON t.id = ut.task_id
          WHERE ut.user_id = ? AND t.assignment_id = ?
@@ -121,6 +127,9 @@ if ($taskId) {
         }
         if ($hasSubmissionComment) {
             $row['submission_comment'] = $row['submission_comment'] ?? null;
+        }
+        if ($hasAdminFeedbackComment) {
+            $row['admin_feedback_comment'] = $row['admin_feedback_comment'] ?? null;
         }
         $row['hints_revealed'] = $row['hints_revealed'] ? json_decode($row['hints_revealed'], true) : [];
         $tasks[] = $row;

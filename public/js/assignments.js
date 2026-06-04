@@ -16,6 +16,7 @@ const assignmentState = {
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
   taskSubmissionComments: {}, // Optional submit comments per task: { taskId: string }
+  taskAdminFeedbackComments: {}, // Optional admin feedback comments per task: { taskId: string }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
   solutionVisible: {}, // Track solution visibility per task: { taskId: boolean }
@@ -274,6 +275,144 @@ function shouldShowTaskDownloadButton(task) {
   return !!task && String(task.task_type || '') === 'code';
 }
 
+function parseFileSubmissionAllowedTypes(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return ['zip', 'png'];
+  return text
+    .split(',')
+    .map((v) => v.trim().toLowerCase().replace(/^\./, ''))
+    .filter((v) => v.length > 0);
+}
+
+function formatFileSubmissionSizeLabel(bytes) {
+  const n = Number(bytes || 0);
+  if (!Number.isFinite(n) || n <= 0) return '100 KB';
+  if (n >= 1024 * 1024) return `${Math.round((n / (1024 * 1024)) * 10) / 10} MB`;
+  return `${Math.round(n / 1024)} KB`;
+}
+
+function getFileSubmissionMeta(taskId) {
+  return assignmentState.taskUserAnswers?.[taskId]?.variable_values?.file_submission || null;
+}
+
+function setFileSubmissionMeta(taskId, meta) {
+  if (!assignmentState.taskUserAnswers[taskId]) {
+    assignmentState.taskUserAnswers[taskId] = { selected_options: [], text_answer: '', variable_values: {} };
+  }
+  if (!assignmentState.taskUserAnswers[taskId].variable_values) {
+    assignmentState.taskUserAnswers[taskId].variable_values = {};
+  }
+  assignmentState.taskUserAnswers[taskId].variable_values.file_submission = meta || {};
+}
+
+function buildFileSubmissionDownloadUrl(taskId, disposition = 'attachment') {
+  const params = new URLSearchParams();
+  params.set('task_id', String(taskId));
+  if (window.TEST_USER_ID) {
+    params.set('test_user_id', String(window.TEST_USER_ID));
+  }
+  if (disposition === 'inline') {
+    params.set('disposition', 'inline');
+  }
+  return `${getApiBasePath()}/user_tasks/download_file_submission.php?${params.toString()}`;
+}
+
+async function uploadFileSubmission(task, file) {
+  const formData = new FormData();
+  formData.append('task_id', String(task.id));
+  formData.append('file', file);
+
+  const response = await fetch(
+    `${getApiBasePath()}/user_tasks/upload_file_submission.php${getTestUserRequestParam('?')}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    }
+  );
+
+  const payload = await readJsonResponse(response, 'Upload fehlgeschlagen');
+  if (!response.ok || (payload && payload.ok === false)) {
+    throw new Error(payload?.error || 'Upload fehlgeschlagen');
+  }
+  return payload;
+}
+
+function renderFileSubmissionTask(task, quizContainer) {
+  const allowedTypes = parseFileSubmissionAllowedTypes(task.file_submission_allowed_types);
+  const maxSizeBytes = Number(task.file_submission_max_size_bytes || 102400);
+  const maxSizeLabel = formatFileSubmissionSizeLabel(maxSizeBytes);
+  const submission = getFileSubmissionMeta(task.id);
+  const hasSubmission = !!(submission && submission.stored_name);
+
+  quizContainer.innerHTML = `
+    <div class="quiz-container file-submission-container">
+      <div class="quiz-question">
+        ${task.task_text ? `<div class="question-text">${escapeHtml(task.task_text)}</div>` : ''}
+        ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+      </div>
+      <div class="file-submission-box" style="padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
+          Erlaubte Dateitypen: <strong>${escapeHtml(allowedTypes.join(', '))}</strong><br />
+          Maximale Dateigröße: <strong>${escapeHtml(maxSizeLabel)}</strong>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="file-submission-input-${task.id}" type="file" accept="${escapeHtml(allowedTypes.map((t) => `.${t}`).join(','))}" />
+          <button id="file-submission-upload-btn-${task.id}" type="button" class="hspf-btn hspf-btn-primary">Datei hochladen</button>
+        </div>
+        <div id="file-submission-feedback-${task.id}" style="margin-top:8px;font-size:12px;"></div>
+        <div id="file-submission-current-${task.id}" style="margin-top:10px;">
+          ${hasSubmission ? `
+            <div><strong>Bereits hochgeladen:</strong></div>
+            <div>Datei: ${escapeHtml(submission.original_name || submission.stored_name)}</div>
+            <div>Größe: ${escapeHtml(formatFileSubmissionSizeLabel(Number(submission.size_bytes || 0)))}</div>
+            ${submission.uploaded_at ? `<div>Zeitpunkt: ${escapeHtml(String(submission.uploaded_at))}</div>` : ''}
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <a class="hspf-btn hspf-btn-sm" target="_blank" rel="noopener" href="${buildFileSubmissionDownloadUrl(task.id, 'attachment')}">⬇ Datei herunterladen</a>
+              <a class="hspf-btn hspf-btn-sm" target="_blank" rel="noopener" href="${buildFileSubmissionDownloadUrl(task.id, 'inline')}">👁 Datei ansehen</a>
+            </div>
+          ` : '<div style="color:var(--text-secondary);">Noch keine Datei hochgeladen.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const uploadBtn = document.getElementById(`file-submission-upload-btn-${task.id}`);
+  const input = document.getElementById(`file-submission-input-${task.id}`);
+  const feedback = document.getElementById(`file-submission-feedback-${task.id}`);
+  if (!uploadBtn || !input || !feedback) return;
+
+  uploadBtn.addEventListener('click', async () => {
+    const selected = input.files && input.files[0] ? input.files[0] : null;
+    if (!selected) {
+      feedback.textContent = 'Bitte zuerst eine Datei auswählen.';
+      feedback.style.color = '#b45309';
+      return;
+    }
+
+    uploadBtn.disabled = true;
+    feedback.textContent = 'Upload läuft...';
+    feedback.style.color = 'var(--text-secondary)';
+
+    try {
+      const payload = await uploadFileSubmission(task, selected);
+      const submissionMeta = payload?.submission || null;
+      if (submissionMeta) {
+        setFileSubmissionMeta(task.id, submissionMeta);
+      }
+      feedback.textContent = 'Datei erfolgreich hochgeladen.';
+      feedback.style.color = '#065f46';
+      renderFileSubmissionTask(task, quizContainer);
+      updateTaskStatusDisplay(task);
+    } catch (err) {
+      feedback.textContent = `Upload fehlgeschlagen: ${err?.message || err}`;
+      feedback.style.color = '#b91c1c';
+    } finally {
+      uploadBtn.disabled = false;
+    }
+  });
+}
+
 function updateSaveButtonTooltip() {
   const saveTaskBtn = $('save-task-btn');
   const saveModeIndicator = $('save-mode-indicator');
@@ -373,7 +512,16 @@ function syncAssignmentStatusInState(assignmentId, assignmentStatus) {
   row.user_status = assignmentStatus;
 }
 
-async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullReset = false, reloadEditor = false) {
+function getCurrentAdminFeedbackComment(taskId) {
+  const resolvedTaskId = Number(taskId || assignmentState.currentTaskId || assignmentState.currentTask?.id || 0);
+  const feedbackField = document.getElementById(`admin-feedback-comment-${resolvedTaskId}`);
+  if (feedbackField) {
+    return feedbackField.value || '';
+  }
+  return assignmentState.taskAdminFeedbackComments[resolvedTaskId] || '';
+}
+
+async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullReset = false, reloadEditor = false, adminFeedbackComment = undefined) {
   const task = assignmentState.currentTask;
   const assignmentId = Number(assignmentState.currentAssignmentId || window.ASSIGNMENT_ID || 0);
   const userId = Number(window.TEST_USER_ID || 0);
@@ -382,16 +530,21 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
     throw new Error('Assignment, User oder Task fehlt.');
   }
 
+  const payload = {
+    assignment_id: assignmentId,
+    user_id: userId,
+    task_id: taskId,
+    status: newStatus,
+    reset_checks: !!resetChecks,
+    full_reset: !!fullReset
+  };
+  if (adminFeedbackComment !== undefined) {
+    payload.admin_feedback_comment = adminFeedbackComment;
+  }
+
   const response = await requestJson('../api/admin/assignments/users/set-task-status.php', {
     method: 'POST',
-    body: JSON.stringify({
-      assignment_id: assignmentId,
-      user_id: userId,
-      task_id: taskId,
-      status: newStatus,
-      reset_checks: !!resetChecks,
-      full_reset: !!fullReset
-    })
+    body: JSON.stringify(payload)
   });
 
   assignmentState.taskStatuses[taskId] = response.status_effective || newStatus;
@@ -405,6 +558,10 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
 
   if (response.assignment_status) {
     syncAssignmentStatusInState(assignmentId, response.assignment_status);
+  }
+
+  if (response.admin_feedback_comment !== undefined) {
+    assignmentState.taskAdminFeedbackComments[taskId] = response.admin_feedback_comment || '';
   }
 
   if (reloadEditor) {
@@ -424,6 +581,7 @@ function refreshCurrentTaskToolbarForStatus(task) {
   const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
   const isFinalized = status === 'passed' || status === 'failed' || status === 'submitted';
   const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
+  const isFileSubmissionTask = String(task.task_type || '') === 'file_submission';
   const showDownload = shouldShowTaskDownloadButton(task);
 
   const checkBtn = $('check-btn');
@@ -485,6 +643,9 @@ function refreshCurrentTaskToolbarForStatus(task) {
       }
         if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
       if (attemptsCounter) attemptsCounter.style.display = 'inline-block';
+    } else {
+      if (checkBtn) checkBtn.style.display = 'none';
+      if (submitBtn) submitBtn.style.display = isFileSubmissionTask && !isAdminUserTestMode() ? 'inline-block' : 'none';
     }
   }
 
@@ -1271,6 +1432,16 @@ function showTaskDetails(task, activeTab = 'details') {
   const userTestStatusSelectId = `user-test-status-select-${task.id}`;
   const userTestResetChecksId = `user-test-reset-checks-${task.id}`;
   const userTestApplyBtnId = `user-test-status-apply-${task.id}`;
+  const userTestAdminFeedbackId = `admin-feedback-comment-${task.id}`;
+  const savedAdminFeedbackComment = assignmentState.taskAdminFeedbackComments[task.id] || '';
+
+  if (savedAdminFeedbackComment.trim() !== '') {
+    detailsHtml += `<div class="admin-feedback-section" style="margin-top:12px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#f8fafc;">
+      <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Kommentar vom Admin</div>
+      <div style="white-space:pre-wrap;line-height:1.4;">${escapeHtml(savedAdminFeedbackComment)}</div>
+    </div>`;
+  }
+
   if (isAdminUserTestMode()) {
     detailsHtml = `
       <details style="margin:0 0 12px 0; border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--panel);">
@@ -1287,6 +1458,8 @@ function showTaskDetails(task, activeTab = 'details') {
           <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary);">
             <input id="${userTestResetChecksId}" type="checkbox" checked /> Checks auf 0 setzen
           </label>
+          <label for="${userTestAdminFeedbackId}" style="font-size:12px; color:var(--text-secondary);">Admin-Kommentar (sichtbar für Studierende)</label>
+          <textarea id="${userTestAdminFeedbackId}" rows="3" placeholder="Optionales Feedback, z.B. was verbessert werden soll" style="width:100%;resize:vertical;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-primary);font:inherit;">${escapeHtml(savedAdminFeedbackComment)}</textarea>
           <button id="${userTestApplyBtnId}" type="button" class="hspf-btn hspf-btn-sm">Status übernehmen</button>
         </div>
       </details>
@@ -1405,6 +1578,13 @@ function showTaskDetails(task, activeTab = 'details') {
       assignmentState.taskSubmissionComments[task.id] = submissionCommentField.value || '';
     });
   }
+
+  const adminFeedbackField = contentEl.querySelector(`#${userTestAdminFeedbackId}`);
+  if (adminFeedbackField) {
+    adminFeedbackField.addEventListener('input', () => {
+      assignmentState.taskAdminFeedbackComments[task.id] = adminFeedbackField.value || '';
+    });
+  }
   
   // Load folder files if this is a folder structure task
   if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
@@ -1508,7 +1688,7 @@ function showTaskDetails(task, activeTab = 'details') {
       applyBtn.textContent = 'Speichere...';
 
       try {
-        await setAdminUserTestTaskStatus(newStatus, !!resetChecks?.checked);
+        await setAdminUserTestTaskStatus(newStatus, !!resetChecks?.checked, false, false, adminFeedbackField ? adminFeedbackField.value : getCurrentAdminFeedbackComment(task.id));
       } catch (err) {
         alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
       } finally {
@@ -2172,7 +2352,9 @@ function renderTaskNavigation() {
     'code': '<i class="fas fa-code"></i>',
     'code_ui': '<i class="fas fa-code"></i>',
     'code_reading': '<i class="fas fa-eye"></i>',
-    'code_random_complex': '<i class="fas fa-random"></i>'
+    'code_random_complex': '<i class="fas fa-random"></i>',
+    'file_submission': '<i class="fas fa-file-upload"></i>',
+    'db_model': '<i class="fas fa-database"></i>'
   };
 
   navEl.innerHTML = tasks.map((task, idx) => {
@@ -2260,6 +2442,9 @@ async function loadSingleAssignment(assignmentId) {
           if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
             assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
           }
+          if (ut.admin_feedback_comment !== undefined) {
+            assignmentState.taskAdminFeedbackComments[ut.task_id] = ut.admin_feedback_comment || '';
+          }
           if (ut.run_count !== undefined && ut.run_count !== null) {
             assignmentState.taskRuns[ut.task_id] = ut.run_count;
           }
@@ -2328,6 +2513,9 @@ async function loadAssignments() {
               };
               if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
                 assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
+              }
+              if (ut.admin_feedback_comment !== undefined) {
+                assignmentState.taskAdminFeedbackComments[ut.task_id] = ut.admin_feedback_comment || '';
               }
               if (ut.run_count !== undefined && ut.run_count !== null) {
                 assignmentState.taskRuns[ut.task_id] = ut.run_count;
@@ -3394,6 +3582,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
+  const isFileSubmissionTask = task.task_type === 'file_submission';
   const isCodeUiTask = task.task_type === 'code_ui';
 
   syncAssignmentPlotUiForTask(task);
@@ -3525,7 +3714,9 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
       quizContainer.style.display = 'block';
       
       // Render quiz UI
-      if (window.QuizRenderer) {
+      if (isFileSubmissionTask) {
+        renderFileSubmissionTask(task, quizContainer);
+      } else if (window.QuizRenderer) {
         window.QuizRenderer.render(task, quizContainer);
       } else {
         quizContainer.innerHTML = '<p>Quiz renderer not loaded</p>';
@@ -3539,7 +3730,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     
     if (runBtn) runBtn.style.display = 'none';
     if (checkBtn) checkBtn.style.display = 'none';
-    if (submitBtn) submitBtn.style.display = 'none';
+    if (submitBtn) submitBtn.style.display = isFileSubmissionTask ? 'inline-block' : 'none';
     
   } else {
     // Handle Code Tasks - show editor
@@ -4986,7 +5177,15 @@ async function submitTask() {
   }
 
   if (manualReviewTask) {
-    await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
+    if (task.task_type === 'file_submission') {
+      const uploadedMeta = getFileSubmissionMeta(task.id);
+      if (!uploadedMeta || !uploadedMeta.stored_name) {
+        alert('Bitte zuerst eine Datei hochladen, bevor du die Aufgabe abgibst.');
+        return;
+      }
+    } else {
+      await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
+    }
     const submissionComment = getCurrentSubmissionComment(task.id);
     if (window.TEST_MODE_NO_PERSIST !== true) {
       await requestJson(getUserTasksUpdateUrl(), {
@@ -7161,7 +7360,7 @@ function bindAssignmentsEvents() {
     if (!window.confirm(warning)) return;
     adminStatusGreyBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('unbearbeitet', true, true, true);
+      await setAdminUserTestTaskStatus('unbearbeitet', true, true, true, getCurrentAdminFeedbackComment(task?.id));
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7176,7 +7375,7 @@ function bindAssignmentsEvents() {
     const isIterative = task?.task_type === 'code_reading' || task?.task_type === 'code_random_complex';
     try {
       // For iterative tasks reload editor to show last iteration state
-      await setAdminUserTestTaskStatus('in-progress', true, false, isIterative);
+      await setAdminUserTestTaskStatus('in-progress', true, false, isIterative, getCurrentAdminFeedbackComment(task?.id));
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7188,7 +7387,7 @@ function bindAssignmentsEvents() {
     if (!isAdminUserTestMode()) return;
     adminStatusGreenBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('passed', true);
+      await setAdminUserTestTaskStatus('passed', true, false, false, getCurrentAdminFeedbackComment(assignmentState.currentTask?.id));
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7200,7 +7399,7 @@ function bindAssignmentsEvents() {
     if (!isAdminUserTestMode()) return;
     adminStatusRedBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('failed', true);
+      await setAdminUserTestTaskStatus('failed', true, false, false, getCurrentAdminFeedbackComment(assignmentState.currentTask?.id));
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {

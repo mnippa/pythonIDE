@@ -157,7 +157,9 @@ $selectColumns = implode(', ', [
     selectExpr($taskColumns, 'task_difficulty', "'medium'"),
     selectExpr($taskColumns, 'expected_output', 'NULL'),
     selectExpr($taskColumns, 'solution_code', 'NULL'),
-    selectExpr($taskColumns, 'randomizer_code', 'NULL')
+    selectExpr($taskColumns, 'randomizer_code', 'NULL'),
+    selectExpr($taskColumns, 'file_submission_allowed_types', 'NULL'),
+    selectExpr($taskColumns, 'file_submission_max_size_bytes', 'NULL')
 ]);
 
 // Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
@@ -270,7 +272,9 @@ foreach ($rawTasks as $taskId => $row) {
         'variable_overrides' => $row['variable_overrides'],
         'folderstructure' => (int)$row['folderstructure'],
         'allowDownload' => (int)$row['allowDownload'],
-        'allowCodeUiWebEdit' => (int)$row['allow_code_ui_web_edit']
+        'allowCodeUiWebEdit' => (int)$row['allow_code_ui_web_edit'],
+        'file_submission_allowed_types' => $row['file_submission_allowed_types'],
+        'file_submission_max_size_bytes' => $row['file_submission_max_size_bytes'] !== null ? (int)$row['file_submission_max_size_bytes'] : null
     ];
 
     if (isset($row['randomizer_code'])) {
