@@ -24,7 +24,6 @@ let projectsEditorInitPromise = null;
 let projectsEditorInitialized = false;
 let loadProjectPromise = null;
 let loadProjectIdInFlight = null;
-let loadProjectRunToken = 0;
 
 async function waitForEditorInstance() {
   for (let attempt = 0; attempt < 200; attempt++) {
@@ -512,6 +511,1757 @@ function markFileInTreeWithRetry(fileId, attempt = 0) {
 function isHtmlLikeProject(project) {
   const type = String(project?.project_type || '').toLowerCase();
   return type === 'html' || type === 'mixed';
+}
+
+function isDbSmallProject(project) {
+  const type = String(project?.project_type || '').toLowerCase();
+  return type === 'db_small';
+}
+
+function getProjectTypeLabel(projectType) {
+  const type = String(projectType || '').toLowerCase();
+  if (type === 'html') return 'HTML/Web';
+  if (type === 'mixed') return 'Gemischt';
+  if (type === 'db_small') return 'DB Small';
+  return 'Python';
+}
+
+const DB_SMALL_MODEL_FILE = 'db_model.json';
+const DB_SMALL_SQL_FILE = 'db_export.sql';
+const dbSmallDesignerState = {
+  projectId: 0,
+  modelFileId: 0,
+  sqlFileId: 0,
+  model: null,
+  selectedDatabaseIndex: 0,
+  selectedTableIndex: 0,
+  isDirty: false,
+  lastSavedAt: '',
+  rowDrafts: {},
+  sortStates: {},
+  selectedRowIndex: -1,
+  activeCell: {
+    rowIndex: -1,
+    colName: '',
+    pendingFocus: false
+  },
+  tableNameEdit: {
+    key: '',
+    active: false,
+    value: ''
+  }
+};
+
+function markDbSmallDirty() {
+  dbSmallDesignerState.isDirty = true;
+}
+
+function markDbSmallSaved() {
+  dbSmallDesignerState.isDirty = false;
+  dbSmallDesignerState.lastSavedAt = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function getDbSmallSaveStatusHtml() {
+  if (dbSmallDesignerState.isDirty) {
+    return '<span style="color:#b45309;font-weight:600;">Nicht gespeichert</span>';
+  }
+  if (dbSmallDesignerState.lastSavedAt) {
+    return `<span style="color:#065f46;font-weight:600;">Gespeichert (${escapeHtml(dbSmallDesignerState.lastSavedAt)})</span>`;
+  }
+  return '<span style="color:var(--text-secondary);">Noch nicht gespeichert</span>';
+}
+
+function createDefaultDbSmallModel() {
+  return {
+    version: 2,
+    activeDatabaseIndex: 0,
+    databases: [
+      {
+        name: 'Zwischenstand 1',
+        tables: [
+          {
+            name: 'student',
+            columns: [
+              { name: 'id', type: 'AUTO', pk: true, fk: false, default: '' },
+              { name: 'name', type: 'VARCHAR', length: '50', pk: false, fk: false, integerVariant: 'INT', floatVariant: 'FLOAT', default: '' }
+            ],
+            rows: [
+              { name: 'Ada' },
+              { name: 'Turing' }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function normalizeDbSmallDatabaseName(value, fallbackPrefix = 'db') {
+  const raw = String(value || '').trim();
+  if (raw) return raw;
+  return `${fallbackPrefix}_${Date.now()}`;
+}
+
+function normalizeDbSmallTable(table, tIndex) {
+  const tableName = String(table?.name || `table_${tIndex + 1}`).trim() || `table_${tIndex + 1}`;
+  const cols = Array.isArray(table?.columns) ? table.columns : [];
+  const normalizedCols = cols.map((col, cIndex) => {
+    const isPk = !!col?.pk;
+    const normalizedType = normalizeDbSmallType(col?.type || 'AUTO');
+    const normalizedIntegerVariant = normalizeDbSmallIntegerVariant(col?.type || 'INTEGER', col?.integerVariant);
+    const normalizedFloatVariant = normalizeDbSmallFloatVariant(col?.type || 'FLOAT', col?.floatVariant);
+    const normalizedLength = normalizedType === 'VARCHAR'
+      ? String(col?.length ?? '').trim() || '50'
+      : '';
+    return {
+      name: String(col?.name || `col_${cIndex + 1}`).trim() || `col_${cIndex + 1}`,
+      type: isPk ? 'AUTO' : normalizedType,
+      length: isPk ? '' : normalizedLength,
+      pk: isPk,
+      fk: !!col?.fk,
+      integerVariant: isPk ? 'INT' : normalizedIntegerVariant,
+      floatVariant: isPk ? 'FLOAT' : normalizedFloatVariant,
+      default: String(col?.default || '')
+    };
+  });
+
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  const normalizedRows = rows.map((row) => {
+    const normalizedRow = {};
+    normalizedCols.forEach((col) => {
+      normalizedRow[col.name] = row && Object.prototype.hasOwnProperty.call(row, col.name)
+        ? String(row[col.name] ?? '')
+        : '';
+    });
+    return normalizedRow;
+  });
+
+  return {
+    name: tableName,
+    columns: normalizedCols.length > 0 ? normalizedCols : [{ name: 'id', type: 'AUTO', pk: true, fk: false, default: '' }],
+    rows: normalizedRows
+  };
+}
+
+function normalizeDbSmallDatabase(database, dbIndex) {
+  const tables = Array.isArray(database?.tables) ? database.tables : [];
+  const normalizedTables = tables.map((table, tIndex) => normalizeDbSmallTable(table, tIndex));
+
+  return {
+    name: normalizeDbSmallDatabaseName(database?.name, `db_${dbIndex + 1}`),
+    tables: normalizedTables.length > 0 ? normalizedTables : createDefaultDbSmallModel().databases[0].tables.map((table, tIndex) => normalizeDbSmallTable(table, tIndex))
+  };
+}
+
+function getDbSmallDatabases(model) {
+  if (Array.isArray(model?.databases) && model.databases.length > 0) {
+    return model.databases;
+  }
+  return createDefaultDbSmallModel().databases;
+}
+
+function getSelectedDbSmallDatabaseIndex(model) {
+  const databases = getDbSmallDatabases(model);
+  if (databases.length === 0) return 0;
+  const idx = Number(dbSmallDesignerState.selectedDatabaseIndex || 0);
+  if (idx < 0) return 0;
+  if (idx >= databases.length) return databases.length - 1;
+  return idx;
+}
+
+function getSelectedDbSmallDatabase(model) {
+  const databases = getDbSmallDatabases(model);
+  const index = getSelectedDbSmallDatabaseIndex(model);
+  return {
+    database: databases[index] || databases[0] || null,
+    index
+  };
+}
+
+function normalizeDbSmallIdentifier(value, fallbackPrefix = 't') {
+  const raw = String(value || '').trim();
+  const cleaned = raw.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (!cleaned) return `${fallbackPrefix}_${Date.now()}`;
+  if (/^[0-9]/.test(cleaned)) return `${fallbackPrefix}_${cleaned}`;
+  return cleaned;
+}
+
+function normalizeDbSmallType(rawType) {
+  const upper = String(rawType || '').trim().toUpperCase();
+  if (upper === 'AUTO') return 'AUTO';
+  if (/^(INT|INTEGER|BIGINT|SMALLINT|TINYINT)$/.test(upper)) return 'INTEGER';
+  if (/^(DECIMAL|NUMERIC|FLOAT|DOUBLE|REAL)/.test(upper)) return 'FLOAT';
+  if (/^(TEXT|VARCHAR|CHAR|STRING)/.test(upper)) return 'VARCHAR';
+  if (upper === 'DATE' || upper === 'DATETIME') return upper;
+  if (upper === 'BOOLEAN' || upper === 'BOOL') return 'BOOLEAN';
+  return 'VARCHAR';
+}
+
+function normalizeDbSmallIntegerVariant(rawType, explicitVariant = '') {
+  const explicit = String(explicitVariant || '').trim().toUpperCase();
+  if (['TINYINT', 'SMALLINT', 'INT', 'BIGINT'].includes(explicit)) {
+    return explicit;
+  }
+
+  const upper = String(rawType || '').trim().toUpperCase();
+  if (upper === 'TINYINT') return 'TINYINT';
+  if (upper === 'SMALLINT') return 'SMALLINT';
+  if (upper === 'BIGINT') return 'BIGINT';
+  return 'INT';
+}
+
+function normalizeDbSmallFloatVariant(rawType, explicitVariant = '') {
+  const explicit = String(explicitVariant || '').trim().toUpperCase();
+  if (['DECIMAL', 'FLOAT', 'DOUBLE', 'NUMERIC'].includes(explicit)) {
+    return explicit;
+  }
+
+  const upper = String(rawType || '').trim().toUpperCase();
+  if (upper === 'DECIMAL') return 'DECIMAL';
+  if (upper === 'DOUBLE') return 'DOUBLE';
+  if (upper === 'NUMERIC') return 'NUMERIC';
+  return 'FLOAT';
+}
+
+function inferAutoDbSmallType(values, fallback = 'VARCHAR') {
+  const nonEmpty = (values || []).map((v) => String(v ?? '').trim()).filter((v) => v !== '');
+  if (nonEmpty.length === 0) return fallback;
+
+  const isInt = nonEmpty.every((v) => /^-?\d+$/.test(v));
+  if (isInt) return 'INTEGER';
+
+  const isReal = nonEmpty.every((v) => /^-?\d+(\.\d+)?$/.test(v));
+  if (isReal) return 'FLOAT';
+
+  const isBool = nonEmpty.every((v) => /^(true|false|0|1)$/i.test(v));
+  if (isBool) return 'BOOLEAN';
+
+  const isDate = nonEmpty.every((v) => /^\d{4}-\d{2}-\d{2}$/.test(v));
+  if (isDate) return 'DATE';
+
+  const isDatetime = nonEmpty.every((v) => /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(v));
+  if (isDatetime) return 'DATETIME';
+
+  return 'VARCHAR';
+}
+
+function normalizeDbSmallModel(model) {
+  const base = model && typeof model === 'object' ? model : {};
+  const databasesSource = Array.isArray(base.databases) && base.databases.length > 0
+    ? base.databases
+    : [{
+        name: String(base.databaseName || base.name || 'Zwischenstand 1'),
+        tables: Array.isArray(base.tables) ? base.tables : []
+      }];
+
+  const normalizedDatabases = databasesSource.map((database, dbIndex) => normalizeDbSmallDatabase(database, dbIndex));
+  const activeDatabaseIndex = normalizedDatabases.length > 0
+    ? Math.min(Math.max(Number(base.activeDatabaseIndex || 0), 0), normalizedDatabases.length - 1)
+    : 0;
+
+  return {
+    version: 2,
+    activeDatabaseIndex,
+    databases: normalizedDatabases.length > 0 ? normalizedDatabases : createDefaultDbSmallModel().databases
+  };
+}
+
+function escapeSqlIdentifier(name) {
+  return String(name || '').replace(/`/g, '``');
+}
+
+function toSqlLiteral(value, type) {
+  const raw = String(value ?? '').trim();
+  if (raw === '') return 'NULL';
+
+  const upperType = normalizeDbSmallType(type);
+  if (upperType === 'INTEGER' || upperType === 'FLOAT') {
+    if (/^-?\d+(\.\d+)?$/.test(raw)) return raw;
+  }
+  if (upperType === 'BOOLEAN') {
+    if (raw.toLowerCase() === 'true') return '1';
+    if (raw.toLowerCase() === 'false') return '0';
+  }
+
+  return `'${raw.replace(/'/g, "''")}'`;
+}
+
+function generateDbSmallSql(model) {
+  const normalized = normalizeDbSmallModel(model);
+  const statements = [];
+  normalized.databases.forEach((database, dbIndex) => {
+    const databaseName = normalizeDbSmallIdentifier(database.name, `db${dbIndex + 1}`);
+    statements.push(`-- Datenbank: ${database.name}`);
+    statements.push(`CREATE DATABASE IF NOT EXISTS \`${escapeSqlIdentifier(databaseName)}\`;`);
+    statements.push(`USE \`${escapeSqlIdentifier(databaseName)}\`;`);
+
+    (database.tables || []).forEach((table, tIndex) => {
+      const tableName = normalizeDbSmallIdentifier(table.name, `table${tIndex + 1}`);
+      const validColumns = (table.columns || []).map((col, cIndex) => ({
+        ...col,
+        name: normalizeDbSmallIdentifier(col.name, `col${cIndex + 1}`)
+      }));
+      if (validColumns.length === 0) return;
+
+      const resolvedTypesByColumn = {};
+      validColumns.forEach((col) => {
+        const tableValues = (table.rows || []).map((row) => row?.[col.name]);
+        resolvedTypesByColumn[col.name] = normalizeDbSmallType(col.type) === 'AUTO'
+          ? inferAutoDbSmallType(tableValues, col.pk ? 'INTEGER' : 'VARCHAR')
+          : normalizeDbSmallType(col.type);
+      });
+
+      const colDefs = validColumns.map((col) => {
+        const resolvedType = resolvedTypesByColumn[col.name] || 'VARCHAR';
+        let sqlType = resolvedType;
+        if (resolvedType === 'VARCHAR') {
+          sqlType = `VARCHAR(${Math.max(1, Number.parseInt(String(col.length || '50'), 10) || 50)})`;
+        } else if (resolvedType === 'INTEGER') {
+          sqlType = normalizeDbSmallIntegerVariant(col.type, col.integerVariant);
+        } else if (resolvedType === 'FLOAT') {
+          sqlType = normalizeDbSmallFloatVariant(col.type, col.floatVariant);
+        }
+
+        const parts = [`\`${escapeSqlIdentifier(col.name)}\``, sqlType];
+        if (col.fk) {
+          parts.push('/* FK */');
+        }
+        return parts.join(' ');
+      });
+
+      const pkCols = validColumns.filter((col) => col.pk).map((col) => `\`${escapeSqlIdentifier(col.name)}\``);
+      if (pkCols.length > 0) {
+        colDefs.push(`PRIMARY KEY (${pkCols.join(', ')})`);
+      }
+
+      statements.push(`CREATE TABLE \`${escapeSqlIdentifier(tableName)}\` (\n  ${colDefs.join(',\n  ')}\n);`);
+
+      const insertColumns = validColumns.filter((col) => !col.pk);
+
+      (table.rows || []).forEach((row) => {
+        if (insertColumns.length === 0) {
+          statements.push(`INSERT INTO \`${escapeSqlIdentifier(tableName)}\` DEFAULT VALUES;`);
+          return;
+        }
+
+        const hasAnyValue = insertColumns.some((col) => String(row?.[col.name] ?? '').trim() !== '');
+        if (!hasAnyValue) return;
+
+        const colNames = insertColumns.map((col) => `\`${escapeSqlIdentifier(col.name)}\``).join(', ');
+        const values = insertColumns.map((col) => toSqlLiteral(row?.[col.name], resolvedTypesByColumn[col.name] || col.type)).join(', ');
+        statements.push(`INSERT INTO \`${escapeSqlIdentifier(tableName)}\` (${colNames}) VALUES (${values});`);
+      });
+    });
+
+    statements.push('');
+  });
+
+  if (statements.length === 0) {
+    return '-- Keine Tabellen definiert.';
+  }
+  return `${statements.filter((line, index, arr) => !(line === '' && arr[index - 1] === '')).join('\n\n')}\n`;
+}
+
+function splitSqlByTopLevelComma(text) {
+  const source = String(text || '');
+  const parts = [];
+  let current = '';
+  let depth = 0;
+  let inQuote = false;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const prev = i > 0 ? source[i - 1] : '';
+
+    if (ch === "'" && prev !== '\\') {
+      inQuote = !inQuote;
+      current += ch;
+      continue;
+    }
+    if (!inQuote && ch === '(') {
+      depth += 1;
+      current += ch;
+      continue;
+    }
+    if (!inQuote && ch === ')') {
+      depth = Math.max(0, depth - 1);
+      current += ch;
+      continue;
+    }
+    if (!inQuote && depth === 0 && ch === ',') {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+  return parts;
+}
+
+function splitSqlStatements(sqlText) {
+  const source = String(sqlText || '');
+  const statements = [];
+  let current = '';
+  let inQuote = false;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const prev = i > 0 ? source[i - 1] : '';
+    if (ch === "'" && prev !== '\\') {
+      inQuote = !inQuote;
+      current += ch;
+      continue;
+    }
+    if (!inQuote && ch === ';') {
+      const trimmed = current.trim();
+      if (trimmed) statements.push(trimmed);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+
+  const tail = current.trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
+
+function parseSqlValueToken(rawToken) {
+  const token = String(rawToken || '').trim();
+  if (!token || /^NULL$/i.test(token)) return '';
+  if (token.startsWith("'") && token.endsWith("'")) {
+    return token.slice(1, -1).replace(/''/g, "'");
+  }
+  return token;
+}
+
+function parseDbSmallSqlImport(sqlText) {
+  const linesWithoutComments = String(sqlText || '')
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+  const statements = splitSqlStatements(linesWithoutComments);
+  const databases = [];
+  const dbIndexByName = new Map();
+  let currentDbName = 'Importierte DB';
+
+  const ensureDatabase = (name) => {
+    const normalizedName = String(name || '').trim() || 'Importierte DB';
+    if (dbIndexByName.has(normalizedName)) {
+      return databases[dbIndexByName.get(normalizedName)];
+    }
+    const database = { name: normalizedName, tables: [] };
+    dbIndexByName.set(normalizedName, databases.length);
+    databases.push(database);
+    return database;
+  };
+
+  const findOrCreateTable = (database, tableName) => {
+    const normalizedTableName = String(tableName || '').trim() || `table_${database.tables.length + 1}`;
+    let table = database.tables.find((item) => String(item.name || '').toLowerCase() === normalizedTableName.toLowerCase());
+    if (!table) {
+      table = {
+        name: normalizedTableName,
+        columns: [{ name: 'id', type: 'AUTO', length: '', pk: true, fk: false, default: '' }],
+        rows: []
+      };
+      database.tables.push(table);
+    }
+    return table;
+  };
+
+  statements.forEach((statement) => {
+    const stmt = statement.trim();
+    if (!stmt) return;
+
+    let match = stmt.match(/^CREATE\s+DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([^`\s]+)`?/i);
+    if (match) {
+      currentDbName = match[1];
+      ensureDatabase(currentDbName);
+      return;
+    }
+
+    match = stmt.match(/^USE\s+`?([^`\s]+)`?/i);
+    if (match) {
+      currentDbName = match[1];
+      ensureDatabase(currentDbName);
+      return;
+    }
+
+    match = stmt.match(/^CREATE\s+TABLE\s+`?([^`\s(]+)`?\s*\(([^\s\S]*)\)$/i);
+    if (!match) {
+      match = stmt.match(/^CREATE\s+TABLE\s+`?([^`\s(]+)`?\s*\(([\s\S]+)\)$/i);
+    }
+    if (match) {
+      const tableName = match[1];
+      const defsBlock = match[2];
+      const defs = splitSqlByTopLevelComma(defsBlock);
+      const columns = [];
+      const pkNames = new Set();
+
+      defs.forEach((definition) => {
+        const def = String(definition || '').trim();
+        if (!def) return;
+
+        const pkMatch = def.match(/^PRIMARY\s+KEY\s*\((.+)\)$/i);
+        if (pkMatch) {
+          const pkCols = splitSqlByTopLevelComma(pkMatch[1]).map((part) => part.replace(/`/g, '').trim()).filter(Boolean);
+          pkCols.forEach((name) => pkNames.add(name));
+          return;
+        }
+
+        const colMatch = def.match(/^`?([^`\s]+)`?\s+([A-Z]+)(?:\(([^)]+)\))?/i);
+        if (!colMatch) return;
+
+        const colName = colMatch[1];
+        const sqlType = String(colMatch[2] || '').toUpperCase();
+        const sqlTypeArgs = String(colMatch[3] || '').trim();
+        const col = {
+          name: colName,
+          type: 'VARCHAR',
+          length: '50',
+          pk: false,
+          fk: /\/\*\s*FK\s*\*\//i.test(def),
+          integerVariant: 'INT',
+          floatVariant: 'FLOAT',
+          default: ''
+        };
+
+        if (/^(TINYINT|SMALLINT|INT|INTEGER|BIGINT)$/.test(sqlType)) {
+          col.type = 'INTEGER';
+          col.length = '';
+          col.integerVariant = normalizeDbSmallIntegerVariant(sqlType);
+        } else if (/^(DECIMAL|FLOAT|DOUBLE|NUMERIC|REAL)$/.test(sqlType)) {
+          col.type = 'FLOAT';
+          col.length = '';
+          col.floatVariant = normalizeDbSmallFloatVariant(sqlType);
+        } else if (/^(VARCHAR|CHAR|TEXT|STRING)$/.test(sqlType)) {
+          col.type = 'VARCHAR';
+          const firstArg = Number.parseInt(String(sqlTypeArgs).split(',')[0], 10);
+          col.length = String(Number.isFinite(firstArg) && firstArg > 0 ? firstArg : 50);
+        } else if (sqlType === 'DATE' || sqlType === 'DATETIME') {
+          col.type = sqlType;
+          col.length = '';
+        } else if (sqlType === 'BOOLEAN' || sqlType === 'BOOL') {
+          col.type = 'BOOLEAN';
+          col.length = '';
+        }
+
+        columns.push(col);
+      });
+
+      columns.forEach((col) => {
+        if (!pkNames.has(col.name)) return;
+        col.pk = true;
+        col.type = 'AUTO';
+        col.length = '';
+        col.integerVariant = 'INT';
+        col.floatVariant = 'FLOAT';
+      });
+
+      const database = ensureDatabase(currentDbName);
+      const table = {
+        name: tableName,
+        columns: columns.length > 0 ? columns : [{ name: 'id', type: 'AUTO', length: '', pk: true, fk: false, default: '' }],
+        rows: []
+      };
+      const existingIndex = database.tables.findIndex((item) => String(item.name || '').toLowerCase() === String(tableName).toLowerCase());
+      if (existingIndex >= 0) {
+        database.tables[existingIndex] = table;
+      } else {
+        database.tables.push(table);
+      }
+      return;
+    }
+
+    match = stmt.match(/^INSERT\s+INTO\s+`?([^`\s(]+)`?\s*\(([^)]*)\)\s*VALUES\s*(.+)$/i);
+    if (match) {
+      const tableName = match[1];
+      const colNames = splitSqlByTopLevelComma(match[2]).map((name) => name.replace(/`/g, '').trim()).filter(Boolean);
+      const tuplesRaw = String(match[3] || '');
+      const tuples = [];
+      let current = '';
+      let depth = 0;
+      let inQuote = false;
+
+      for (let i = 0; i < tuplesRaw.length; i += 1) {
+        const ch = tuplesRaw[i];
+        const prev = i > 0 ? tuplesRaw[i - 1] : '';
+        if (ch === "'" && prev !== '\\') {
+          inQuote = !inQuote;
+          current += ch;
+          continue;
+        }
+        if (!inQuote && ch === '(') {
+          if (depth === 0) current = '';
+          depth += 1;
+          continue;
+        }
+        if (!inQuote && ch === ')') {
+          depth -= 1;
+          if (depth === 0) {
+            tuples.push(current);
+            current = '';
+            continue;
+          }
+        }
+        if (depth > 0) current += ch;
+      }
+
+      const database = ensureDatabase(currentDbName);
+      const table = findOrCreateTable(database, tableName);
+      tuples.forEach((tupleValues) => {
+        const values = splitSqlByTopLevelComma(tupleValues).map((value) => parseSqlValueToken(value));
+        const row = {};
+        colNames.forEach((colName, index) => {
+          const column = (table.columns || []).find((col) => col.name === colName);
+          if (!column || column.pk) return;
+          row[colName] = String(values[index] ?? '');
+        });
+        if (Object.keys(row).length > 0) {
+          table.rows.push(row);
+        }
+      });
+    }
+  });
+
+  return databases.map((db, index) => normalizeDbSmallDatabase(db, index));
+}
+
+function openDbSmallSqlImportModal() {
+  return new Promise((resolve) => {
+    let modal = document.getElementById('db-small-sql-import-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'db-small-sql-import-modal';
+      modal.style.position = 'fixed';
+      modal.style.inset = '0';
+      modal.style.background = 'rgba(0, 0, 0, 0.45)';
+      modal.style.display = 'none';
+      modal.style.alignItems = 'center';
+      modal.style.justifyContent = 'center';
+      modal.style.zIndex = '3000';
+      modal.innerHTML = `
+        <div style="width:min(920px, 92vw); max-height:86vh; background:var(--bg); color:var(--text-primary); border:1px solid var(--border); border-radius:10px; padding:12px; display:grid; gap:8px; box-shadow:0 12px 40px rgba(0,0,0,0.25);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <strong>SQL Import</strong>
+            <button type="button" data-role="sql-import-close" aria-label="Schließen" title="Schließen">✕</button>
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary);">Unterstützt vereinfachtes SQL: CREATE DATABASE, USE, CREATE TABLE, INSERT INTO.</div>
+          <textarea data-role="sql-import-input" placeholder="CREATE DATABASE ...; USE ...; CREATE TABLE ...; INSERT INTO ...;" style="width:100%; min-height:280px; max-height:58vh; font-family:Consolas, monospace; font-size:12px;"></textarea>
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" data-role="sql-import-cancel">Abbrechen</button>
+            <button type="button" data-role="sql-import-confirm">Importieren</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const input = modal.querySelector('[data-role="sql-import-input"]');
+    const closeBtn = modal.querySelector('[data-role="sql-import-close"]');
+    const cancelBtn = modal.querySelector('[data-role="sql-import-cancel"]');
+    const confirmBtn = modal.querySelector('[data-role="sql-import-confirm"]');
+
+    const cleanup = () => {
+      modal.style.display = 'none';
+      modal.onclick = null;
+      if (closeBtn) closeBtn.onclick = null;
+      if (cancelBtn) cancelBtn.onclick = null;
+      if (confirmBtn) confirmBtn.onclick = null;
+      document.removeEventListener('keydown', escHandler);
+    };
+
+    const closeWith = (value) => {
+      cleanup();
+      resolve(value);
+    };
+
+    const escHandler = (event) => {
+      if (event.key === 'Escape') {
+        closeWith(null);
+      }
+    };
+
+    modal.style.display = 'flex';
+    if (input instanceof HTMLTextAreaElement) {
+      input.value = '';
+      window.setTimeout(() => input.focus(), 0);
+    }
+
+    modal.onclick = (event) => {
+      if (event.target === modal) {
+        closeWith(null);
+      }
+    };
+    if (closeBtn) closeBtn.onclick = () => closeWith(null);
+    if (cancelBtn) cancelBtn.onclick = () => closeWith(null);
+    if (confirmBtn) {
+      confirmBtn.onclick = () => {
+        const value = input instanceof HTMLTextAreaElement ? String(input.value || '').trim() : '';
+        closeWith(value);
+      };
+    }
+    document.addEventListener('keydown', escHandler);
+  });
+}
+
+async function createProjectFileByName(projectId, fileName, content) {
+  const response = await fetch('../api/projects/files-v2.php?action=create', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      folder_id: null,
+      name: fileName,
+      content: String(content ?? '')
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error || `Datei ${fileName} konnte nicht erstellt werden`);
+  }
+  return Number(payload.file_id || 0);
+}
+
+async function updateProjectFileContent(projectId, fileId, content) {
+  const response = await fetch('../api/projects/files-v2.php?action=update', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      file_id: Number(fileId),
+      content: String(content ?? '')
+    })
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error || 'Datei-Update fehlgeschlagen');
+  }
+}
+
+async function ensureDbSmallModelLoaded(project) {
+  if (!project?.id) return;
+
+  if (dbSmallDesignerState.projectId === Number(project.id) && dbSmallDesignerState.model) {
+    return;
+  }
+
+  dbSmallDesignerState.projectId = Number(project.id);
+  dbSmallDesignerState.modelFileId = 0;
+  dbSmallDesignerState.sqlFileId = 0;
+  dbSmallDesignerState.selectedDatabaseIndex = 0;
+  dbSmallDesignerState.selectedTableIndex = 0;
+  dbSmallDesignerState.isDirty = false;
+  dbSmallDesignerState.lastSavedAt = '';
+  dbSmallDesignerState.rowDrafts = {};
+  dbSmallDesignerState.sortStates = {};
+
+  let modelFile = await readProjectFileByName(project.id, DB_SMALL_MODEL_FILE);
+  if (!modelFile?.fileId) {
+    const defaultModel = createDefaultDbSmallModel();
+    await createProjectFileByName(project.id, DB_SMALL_MODEL_FILE, JSON.stringify(defaultModel, null, 2));
+    modelFile = await readProjectFileByName(project.id, DB_SMALL_MODEL_FILE);
+  }
+
+  let model = createDefaultDbSmallModel();
+  try {
+    model = normalizeDbSmallModel(JSON.parse(String(modelFile?.content || '{}')));
+  } catch (_err) {
+    model = createDefaultDbSmallModel();
+  }
+
+  dbSmallDesignerState.modelFileId = Number(modelFile?.fileId || 0);
+  dbSmallDesignerState.model = model;
+  dbSmallDesignerState.selectedDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+
+  const sqlFile = await readProjectFileByName(project.id, DB_SMALL_SQL_FILE);
+  if (sqlFile?.fileId) {
+    dbSmallDesignerState.sqlFileId = Number(sqlFile.fileId);
+  } else {
+    dbSmallDesignerState.sqlFileId = await createProjectFileByName(project.id, DB_SMALL_SQL_FILE, '-- SQL Export wird im DB-Designer erzeugt.\n');
+  }
+}
+
+async function persistDbSmallModel() {
+  if (!dbSmallDesignerState.projectId || !dbSmallDesignerState.modelFileId || !dbSmallDesignerState.model) return;
+  const normalized = normalizeDbSmallModel(dbSmallDesignerState.model);
+  dbSmallDesignerState.model = normalized;
+  await updateProjectFileContent(dbSmallDesignerState.projectId, dbSmallDesignerState.modelFileId, JSON.stringify(normalized, null, 2));
+}
+
+async function persistDbSmallSql(sqlText) {
+  if (!dbSmallDesignerState.projectId) return;
+  if (!dbSmallDesignerState.sqlFileId) {
+    dbSmallDesignerState.sqlFileId = await createProjectFileByName(dbSmallDesignerState.projectId, DB_SMALL_SQL_FILE, sqlText);
+    return;
+  }
+  await updateProjectFileContent(dbSmallDesignerState.projectId, dbSmallDesignerState.sqlFileId, sqlText);
+}
+
+function setDbSmallWorkspaceMode(active) {
+  const treeHeader = document.querySelector('#file-tree-wrapper .tree-header');
+  const editorContainer = document.getElementById('editor-container');
+  const designerPanel = document.getElementById('db-small-designer-panel');
+  const runBtn = document.getElementById('run-btn');
+
+  if (treeHeader) {
+    treeHeader.textContent = active ? '🗂 Datenbank' : '📁 Dateien';
+  }
+
+  if (editorContainer) {
+    editorContainer.style.display = active ? 'none' : '';
+  }
+  if (designerPanel) {
+    designerPanel.style.display = active ? 'block' : 'none';
+    if (!active) designerPanel.innerHTML = '';
+  }
+
+  if (runBtn) {
+    runBtn.disabled = !!active;
+    runBtn.title = active ? 'Run ist für db_small aktuell deaktiviert' : '';
+    runBtn.style.opacity = active ? '0.55' : '1';
+    runBtn.style.cursor = active ? 'not-allowed' : 'pointer';
+  }
+}
+
+function getDbSmallNavigationContainer() {
+  const directTree = document.getElementById('project-file-tree');
+  if (directTree) {
+    return directTree;
+  }
+
+  const wrapper = document.getElementById('file-tree-wrapper');
+  if (!wrapper) {
+    return null;
+  }
+
+  let header = wrapper.querySelector('.tree-header');
+  if (!header) {
+    header = document.createElement('div');
+    header.className = 'tree-header';
+    wrapper.prepend(header);
+  }
+
+  let fallback = wrapper.querySelector('.db-small-tree-container');
+  if (!fallback) {
+    // Remove stale file-tree content and mount a dedicated db_small nav container.
+    Array.from(wrapper.children).forEach((child) => {
+      if (!child.classList.contains('tree-header')) {
+        child.remove();
+      }
+    });
+    fallback = document.createElement('div');
+    fallback.className = 'db-small-tree-container';
+    fallback.style.flex = '1';
+    fallback.style.overflowY = 'auto';
+    fallback.style.overflowX = 'hidden';
+    fallback.style.padding = '4px';
+    fallback.style.minHeight = '0';
+    wrapper.appendChild(fallback);
+  }
+
+  return fallback;
+}
+
+function getSelectedDbSmallTableIndex(model) {
+  const databases = getDbSmallDatabases(model);
+  const activeDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+  const tables = Array.isArray(databases[activeDatabaseIndex]?.tables) ? databases[activeDatabaseIndex].tables : [];
+  if (tables.length === 0) return 0;
+  const idx = Number(dbSmallDesignerState.selectedTableIndex || 0);
+  if (idx < 0) return 0;
+  if (idx >= tables.length) return tables.length - 1;
+  return idx;
+}
+
+function sortDbSmallRows(table, colName, direction) {
+  if (!table || !Array.isArray(table.rows) || !colName) return;
+  const dir = direction === 'desc' ? -1 : 1;
+
+  table.rows.sort((a, b) => {
+    const av = String(a?.[colName] ?? '').trim();
+    const bv = String(b?.[colName] ?? '').trim();
+
+    if (av === '' && bv === '') return 0;
+    if (av === '') return 1;
+    if (bv === '') return -1;
+
+    const aNum = Number(av);
+    const bNum = Number(bv);
+    const bothNumeric = Number.isFinite(aNum) && Number.isFinite(bNum) && /^-?\d+(\.\d+)?$/.test(av) && /^-?\d+(\.\d+)?$/.test(bv);
+
+    if (bothNumeric) {
+      if (aNum === bNum) return 0;
+      return (aNum < bNum ? -1 : 1) * dir;
+    }
+
+    return av.localeCompare(bv, 'de', { sensitivity: 'base', numeric: true }) * dir;
+  });
+}
+
+function assignDbSmallAutoPkValues(table) {
+  if (!table || !Array.isArray(table.rows) || !Array.isArray(table.columns)) return;
+  const pkColumns = table.columns.filter((col) => !!col?.pk);
+  if (pkColumns.length === 0) return;
+
+  pkColumns.forEach((pkCol) => {
+    const usedValues = new Set();
+    let nextValue = 1;
+
+    table.rows.forEach((row) => {
+      const raw = String(row?.[pkCol.name] ?? '').trim();
+      if (!/^\d+$/.test(raw)) return;
+      const numeric = Number.parseInt(raw, 10);
+      if (!Number.isFinite(numeric) || numeric < 1) return;
+      usedValues.add(numeric);
+      if (numeric >= nextValue) nextValue = numeric + 1;
+    });
+
+    table.rows.forEach((row) => {
+      const raw = String(row?.[pkCol.name] ?? '').trim();
+      if (/^\d+$/.test(raw) && Number.parseInt(raw, 10) > 0) return;
+      while (usedValues.has(nextValue)) {
+        nextValue += 1;
+      }
+      row[pkCol.name] = String(nextValue);
+      usedValues.add(nextValue);
+      nextValue += 1;
+    });
+  });
+}
+
+function renderDbSmallTableNavigation(model) {
+  const treeContainer = getDbSmallNavigationContainer();
+  if (!treeContainer) return;
+
+  const databases = getDbSmallDatabases(model);
+  const selectedDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+  const tables = Array.isArray(databases[selectedDatabaseIndex]?.tables) ? databases[selectedDatabaseIndex].tables : [];
+  const selectedIndex = getSelectedDbSmallTableIndex(model);
+  dbSmallDesignerState.selectedTableIndex = selectedIndex;
+  dbSmallDesignerState.selectedDatabaseIndex = selectedDatabaseIndex;
+
+  const treeHeader = document.querySelector('#file-tree-wrapper .tree-header');
+  if (treeHeader) {
+    const activeDbName = String(databases[selectedDatabaseIndex]?.name || `db_${selectedDatabaseIndex + 1}`);
+    treeHeader.textContent = `🗂 Datenbank: ${activeDbName}`;
+  }
+
+  treeContainer.innerHTML = `
+    <div style="padding:8px; display:grid; gap:6px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+        <strong>Tabellen</strong>
+        <button type="button" data-action="add-table" title="Tabelle anlegen" aria-label="Tabelle anlegen" style="width:26px;height:26px;border-radius:999px;border:0;background:#2563eb;color:#fff;font-weight:700;line-height:1;cursor:pointer;">+</button>
+      </div>
+      ${tables.map((table, index) => `
+        <div class="db-table-nav-item ${index === selectedIndex ? 'active' : ''}" data-action="select-table" data-table-index="${index}" style="display:flex; align-items:center; gap:6px; padding-top:4px; padding-bottom:4px; min-height:0;">
+          <span>🧱</span>
+          <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(table.name || `table_${index + 1}`)}</span>
+          <button type="button" data-action="remove-table-nav" data-table-index="${index}" title="Tabelle löschen" aria-label="Tabelle löschen" style="padding:0 4px; min-width:24px;">🗑</button>
+        </div>
+      `).join('')}
+      <div style="margin-top:6px; display:grid; gap:4px; border-top:1px solid var(--border); padding-top:6px;">
+        <label style="font-size:12px; color:var(--text-secondary);">Datenbank</label>
+        <select data-role="db-select" style="width:100%;">
+          ${databases.map((database, index) => `<option value="${index}" ${index === selectedDatabaseIndex ? 'selected' : ''}>${escapeHtml(database.name || `db_${index + 1}`)}</option>`).join('')}
+        </select>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" data-action="add-database" title="Datenbank anlegen" aria-label="Datenbank anlegen" style="width:26px;height:26px;border-radius:999px;border:0;background:#2563eb;color:#fff;font-weight:700;line-height:1;cursor:pointer;">+</button>
+          <button type="button" data-action="duplicate-database">Duplizieren</button>
+          <button type="button" data-action="rename-database">Umbenennen</button>
+          <button type="button" data-action="remove-database">Löschen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  treeContainer.onclick = (event) => {
+    const actionEl = event.target.closest('[data-action]');
+    if (!actionEl || !dbSmallDesignerState.model) return;
+    const action = String(actionEl.dataset.action || '');
+    const currentModel = dbSmallDesignerState.model;
+    const databases = Array.isArray(currentModel.databases) ? currentModel.databases : [];
+    const activeDatabaseIndex = getSelectedDbSmallDatabaseIndex(currentModel);
+    const activeDatabase = databases[activeDatabaseIndex];
+    if (!activeDatabase) return;
+
+    if (action === 'add-database') {
+      dbSmallDesignerState.model.databases.push({
+        name: `Zwischenstand ${dbSmallDesignerState.model.databases.length + 1}`,
+        tables: [{
+          name: 'table_1',
+          columns: [{ name: 'id', type: 'AUTO', pk: true, fk: false, default: '' }],
+          rows: []
+        }]
+      });
+      dbSmallDesignerState.selectedDatabaseIndex = dbSmallDesignerState.model.databases.length - 1;
+      dbSmallDesignerState.selectedTableIndex = 0;
+      dbSmallDesignerState.rowDrafts = {};
+      dbSmallDesignerState.sortStates = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'duplicate-database') {
+      const clone = JSON.parse(JSON.stringify(activeDatabase));
+      clone.name = `${activeDatabase.name || 'Zwischenstand'} Kopie`;
+      dbSmallDesignerState.model.databases.splice(activeDatabaseIndex + 1, 0, clone);
+      dbSmallDesignerState.selectedDatabaseIndex = activeDatabaseIndex + 1;
+      dbSmallDesignerState.selectedTableIndex = 0;
+      dbSmallDesignerState.rowDrafts = {};
+      dbSmallDesignerState.sortStates = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'rename-database') {
+      const nextName = window.prompt('Name der Datenbank', activeDatabase.name || 'Zwischenstand 1');
+      if (nextName === null) return;
+      activeDatabase.name = normalizeDbSmallDatabaseName(nextName, `db_${activeDatabaseIndex + 1}`);
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'remove-database') {
+      if (!window.confirm('Datenbank wirklich löschen?')) return;
+      dbSmallDesignerState.model.databases.splice(activeDatabaseIndex, 1);
+      if (dbSmallDesignerState.model.databases.length === 0) {
+        dbSmallDesignerState.model.databases.push(createDefaultDbSmallModel().databases[0]);
+      }
+      dbSmallDesignerState.selectedDatabaseIndex = Math.max(0, activeDatabaseIndex - 1);
+      dbSmallDesignerState.selectedTableIndex = 0;
+      dbSmallDesignerState.rowDrafts = {};
+      dbSmallDesignerState.sortStates = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'add-table') {
+      activeDatabase.tables.push({
+        name: `table_${activeDatabase.tables.length + 1}`,
+        columns: [{ name: 'id', type: 'AUTO', length: '', pk: true, fk: false, default: '' }],
+        rows: []
+      });
+      dbSmallDesignerState.selectedTableIndex = activeDatabase.tables.length - 1;
+      dbSmallDesignerState.rowDrafts = {};
+      dbSmallDesignerState.sortStates = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+    if (action === 'remove-table-nav') {
+      const tableIndex = Number(actionEl.dataset.tableIndex || -1);
+      if (tableIndex < 0) return;
+      const table = activeDatabase.tables?.[tableIndex];
+      const tableName = table?.name || `table_${tableIndex + 1}`;
+      if (!window.confirm(`Tabelle "${tableName}" wirklich löschen?`)) return;
+      activeDatabase.tables.splice(tableIndex, 1);
+      if (activeDatabase.tables.length === 0) {
+        activeDatabase.tables.push({
+          name: 'table_1',
+          columns: [{ name: 'id', type: 'AUTO', length: '', pk: true, fk: false, default: '' }],
+          rows: []
+        });
+      }
+      dbSmallDesignerState.selectedTableIndex = Math.max(0, Math.min(tableIndex, activeDatabase.tables.length - 1));
+      dbSmallDesignerState.rowDrafts = {};
+      dbSmallDesignerState.sortStates = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+    if (action === 'select-table') {
+      const idx = Number(actionEl.dataset.tableIndex || 0);
+      dbSmallDesignerState.selectedTableIndex = idx;
+      renderDbSmallDesignerView();
+    }
+  };
+
+  treeContainer.onchange = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const role = String(target.dataset.role || '');
+    if (role !== 'db-select') return;
+    const idx = Number(target.value || 0);
+    dbSmallDesignerState.selectedDatabaseIndex = Number.isFinite(idx) ? idx : 0;
+    dbSmallDesignerState.selectedTableIndex = 0;
+    dbSmallDesignerState.tableNameEdit.active = false;
+    renderDbSmallDesignerView();
+  };
+}
+
+function renderDbSmallSqlPanel(model) {
+  const guiContainer = document.getElementById('gui-container');
+  const outputEl = document.getElementById('output-container');
+  const plotEl = document.getElementById('plot-container');
+  const lintEl = document.getElementById('lint-container');
+  const helpEl = document.getElementById('help-container');
+  if (!outputEl || !helpEl) return;
+
+  const databases = getDbSmallDatabases(model);
+  const selectedDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+  const database = databases[selectedDatabaseIndex] || databases[0];
+  const tables = Array.isArray(database?.tables) ? database.tables : [];
+  const tableIndex = getSelectedDbSmallTableIndex(model);
+  const table = tables[tableIndex];
+  const allColumns = table?.columns || [];
+  const dataColumns = allColumns.filter((col) => !col.pk);
+  const sortState = dbSmallDesignerState.sortStates[`${selectedDatabaseIndex}:${tableIndex}`] || null;
+  const sqlPreview = generateDbSmallSql(model);
+  const selectedRowIndex = Array.isArray(table?.rows) && table.rows[dbSmallDesignerState.selectedRowIndex]
+    ? dbSmallDesignerState.selectedRowIndex
+    : -1;
+  dbSmallDesignerState.selectedRowIndex = selectedRowIndex;
+  const activeCell = dbSmallDesignerState.activeCell || { rowIndex: -1, colName: '', pendingFocus: false };
+  if (activeCell.rowIndex < 0 || !table?.rows?.[activeCell.rowIndex]) {
+    dbSmallDesignerState.activeCell = { rowIndex: -1, colName: '', pendingFocus: false };
+  }
+  const selectedRowDraftKey = `${selectedDatabaseIndex}:${tableIndex}:${selectedRowIndex}`;
+  const selectedRowDraft = selectedRowIndex >= 0 ? (dbSmallDesignerState.rowDrafts[selectedRowDraftKey] || {}) : null;
+  const selectedRow = selectedRowIndex >= 0 ? table?.rows?.[selectedRowIndex] : null;
+  const selectedRowDirty = !!(selectedRow && selectedRowDraft && dataColumns.some((col) => {
+    if (!Object.prototype.hasOwnProperty.call(selectedRowDraft, col.name)) return false;
+    return String(selectedRowDraft[col.name] ?? '') !== String(selectedRow?.[col.name] ?? '');
+  }));
+
+  if (table) {
+    assignDbSmallAutoPkValues(table);
+  }
+
+  if (guiContainer) {
+    guiContainer.classList.remove('active');
+    guiContainer.innerHTML = '';
+  }
+  setProjectsRightPanelMode(false);
+
+  const outputTab = document.querySelector('.output-plot-tab[data-tab="output"]');
+  const plotTab = document.querySelector('.output-plot-tab[data-tab="plot"]');
+  outputTab?.classList.add('active');
+  plotTab?.classList.remove('active');
+  outputEl.classList.add('active');
+  plotEl?.classList.remove('active');
+  if (plotEl) plotEl.innerHTML = '';
+
+  const rowsHtml = (table?.rows || []).map((row, rowIndex) => {
+    const rowDraftKey = `${selectedDatabaseIndex}:${tableIndex}:${rowIndex}`;
+    const rowDraft = dbSmallDesignerState.rowDrafts[rowDraftKey] || {};
+    const rowBackground = rowIndex === selectedRowIndex ? '#fff7cc' : 'var(--surface)';
+
+    return `
+      <tr data-role="data-row" data-row-index="${rowIndex}" style="background:${rowBackground}; cursor:pointer;">
+        ${allColumns.map((col) => {
+          if (col.pk) {
+            const pkValue = String(row?.[col.name] ?? (rowIndex + 1));
+            return `<td style="padding:0;border:1px solid var(--border);background:${rowIndex === selectedRowIndex ? '#fff7cc' : '#fafafa'};"><input value="${escapeHtml(pkValue)}" readonly tabindex="-1" style="width:100%;border:0;margin:0;padding:3px 6px;border-radius:0;box-sizing:border-box;background:transparent;color:var(--text-secondary);" /></td>`;
+          }
+          const draftValue = Object.prototype.hasOwnProperty.call(rowDraft, col.name)
+            ? rowDraft[col.name]
+            : String(row?.[col.name] ?? '');
+          const isActiveCell = dbSmallDesignerState.activeCell?.rowIndex === rowIndex && dbSmallDesignerState.activeCell?.colName === col.name;
+          const cellBackground = isActiveCell ? '#dbeafe' : rowBackground;
+          const inputStyle = isActiveCell
+            ? 'width:100%;border:1px inset #93c5fd;margin:0;padding:2px 5px;border-radius:2px;box-sizing:border-box;background:#dbeafe;box-shadow:inset 0 0 0 1px #bfdbfe;'
+            : 'width:100%;border:0;margin:0;padding:3px 6px;border-radius:0;box-sizing:border-box;background:transparent;';
+          return `<td data-role="data-cell" data-row-index="${rowIndex}" data-col-name="${escapeHtml(col.name)}" style="padding:0;border:1px solid var(--border);background:${cellBackground};"><input data-role="row-value" data-row-index="${rowIndex}" data-col-name="${escapeHtml(col.name)}" value="${escapeHtml(String(draftValue ?? ''))}" style="${inputStyle}" /></td>`;
+        }).join('')}
+      </tr>
+    `;
+  }).join('');
+
+  outputEl.style.whiteSpace = 'normal';
+  outputEl.style.fontFamily = 'inherit';
+  outputEl.innerHTML = table
+    ? `
+      <div style="display:grid;gap:8px;">
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;">
+          <strong style="color:#7c3aed;">Datenanzeige</strong>
+          <button type="button" data-action="add-row" title="Neue Zeile anlegen" aria-label="Neue Zeile anlegen" style="width:28px;height:28px;border-radius:999px;border:0;background:#2563eb;color:#fff;font-weight:700;line-height:1;cursor:pointer;">+</button>
+          <button type="button" data-action="save-selected-row" title="Markierte Zeile speichern" aria-label="Markierte Zeile speichern" ${selectedRowDirty ? '' : 'disabled'} style="width:28px;height:28px;border-radius:999px;border:0;background:#16a34a;color:#fff;font-weight:700;line-height:1;cursor:${selectedRowDirty ? 'pointer' : 'not-allowed'};opacity:${selectedRowDirty ? '1' : '0.45'};">✓</button>
+          <button type="button" data-action="cancel-selected-row" title="Änderungen der markierten Zeile verwerfen" aria-label="Änderungen der markierten Zeile verwerfen" ${selectedRowDirty ? '' : 'disabled'} style="width:28px;height:28px;border-radius:999px;border:0;background:#d97706;color:#fff;font-weight:700;line-height:1;cursor:${selectedRowDirty ? 'pointer' : 'not-allowed'};opacity:${selectedRowDirty ? '1' : '0.45'};">↶</button>
+          <button type="button" data-action="remove-selected-row" title="Markierte Zeile löschen" aria-label="Markierte Zeile löschen" ${selectedRowIndex >= 0 ? '' : 'disabled'} style="width:28px;height:28px;border-radius:999px;border:0;background:#dc2626;color:#fff;font-weight:700;line-height:1;cursor:${selectedRowIndex >= 0 ? 'pointer' : 'not-allowed'};opacity:${selectedRowIndex >= 0 ? '1' : '0.45'};">🗑</button>
+        </div>
+        <div style="overflow:auto; border:1px solid var(--border); border-radius:8px; padding:8px;">
+          <table style="width:100%; border-collapse:collapse; border-spacing:0; font-size:12px; table-layout:auto;">
+            <thead><tr>${allColumns.map((col) => {
+              const keyColor = col.pk ? '#1d4ed8' : (col.fk ? '#15803d' : 'inherit');
+              if (col.pk) {
+                return `<th style="padding:0;border:1px solid var(--border);background:#eef5ff;text-align:left;"><div style="padding:3px 6px;color:${keyColor};font-weight:600;">${escapeHtml(col.name)}</div></th>`;
+              }
+              const arrow = sortState && sortState.colName === col.name ? (sortState.direction === 'asc' ? ' ▲' : ' ▼') : '';
+              return `<th style="padding:0;border:1px solid var(--border);background:#eef5ff;"><button type="button" data-action="sort-rows" data-col-name="${escapeHtml(col.name)}" title="Nach ${escapeHtml(col.name)} sortieren" style="width:100%;border:0;background:transparent;text-align:left;padding:3px 6px;cursor:pointer;color:${keyColor};font-weight:${col.pk || col.fk ? '600' : '400'};">${escapeHtml(col.name)}${arrow}</button></th>`;
+            }).join('')}</tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          ${dataColumns.length === 0
+            ? '<div style="margin-top:6px;font-size:12px;color:var(--text-secondary);">Nur AUTO-PK vorhanden. Jeder neue Datensatz erzeugt automatisch einen PK-Wert.</div>'
+            : ''}
+        </div>
+      </div>
+    `
+    : '<p style="color:var(--text-secondary);">Keine Datenanzeige verfügbar.</p>';
+
+  if (dbSmallDesignerState.activeCell?.pendingFocus) {
+    const { rowIndex, colName } = dbSmallDesignerState.activeCell;
+    window.requestAnimationFrame(() => {
+      const targetInput = Array.from(outputEl.querySelectorAll(`[data-role="row-value"][data-row-index="${rowIndex}"]`))
+        .find((input) => String(input.getAttribute('data-col-name') || '') === colName);
+      if (targetInput instanceof HTMLInputElement) {
+        targetInput.focus();
+        targetInput.select();
+      }
+      dbSmallDesignerState.activeCell.pendingFocus = false;
+    });
+  }
+
+  outputEl.onclick = (event) => {
+    const actionEl = event.target.closest('[data-action]');
+    if (!dbSmallDesignerState.model) return;
+
+    const cellEl = event.target.closest('[data-role="data-cell"]');
+    if (cellEl) {
+      const rowIndex = Number(cellEl.getAttribute('data-row-index') || -1);
+      const colName = String(cellEl.getAttribute('data-col-name') || '');
+      if (rowIndex >= 0 && colName) {
+        const cellChanged = dbSmallDesignerState.activeCell.rowIndex !== rowIndex || dbSmallDesignerState.activeCell.colName !== colName;
+        const rowChanged = rowIndex !== dbSmallDesignerState.selectedRowIndex;
+        dbSmallDesignerState.selectedRowIndex = rowIndex;
+        dbSmallDesignerState.activeCell = { rowIndex, colName, pendingFocus: cellChanged || rowChanged };
+        if (cellChanged || rowChanged) {
+          renderDbSmallDesignerView();
+          return;
+        }
+      }
+    }
+
+    const rowEl = event.target.closest('[data-role="data-row"]');
+    if (rowEl) {
+      const rowIndex = Number(rowEl.getAttribute('data-row-index') || -1);
+      if (rowIndex >= 0 && rowIndex !== dbSmallDesignerState.selectedRowIndex) {
+        dbSmallDesignerState.selectedRowIndex = rowIndex;
+        dbSmallDesignerState.activeCell = { rowIndex: -1, colName: '', pendingFocus: false };
+        renderDbSmallDesignerView();
+        return;
+      }
+    }
+
+    if (!actionEl) return;
+
+    const action = String(actionEl.dataset.action || '');
+    const activeDatabase = dbSmallDesignerState.model.databases?.[dbSmallDesignerState.selectedDatabaseIndex];
+    const activeTable = activeDatabase?.tables?.[dbSmallDesignerState.selectedTableIndex];
+    if (!activeTable) return;
+
+    if (action === 'add-row') {
+      const row = {};
+      (activeTable.columns || []).filter((col) => !col.pk).forEach((col) => {
+        row[col.name] = '';
+      });
+      activeTable.rows.push(row);
+      assignDbSmallAutoPkValues(activeTable);
+      dbSmallDesignerState.selectedRowIndex = activeTable.rows.length - 1;
+      const firstEditableCol = (activeTable.columns || []).find((col) => !col.pk);
+      dbSmallDesignerState.activeCell = firstEditableCol
+        ? { rowIndex: activeTable.rows.length - 1, colName: firstEditableCol.name, pendingFocus: true }
+        : { rowIndex: -1, colName: '', pendingFocus: false };
+      dbSmallDesignerState.rowDrafts = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'save-selected-row') {
+      const rowIndex = dbSmallDesignerState.selectedRowIndex;
+      if (rowIndex < 0) return;
+      const row = activeTable.rows?.[rowIndex];
+      if (!row) return;
+      const rowDraftKey = `${dbSmallDesignerState.selectedDatabaseIndex}:${dbSmallDesignerState.selectedTableIndex}:${rowIndex}`;
+      const rowDraft = dbSmallDesignerState.rowDrafts[rowDraftKey] || {};
+      Object.keys(rowDraft).forEach((colName) => {
+        row[colName] = String(rowDraft[colName] ?? '');
+      });
+      delete dbSmallDesignerState.rowDrafts[rowDraftKey];
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'cancel-selected-row') {
+      const rowIndex = dbSmallDesignerState.selectedRowIndex;
+      if (rowIndex < 0) return;
+      const rowDraftKey = `${dbSmallDesignerState.selectedDatabaseIndex}:${dbSmallDesignerState.selectedTableIndex}:${rowIndex}`;
+      delete dbSmallDesignerState.rowDrafts[rowDraftKey];
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'remove-selected-row') {
+      const rowIndex = dbSmallDesignerState.selectedRowIndex;
+      if (rowIndex < 0) return;
+      if (!window.confirm('Zeile wirklich löschen?')) return;
+      activeTable.rows.splice(rowIndex, 1);
+      dbSmallDesignerState.selectedRowIndex = activeTable.rows[rowIndex] ? rowIndex : Math.max(-1, activeTable.rows.length - 1);
+      dbSmallDesignerState.activeCell = { rowIndex: -1, colName: '', pendingFocus: false };
+      dbSmallDesignerState.rowDrafts = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'sort-rows') {
+      const colName = String(actionEl.dataset.colName || '');
+      if (!colName) return;
+      const stateKey = `${dbSmallDesignerState.selectedDatabaseIndex}:${dbSmallDesignerState.selectedTableIndex}`;
+      const prev = dbSmallDesignerState.sortStates[stateKey];
+      const nextDirection = prev && prev.colName === colName && prev.direction === 'asc' ? 'desc' : 'asc';
+      sortDbSmallRows(activeTable, colName, nextDirection);
+      dbSmallDesignerState.sortStates[stateKey] = { colName, direction: nextDirection };
+      dbSmallDesignerState.rowDrafts = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+    }
+  };
+
+  outputEl.oninput = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !dbSmallDesignerState.model) return;
+    const role = String(target.dataset.role || '');
+    if (role !== 'row-value') return;
+
+    const rowIndex = Number(target.dataset.rowIndex || -1);
+    const colName = String(target.dataset.colName || '');
+    if (rowIndex < 0 || !colName) return;
+    dbSmallDesignerState.selectedRowIndex = rowIndex;
+    dbSmallDesignerState.activeCell = { rowIndex, colName, pendingFocus: false };
+
+    const rowDraftKey = `${dbSmallDesignerState.selectedDatabaseIndex}:${dbSmallDesignerState.selectedTableIndex}:${rowIndex}`;
+    if (!dbSmallDesignerState.rowDrafts[rowDraftKey]) {
+      dbSmallDesignerState.rowDrafts[rowDraftKey] = {};
+    }
+    dbSmallDesignerState.rowDrafts[rowDraftKey][colName] = target.value;
+
+    const row = dbSmallDesignerState.model.databases?.[dbSmallDesignerState.selectedDatabaseIndex]?.tables?.[dbSmallDesignerState.selectedTableIndex]?.rows?.[rowIndex];
+    const hasChanges = Object.keys(dbSmallDesignerState.rowDrafts[rowDraftKey]).some((key) => {
+      return String(dbSmallDesignerState.rowDrafts[rowDraftKey][key] ?? '') !== String(row?.[key] ?? '');
+    });
+
+    const rowSaveBtn = outputEl.querySelector(`button[data-action="save-row"][data-row-index="${rowIndex}"]`);
+    const rowCancelBtn = outputEl.querySelector(`button[data-action="cancel-row"][data-row-index="${rowIndex}"]`);
+    if (rowSaveBtn) rowSaveBtn.disabled = !hasChanges;
+    if (rowCancelBtn) rowCancelBtn.disabled = !hasChanges;
+  };
+
+  outputEl.onfocusin = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const role = String(target.dataset.role || '');
+    if (role !== 'row-value') return;
+    const rowIndex = Number(target.dataset.rowIndex || -1);
+    const colName = String(target.dataset.colName || '');
+    if (rowIndex < 0 || !colName) return;
+    dbSmallDesignerState.selectedRowIndex = rowIndex;
+    dbSmallDesignerState.activeCell = { rowIndex, colName, pendingFocus: false };
+    const cellEl = target.closest('[data-role="data-cell"]');
+    if (cellEl instanceof HTMLElement) {
+      cellEl.style.background = '#dbeafe';
+    }
+    target.style.background = '#dbeafe';
+    target.style.border = '1px inset #93c5fd';
+    target.style.boxShadow = 'inset 0 0 0 1px #bfdbfe';
+  };
+
+  if (lintEl) {
+    lintEl.innerHTML = `<span style="color:var(--text-secondary);">DB Designer aktiv</span>`;
+  }
+
+  helpEl.innerHTML = `
+    <div style="display:grid; gap:8px; width:100%;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <strong>Debug / Lint / Doku: SQL Output</strong>
+        <button type="button" data-action="save-model">Speichern (Create/Update/Delete)</button>
+        <button type="button" data-action="discard-model">Ungespeicherte Änderungen verwerfen</button>
+        <button type="button" data-action="export-sql">SQL exportieren</button>
+      </div>
+      <div style="font-size:12px;">Status: ${getDbSmallSaveStatusHtml()}</div>
+      <textarea readonly style="width:100%; min-height:180px; font-family:Consolas, monospace; font-size:12px;">${escapeHtml(sqlPreview)}</textarea>
+    </div>
+  `;
+
+  helpEl.onclick = async (event) => {
+    const actionEl = event.target.closest('[data-action]');
+    if (!actionEl) return;
+    const action = String(actionEl.dataset.action || '');
+
+    if (action === 'save-model') {
+      try {
+        await persistDbSmallModel();
+        await persistDbSmallSql(generateDbSmallSql(dbSmallDesignerState.model));
+        markDbSmallSaved();
+        renderDbSmallDesignerView();
+        alert('DB-Modell gespeichert.');
+      } catch (err) {
+        alert('Speichern fehlgeschlagen: ' + (err?.message || err));
+      }
+      return;
+    }
+    if (action === 'discard-model') {
+      if (!dbSmallDesignerState.isDirty) return;
+      dbSmallDesignerState.projectId = 0;
+      dbSmallDesignerState.model = null;
+      ensureDbSmallModelLoaded(currentProject)
+        .then(() => {
+          markDbSmallSaved();
+          renderDbSmallDesignerView();
+        })
+        .catch((err) => {
+          alert('Verwerfen fehlgeschlagen: ' + (err?.message || err));
+        });
+      return;
+    }
+    if (action === 'export-sql') {
+      try {
+        const sql = generateDbSmallSql(dbSmallDesignerState.model);
+        await persistDbSmallSql(sql);
+        triggerFileDownload(new Blob([sql], { type: 'application/sql' }), `${normalizeDbSmallIdentifier(currentProject?.name || 'db_model')}.sql`);
+      } catch (err) {
+        alert('SQL-Export fehlgeschlagen: ' + (err?.message || err));
+      }
+    }
+  };
+}
+
+function renderDbSmallDesignerCenter(model) {
+  const designerPanel = document.getElementById('db-small-designer-panel');
+  if (!designerPanel) return;
+
+  const databases = getDbSmallDatabases(model);
+  const selectedDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+  const database = databases[selectedDatabaseIndex] || databases[0];
+  const tables = Array.isArray(database?.tables) ? database.tables : [];
+  const tableIndex = getSelectedDbSmallTableIndex(model);
+  dbSmallDesignerState.selectedDatabaseIndex = selectedDatabaseIndex;
+  dbSmallDesignerState.selectedTableIndex = tableIndex;
+  const table = tables[tableIndex];
+
+  if (!table) {
+    designerPanel.innerHTML = '<p style="color:var(--text-secondary);">Keine Tabelle in dieser Datenbank vorhanden.</p>';
+    return;
+  }
+
+  const allColumns = table.columns || [];
+  const tableKey = `${selectedDatabaseIndex}:${tableIndex}`;
+  if (dbSmallDesignerState.tableNameEdit.key !== tableKey) {
+    dbSmallDesignerState.tableNameEdit = {
+      key: tableKey,
+      active: false,
+      value: String(table.name || '')
+    };
+  }
+  const tableNameEdit = dbSmallDesignerState.tableNameEdit;
+
+  const columnsHtml = (table.columns || []).map((col, colIndex) => {
+    const normalizedType = normalizeDbSmallType(col.type);
+    let sizeControlHtml = '<span style="color:var(--text-secondary);">-</span>';
+    const keyColor = col.pk ? '#1d4ed8' : (col.fk ? '#15803d' : 'inherit');
+
+    if (!col.pk && normalizedType === 'VARCHAR') {
+      sizeControlHtml = `<input data-role="col-length" data-col-index="${colIndex}" value="${escapeHtml(String(col.length || '50'))}" placeholder="50" title="VARCHAR-Länge" style="width:78px;border:1px solid var(--border);margin:0;padding:4px 6px;border-radius:8px;box-sizing:border-box;background:var(--surface);" />`;
+    } else if (!col.pk && normalizedType === 'INTEGER') {
+      sizeControlHtml = `<select data-role="col-int-variant" data-col-index="${colIndex}" title="MySQL INTEGER-Typ" style="width:96px;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);">${['TINYINT', 'SMALLINT', 'INT', 'BIGINT'].map((variant) => `<option value="${variant}" ${normalizeDbSmallIntegerVariant(col.type, col.integerVariant) === variant ? 'selected' : ''}>${variant}</option>`).join('')}</select>`;
+    } else if (!col.pk && normalizedType === 'FLOAT') {
+      sizeControlHtml = `<select data-role="col-float-variant" data-col-index="${colIndex}" title="MySQL FLOAT-Typ" style="width:96px;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);">${['DECIMAL', 'FLOAT', 'DOUBLE', 'NUMERIC'].map((variant) => `<option value="${variant}" ${normalizeDbSmallFloatVariant(col.type, col.floatVariant) === variant ? 'selected' : ''}>${variant}</option>`).join('')}</select>`;
+    }
+
+    return `
+    <tr style="background:var(--surface);">
+      <td style="width:26px;min-width:26px;padding:2px 1px 2px 0;border-bottom:1px solid var(--border);text-align:center;"><input type="checkbox" data-role="col-pk" data-col-index="${colIndex}" ${col.pk ? 'checked' : ''} style="margin:0;" /></td>
+      <td style="width:26px;min-width:26px;padding:2px 1px;border-bottom:1px solid var(--border);text-align:center;"><input type="checkbox" data-role="col-fk" data-col-index="${colIndex}" ${col.fk ? 'checked' : ''} style="margin:0;" /></td>
+      <td style="padding:2px 6px;border-bottom:1px solid var(--border);"><input data-role="col-name" data-col-index="${colIndex}" data-old-name="${escapeHtml(col.name)}" value="${escapeHtml(col.name)}" style="width:100%;border:1px solid var(--border);margin:0;padding:4px 6px;border-radius:8px;box-sizing:border-box;background:var(--surface);min-width:120px;color:${keyColor};font-weight:${col.pk || col.fk ? '600' : '400'};" /></td>
+      <td style="width:122px;min-width:122px;padding:2px 6px;border-bottom:1px solid var(--border);">
+        <select data-role="col-type" data-col-index="${colIndex}" ${col.pk ? 'disabled' : ''} style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
+          ${['AUTO', 'INTEGER', 'FLOAT', 'VARCHAR', 'DATE', 'DATETIME', 'BOOLEAN'].map((type) => `<option value="${type}" ${normalizedType === type ? 'selected' : ''}>${type}</option>`).join('')}
+        </select>
+      </td>
+      <td style="width:102px;min-width:102px;padding:2px 6px;border-bottom:1px solid var(--border);">${sizeControlHtml}</td>
+      <td style="width:30px;min-width:30px;padding:2px 0 2px 6px;border-bottom:1px solid var(--border);text-align:center;"><button type="button" data-action="remove-column" data-col-index="${colIndex}" title="Spalte löschen" aria-label="Spalte löschen">🗑</button></td>
+    </tr>
+  `;
+  }).join('');
+
+  designerPanel.innerHTML = `
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+      <strong>Tabellenentwurf</strong>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+      <span style="font-size:13px; color:#1d4ed8; font-weight:700; min-width:90px;">${escapeHtml(table.name)}</span>
+      ${tableNameEdit.active
+        ? `<input data-role="table-name-edit" value="${escapeHtml(tableNameEdit.value || table.name)}" style="flex:1;" />
+           <button type="button" data-action="save-table-name" title="Speichern">💾</button>
+           <button type="button" data-action="cancel-table-name" title="Abbrechen">✕</button>`
+        : `<button type="button" data-action="edit-table-name" title="Tabellenname bearbeiten">✏️</button>`}
+    </div>
+
+    <div style="overflow:auto; border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--surface);">
+      <table style="width:100%; border-collapse:separate; border-spacing:0 8px; font-size:12px; table-layout:fixed; background:var(--surface);">
+        <thead><tr><th style="width:26px;min-width:26px;padding:1px 1px 1px 0;text-align:center;background:#eef5ff;">PK</th><th style="width:26px;min-width:26px;padding:1px 1px;text-align:center;background:#eef5ff;">FK</th><th style="padding:2px 6px;text-align:left;background:#eef5ff;">Feld</th><th style="width:122px;min-width:122px;padding:2px 6px;text-align:left;background:#eef5ff;">Datentyp</th><th style="width:102px;min-width:102px;padding:2px 6px;text-align:left;background:#eef5ff;">Größe</th><th style="width:30px;min-width:30px;padding:2px 0 2px 6px;background:#eef5ff;"></th></tr></thead>
+        <tbody>${columnsHtml}</tbody>
+      </table>
+      <div style="margin-top:6px;"><button type="button" data-action="add-column" title="Feld anlegen" aria-label="Feld anlegen" style="width:26px;height:26px;border-radius:999px;border:0;background:#2563eb;color:#fff;font-weight:700;line-height:1;cursor:pointer;">+</button></div>
+    </div>
+
+    <div style="margin-top:12px; display:flex; justify-content:flex-start;">
+      <button type="button" data-action="import-sql">SQL importieren</button>
+    </div>
+  `;
+
+  designerPanel.onclick = async (event) => {
+    const actionEl = event.target.closest('[data-action]');
+    if (!actionEl || !dbSmallDesignerState.model) return;
+    const action = String(actionEl.dataset.action || '');
+    const activeDatabase = dbSmallDesignerState.model.databases?.[dbSmallDesignerState.selectedDatabaseIndex];
+    if (!activeDatabase) return;
+    const activeTable = activeDatabase.tables?.[dbSmallDesignerState.selectedTableIndex];
+    if (!activeTable) return;
+
+    if (action === 'add-column') {
+      const nextCol = `col_${(activeTable.columns || []).length + 1}`;
+      activeTable.columns.push({ name: nextCol, type: 'VARCHAR', length: '50', pk: false, fk: false, integerVariant: 'INT', floatVariant: 'FLOAT', default: '' });
+      (activeTable.rows || []).forEach((row) => {
+        if (!Object.prototype.hasOwnProperty.call(row, nextCol)) row[nextCol] = '';
+      });
+      dbSmallDesignerState.rowDrafts = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'edit-table-name') {
+      dbSmallDesignerState.tableNameEdit.active = true;
+      dbSmallDesignerState.tableNameEdit.value = String(activeTable.name || '');
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'cancel-table-name') {
+      dbSmallDesignerState.tableNameEdit.active = false;
+      dbSmallDesignerState.tableNameEdit.value = String(activeTable.name || '');
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'save-table-name') {
+      const input = designerPanel.querySelector('[data-role="table-name-edit"]');
+      const nextName = String(input?.value || '').trim() || String(activeTable.name || '');
+      activeTable.name = nextName;
+      dbSmallDesignerState.tableNameEdit.active = false;
+      dbSmallDesignerState.tableNameEdit.value = nextName;
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'remove-column') {
+      const colIndex = Number(actionEl.dataset.colIndex || -1);
+      if (colIndex < 0) return;
+      if (!window.confirm('Spalte wirklich löschen?')) return;
+      const removed = activeTable.columns.splice(colIndex, 1)[0];
+      if (activeTable.columns.length === 0) {
+        activeTable.columns.push({ name: 'id', type: 'AUTO', length: '', pk: true, fk: false, default: '' });
+      }
+      if (removed?.name) {
+        (activeTable.rows || []).forEach((row) => delete row[removed.name]);
+      }
+      dbSmallDesignerState.rowDrafts = {};
+      markDbSmallDirty();
+      renderDbSmallDesignerView();
+      return;
+    }
+
+    if (action === 'import-sql') {
+      const sqlText = await openDbSmallSqlImportModal();
+      if (!sqlText) {
+        return;
+      }
+
+      try {
+        const importedDatabases = parseDbSmallSqlImport(sqlText);
+        if (!Array.isArray(importedDatabases) || importedDatabases.length === 0) {
+          alert('Kein importierbares SQL erkannt.');
+          return;
+        }
+
+        const activeDbIndex = dbSmallDesignerState.selectedDatabaseIndex;
+        dbSmallDesignerState.model.databases[activeDbIndex] = importedDatabases[0];
+        if (importedDatabases.length > 1) {
+          dbSmallDesignerState.model.databases.splice(activeDbIndex + 1, 0, ...importedDatabases.slice(1));
+        }
+
+        dbSmallDesignerState.selectedTableIndex = 0;
+        dbSmallDesignerState.rowDrafts = {};
+        dbSmallDesignerState.sortStates = {};
+        markDbSmallDirty();
+        renderDbSmallDesignerView();
+        alert(importedDatabases.length > 1
+          ? `${importedDatabases.length} Datenbanken aus SQL importiert.`
+          : 'SQL in aktive Datenbank importiert.');
+      } catch (err) {
+        alert('SQL-Import fehlgeschlagen: ' + (err?.message || err));
+      }
+    }
+  };
+
+  designerPanel.onchange = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) return;
+    if (!dbSmallDesignerState.model) return;
+
+    const activeDatabase = dbSmallDesignerState.model.databases?.[dbSmallDesignerState.selectedDatabaseIndex];
+    const activeTable = activeDatabase?.tables?.[dbSmallDesignerState.selectedTableIndex];
+    if (!activeTable) return;
+    const role = String(target.dataset.role || '');
+
+    if (role === 'table-name-edit' && target instanceof HTMLInputElement) {
+      dbSmallDesignerState.tableNameEdit.value = target.value;
+      return;
+    }
+
+    if (role === 'col-name' || role === 'col-type' || role === 'col-pk' || role === 'col-fk' || role === 'col-length' || role === 'col-int-variant' || role === 'col-float-variant') {
+      const colIndex = Number(target.dataset.colIndex || -1);
+      const column = activeTable.columns?.[colIndex];
+      if (!column) return;
+
+      if (role === 'col-name') {
+        const oldName = String(target.dataset.oldName || column.name || '');
+        const newName = String(target.value || '').trim() || oldName;
+        column.name = newName;
+        target.dataset.oldName = newName;
+        (activeTable.rows || []).forEach((row) => {
+          if (oldName !== newName && Object.prototype.hasOwnProperty.call(row, oldName)) {
+            row[newName] = row[oldName];
+            delete row[oldName];
+          }
+          if (!Object.prototype.hasOwnProperty.call(row, newName)) {
+            row[newName] = '';
+          }
+        });
+        dbSmallDesignerState.rowDrafts = {};
+        markDbSmallDirty();
+        renderDbSmallDesignerView();
+        return;
+      }
+
+      if (role === 'col-type' && target instanceof HTMLSelectElement) {
+        if (column.pk) {
+          column.type = 'AUTO';
+          column.length = '';
+          column.integerVariant = 'INT';
+          column.floatVariant = 'FLOAT';
+          renderDbSmallDesignerView();
+          return;
+        }
+        column.type = normalizeDbSmallType(target.value);
+        if (column.type === 'VARCHAR') {
+          column.length = String(column.length || '').trim() || '50';
+          column.integerVariant = 'INT';
+          column.floatVariant = 'FLOAT';
+        } else if (column.type === 'INTEGER') {
+          column.length = '';
+          column.integerVariant = normalizeDbSmallIntegerVariant(column.type, column.integerVariant);
+          column.floatVariant = 'FLOAT';
+        } else if (column.type === 'FLOAT') {
+          column.length = '';
+          column.integerVariant = 'INT';
+          column.floatVariant = normalizeDbSmallFloatVariant(column.type, column.floatVariant);
+        } else {
+          column.length = '';
+          column.integerVariant = 'INT';
+          column.floatVariant = 'FLOAT';
+        }
+        markDbSmallDirty();
+        renderDbSmallDesignerView();
+        return;
+      }
+      if (role === 'col-length' && target instanceof HTMLInputElement) {
+        const raw = String(target.value || '').trim();
+        if (!column.pk && normalizeDbSmallType(column.type) === 'VARCHAR') {
+          column.length = raw.replace(/[^0-9]/g, '').slice(0, 5);
+        } else {
+          column.length = '';
+        }
+        markDbSmallDirty();
+        return;
+      }
+      if (role === 'col-int-variant' && target instanceof HTMLSelectElement) {
+        if (!column.pk && normalizeDbSmallType(column.type) === 'INTEGER') {
+          column.integerVariant = normalizeDbSmallIntegerVariant(column.type, target.value);
+          markDbSmallDirty();
+        }
+        return;
+      }
+      if (role === 'col-float-variant' && target instanceof HTMLSelectElement) {
+        if (!column.pk && normalizeDbSmallType(column.type) === 'FLOAT') {
+          column.floatVariant = normalizeDbSmallFloatVariant(column.type, target.value);
+          markDbSmallDirty();
+        }
+        return;
+      }
+      if (role === 'col-pk' && target instanceof HTMLInputElement) {
+        column.pk = target.checked;
+        if (column.pk) {
+          column.type = 'AUTO';
+          column.length = '';
+          column.integerVariant = 'INT';
+          column.floatVariant = 'FLOAT';
+        }
+        (activeTable.rows || []).forEach((row) => {
+          if (column.pk) {
+            delete row[column.name];
+          } else if (!Object.prototype.hasOwnProperty.call(row, column.name)) {
+            row[column.name] = '';
+          }
+        });
+        dbSmallDesignerState.rowDrafts = {};
+        markDbSmallDirty();
+        renderDbSmallDesignerView();
+        return;
+      }
+      if (role === 'col-fk' && target instanceof HTMLInputElement) {
+        column.fk = target.checked;
+        markDbSmallDirty();
+      }
+      return;
+    }
+
+  };
+}
+
+function renderDbSmallDesignerView() {
+  if (!dbSmallDesignerState.model) return;
+  const model = normalizeDbSmallModel(dbSmallDesignerState.model);
+  dbSmallDesignerState.model = model;
+  dbSmallDesignerState.selectedDatabaseIndex = getSelectedDbSmallDatabaseIndex(model);
+  setDbSmallWorkspaceMode(true);
+  renderDbSmallTableNavigation(model);
+  renderDbSmallDesignerCenter(model);
+  renderDbSmallSqlPanel(model);
+}
+
+async function renderDbSmallDesigner(project) {
+  if (!project?.id) return;
+  await ensureDbSmallModelLoaded(project);
+  renderDbSmallDesignerView();
 }
 
 function updateWebHelpButton(project) {
@@ -1795,7 +3545,7 @@ function renderProjectList() {
     <div class="project-nav-item ${currentProject?.id === project.id ? 'active' : ''}" 
          data-project-id="${project.id}">
       <span class="project-nav-title">${escapeHtml(project.name)}</span>
-      <span class="project-nav-type">${project.project_type || 'python'}</span>
+      <span class="project-nav-type">${getProjectTypeLabel(project.project_type)}</span>
       <span class="project-nav-delete" data-project-id="${project.id}" data-project-name="${escapeHtml(project.name)}" 
             title="Löschen">🗑️</span>
     </div>
@@ -1811,9 +3561,6 @@ async function loadProject(projectId) {
     return;
   }
 
-  const runToken = ++loadProjectRunToken;
-  const isStaleRun = () => runToken !== loadProjectRunToken;
-
   if (loadProjectPromise && loadProjectIdInFlight === normalizedProjectId) {
     console.log('[projects-editor] loadProject already running for project:', normalizedProjectId, '- skipping duplicate trigger');
     return loadProjectPromise;
@@ -1823,8 +3570,6 @@ async function loadProject(projectId) {
 
   loadProjectPromise = (async () => {
   try {
-    if (isStaleRun()) return;
-
     window.currentProject = null;
     updateWebHelpButton(null);
     setProjectsRightPanelMode(false);
@@ -1836,16 +3581,12 @@ async function loadProject(projectId) {
     const response = await fetch(`../api/projects/load.php?id=${normalizedProjectId}`, {
       credentials: 'include'
     });
-
-    if (isStaleRun()) return;
     
     if (!response.ok) {
       throw new Error('Failed to load project');
     }
     
     const data = await response.json();
-    if (isStaleRun()) return;
-
     const project = data.project;
     const access = data.access;
     
@@ -1866,7 +3607,6 @@ async function loadProject(projectId) {
     projectFileNamesById = {};
 
     await ensureInitPyExists(normalizedProjectId, project.name, project.code || '');
-    if (isStaleRun()) return;
     
     // Update UI
     const projectTitleEl = document.getElementById('project-page-title');
@@ -1885,13 +3625,9 @@ async function loadProject(projectId) {
     // Load editor code from init.py (fallback to project.code)
     console.log('[projects-editor] Loading project code...');
     const editorReady = await waitForEditorInstance();
-    if (isStaleRun()) return;
-
     if (editorReady) {
       try {
         const preferredFile = await loadPreferredProjectFile(normalizedProjectId, project.code || '');
-        if (isStaleRun()) return;
-
         setEditorContent(editorReady, preferredFile.content || '');
         window.editor = editorReady;
         currentOpenFileId = preferredFile.fileId ? Number(preferredFile.fileId) : null;
@@ -1912,99 +3648,105 @@ async function loadProject(projectId) {
       console.warn('[projects-editor] Editor not available, code not loaded');
     }
     
-    // File tree like assignment-test/projects.js: use FileTreeManager first
-    console.log('[projects-editor] Starting file tree initialization for project:', normalizedProjectId);
-    const treeContainer = document.getElementById('project-file-tree');
-    if (treeContainer) {
-      treeContainer.innerHTML = '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Dateibaum...</p>';
-    } else {
-      console.error('[projects-editor] Tree container #project-file-tree not found!');
-    }
+    if (!isDbSmallProject(project)) {
+      setDbSmallWorkspaceMode(false);
 
-    if (projectFileManager && typeof projectFileManager.destroy === 'function') {
-      console.log('[projects-editor] Destroying existing FileTreeManager');
-      projectFileManager.destroy();
-    }
+      // File tree like assignment-test/projects.js: use FileTreeManager first
+      console.log('[projects-editor] Starting file tree initialization for project:', normalizedProjectId);
+      const treeContainer = document.getElementById('project-file-tree');
+      if (treeContainer) {
+        treeContainer.innerHTML = '<p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Dateibaum...</p>';
+      } else {
+        console.error('[projects-editor] Tree container #project-file-tree not found!');
+      }
 
-    console.log('[projects-editor] FileTreeManager available:', typeof window.FileTreeManager !== 'undefined');
-    if (typeof window.FileTreeManager !== 'undefined') {
-      try {
-        if (isStaleRun()) return;
+      if (projectFileManager && typeof projectFileManager.destroy === 'function') {
+        console.log('[projects-editor] Destroying existing FileTreeManager');
+        projectFileManager.destroy();
+      }
 
-        console.log('[projects-editor] Creating FileTreeManager instance...');
-        projectFileManager = new window.FileTreeManager('project-file-tree', {
-          projectId: normalizedProjectId,
-          projectName: project.name,
-          readOnly: false,
-          doubleClickAction: 'open-folder',
-          onFolderChanged: async (_folderId, folderPath) => {
-            const activeFolder = Array.isArray(folderPath)
-              ? folderPath.map((segment) => String(segment?.name || '').trim()).filter(Boolean).join('/')
-              : '';
-            
-            // Track: folder changed, so Pyodide's runtime state is now stale
-            if (activeFolder !== pyodideRuntimeFolderPath) {
+      console.log('[projects-editor] FileTreeManager available:', typeof window.FileTreeManager !== 'undefined');
+      if (typeof window.FileTreeManager !== 'undefined') {
+        try {
+          console.log('[projects-editor] Creating FileTreeManager instance...');
+          projectFileManager = new window.FileTreeManager('project-file-tree', {
+            projectId: normalizedProjectId,
+            projectName: project.name,
+            readOnly: false,
+            doubleClickAction: 'open-folder',
+            onFolderChanged: async (_folderId, folderPath) => {
+              const activeFolder = Array.isArray(folderPath)
+                ? folderPath.map((segment) => String(segment?.name || '').trim()).filter(Boolean).join('/')
+                : '';
+              
+              // Track: folder changed, so Pyodide's runtime state is now stale
+              if (activeFolder !== pyodideRuntimeFolderPath) {
+                pyodideRuntimeModulesDirty = true;
+                pyodideRuntimeFolderPath = activeFolder;
+                console.log('[projects-editor] Folder changed to:', activeFolder, '- marking Pyodide runtime as dirty');
+              }
+
+              if (!currentProject || !isHtmlLikeProject(currentProject)) {
+                return;
+              }
+              
+              clearProjectOutputPanels();
+              setProjectGuiPlaceholder(activeFolder);
+            },
+            beforeFileSelect: async () => {
+              cacheCurrentProjectEditorDraft();
+              return true;
+            },
+            onFileSelected: async (fileId, fileName, content) => {
+              await openFileInEditor(fileId, fileName, content);
+              console.log('[projects-editor] Opened file from tree:', fileName);
+            },
+            onFileSaved: () => {
+              // File was saved via tree editor: mark Pyodide runtime as dirty
+              // so modules are reloaded on next run
               pyodideRuntimeModulesDirty = true;
-              pyodideRuntimeFolderPath = activeFolder;
-              console.log('[projects-editor] Folder changed to:', activeFolder, '- marking Pyodide runtime as dirty');
-            }
-
-            if (!currentProject || !isHtmlLikeProject(currentProject)) {
-              return;
-            }
-            
-            clearProjectOutputPanels();
-            setProjectGuiPlaceholder(activeFolder);
-          },
-          beforeFileSelect: async () => {
-            cacheCurrentProjectEditorDraft();
-            return true;
-          },
-          onFileSelected: async (fileId, fileName, content) => {
-            await openFileInEditor(fileId, fileName, content);
-            console.log('[projects-editor] Opened file from tree:', fileName);
-          },
-          onFileSaved: () => {
-            // File was saved via tree editor: mark Pyodide runtime as dirty
-            // so modules are reloaded on next run
-            pyodideRuntimeModulesDirty = true;
-            console.log('[projects-editor] File saved via tree - marking Pyodide runtime as dirty');
-          },
-          onFileDeleted: () => {}
-        });
-        console.log('[projects-editor] FileTreeManager instance created, calling init()...');
-        if (typeof projectFileManager.init === 'function') {
-          await projectFileManager.init();
-          if (isStaleRun()) return;
-
-          console.log('[projects-editor] FileTreeManager init() completed successfully');
-          setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
-        } else {
-          console.error('[projects-editor] FileTreeManager has no init() method!');
-          throw new Error('No init method');
+              console.log('[projects-editor] File saved via tree - marking Pyodide runtime as dirty');
+            },
+            onFileDeleted: () => {}
+          });
+          console.log('[projects-editor] FileTreeManager instance created, calling init()...');
+          if (typeof projectFileManager.init === 'function') {
+            await projectFileManager.init();
+            console.log('[projects-editor] FileTreeManager init() completed successfully');
+            setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
+          } else {
+            console.error('[projects-editor] FileTreeManager has no init() method!');
+            throw new Error('No init method');
+          }
+        } catch (treeErr) {
+          console.error('[projects-editor] FileTreeManager failed, fallback to manual tree:', treeErr);
+          projectFileManager = null;
+          await renderFileTreeManually(normalizedProjectId);
         }
-      } catch (treeErr) {
-        console.error('[projects-editor] FileTreeManager failed, fallback to manual tree:', treeErr);
-        projectFileManager = null;
+      } else {
+        console.log('[projects-editor] FileTreeManager not available, using manual tree');
         await renderFileTreeManually(normalizedProjectId);
+        setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
       }
     } else {
-      console.log('[projects-editor] FileTreeManager not available, using manual tree');
-      await renderFileTreeManually(normalizedProjectId);
-      setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
+      if (projectFileManager && typeof projectFileManager.destroy === 'function') {
+        projectFileManager.destroy();
+      }
+      projectFileManager = null;
     }
     
-    // Show GUI container only for HTML/Mixed projects
+    // Show GUI container for HTML/Mixed and db_small projects
     const guiContainer = document.getElementById('gui-container');
     
-    // Load and render HTML if project_type is html or mixed
-    if (project.project_type === 'html' || project.project_type === 'mixed') {
+    if (isHtmlLikeProject(project)) {
       // Always show GUI container for HTML/Mixed, even if empty (will render on first RUN)
       guiContainer.classList.add('active');
       setProjectsRightPanelMode(true);
       setProjectGuiPlaceholder('');
       guiContainer.dataset.projectId = String(project.id);
       delete guiContainer.dataset.codeUiRunBound;
+    } else if (isDbSmallProject(project)) {
+      await renderDbSmallDesigner(project);
     } else {
       // For python-only projects: hide GUI container completely
       guiContainer.classList.remove('active');
@@ -2023,16 +3765,12 @@ async function loadProject(projectId) {
     
     // Save as last opened project (DB + localStorage fallback)
     await persistLastOpenedProject(normalizedProjectId);
-    if (isStaleRun()) return;
     
     // Auto-open init.py after FileTreeManager is ready
-    setTimeout(async () => {
+    if (!isDbSmallProject(project)) {
+      setTimeout(async () => {
       try {
-        if (isStaleRun()) return;
-
         const initFile = await readProjectFileByName(projectId, 'init.py');
-        if (isStaleRun()) return;
-
         if (!currentProject || Number(currentProject.id) !== normalizedProjectId) {
           return;
         }
@@ -2048,7 +3786,8 @@ async function loadProject(projectId) {
       } catch (autoOpenErr) {
         console.warn('[projects-editor] Could not auto-open init.py:', autoOpenErr);
       }
-    }, 500);
+      }, 500);
+    }
     
   } catch (error) {
     console.error('Error loading project:', error);
@@ -2059,7 +3798,7 @@ async function loadProject(projectId) {
   try {
     return await loadProjectPromise;
   } finally {
-    if (loadProjectIdInFlight === normalizedProjectId && runToken === loadProjectRunToken) {
+    if (loadProjectIdInFlight === normalizedProjectId) {
       loadProjectPromise = null;
       loadProjectIdInFlight = null;
     }
@@ -2079,7 +3818,7 @@ function updateProjectDetails(project) {
     <div class="project-info-section">
       <h4>Typ</h4>
       <span class="project-type-badge ${project.project_type || 'python'}">
-        ${project.project_type === 'html' ? 'HTML/Web' : project.project_type === 'mixed' ? 'Gemischt' : 'Python'}
+        ${getProjectTypeLabel(project.project_type)}
       </span>
     </div>
     
@@ -2098,12 +3837,12 @@ function updateProjectDetails(project) {
       </button>
     </div>
     
-    ${project.project_type === 'html' || project.project_type === 'mixed' ? `
+    ${(project.project_type === 'html' || project.project_type === 'mixed' || project.project_type === 'db_small') ? `
       <div class="project-info-section">
         <h4>Hilfe</h4>
-        <a href="/public/help/idegui/index.html" target="_blank" rel="noopener noreferrer" class="help-link">
-          ❓ idegui Dokumentation
-        </a>
+        ${project.project_type === 'db_small'
+          ? '<span class="help-link" style="display:inline-block;opacity:0.9;">Nutze den DB-Designer rechts für Tabellen, Testdaten und SQL-Export.</span>'
+          : '<a href="/public/help/idegui/index.html" target="_blank" rel="noopener noreferrer" class="help-link">❓ idegui Dokumentation</a>'}
       </div>
     ` : ''}
   `;

@@ -41,7 +41,7 @@ if (!in_array($visibility, ['private', 'public'])) {
     jsonResponse(['ok' => false, 'error' => 'Invalid visibility'], 400);
 }
 
-if (!in_array($projectType, ['python', 'html', 'mixed'])) {
+if (!in_array($projectType, ['python', 'html', 'mixed', 'db_small'])) {
     jsonResponse(['ok' => false, 'error' => 'Invalid project type'], 400);
 }
 

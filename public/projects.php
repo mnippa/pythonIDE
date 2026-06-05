@@ -325,6 +325,35 @@ if ($displayName === '') {
       min-width: 45px;
       text-align: right;
     }
+
+    .db-table-nav-item {
+      padding: 8px 10px;
+      margin: 0;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      border-left: 3px solid transparent;
+      color: var(--text-primary);
+    }
+    .db-table-nav-item:hover {
+      background: var(--panel);
+    }
+    .db-table-nav-item.active {
+      background: var(--panel);
+      border-left-color: #0ea5e9;
+      font-weight: 600;
+    }
+
+    #db-small-designer-panel {
+      display: none;
+      height: 100%;
+      overflow: auto;
+      padding: 12px;
+      background: var(--bg);
+    }
     
     /* Project Details (bottom) */
     .project-details-content {
@@ -856,6 +885,7 @@ HTML;
     <div class="editor-area">
       <div class="editor-container-wrapper">
         <div id="editor-container"></div>
+        <div id="db-small-designer-panel"></div>
       </div>
 
       <div class="editor-bottom">
@@ -898,6 +928,7 @@ HTML;
           <label style="display: block; margin-bottom: 8px; font-weight: 600;">Vorlage:</label>
           <select id="project-template-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);">
             <option value="empty_python" selected>Leeres Python Projekt</option>
+            <option value="db_small">Kleine DB-Integration (Tabellen + Testdaten + SQL-Export)</option>
             <option value="empty_python_html">Leeres Python-HTML Projekt</option>
             <option value="python_logic">Python-HTML mit Python-Logik</option>
             <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
@@ -965,7 +996,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260527a"></script>
+  <script type="module" src="js/editor-setup.js?v=20260511c"></script>
 
   <script>
     // Theme Toggle
@@ -1157,7 +1188,7 @@ HTML;
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script type="module" src="js/projects-editor.js?v=20260511b"></script>
+  <script type="module" src="js/projects-editor.js?v=20260605s"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;

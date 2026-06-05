@@ -31,6 +31,54 @@ class ProjectTemplates {
             ]
         ];
     }
+
+        /**
+         * Template: Kleines Datenbank-Projekt (Modell + Testdaten + SQL-Export)
+         */
+        private static function template_db_small() {
+                return [
+                        'project_type' => 'db_small',
+                        'files' => [
+                                'init.py' => [
+                                        'content' => "# DB Small Projekt\n# Die Modellierung erfolgt im rechten Panel (Tabellen/Testdaten/SQL-Export).\n",
+                                        'mime_type' => 'text/x-python'
+                                ],
+                                'db_model.json' => [
+                                        'content' => <<<'JSON'
+{
+    "version": 2,
+    "activeDatabaseIndex": 0,
+    "databases": [
+        {
+            "name": "Zwischenstand 1",
+            "tables": [
+                {
+                    "name": "student",
+                    "columns": [
+                        { "name": "id", "type": "AUTO", "pk": true, "fk": false, "default": "" },
+                        { "name": "name", "type": "TEXT", "pk": false, "fk": false, "default": "" },
+                        { "name": "semester", "type": "AUTO", "pk": false, "fk": false, "default": "" }
+                    ],
+                    "rows": [
+                        { "name": "Ada", "semester": "2" },
+                        { "name": "Turing", "semester": "4" }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+JSON
+                                        ,
+                                        'mime_type' => 'application/json'
+                                ],
+                                'db_export.sql' => [
+                                        'content' => "-- SQL Export wird im DB-Designer erzeugt.\n",
+                                        'mime_type' => 'application/sql'
+                                ]
+                        ]
+                ];
+        }
     
     /**
      * Template: Leeres Python-HTML Projekt
