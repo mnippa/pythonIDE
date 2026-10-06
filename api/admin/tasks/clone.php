@@ -41,6 +41,7 @@ try {
     $conn = getDbConnection();
     $ownedTask = requireAdminOwnedTask($conn, (int)$taskId, $admin);
     requireAdminOwnedAssignment($conn, (int)$assignmentId, $admin);
+    requireAssignmentUnlocked($conn, (int)$assignmentId);
     if ((int)$ownedTask['assignment_id'] !== (int)$assignmentId) {
         throw new Exception('Task does not belong to this assignment');
     }

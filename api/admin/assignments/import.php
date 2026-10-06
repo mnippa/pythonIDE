@@ -16,6 +16,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     require_once __DIR__ . '/../../../config/database.php';
+    require_once __DIR__ . '/../../auth/middleware.php';
 } catch (Exception $e) {
     ob_end_clean();
     http_response_code(500);
@@ -96,6 +97,7 @@ if (empty($title)) {
 }
 
 try {
+    $admin = requireAdmin();
     // Get mysqli connection
     $conn = getDbConnection();
     
@@ -109,18 +111,9 @@ try {
     // Start transaction
     $conn->begin_transaction();
     
-    // Verify assignment exists
-    $stmt = $conn->prepare('SELECT id FROM assignments WHERE id = ?');
-    $stmt->bind_param('i', $assignmentId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if (!$result->fetch_assoc()) {
-        $conn->rollback();
-        ob_end_clean();
-        http_response_code(404);
-        echo json_encode(['ok' => false, 'error' => 'Assignment not found']);
-        exit;
-    }
+    // Verify assignment access and lock state.
+    requireAdminOwnedAssignment($conn, (int)$assignmentId, $admin);
+    requireAssignmentUnlocked($conn, (int)$assignmentId);
 
     // Always append task at end
     $stmt = $conn->prepare('SELECT COALESCE(MAX(position), 0) AS max_pos FROM tasks WHERE assignment_id = ?');

@@ -56,10 +56,33 @@ let teamMatrixDetailCache = new Map();
 let teamMatrixDetailBox = null;
 let teamMatrixHideTimer = null;
 let teamMatrixActiveTrigger = null;
+let teamMatrixStatusModal = null;
 
 function formatMinutes(seconds) {
   const total = Math.max(0, Number(seconds) || 0);
   return String(Math.round(total / 60));
+}
+
+function getTeamMatrixTaskSummary(tasks) {
+  let passed = 0;
+  let failed = 0;
+  let inProgress = 0;
+  let submitted = 0;
+  let manual = 0;
+  let open = 0;
+
+  for (const task of tasks) {
+    const status = task?.status || 'unbearbeitet';
+    const isManual = status === 'submitted' && Number(task?.manual_review_required || 0) === 1;
+    if (status === 'passed') passed++;
+    else if (status === 'failed') failed++;
+    else if (status === 'in-progress') inProgress++;
+    else if (isManual) manual++;
+    else if (status === 'submitted') submitted++;
+    else open++;
+  }
+
+  return { passed, failed, inProgress, submitted, manual, open };
 }
 
 function ensureTeamMatrixDetailBox() {
@@ -146,17 +169,7 @@ function positionTeamMatrixDetailBox(trigger) {
 function buildTeamMatrixDetailHtml(detail) {
   const user = detail?.user || {};
   const tasks = Array.isArray(detail?.tasks) ? detail.tasks : [];
-  let passed = 0;
-  let failed = 0;
-  let inProgress = 0;
-  let open = 0;
-  for (const task of tasks) {
-    const s = task?.status || 'unbearbeitet';
-    if (s === 'passed') passed++;
-    else if (s === 'failed') failed++;
-    else if (s === 'in-progress') inProgress++;
-    else open++;
-  }
+  const taskSummary = getTeamMatrixTaskSummary(tasks);
 
   const checksTotal = tasks.reduce((sum, t) => sum + (Number(t.attempts) || 0), 0);
   const runsTotal = tasks.reduce((sum, t) => sum + (Number(t.run_count) || 0), 0);
@@ -174,7 +187,7 @@ function buildTeamMatrixDetailHtml(detail) {
     <div style="margin-bottom:4px;">Status: <strong>${escapeHtml(user.status_label || user.status || '-')}</strong></div>
     <div style="margin-bottom:4px;">Hints: <strong>${hintsTotal}</strong> · Checks: <strong>${checksTotal}</strong> · Runs: <strong>${runsTotal}</strong></div>
     <div style="margin-bottom:4px;">Zeit: <strong>${formatMinutes(activeSecondsTotal)} min</strong></div>
-    <div style="margin-bottom:2px;">Tasks: ⚪${open} · 🟡${inProgress} · 🟢${passed} · 🔴${failed}</div>
+    <div style="margin-bottom:2px;">Tasks: Offen ${taskSummary.open} · In Bearbeitung ${taskSummary.inProgress} · Eingereicht ${taskSummary.submitted} · Manuell ${taskSummary.manual} · Bestanden ${taskSummary.passed} · Nicht bestanden ${taskSummary.failed}</div>
     ${flags ? `<div style="margin-top:4px;">${flags}</div>` : ''}
   `;
 }
@@ -194,7 +207,21 @@ async function showTeamMatrixDetail(triggerEl) {
   box.innerHTML = 'Lade Details...';
   positionTeamMatrixDetailBox(triggerEl);
 
+  const detail = await fetchTeamMatrixDetail(userId, assignmentId);
+  if (teamMatrixActiveTrigger !== triggerEl) return;
+
+  box.innerHTML = detail.ok
+    ? buildTeamMatrixDetailHtml(detail.data)
+    : `<div style="color:#fecaca;">Detailansicht konnte nicht geladen werden: ${escapeHtml(detail.error || 'Unbekannter Fehler')}</div>`;
+  positionTeamMatrixDetailBox(triggerEl);
+}
+
+async function fetchTeamMatrixDetail(userId, assignmentId, forceReload = false) {
   const cacheKey = `${assignmentId}:${userId}`;
+  if (forceReload) {
+    teamMatrixDetailCache.delete(cacheKey);
+  }
+
   if (!teamMatrixDetailCache.has(cacheKey)) {
     try {
       const detail = await teamsUsersRequestJson(`../api/admin/evaluation/user-detail.php?assignment_id=${encodeURIComponent(assignmentId)}&user_id=${encodeURIComponent(userId)}`);
@@ -204,12 +231,228 @@ async function showTeamMatrixDetail(triggerEl) {
     }
   }
 
-  if (teamMatrixActiveTrigger !== triggerEl) return;
-  const entry = teamMatrixDetailCache.get(cacheKey);
-  box.innerHTML = entry?.ok
-    ? buildTeamMatrixDetailHtml(entry.data)
-    : `<div style="color:#fecaca;">Detailansicht konnte nicht geladen werden: ${escapeHtml(entry?.error || 'Unbekannter Fehler')}</div>`;
-  positionTeamMatrixDetailBox(triggerEl);
+  return teamMatrixDetailCache.get(cacheKey) || { ok: false, error: 'Keine Details verfügbar' };
+}
+
+function toTaskStatusFromMatrixStatus(matrixStatus) {
+  const status = String(matrixStatus || '').trim();
+  if (status === 'in_progress') return 'in-progress';
+  if (status === 'assigned') return 'unbearbeitet';
+  if (status === 'passed_delayed') return 'passed';
+  if (status === 'rework') return 'rework';
+  return status || 'unbearbeitet';
+}
+
+function toAssignmentStatusFromModalStatus(modalStatus) {
+  const status = String(modalStatus || '').trim();
+  if (status === 'unbearbeitet') return 'assigned';
+  if (status === 'in-progress') return 'in_progress';
+  if (status === 'manual') return 'submitted';
+  return status || 'submitted';
+}
+
+function ensureTeamMatrixStatusModal() {
+  if (teamMatrixStatusModal) return teamMatrixStatusModal;
+
+  const modal = document.createElement('div');
+  modal.id = 'team-matrix-status-modal';
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width:560px;">
+      <div class="modal-header">
+        <h3>Bewertung ändern</h3>
+        <button class="modal-close" type="button" data-role="close">✕</button>
+      </div>
+      <div class="modal-body" style="padding: var(--hspf-spacing-lg);">
+        <div id="team-matrix-status-info" style="margin-bottom: var(--hspf-spacing-md); color: var(--hspf-text-secondary);"></div>
+        <div class="field">
+          <label for="team-matrix-status-select">Neuer Status (für alle Tasks im Assignment)</label>
+          <select id="team-matrix-status-select">
+            <option value="unbearbeitet">Unbearbeitet</option>
+            <option value="in-progress">In Bearbeitung</option>
+            <option value="manual">Manuell</option>
+            <option value="submitted">Eingereicht</option>
+            <option value="passed">Bestanden</option>
+            <option value="failed">Nicht bestanden</option>
+            <option value="rework">Nacharbeit</option>
+          </select>
+        </div>
+        <div style="font-size:12px;color:var(--hspf-text-secondary);margin-top:8px;">
+          Hinweis: Der gewählte Status wird direkt als Assignment-Status für diese Zuordnung gespeichert.
+        </div>
+        <div class="row-actions" style="margin-top: var(--hspf-spacing-md);">
+          <button class="hspf-btn" type="button" data-role="cancel">Abbrechen</button>
+          <button class="hspf-btn hspf-btn-primary" type="button" data-role="apply">Speichern</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal || e.target.dataset.role === 'close' || e.target.dataset.role === 'cancel') {
+      closeTeamMatrixStatusModal();
+    }
+  });
+
+  const applyBtn = modal.querySelector('[data-role="apply"]');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', applyTeamMatrixStatusChange);
+  }
+
+  document.body.appendChild(modal);
+  teamMatrixStatusModal = modal;
+  return modal;
+}
+
+function closeTeamMatrixStatusModal() {
+  if (!teamMatrixStatusModal) return;
+  teamMatrixStatusModal.classList.remove('active');
+}
+
+async function openTeamMatrixStatusModal(triggerEl) {
+  const userId = Number(triggerEl.dataset.userId || 0);
+  const assignmentId = Number(triggerEl.dataset.assignmentId || 0);
+  if (!userId || !assignmentId) return;
+
+  const modal = ensureTeamMatrixStatusModal();
+  const infoBox = modal.querySelector('#team-matrix-status-info');
+  const statusSelect = modal.querySelector('#team-matrix-status-select');
+  const applyBtn = modal.querySelector('[data-role="apply"]');
+
+  modal.dataset.userId = String(userId);
+  modal.dataset.assignmentId = String(assignmentId);
+  modal.dataset.currentStatus = String(triggerEl.dataset.status || 'assigned');
+
+  if (infoBox) {
+    infoBox.textContent = 'Lade Details...';
+  }
+  if (applyBtn) applyBtn.disabled = true;
+  modal.classList.add('active');
+
+  const detailEntry = await fetchTeamMatrixDetail(userId, assignmentId, false);
+  if (!detailEntry.ok) {
+    if (infoBox) {
+      infoBox.textContent = `Detaildaten konnten nicht geladen werden: ${detailEntry.error || 'Unbekannter Fehler'}`;
+    }
+    return;
+  }
+
+  const user = detailEntry.data?.user || {};
+  const tasks = Array.isArray(detailEntry.data?.tasks) ? detailEntry.data.tasks : [];
+  const assignmentTitle = detailEntry.data?.assignment_title || `Assignment #${assignmentId}`;
+  const userLabel = user.full_name || user.email || `User #${userId}`;
+
+  let passed = 0;
+  let failed = 0;
+  let inProgress = 0;
+  let open = 0;
+  let submitted = 0;
+  let manual = 0;
+  for (const task of tasks) {
+    const s = task?.status || 'unbearbeitet';
+    const isManual = s === 'submitted' && Number(task?.manual_review_required || 0) === 1;
+    if (s === 'passed') passed++;
+    else if (s === 'failed') failed++;
+    else if (s === 'in-progress') inProgress++;
+    else if (isManual) manual++;
+    else if (s === 'submitted') submitted++;
+    else open++;
+  }
+
+  const checksTotal = tasks.reduce((sum, t) => sum + (Number(t.attempts) || 0), 0);
+  const runsTotal = tasks.reduce((sum, t) => sum + (Number(t.run_count) || 0), 0);
+  const hintsTotal = tasks.reduce((sum, t) => sum + (Number(t.hints_count) || 0), 0);
+  const activeSecondsTotal = tasks.reduce((sum, t) => sum + (Number(t.active_seconds) || 0), 0);
+
+  if (infoBox) {
+    infoBox.innerHTML = `
+      <div><strong>${escapeHtml(assignmentTitle)}</strong></div>
+      <div>${escapeHtml(userLabel)}</div>
+      <div style="margin-top:6px;font-size:12px;">
+        Status: <strong>${escapeHtml(user.status_label || user.status || '-')}</strong> ·
+        Tasks: Offen ${open} · In Bearbeitung ${inProgress} · Eingereicht ${submitted} · Manuell ${manual} · Bestanden ${passed} · Nicht bestanden ${failed}<br>
+        Hints: <strong>${hintsTotal}</strong> · Checks: <strong>${checksTotal}</strong> · Runs: <strong>${runsTotal}</strong> · Zeit: <strong>${formatMinutes(activeSecondsTotal)} min</strong>
+      </div>
+    `;
+  }
+
+  const defaultStatus = toTaskStatusFromMatrixStatus(modal.dataset.currentStatus);
+  if (statusSelect) {
+    statusSelect.value = ['unbearbeitet', 'in-progress', 'submitted', 'passed', 'failed', 'rework'].includes(defaultStatus)
+      ? defaultStatus
+      : 'submitted';
+  }
+  if (applyBtn) applyBtn.disabled = false;
+}
+
+async function applyTeamMatrixStatusChange() {
+  const modal = ensureTeamMatrixStatusModal();
+  const userId = Number(modal.dataset.userId || 0);
+  const assignmentId = Number(modal.dataset.assignmentId || 0);
+  const statusSelect = modal.querySelector('#team-matrix-status-select');
+  const applyBtn = modal.querySelector('[data-role="apply"]');
+  const infoBox = modal.querySelector('#team-matrix-status-info');
+
+  if (!userId || !assignmentId || !statusSelect) return;
+
+  const targetStatus = statusSelect.value;
+  const oldLabel = applyBtn ? applyBtn.textContent : '';
+  if (applyBtn) {
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Speichere...';
+  }
+
+  try {
+    if (targetStatus === 'rework') {
+      const confirmed = window.confirm('Nacharbeit starten? Dabei wird die individuelle Frist auf jetzt + 10 Tage gesetzt und nicht bestandene Aufgaben werden wieder auf unbearbeitet gesetzt.');
+      if (!confirmed) {
+        return;
+      }
+
+      // Keep rework behavior identical to assignment participant overview.
+      await teamsUsersRequestJson('../api/admin/assignments/users/update-status.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          assignment_id: assignmentId,
+          user_id: userId,
+          status: 'rework'
+        })
+      });
+    } else {
+      const assignmentStatus = toAssignmentStatusFromModalStatus(targetStatus);
+      await teamsUsersRequestJson('../api/admin/assignments/users/update-status.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          assignment_id: assignmentId,
+          user_id: userId,
+          status: assignmentStatus
+        })
+      });
+    }
+
+    teamMatrixDetailCache.delete(`${assignmentId}:${userId}`);
+
+    const selectedTeamId = Number(($('teams-members-team-filter')?.value || window.selectedTeamId || 0));
+    if (selectedTeamId > 0) {
+      await loadTeamMembers(selectedTeamId);
+    }
+
+    closeTeamMatrixStatusModal();
+    if (targetStatus === 'rework') {
+      alert('Nacharbeit aktiviert (inkl. Frist +10 Tage und Reset der nicht bestandenen Aufgaben wie in der Teilnehmer-Übersicht).');
+    } else {
+      alert(`Assignment-Bewertung auf "${targetStatus}" gesetzt.`);
+    }
+  } catch (err) {
+    if (infoBox) {
+      infoBox.innerHTML = `<div style="color:#b91c1c;">Fehler beim Speichern: ${escapeHtml(err.message || 'Unbekannter Fehler')}</div>`;
+    }
+  } finally {
+    if (applyBtn) {
+      applyBtn.disabled = false;
+      applyBtn.textContent = oldLabel || 'Speichern';
+    }
+  }
 }
 
 function bindTeamMatrixDetailHover() {
@@ -222,6 +465,12 @@ function bindTeamMatrixDetailHover() {
     });
     trigger.addEventListener('mouseleave', () => {
       scheduleHideTeamMatrixDetailBox();
+    });
+
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openTeamMatrixStatusModal(trigger);
     });
   });
 }
@@ -403,6 +652,36 @@ async function loadTeamMembers(teamId) {
   }
 }
 
+function downloadTeamMatrixZipExport(teamId, teamName) {
+  const id = Number(teamId || 0);
+  if (id <= 0) {
+    alert('Bitte zuerst ein Team auswählen.');
+    return;
+  }
+
+  const exportBtn = $('team-matrix-export-btn');
+  const oldLabel = exportBtn ? exportBtn.textContent : '';
+  if (exportBtn) {
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Exportiere...';
+  }
+
+  const url = `../api/admin/evaluation/team-matrix-export.php?team_id=${encodeURIComponent(id)}&ts=${Date.now()}`;
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `team_matrix_export_${String(teamName || id)}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  setTimeout(() => {
+    if (exportBtn) {
+      exportBtn.disabled = false;
+      exportBtn.textContent = oldLabel || 'ZIP-Export';
+    }
+  }, 1200);
+}
+
 function renderTeamMatrix(data, errorMessage = null) {
   const head = $('team-matrix-head');
   const body = $('team-matrix-body');
@@ -423,6 +702,32 @@ function renderTeamMatrix(data, errorMessage = null) {
   const assignments = data.assignments || [];
   const users = data.users || [];
 
+  const labStatusMap = {
+    durchfuehrung: { label: 'Durchfuehrung', color: '#facc15' },
+    bewertung: { label: 'Bewertung', color: '#38bdf8' },
+    bestanden: { label: 'Bestanden', color: '#22c55e' },
+    nachpruefung: { label: 'Nachpruefung', color: '#f97316' },
+    nicht_bestanden: { label: 'Nicht bestanden', color: '#ef4444' },
+    nicht_teilgenommen: { label: 'Nicht teilgenommen', color: '#6b7280' }
+  };
+
+  function renderLabStatusSelect(userId, selectedStatus) {
+    const value = selectedStatus || 'durchfuehrung';
+    const options = Object.entries(labStatusMap).map(([key, meta]) => {
+      const selected = key === value ? 'selected' : '';
+      return `<option value="${key}" ${selected}>${meta.label}</option>`;
+    }).join('');
+    const color = labStatusMap[value]?.color || '#6b7280';
+    return `
+      <div style="display:flex;align-items:center;gap:8px;justify-content:center;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};"></span>
+        <select class="team-lab-eval-select" data-user-id="${userId}" data-current-value="${value}" style="min-width:170px;font-size:12px;padding:2px 6px;">
+          ${options}
+        </select>
+      </div>
+    `;
+  }
+
   const ampelDot = (status) => {
     const map = {
       passed:          { bg: '#22c55e', title: 'Bestanden' },
@@ -442,12 +747,13 @@ function renderTeamMatrix(data, errorMessage = null) {
     + '<th>Name</th>'
     + assignments.map(a => `<th style="text-align:center;font-size:11px;max-width:70px;white-space:normal;word-break:break-word;" title="${escapeHtml(a.title)}">${escapeHtml(a.short)}</th>`).join('')
     + '<th style="text-align:center;">Bestanden</th>'
+    + '<th style="text-align:center;">Laborbewertung</th>'
     + '</tr>';
   head.innerHTML = thHtml;
 
   // Body rows
   if (users.length === 0) {
-    body.innerHTML = `<tr><td colspan="${1 + assignments.length + 1}" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Teilnehmer in diesem Team.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="${1 + assignments.length + 2}" style="text-align:center;padding:16px;color:var(--hspf-text-secondary);">Keine Teilnehmer in diesem Team.</td></tr>`;
     return;
   }
 
@@ -462,16 +768,18 @@ function renderTeamMatrix(data, errorMessage = null) {
       if (isLate) flags += '<span title="Verspätet" style="margin-left:2px;">🕐</span>';
       if (isRework) flags += '<span title="Nacharbeit" style="margin-left:2px;">🔨</span>';
       const dotHtml = status
-        ? `<span class="team-matrix-dot-trigger" data-user-id="${u.id}" data-assignment-id="${a.id}" style="display:inline-flex;align-items:center;cursor:help;">${ampelDot(status)}</span>`
+        ? `<span class="team-matrix-dot-trigger" data-user-id="${u.id}" data-assignment-id="${a.id}" data-status="${escapeHtml(String(status))}" style="display:inline-flex;align-items:center;cursor:pointer;" title="Klick: Bewertung ändern · Hover: Details">${ampelDot(status)}</span>`
         : '<span style="color:#e5e7eb;">–</span>';
       return `<td style="text-align:center;white-space:nowrap;">${dotHtml}${flags}</td>`;
     }).join('');
     const summaryColor = u.passed > 0 && u.passed === u.total ? '#15803d' : (u.passed > 0 ? '#b45309' : '#6b7280');
     const summary = `<span style="font-weight:700;color:${summaryColor};">${u.passed}/${u.total}</span>`;
+    const labEvaluation = renderLabStatusSelect(u.id, u.lab_evaluation_status || 'durchfuehrung');
     return `<tr>
       <td style="white-space:nowrap;">${escapeHtml(name)}</td>
       ${dots}
       <td style="text-align:center;">${summary}</td>
+      <td style="text-align:center;">${labEvaluation}</td>
     </tr>`;
   }).join('');
 
@@ -1317,6 +1625,36 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+document.addEventListener('change', async (e) => {
+  const select = e.target.closest('.team-lab-eval-select');
+  if (!select) return;
+
+  const userId = Number(select.dataset.userId || 0);
+  const status = String(select.value || 'durchfuehrung');
+  if (!userId) return;
+
+  const previous = select.dataset.currentValue || 'durchfuehrung';
+  select.disabled = true;
+
+  try {
+    await teamsUsersRequestJson('../api/admin/teams/users/set-lab-evaluation.php', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, status })
+    });
+    select.dataset.currentValue = status;
+
+    const selectedTeamId = Number(($('teams-members-team-filter')?.value || window.selectedTeamId || 0));
+    if (selectedTeamId > 0) {
+      await loadTeamMembers(selectedTeamId);
+    }
+  } catch (err) {
+    select.value = previous;
+    alert('Laborbewertung konnte nicht gespeichert werden: ' + (err.message || 'Unbekannter Fehler'));
+  } finally {
+    select.disabled = false;
+  }
+});
+
 // Team click handler - show detail cards
 document.addEventListener('click', (e) => {
   const teamClick = e.target.dataset.teamClick;
@@ -1355,6 +1693,13 @@ async function showTeamDetail(teamId, teamName) {
   // Show plus button for new assignment
   const addBtn = $('add-team-assignment-btn');
   if (addBtn) addBtn.style.display = 'inline-block';
+
+  const exportBtn = $('team-matrix-export-btn');
+  if (exportBtn) {
+    exportBtn.disabled = false;
+    exportBtn.dataset.teamId = String(teamId);
+    exportBtn.dataset.teamName = String(teamName || 'team');
+  }
   
   // Load team matrix
   await loadTeamMembers(teamId);
@@ -1397,6 +1742,12 @@ $('add-team-assignment-btn')?.addEventListener('click', async () => {
   }
   
   await openTeamAssignModal(window.selectedTeamId);
+});
+
+$('team-matrix-export-btn')?.addEventListener('click', () => {
+  const teamId = Number(window.selectedTeamId || $('team-matrix-export-btn')?.dataset.teamId || 0);
+  const teamName = $('selected-team-name')?.textContent || $('team-matrix-export-btn')?.dataset.teamName || `team_${teamId}`;
+  downloadTeamMatrixZipExport(teamId, teamName);
 });
 
 // Initial load

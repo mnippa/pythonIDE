@@ -363,7 +363,7 @@ if (count($databases) === 0) {
 }
 
 $dbModel = [
-    'version' => 2,
+    'version' => 3,
     'activeDatabaseIndex' => 0,
     'databases' => $databases,
 ];

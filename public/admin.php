@@ -702,6 +702,7 @@ if ($displayName === '') {
       <div class="admin-card" id="tasks-section" style="display:none;">
         <h3 id="tasks-title">📚 Tasks</h3>
         <div class="admin-card-subtitle" id="tasks-hint">Select an assignment to manage tasks.</div>
+        <div class="admin-card-subtitle" id="tasks-lock-hint" style="color:#b45309;"></div>
         <div class="search-filter" style="margin-top: var(--hspf-spacing-sm);">
           <input type="text" id="tasks-filter-text" placeholder="Filter by title..." style="max-width: 260px;" />
           <select id="tasks-filter-type" style="max-width: 220px;">
@@ -811,7 +812,10 @@ if ($displayName === '') {
       <div class="admin-card" style="display:none;" id="team-detail-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--hspf-spacing-md);">
           <h3 style="margin: 0;">Teilnehmer - Assignment-Übersicht für <span id="selected-team-name" style="font-weight: 700;"></span></h3>
-          <button class="hspf-btn" type="button" onclick="document.getElementById('team-detail-card').style.display='none'; document.getElementById('team-assignments-detail-card').style.display='none';">✕ Close</button>
+          <div style="display:flex;gap:var(--hspf-spacing-sm);align-items:center;">
+            <button class="hspf-btn hspf-btn-primary" type="button" id="team-matrix-export-btn">ZIP-Export</button>
+            <button class="hspf-btn" type="button" onclick="document.getElementById('team-detail-card').style.display='none'; document.getElementById('team-assignments-detail-card').style.display='none';">✕ Close</button>
+          </div>
         </div>
         <div style="overflow:auto;">
           <table id="team-matrix-table">
@@ -1128,8 +1132,7 @@ if ($displayName === '') {
             <option value="free_text">Freitext</option>
             <option value="code_reading">Code Reading</option>
             <option value="code_random_complex">Random Complex</option>
-            <option value="db_model">Datenbank-Modell</option>
-            <option value="file_submission">Dateiabgabe</option>
+            <option value="db_model">DB-Modell (manuelle Bewertung)</option>
           </select>
         </div>
         
@@ -1187,8 +1190,7 @@ if ($displayName === '') {
               <option value="free_text">Freitext</option>
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
-              <option value="db_model">Datenbank-Modell</option>
-              <option value="file_submission">Dateiabgabe</option>
+              <option value="db_model">DB-Modell (manuelle Bewertung)</option>
             </select>
           </div>
 
@@ -1228,20 +1230,6 @@ if ($displayName === '') {
             <label for="task-max-iterations">Iterationen</label>
             <input id="task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
-          </div>
-
-          <div class="field" data-field="file-submission-config">
-            <label for="task-file-submission-types">Dateiabgabe: erlaubte Typen</label>
-            <input id="task-file-submission-types" type="text" value="zip,png" placeholder="zip,png" />
-            <label for="task-file-submission-max-size" style="margin-top:8px;">Dateiabgabe: Max. Dateigröße</label>
-            <select id="task-file-submission-max-size">
-              <option value="51200">50 KB</option>
-              <option value="102400" selected>100 KB (Standard)</option>
-              <option value="256000">250 KB</option>
-              <option value="1048576">1 MB</option>
-              <option value="2097152">2 MB</option>
-              <option value="5242880">5 MB</option>
-            </select>
           </div>
           
           <div class="field checkbox-field">
@@ -1408,8 +1396,8 @@ if ($displayName === '') {
           
           <!-- Solution Code (for code & code_random_complex tasks) -->
           <div class="field" data-field="solution">
-            <label for="task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt Placeholder)</span></label>
-            <textarea id="task-solution" placeholder="Für code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
+            <label for="task-solution">Solution Code / DB-Template <span style="color:#999; font-size:12px;">(db_model: JSON-Template für den Designer; code_random_complex nutzt Placeholder)</span></label>
+            <textarea id="task-solution" placeholder="Für db_model: {\"tables\":[{\"name\":\"kunden\",\"columns\":[{\"name\":\"id\",\"type\":\"INTEGER\",\"pk\":true}]}]}\nFür code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
             <div class="hint">
               <strong>Für code_random_complex:</strong> Verwende Placeholder <code>{varName}</code> für dynamische Werte<br>
               Beispiel: <code>result = int({binary}, 2)</code><br>
@@ -1482,8 +1470,7 @@ if ($displayName === '') {
               <option value="free_text">Freitext</option>
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
-              <option value="db_model">Datenbank-Modell</option>
-              <option value="file_submission">Dateiabgabe</option>
+              <option value="db_model">DB-Modell (manuelle Bewertung)</option>
             </select>
           </div>
 
@@ -1520,20 +1507,6 @@ if ($displayName === '') {
             <label for="edit-task-max-iterations">Iterationen</label>
             <input id="edit-task-max-iterations" type="number" min="1" value="3" />
             <div class="hint">Für code_reading wird die Anzahl automatisch aus den Sets bestimmt, bei code_random_complex manuell über dieses Feld.</div>
-          </div>
-
-          <div class="field" data-field="file-submission-config">
-            <label for="edit-task-file-submission-types">Dateiabgabe: erlaubte Typen</label>
-            <input id="edit-task-file-submission-types" type="text" value="zip,png" placeholder="zip,png" />
-            <label for="edit-task-file-submission-max-size" style="margin-top:8px;">Dateiabgabe: Max. Dateigröße</label>
-            <select id="edit-task-file-submission-max-size">
-              <option value="51200">50 KB</option>
-              <option value="102400" selected>100 KB (Standard)</option>
-              <option value="256000">250 KB</option>
-              <option value="1048576">1 MB</option>
-              <option value="2097152">2 MB</option>
-              <option value="5242880">5 MB</option>
-            </select>
           </div>
           
           <div class="field checkbox-field">
@@ -1701,8 +1674,8 @@ if ($displayName === '') {
         
         <!-- Solution Code (for code & code_random_complex tasks) -->
         <div class="field" data-field="solution">
-          <label for="edit-task-solution">Solution Code <span style="color:#999; font-size:12px;">(code_random_complex nutzt Placeholder)</span></label>
-          <textarea id="edit-task-solution" placeholder="Für code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
+          <label for="edit-task-solution">Solution Code / DB-Template <span style="color:#999; font-size:12px;">(db_model: JSON-Template für den Designer; code_random_complex nutzt Placeholder)</span></label>
+          <textarea id="edit-task-solution" placeholder="Für db_model: {\"tables\":[{\"name\":\"kunden\",\"columns\":[{\"name\":\"id\",\"type\":\"INTEGER\",\"pk\":true}]}]}\nFür code/intentelligent: volle Musterlösung\nFür code_random_complex: result = int({binary}, 2)"></textarea>
           <div class="hint">
             <strong>Für code & intelligent:</strong> Vollständige Musterlösung<br>
             <strong>Für code_random_complex:</strong> Verwende Placeholder <code>{varName}</code> für dynamische Werte<br>
@@ -2048,6 +2021,102 @@ if ($displayName === '') {
   <script src="js/import-tasks.js"></script>
   <script src="js/task-ai-generator.js"></script>
   <script src="js/admin-dashboard.js?v=20260506a"></script>
-  <script src="js/admin-teams-users.js?v=20260423c"></script>
+  <script src="js/admin-teams-users.js?v=20260618c"></script>
+  
+  <script>
+  // HOTFIX: Ensure new assignment-level status change is available
+  // This function maps modal UI values to assignment-level API schema
+  if (typeof toAssignmentStatusFromModalStatus === 'undefined') {
+    window.toAssignmentStatusFromModalStatus = function(modalStatus) {
+      const status = String(modalStatus || '').trim();
+      if (status === 'unbearbeitet') return 'assigned';
+      if (status === 'in-progress') return 'in_progress';
+      if (status === 'manual') return 'submitted';
+      return status || 'submitted';
+    };
+  }
+  
+  // HOTFIX: Ensure applyTeamMatrixStatusChange uses assignment-level API
+  if (typeof applyTeamMatrixStatusChange === 'function') {
+    const oldApply = applyTeamMatrixStatusChange;
+    window.applyTeamMatrixStatusChange = async function() {
+      const modal = ensureTeamMatrixStatusModal();
+      const userId = Number(modal.dataset.userId || 0);
+      const assignmentId = Number(modal.dataset.assignmentId || 0);
+      const statusSelect = modal.querySelector('#team-matrix-status-select');
+      const applyBtn = modal.querySelector('[data-role="apply"]');
+      const infoBox = modal.querySelector('#team-matrix-status-info');
+
+      if (!userId || !assignmentId || !statusSelect) return;
+
+      const targetStatus = statusSelect.value;
+      const oldLabel = applyBtn ? applyBtn.textContent : '';
+      if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Speichere...';
+      }
+
+      try {
+        if (targetStatus === 'rework') {
+          const confirmed = window.confirm('Nacharbeit starten? Dabei wird die individuelle Frist auf jetzt + 10 Tage gesetzt und nicht bestandene Aufgaben werden wieder auf unbearbeitet gesetzt.');
+          if (!confirmed) {
+            if (applyBtn) {
+              applyBtn.disabled = false;
+              applyBtn.textContent = oldLabel || 'Speichern';
+            }
+            return;
+          }
+          
+          await teamsUsersRequestJson('../api/admin/assignments/users/update-status.php', {
+            method: 'POST',
+            body: JSON.stringify({
+              assignment_id: assignmentId,
+              user_id: userId,
+              status: 'rework'
+            })
+          });
+        } else {
+          const assignmentStatus = window.toAssignmentStatusFromModalStatus(targetStatus);
+          await teamsUsersRequestJson('../api/admin/assignments/users/update-status.php', {
+            method: 'POST',
+            body: JSON.stringify({
+              assignment_id: assignmentId,
+              user_id: userId,
+              status: assignmentStatus
+            })
+          });
+        }
+
+        if (window.teamMatrixDetailCache) {
+          window.teamMatrixDetailCache.delete(assignmentId + ':' + userId);
+        }
+
+        const selectedTeamId = Number((document.getElementById('teams-members-team-filter')?.value || window.selectedTeamId || 0));
+        if (selectedTeamId > 0 && typeof window.loadTeamMembers === 'function') {
+          await window.loadTeamMembers(selectedTeamId);
+        }
+
+        if (typeof closeTeamMatrixStatusModal === 'function') {
+          closeTeamMatrixStatusModal();
+        }
+        
+        if (targetStatus === 'rework') {
+          alert('Nacharbeit aktiviert (inkl. Frist +10 Tage und Reset der nicht bestandenen Aufgaben wie in der Teilnehmer-Übersicht).');
+        } else {
+          alert('Assignment-Bewertung auf "' + targetStatus + '" gesetzt.');
+        }
+      } catch (err) {
+        if (infoBox) {
+          infoBox.innerHTML = '<div style="color:#b91c1c;">Fehler beim Speichern: ' + (err.message || 'Unbekannter Fehler') + '</div>';
+        }
+      } finally {
+        if (applyBtn) {
+          applyBtn.disabled = false;
+          applyBtn.textContent = oldLabel || 'Speichern';
+        }
+      }
+    };
+  }
+  </script>
 </body>
 </html>

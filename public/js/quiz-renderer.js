@@ -134,6 +134,10 @@ window.QuizRenderer = {
       this.renderChoice(task, container, taskType === 'multiple_choice');
     } else if (taskType === 'free_text') {
       this.renderFreeText(task, container);
+    } else if (taskType === 'db_model') {
+      this.renderDbModel(task, container);
+    } else if (taskType === 'uml') {
+      window.UmlRenderer?.render(task, container);
     } else if (taskType === 'code_reading') {
       this.renderCodeReading(task, container);
     } else if (taskType === 'code_random_complex') {
@@ -408,6 +412,1526 @@ window.QuizRenderer = {
         <div id="quiz-feedback-${task.id}" class="quiz-feedback"></div>
       </div>
     `;
+  },
+
+  getDbModelTemplateFromTask(task) {
+    const fallback = {
+      tables: [
+        {
+          name: 'kunden',
+          columns: [
+            { name: 'id', type: 'INTEGER', size: 11, pk: true, nullable: false, default: '' },
+            { name: 'name', type: 'VARCHAR', size: 100, pk: false, nullable: false, default: '' }
+          ]
+        }
+      ]
+    };
+
+    const raw = task?.solution_code || task?.db_template || '';
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return fallback;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.tables)) {
+        return parsed;
+      }
+    } catch (_err) {
+      // Fallback to the built-in starter schema if the admin template is not valid JSON.
+    }
+
+    return fallback;
+  },
+
+  getDbModelTaskState(task) {
+    const fallback = this.getDbModelTemplateFromTask(task);
+    const key = `__dbModelTaskState_${task?.id || 'default'}`;
+    const existing = window[key];
+
+    if (existing && Array.isArray(existing.tables)) {
+      return existing;
+    }
+
+    const seeded = JSON.parse(JSON.stringify(fallback));
+    window[key] = seeded;
+    return seeded;
+  },
+
+  persistDbModelTaskAnswer(task, state) {
+    if (!task?.id || !window.assignmentState) return;
+    if (!window.assignmentState.taskUserAnswers) {
+      window.assignmentState.taskUserAnswers = {};
+    }
+    if (!window.assignmentState.taskUserAnswers[task.id]) {
+      window.assignmentState.taskUserAnswers[task.id] = {};
+    }
+    window.assignmentState.taskUserAnswers[task.id].text_answer = JSON.stringify(state);
+  },
+
+  setDbModelTaskState(task, state) {
+    if (!task?.id) return;
+    const historyKey = `__dbModelTaskHistory_${task.id}`;
+    const history = window[historyKey] || { entries: [], index: -1 };
+    const serialized = JSON.stringify(state);
+    const lastEntry = history.entries[history.index];
+    if (lastEntry !== serialized) {
+      history.entries = history.entries.slice(0, history.index + 1);
+      history.entries.push(serialized);
+      history.index = history.entries.length - 1;
+      window[historyKey] = history;
+    }
+    window[`__dbModelTaskState_${task.id}`] = state;
+    this.persistDbModelTaskAnswer(task, state);
+  },
+
+  createDbModelEmptyTable() {
+    return {
+      name: 'neue_tabelle',
+      rows: [],
+      columns: [
+        { name: 'id', type: 'INTEGER', size: 11, pk: true, nullable: false, default: '' }
+      ]
+    };
+  },
+
+  createDbModelEmptyColumn() {
+    return { name: 'neue_spalte', type: 'VARCHAR', size: 100, pk: false, nullable: true, default: '' };
+  },
+
+  getDbModelTypeOptionsMarkup(selectedType) {
+    const types = ['AUTO', 'INTEGER', 'BOOLEAN', 'DATE', 'DATETIME', 'TIME', 'VARCHAR', 'FLOAT'];
+    const normalizedType = (() => {
+      const value = String(selectedType || '').toUpperCase();
+      if (value === 'TEXT') return 'VARCHAR';
+      if (value === 'REAL' || value === 'NUMERIC') return 'FLOAT';
+      return value;
+    })();
+    return types.map((type) => `<option value="${type}" ${normalizedType === type ? 'selected' : ''}>${type}</option>`).join('');
+  },
+
+  getDbModelColumnSizeMarkup(column, tableIndex, colIndex) {
+    const type = String(column?.type || '').toUpperCase();
+    const size = column?.size;
+    if (type === 'AUTO') {
+      return `<input value="3" disabled style="width:58px; margin:0; border-radius:10px; border:1px solid var(--border); background:var(--bg); padding:5px 6px; opacity:0.6; box-sizing:border-box;">`;
+    }
+    if (type === 'VARCHAR') {
+      return `<input data-db-model-field="column-size" data-table-index="${tableIndex}" data-column-index="${colIndex}" value="${this.escapeHtml(String(Number.isFinite(Number(size)) ? Number(size) : 50))}" style="width:58px; margin:0; border-radius:10px; border:1px solid var(--border); background:var(--bg); padding:5px 6px; box-sizing:border-box;">`;
+    }
+    if (type === 'INTEGER') {
+      const options = [1, 2, 3, 4, 8].map((value) => `<option value="${value}" ${Number(size || 2) === value ? 'selected' : ''}>${value}</option>`).join('');
+      return `<select data-db-model-field="column-size" data-table-index="${tableIndex}" data-column-index="${colIndex}" style="width:58px; margin:0; border-radius:10px; border:1px solid var(--border); background:var(--bg); padding:5px 6px; box-sizing:border-box;">${options}</select>`;
+    }
+    return '';
+  },
+
+  getDbModelColumnDefaultPlaceholder(column) {
+    const type = String(column?.type || '').toUpperCase();
+    if (type === 'AUTO') return '';
+    if (type === 'BOOLEAN') return '0 / 1';
+    if (type === 'DATE') return 'YYYY-MM-DD';
+    if (type === 'DATETIME') return 'YYYY-MM-DD HH:MM:SS';
+    if (type === 'TIME') return 'HH:MM:SS';
+    if (type === 'INTEGER') return '0';
+    if (type === 'FLOAT') return '0.0';
+    return '';
+  },
+
+  getDbModelRowPendingEdits(tableIndex, rowIndex) {
+    const key = `${tableIndex}:${rowIndex}`;
+    const pending = this.dbModelTaskPendingRowEdits || {};
+    if (!pending[key] || typeof pending[key] !== 'object') {
+      pending[key] = {};
+      this.dbModelTaskPendingRowEdits = pending;
+    }
+    return pending[key];
+  },
+
+  clearDbModelRowPendingEdits(tableIndex, rowIndex) {
+    const key = `${tableIndex}:${rowIndex}`;
+    const pending = this.dbModelTaskPendingRowEdits || {};
+    if (pending[key]) {
+      delete pending[key];
+      this.dbModelTaskPendingRowEdits = pending;
+    }
+  },
+
+  getDbModelRowActionMarkup(tableIndex, rowIndex, isDirty = false) {
+    if (isDirty) {
+      return `<span style="display:inline-flex; gap:2px; align-items:center;"><button type="button" data-db-model-action="commit-row-edit" data-table-index="${tableIndex}" data-row-index="${rowIndex}" title="Zeile speichern" aria-label="Zeile speichern" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #86efac; background:#f0fdf4; color:#166534; border-radius:6px; padding:0;">✓</button><button type="button" data-db-model-action="discard-row-edit" data-table-index="${tableIndex}" data-row-index="${rowIndex}" title="Änderungen verwerfen" aria-label="Änderungen verwerfen" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #fecaca; background:#fff1f2; color:#b42318; border-radius:6px; padding:0;">⛔</button></span><button type="button" data-db-model-action="duplicate-row" data-table-index="${tableIndex}" data-row-index="${rowIndex}" title="Zeile duplizieren" aria-label="Zeile duplizieren" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--panel); border-radius:6px; padding:0;">⧉</button><button type="button" data-db-model-action="delete-row" data-table-index="${tableIndex}" data-row-index="${rowIndex}" class="db-data-grid-inline-add-btn" title="Zeile löschen" aria-label="Zeile löschen" style="width:24px; height:24px;">-</button>`;
+    }
+
+    return `<button type="button" data-db-model-action="duplicate-row" data-table-index="${tableIndex}" data-row-index="${rowIndex}" title="Zeile duplizieren" aria-label="Zeile duplizieren" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--panel); border-radius:6px; padding:0;">⧉</button><button type="button" data-db-model-action="delete-row" data-table-index="${tableIndex}" data-row-index="${rowIndex}" class="db-data-grid-inline-add-btn" title="Zeile löschen" aria-label="Zeile löschen" style="width:24px; height:24px;">-</button>`;
+  },
+
+  syncDbModelRowActionButtons(container, tableIndex, rowIndex, inputEl) {
+    const row = inputEl?.closest?.('tr');
+    if (!row) return;
+    const actionCell = row.querySelector('td:last-child');
+    if (!actionCell) return;
+
+    const key = String(inputEl?.getAttribute('data-db-input') || '');
+    const pending = this.getDbModelRowPendingEdits(tableIndex, rowIndex);
+    const columnName = String(inputEl?.getAttribute('data-column-name') || '').trim();
+    const currentValue = inputEl?.value ?? '';
+    const isDirty = Object.keys(pending || {}).length > 0 || (key === 'row-value' && columnName && String(currentValue ?? '').trim() !== '');
+
+    if (key === 'row-new-value') {
+      const shouldShowActions = String(currentValue ?? '').trim() !== '';
+      row.classList.toggle('db-data-grid-row-dirty', shouldShowActions);
+      actionCell.innerHTML = shouldShowActions
+        ? `<span style="display:inline-flex; gap:2px; align-items:center;"><button type="button" data-db-model-action="add-row-inline" data-table-index="${tableIndex}" title="Zeile einfügen" aria-label="Zeile einfügen" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #86efac; background:#f0fdf4; color:#166534; border-radius:6px; padding:0;">✓</button><button type="button" data-db-model-action="discard-inline-row" data-table-index="${tableIndex}" title="Änderungen verwerfen" aria-label="Änderungen verwerfen" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #fecaca; background:#fff1f2; color:#b42318; border-radius:6px; padding:0;">⛔</button></span>`
+        : `<button type="button" data-db-model-action="add-row-inline" data-table-index="${tableIndex}" title="Zeile einfügen" style="border:1px solid #bfdbfe; background:#eff6ff; color:#2563eb; border-radius:6px; width:26px; height:26px; line-height:1; font-weight:700;">+</button>`;
+      return;
+    }
+
+    row.classList.toggle('db-data-grid-row-dirty', isDirty);
+    actionCell.innerHTML = this.getDbModelRowActionMarkup(tableIndex, rowIndex, isDirty);
+  },
+
+  syncDbModelRowVisualState(container, focusedInput) {
+    if (!container) return;
+    const activeRow = focusedInput?.closest?.('tr');
+    const activeCell = focusedInput?.closest?.('td');
+    container.querySelectorAll('.db-data-grid-row').forEach((row) => {
+      const rowHasFocus = row === activeRow;
+      row.classList.toggle('db-data-grid-row-active', rowHasFocus);
+      row.querySelectorAll('td').forEach((cell) => {
+        cell.classList.toggle('db-data-grid-cell-active', rowHasFocus && cell === activeCell);
+      });
+    });
+  },
+
+  focusDbModelGridCell(container, tableIndex, rowIndex, colIndex) {
+    window.setTimeout(() => {
+      if (!container) return;
+      const selector = `.db-data-grid-input[data-db-input="row-value"][data-table-index="${tableIndex}"][data-row-index="${rowIndex}"][data-column-name]`;
+      const inputs = Array.from(container.querySelectorAll(selector));
+      const target = inputs[Math.max(0, Math.min(colIndex, inputs.length - 1))];
+      if (target instanceof HTMLInputElement) {
+        target.focus();
+        target.select();
+      }
+    }, 0);
+  },
+
+  getDbModelAutoGeneratedValue(table, column, rowIndexToExclude = null) {
+    const columnName = String(column?.name || '').trim();
+    if (!columnName || String(column?.type || '').toUpperCase() !== 'AUTO') {
+      return '';
+    }
+
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    const numericValues = rows
+      .map((row, index) => {
+        if (index === rowIndexToExclude) return null;
+        const rawValue = row?.[columnName];
+        if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+        const parsed = Number(String(rawValue).trim());
+        return Number.isFinite(parsed) ? parsed : null;
+      })
+      .filter((value) => Number.isFinite(value));
+
+    const nextValue = numericValues.length ? Math.max(...numericValues) + 1 : 1;
+    return String(nextValue);
+  },
+
+  applyDbModelColumnTypeBehavior(column) {
+    if (!column) return column;
+    const normalizedType = String(column.type || '').toUpperCase();
+    if (normalizedType === 'AUTO') {
+      column.size = 3;
+      column.pk = true;
+      column.fk = false;
+      column.nullable = false;
+      column.default = '';
+    } else if (normalizedType === 'VARCHAR') {
+      column.size = Number.isFinite(Number(column.size)) && Number(column.size) > 0 ? Math.floor(Number(column.size)) : 50;
+    } else if (normalizedType === 'INTEGER') {
+      column.size = [1, 2, 3, 4, 8].includes(Math.floor(Number(column.size))) ? Math.floor(Number(column.size)) : 2;
+    } else {
+      column.size = null;
+    }
+    return column;
+  },
+
+  _dbModelTreeContextMenuState: null,
+
+  getDbModelTreeContextMenuElement() {
+    if (this._dbModelTreeContextMenuState?.menuEl && document.body.contains(this._dbModelTreeContextMenuState.menuEl)) {
+      return this._dbModelTreeContextMenuState.menuEl;
+    }
+
+    const menuEl = document.createElement('div');
+    menuEl.id = 'db-model-tree-context-menu';
+    menuEl.style.position = 'fixed';
+    menuEl.style.minWidth = '190px';
+    menuEl.style.background = '#ffffff';
+    menuEl.style.border = '1px solid #d1d5db';
+    menuEl.style.borderRadius = '10px';
+    menuEl.style.boxShadow = '0 8px 24px rgba(0,0,0,0.14)';
+    menuEl.style.padding = '6px';
+    menuEl.style.display = 'none';
+    menuEl.style.zIndex = '9999';
+    document.body.appendChild(menuEl);
+
+    const onPointerDown = (event) => {
+      if (!menuEl.contains(event.target)) {
+        this.hideDbModelTreeContextMenu();
+      }
+    };
+
+    const onEscape = (event) => {
+      if (event.key === 'Escape') {
+        this.hideDbModelTreeContextMenu();
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('keydown', onEscape, true);
+
+    this._dbModelTreeContextMenuState = {
+      menuEl,
+      dispose: () => {
+        document.removeEventListener('mousedown', onPointerDown, true);
+        document.removeEventListener('keydown', onEscape, true);
+      }
+    };
+
+    return menuEl;
+  },
+
+  hideDbModelTreeContextMenu() {
+    const menuEl = this._dbModelTreeContextMenuState?.menuEl;
+    if (!menuEl) return;
+    menuEl.style.display = 'none';
+    menuEl.innerHTML = '';
+  },
+
+  findNextDuplicatedDbModelTableName(tables, sourceName) {
+    const existingNames = new Set((tables || []).map((table) => String(table?.name || '').trim().toLowerCase()));
+    const baseName = String(sourceName || '').trim() || 'tabelle';
+    for (let suffix = 2; suffix < 1000; suffix += 1) {
+      const candidate = `${baseName}${suffix}`;
+      if (!existingNames.has(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+    return `${baseName}${Date.now()}`;
+  },
+
+  showDbModelTreeContextMenu(tableIndex, pageX, pageY, task, state, container) {
+    const menuEl = this.getDbModelTreeContextMenuElement();
+    menuEl.innerHTML = '';
+
+    const entries = [
+      { label: 'Umbenennen', action: 'context-rename-table' },
+      { label: 'Neue Tabelle', action: 'context-add-table' },
+      { label: 'Tabellendaten löschen', action: 'context-clear-table-data' },
+      { label: 'Tabelle löschen', action: 'context-delete-table', danger: true },
+      { label: 'Tabelle duplizieren', action: 'context-duplicate-table' }
+    ];
+
+    entries.forEach((entry) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = entry.label;
+      btn.style.display = 'block';
+      btn.style.width = '100%';
+      btn.style.textAlign = 'left';
+      btn.style.border = 'none';
+      btn.style.background = 'transparent';
+      btn.style.padding = '8px 10px';
+      btn.style.borderRadius = '8px';
+      btn.style.cursor = 'pointer';
+      btn.style.fontSize = '13px';
+      btn.style.color = entry.danger ? '#b91c1c' : '#111827';
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = entry.danger ? '#fff1f2' : '#f3f4f6';
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = 'transparent';
+      });
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.hideDbModelTreeContextMenu();
+        this.handleDbModelAction(task, entry.action, { getAttribute: (name) => (name === 'data-table-index' ? String(tableIndex) : null) }, state, container);
+      });
+      menuEl.appendChild(btn);
+    });
+
+    menuEl.style.display = 'block';
+    menuEl.style.left = `${Math.max(8, Number(pageX) || 0)}px`;
+    menuEl.style.top = `${Math.max(8, Number(pageY) || 0)}px`;
+
+    const rect = menuEl.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - 8;
+    const maxTop = window.innerHeight - rect.height - 8;
+    menuEl.style.left = `${Math.min(Math.max(8, Number(pageX) || 0), Math.max(8, maxLeft))}px`;
+    menuEl.style.top = `${Math.min(Math.max(8, Number(pageY) || 0), Math.max(8, maxTop))}px`;
+  },
+
+  handleDbModelAction(task, action, buttonEl, state, container) {
+    const tables = Array.isArray(state?.tables) ? state.tables : [];
+    const tableIndex = Number(buttonEl?.getAttribute('data-table-index') || -1);
+    const columnIndex = Number(buttonEl?.getAttribute('data-column-index') || -1);
+    const table = tables[tableIndex];
+
+    if (action === 'select-table') {
+      state.selectedTableIndex = tableIndex >= 0 ? tableIndex : 0;
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'add-table' || action === 'context-add-table') {
+      tables.push(this.createDbModelEmptyTable());
+      state.selectedTableIndex = tables.length - 1;
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'save-structure') {
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'discard') {
+      const resetState = this.getDbModelTemplateFromTask(task);
+      resetState.tables = Array.isArray(resetState.tables) ? resetState.tables : [];
+      resetState.selectedTableIndex = 0;
+      this.setDbModelTaskState(task, resetState);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'undo') {
+      const historyKey = `__dbModelTaskHistory_${task.id}`;
+      const history = window[historyKey] || { entries: [], index: -1 };
+      if (history.index > 0) {
+        history.index -= 1;
+        window[historyKey] = history;
+        const restored = JSON.parse(history.entries[history.index]);
+        this.setDbModelTaskState(task, restored);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'redo') {
+      const historyKey = `__dbModelTaskHistory_${task.id}`;
+      const history = window[historyKey] || { entries: [], index: -1 };
+      if (history.index >= 0 && history.index < history.entries.length - 1) {
+        history.index += 1;
+        window[historyKey] = history;
+        const restored = JSON.parse(history.entries[history.index]);
+        this.setDbModelTaskState(task, restored);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'delete-table' || action === 'context-delete-table') {
+      if (tableIndex >= 0 && tables[tableIndex]) {
+        tables.splice(tableIndex, 1);
+        state.selectedTableIndex = Math.max(0, Math.min(tableIndex, tables.length - 1));
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'context-rename-table' && table) {
+      const currentName = String(table?.name || '').trim() || `Tabelle ${tableIndex + 1}`;
+      const renamed = window.prompt('Neuer Tabellenname:', currentName);
+      if (renamed == null) return;
+      const nextName = String(renamed || '').trim();
+      if (!nextName) return;
+      table.name = nextName;
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'context-clear-table-data' && table) {
+      table.rows = [];
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'context-duplicate-table' && table) {
+      const clone = JSON.parse(JSON.stringify(table));
+      clone.name = this.findNextDuplicatedDbModelTableName(tables, table.name);
+      tables.splice(tableIndex + 1, 0, clone);
+      state.selectedTableIndex = tableIndex + 1;
+      this.setDbModelTaskState(task, state);
+      this.renderDbModel(task, container);
+      return;
+    }
+
+    if (action === 'add-column-inline') {
+      if (tableIndex >= 0 && tables[tableIndex]) {
+        const newColumn = this.createDbModelEmptyColumn();
+        const nameInput = container.querySelector('[data-db-model-field="new-column-name"]');
+        const typeInput = container.querySelector('[data-db-model-field="new-column-type"]');
+        const sizeInput = container.querySelector('[data-db-model-field="new-column-size"]');
+        const pkInput = container.querySelector('[data-db-model-field="new-column-pk"]');
+        const fkInput = container.querySelector('[data-db-model-field="new-column-fk"]');
+        const nullableInput = container.querySelector('[data-db-model-field="new-column-nullable"]');
+        const defaultInput = container.querySelector('[data-db-model-field="new-column-default"]');
+
+        newColumn.name = String(nameInput?.value || '').trim() || newColumn.name;
+        newColumn.type = String(typeInput?.value || 'VARCHAR').toUpperCase();
+        const sizeValue = Number(sizeInput?.value);
+        if (newColumn.type === 'AUTO') {
+          this.applyDbModelColumnTypeBehavior(newColumn);
+        } else {
+          newColumn.size = Number.isFinite(sizeValue) && sizeValue > 0 ? Math.floor(sizeValue) : 100;
+          newColumn.pk = Boolean(pkInput?.checked);
+          newColumn.fk = Boolean(fkInput?.checked);
+          newColumn.nullable = Boolean(nullableInput?.checked);
+          newColumn.default = String(defaultInput?.value ?? '');
+        }
+
+        tables[tableIndex].columns = Array.isArray(tables[tableIndex].columns) ? tables[tableIndex].columns : [];
+        tables[tableIndex].columns.push(newColumn);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'add-row') {
+      if (tableIndex >= 0 && tables[tableIndex]) {
+        tables[tableIndex].rows = Array.isArray(tables[tableIndex].rows) ? tables[tableIndex].rows : [];
+        const newRow = {};
+        (tables[tableIndex].columns || []).forEach((column) => {
+          const colName = String(column?.name || '').trim();
+          if (!colName) return;
+          const isAutoColumn = String(column?.type || '').toUpperCase() === 'AUTO';
+          newRow[colName] = isAutoColumn ? this.getDbModelAutoGeneratedValue(tables[tableIndex], column) : '';
+        });
+        tables[tableIndex].rows.push(newRow);
+        const rowIndex = tables[tableIndex].rows.length - 1;
+        const pending = this.getDbModelRowPendingEdits(tableIndex, rowIndex);
+        pending.__new__ = true;
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+        this.focusDbModelGridCell(container, tableIndex, rowIndex, 0);
+      }
+      return;
+    }
+
+    if (action === 'add-row-inline') {
+      if (tableIndex >= 0 && tables[tableIndex]) {
+        const rowValues = {};
+        const columnInputs = container.querySelectorAll('[data-db-input="row-new-value"][data-table-index="' + tableIndex + '"]');
+        columnInputs.forEach((input) => {
+          const columnName = String(input.getAttribute('data-column-name') || '').trim();
+          if (!columnName) return;
+          const column = (tables[tableIndex].columns || []).find((entry) => String(entry?.name || '').trim() === columnName);
+          const isAutoColumn = String(column?.type || '').toUpperCase() === 'AUTO';
+          const rawValue = input.value;
+          rowValues[columnName] = isAutoColumn
+            ? (String(rawValue).trim() !== '' ? rawValue : this.getDbModelAutoGeneratedValue(tables[tableIndex], column))
+            : rawValue;
+        });
+        tables[tableIndex].rows = Array.isArray(tables[tableIndex].rows) ? tables[tableIndex].rows : [];
+        tables[tableIndex].rows.push(rowValues);
+        const rowIndex = tables[tableIndex].rows.length - 1;
+        this.clearDbModelRowPendingEdits(tableIndex, rowIndex);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+        this.focusDbModelGridCell(container, tableIndex, rowIndex, 0);
+      }
+      return;
+    }
+
+    if (action === 'commit-row-edit') {
+      if (tableIndex >= 0 && tables[tableIndex] && Number.isInteger(columnIndex) && columnIndex >= 0) {
+        const row = tables[tableIndex].rows?.[columnIndex];
+        if (row && typeof row === 'object') {
+          const pending = this.getDbModelRowPendingEdits(tableIndex, columnIndex);
+          const pendingEntries = Object.entries(pending || {}).filter(([colName]) => colName !== '__new__');
+          (tables[tableIndex].columns || []).forEach((column) => {
+            const colName = String(column?.name || '').trim();
+            if (!colName) return;
+            const isAutoColumn = String(column?.type || '').toUpperCase() === 'AUTO';
+            const pendingValue = pendingEntries.find(([name]) => name === colName)?.[1];
+            const nextValue = isAutoColumn
+              ? (pendingValue !== undefined && String(pendingValue).trim() !== '' ? pendingValue : this.getDbModelAutoGeneratedValue(tables[tableIndex], column, columnIndex))
+              : (pendingValue !== undefined ? pendingValue : row[colName]);
+            row[colName] = String(nextValue ?? '');
+          });
+        }
+        this.clearDbModelRowPendingEdits(tableIndex, columnIndex);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'discard-row-edit') {
+      if (tableIndex >= 0 && tables[tableIndex] && Number.isInteger(columnIndex) && columnIndex >= 0) {
+        const pending = this.getDbModelRowPendingEdits(tableIndex, columnIndex);
+        if (pending?.__new__) {
+          tables[tableIndex].rows.splice(columnIndex, 1);
+        }
+        this.clearDbModelRowPendingEdits(tableIndex, columnIndex);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'discard-inline-row') {
+      if (tableIndex >= 0 && tables[tableIndex]) {
+        this.clearDbModelRowPendingEdits(tableIndex, tables[tableIndex].rows.length);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'duplicate-row') {
+      if (tableIndex >= 0 && tables[tableIndex] && Number.isInteger(columnIndex) && columnIndex >= 0) {
+        const source = tables[tableIndex].rows?.[columnIndex];
+        if (source && typeof source === 'object') {
+          const clone = JSON.parse(JSON.stringify(source));
+          (tables[tableIndex].columns || []).forEach((column) => {
+            const colName = String(column?.name || '').trim();
+            if (!colName) return;
+            if (String(column?.type || '').toUpperCase() === 'AUTO') {
+              clone[colName] = this.getDbModelAutoGeneratedValue(tables[tableIndex], column, columnIndex);
+            }
+          });
+          tables[tableIndex].rows.splice(columnIndex + 1, 0, clone);
+          this.setDbModelTaskState(task, state);
+          this.renderDbModel(task, container);
+          this.focusDbModelGridCell(container, tableIndex, columnIndex + 1, 0);
+        }
+      }
+      return;
+    }
+
+    if (action === 'delete-row') {
+      if (tableIndex >= 0 && tables[tableIndex] && Number.isInteger(columnIndex) && columnIndex >= 0) {
+        tables[tableIndex].rows.splice(columnIndex, 1);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+
+    if (action === 'delete-column') {
+      if (tableIndex >= 0 && columnIndex >= 0 && tables[tableIndex] && Array.isArray(tables[tableIndex].columns)) {
+        tables[tableIndex].columns.splice(columnIndex, 1);
+        this.setDbModelTaskState(task, state);
+        this.renderDbModel(task, container);
+      }
+      return;
+    }
+  },
+
+  getDbModelTreeMarkup(task, state, selectedTableIndex = 0) {
+    const tables = Array.isArray(state?.tables) ? state.tables : [];
+    const listItems = tables.map((table, tableIndex) => {
+      const isActive = tableIndex === selectedTableIndex;
+      return `
+        <button type="button" class="db-tree-item ${isActive ? 'active' : ''}" data-db-model-action="select-table" data-table-index="${tableIndex}">
+          <span>📄</span>
+          <span>${this.escapeHtml(String(table.name || 'neue_tabelle'))}</span>
+        </button>
+      `;
+    }).join('');
+
+    return `
+      <div class="db-model-task-tree-shell">
+        <div class="db-model-task-panel-header">
+          <span>DB Struktur</span>
+          <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">DB</span>
+        </div>
+        <div class="db-model-task-list">
+          ${listItems || '<div class="db-model-task-empty-state">Noch keine Tabellen vorhanden.</div>'}
+        </div>
+        <div class="db-model-task-sidebar-actions">
+          <button type="button" data-db-model-action="add-table" class="hspf-btn hspf-btn-primary">+ Tabelle</button>
+        </div>
+      </div>
+    `;
+  },
+
+  getDbModelTaskQuestionMarkup(task, stateHint = '') {
+    return `
+      <div class="db-model-task-question-shell">
+        <div class="db-model-task-panel-header">
+          <span>Aufgabe</span>
+          <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">Frage</span>
+        </div>
+        <div class="db-model-task-question-content">
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
+          ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
+          ${stateHint}
+          <div class="quiz-hint">Die Vorlage aus dem Admin-Template wird als Startzustand geladen. Die Bearbeitung erfolgt im linken Baum und im mittleren Entwurfsbereich.</div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderDbModelSidebar(task, container) {
+    if (!container) return;
+    this.ensureDbModelTaskStyles();
+
+    const state = this.getDbModelTaskState(task);
+    const tables = Array.isArray(state?.tables) ? state.tables : [];
+    const selectedTableIndex = Math.max(0, Number(state.selectedTableIndex || 0));
+    const listItems = tables.map((table, tableIndex) => {
+      const isActive = tableIndex === selectedTableIndex;
+      return `
+        <button type="button" class="db-tree-item ${isActive ? 'active' : ''}" data-db-model-action="select-table" data-table-index="${tableIndex}">
+          <span>📄</span>
+          <span>${this.escapeHtml(String(table.name || 'neue_tabelle'))}</span>
+        </button>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="db-model-task-sidebar-panel">
+        <div class="db-model-task-panel-header">
+          <span>🗄️ Struktur</span>
+          <span style="display:inline-flex; align-items:center; gap:6px; margin-left:auto;">
+            <button type="button" data-db-model-action="add-table" title="Neue Tabelle" aria-label="Neue Tabelle" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid #93c5fd; background:#2563eb; color:#ffffff; font-weight:700;">+</button>
+            <button type="button" data-db-model-action="delete-table" data-table-index="${selectedTableIndex}" title="Markierte Tabelle löschen" aria-label="Markierte Tabelle löschen" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid #fecaca; background:#fff1f2; color:#dc2626; font-weight:700;">✕</button>
+          </span>
+        </div>
+        <div class="db-model-task-list">
+          ${listItems || '<div class="db-model-task-empty-state">Noch keine Tabellen vorhanden.</div>'}
+        </div>
+        <div class="db-model-task-sidebar-actions">
+          <button type="button" data-db-model-action="add-table" class="hspf-btn hspf-btn-primary">+ Tabelle</button>
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('[data-db-model-action="add-table"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.handleDbModelAction(task, 'add-table', btn, state, document.getElementById('quiz-container'));
+        this.renderDbModelSidebar(task, container);
+      });
+    });
+
+    container.querySelectorAll('[data-db-model-action="select-table"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.handleDbModelAction(task, 'select-table', btn, state, document.getElementById('quiz-container'));
+        this.renderDbModelSidebar(task, container);
+      });
+    });
+
+    container.querySelectorAll('.db-tree-item').forEach((btn) => {
+      btn.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        const tableIndex = Number(btn.getAttribute('data-table-index') || -1);
+        if (tableIndex < 0) return;
+        state.selectedTableIndex = tableIndex;
+        this.setDbModelTaskState(task, state);
+        this.showDbModelTreeContextMenu(tableIndex, event.pageX, event.pageY, task, state, document.getElementById('quiz-container'));
+      });
+    });
+
+    container.querySelectorAll('[data-db-model-action="delete-table"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.handleDbModelAction(task, 'delete-table', btn, state, document.getElementById('quiz-container'));
+        this.renderDbModelSidebar(task, container);
+      });
+    });
+  },
+
+  ensureDbModelTaskStyles() {
+    if (document.getElementById('db-model-task-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'db-model-task-styles';
+    style.textContent = `
+      .quiz-container.db-model-task-quiz {
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+        border: none;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .db-model-task-shell {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border: 1px solid var(--border);
+        border-radius: 0;
+        overflow: hidden;
+        background: var(--bg);
+        box-sizing: border-box;
+      }
+
+      .db-model-task-sidebar,
+      .db-model-task-center {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        box-sizing: border-box;
+      }
+
+      .db-model-task-sidebar {
+        border-right: 1px solid var(--border);
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .db-model-task-center {
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      .db-model-task-tree-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .db-model-sidebar-slot {
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--panel);
+      }
+
+      .db-model-task-sidebar-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 180px;
+      }
+
+      .db-tree-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        margin: 2px 0;
+        border-radius: 4px;
+        background: var(--panel);
+        color: var(--text-primary);
+        cursor: pointer;
+        text-align: left;
+        font-size: 12px;
+        border: 1px solid transparent;
+      }
+
+      .db-tree-item:hover {
+        background: var(--bg);
+      }
+
+      .db-tree-item.active {
+        background: #dbeafe;
+        color: #0c4a6e;
+        font-weight: 600;
+      }
+
+      .db-model-task-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: var(--text-primary);
+        background: var(--panel);
+      }
+
+      .db-model-task-list {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow-y: auto;
+        flex: 1 1 auto;
+      }
+
+      .db-model-task-list-item {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 8px 10px;
+        background: var(--bg);
+        color: var(--text-primary);
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .db-model-task-list-item:hover {
+        border-color: #93c5fd;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
+      }
+
+      .db-model-task-list-item.active {
+        background: #dbeafe;
+        border-color: #667eea;
+        color: #0c4a6e;
+        font-weight: 600;
+        box-shadow: inset 0 0 0 1px rgba(102, 126, 234, 0.15);
+      }
+
+      .db-model-task-sidebar-actions {
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .db-model-task-main {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) minmax(220px, 0.85fr);
+        min-height: 0;
+        height: 100%;
+        min-width: 0;
+      }
+
+      .db-model-task-design-pane,
+      .db-model-task-data-pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .db-model-task-design-pane {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .db-model-task-design-content,
+      .db-model-task-data-content {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: auto;
+        flex: 1 1 auto;
+      }
+
+      .db-model-task-editor-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+
+      .db-model-task-editor-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .db-model-task-editor-top input {
+        flex: 1;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+      }
+
+      .db-model-task-editor-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .db-model-task-column-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 1px;
+        font-size: 12px;
+      }
+
+      .db-model-task-column-table {
+        table-layout: fixed;
+        width: 100%;
+        min-width: 0;
+      }
+
+      .db-model-task-column-table th {
+        text-align: left;
+        padding: 0 1px 1px 1px;
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .db-model-task-column-table td {
+        padding: 0 1px;
+        min-width: 0;
+      }
+
+      .db-model-task-column-table td > input,
+      .db-model-task-column-table td > select,
+      .db-model-task-column-table td > div {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .db-model-task-column-table input,
+      .db-model-task-column-table select {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg);
+        box-sizing: border-box;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      }
+
+      .db-model-task-column-table .db-model-task-inline-add {
+        background: #f0fdf4;
+        border-style: dashed;
+        border-color: #86efac;
+      }
+
+      .db-model-task-column-table .db-model-task-checkbox-cell {
+        width: 34px;
+        text-align: center;
+      }
+
+      .db-model-task-column-table .db-model-task-action-cell {
+        width: 36px;
+      }
+
+      .db-model-task-data-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .db-model-task-data-toolbar input {
+        width: 180px;
+        max-width: 220px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        font-size: 12px;
+      }
+
+      .db-model-task-data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .db-model-task-data-table th,
+      .db-model-task-data-table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .db-model-task-data-table th {
+        color: var(--text-secondary);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .db-model-task-data-table tbody tr:nth-child(even) {
+        background: #f8fafc;
+      }
+
+      .db-data-grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .db-data-grid-table th,
+      .db-data-grid-table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .db-data-grid-table th {
+        color: var(--text-secondary);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .db-data-grid-input {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        box-sizing: border-box;
+      }
+
+      .db-data-grid-inline-row {
+        background: #fbfdff;
+      }
+
+      .db-data-grid-row-dirty > td {
+        background: #fefce8;
+      }
+
+      .db-data-grid-row-active > td {
+        background: #f3f8ff;
+      }
+
+      .db-data-grid-cell-active {
+        background: #fff7cc !important;
+        box-shadow: inset 0 0 0 1px #60a5fa;
+      }
+
+      .db-data-grid-row td {
+        transition: background-color 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .db-data-grid-row:hover td,
+      .db-data-grid-row:focus-within td {
+        background: #f8fafc;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+      }
+
+      .db-data-grid-input {
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 4px 6px;
+        background: transparent;
+        color: inherit;
+      }
+
+      .db-data-grid-input:focus {
+        outline: none;
+        border-color: #2563eb;
+        background: #fef3c7;
+        box-shadow: inset 0 0 0 1px #2563eb;
+      }
+
+      .db-data-grid-input[readonly] {
+        background: #f8fafc;
+        color: #64748b;
+        cursor: not-allowed;
+      }
+
+      .db-data-grid-inline-add-btn {
+        width: 26px;
+        height: 26px;
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #2563eb;
+        border-radius: 6px;
+        font-weight: 700;
+      }
+
+      .db-model-task-column-row label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+
+      .db-model-task-preview textarea {
+        width: 100%;
+        min-height: 140px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        resize: vertical;
+      }
+
+      .db-model-task-question-content {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: auto;
+        flex: 1 1 auto;
+      }
+
+      .db-model-task-question-content .question-text {
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .db-model-task-question-content .question-image {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      }
+
+      .db-model-task-empty-state {
+        padding: 12px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        color: var(--text-secondary);
+        background: var(--bg);
+      }
+
+      @media (max-width: 900px) {
+        .db-model-task-shell {
+          display: flex;
+          flex-direction: column;
+        }
+        .db-model-task-sidebar,
+        .db-model-task-center {
+          border: none;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  },
+
+  renderDbModel(task, container) {
+    this.ensureDbModelTaskStyles();
+
+    const attemptsInfo = this.getAttemptsInfo(task);
+    const disableSubmit = attemptsInfo.blocked;
+
+    const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
+    const userTextAnswer = userAnswer?.text_answer || '';
+
+    const existingInMemoryState = window[`__dbModelTaskState_${task?.id || 'default'}`];
+    let state = existingInMemoryState && Array.isArray(existingInMemoryState.tables)
+      ? JSON.parse(JSON.stringify(existingInMemoryState))
+      : null;
+
+    if (!state && typeof userTextAnswer === 'string' && userTextAnswer.trim()) {
+      try {
+        const parsed = JSON.parse(userTextAnswer);
+        if (parsed && Array.isArray(parsed.tables)) {
+          state = parsed;
+        }
+      } catch (_err) {
+        // Fall back to the current in-memory editor state.
+      }
+    }
+
+    if (!state) {
+      state = this.getDbModelTaskState(task);
+    }
+
+    state.tables = Array.isArray(state.tables) ? state.tables : [];
+    state.selectedTableIndex = Number.isInteger(state.selectedTableIndex) ? state.selectedTableIndex : 0;
+    if (state.selectedTableIndex < 0) state.selectedTableIndex = 0;
+    if (state.selectedTableIndex >= state.tables.length) {
+      state.selectedTableIndex = Math.max(0, state.tables.length - 1);
+    }
+    this.setDbModelTaskState(task, state);
+
+    let stateHint = '<div class="quiz-hint">Diese Aufgabe wird manuell bewertet.</div>';
+    if (attemptsInfo.isSubmitted) {
+      stateHint = '<div class="quiz-hint">Antwort abgegeben. Bewertung erfolgt manuell.</div>';
+    }
+
+    const selectedTableIndex = Math.max(0, Number(state.selectedTableIndex || 0));
+    const selectedTable = state.tables[selectedTableIndex] || null;
+    const selectedRowsMarkup = selectedTable
+      ? (() => {
+          const rows = Array.isArray(selectedTable.rows) ? selectedTable.rows : [];
+          return rows.map((row, rowIndex) => {
+            const cells = (selectedTable.columns || []).map((column) => {
+              const columnName = String(column?.name || '').trim();
+              const value = columnName ? (row?.[columnName] ?? '') : '';
+              const isAutoColumn = String(column?.type || '').toUpperCase() === 'AUTO';
+              const readOnlyAttr = isAutoColumn ? 'readonly' : '';
+              const styleAttr = isAutoColumn ? 'background:#f8fafc; color:#64748b;' : '';
+              return `<td><input class="db-data-grid-input" data-db-model-field="row-value" data-db-input="row-value" data-table-index="${selectedTableIndex}" data-row-index="${rowIndex}" data-column-name="${this.escapeHtml(columnName)}" value="${this.escapeHtml(String(value ?? ''))}" placeholder="Wert" ${disableSubmit ? 'disabled' : ''} ${readOnlyAttr} style="${styleAttr}"></td>`;
+            }).join('');
+            return `
+              <tr class="db-data-grid-row">
+                <td style="padding:4px 6px; color:#666; border-right:1px solid #eee;">${rowIndex + 1}</td>
+                ${cells}
+                <td style="padding:2px; display:flex; gap:2px; align-items:center; justify-content:flex-end;">${this.getDbModelRowActionMarkup(selectedTableIndex, rowIndex, false)}</td>
+              </tr>
+            `;
+          }).join('');
+        })()
+      : '';
+    const inlineRowMarkup = selectedTable
+      ? (() => {
+          const columns = selectedTable.columns || [];
+          const cells = columns.map((column) => {
+            const columnName = String(column?.name || '').trim();
+            const isAutoColumn = String(column?.type || '').toUpperCase() === 'AUTO';
+            const readOnlyAttr = isAutoColumn ? 'readonly' : '';
+            const defaultValue = isAutoColumn ? this.getDbModelAutoGeneratedValue(selectedTable, column) : '';
+            const styleAttr = isAutoColumn ? 'background:#f8fafc; color:#64748b;' : '';
+            return `<td><input class="db-data-grid-input" data-db-model-field="row-value" data-db-input="row-new-value" data-table-index="${selectedTableIndex}" data-row-index="${Array.isArray(selectedTable.rows) ? selectedTable.rows.length : 0}" data-column-name="${this.escapeHtml(columnName)}" value="${this.escapeHtml(String(defaultValue))}" placeholder="neu..." ${disableSubmit ? 'disabled' : ''} ${readOnlyAttr} style="${styleAttr}"></td>`;
+          }).join('');
+          return `
+            <tr class="db-data-grid-row db-data-grid-inline-row">
+              <td style="padding:4px 6px; color:#3b82f6; border-right:1px solid #eee;">+</td>
+              ${cells}
+              <td style="padding:2px;">
+                <button type="button" data-db-model-action="add-row-inline" data-table-index="${selectedTableIndex}" class="db-data-grid-inline-add-btn" ${disableSubmit ? 'disabled' : ''}>+</button>
+              </td>
+            </tr>
+          `;
+        })()
+      : '';
+    const selectedColumnsMarkup = selectedTable
+      ? (selectedTable.columns || []).map((column, columnIndex) => {
+          const columnType = String(column.type || 'VARCHAR').toUpperCase();
+          const defaultPlaceholder = this.getDbModelColumnDefaultPlaceholder(column);
+          return `
+            <tr>
+              <td class="db-model-task-checkbox-cell"><input data-db-model-field="column-pk" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" type="checkbox" ${column.pk ? 'checked' : ''} ${disableSubmit ? 'disabled' : ''}></td>
+              <td class="db-model-task-checkbox-cell"><input data-db-model-field="column-fk" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" type="checkbox" ${column.fk ? 'checked' : ''} ${disableSubmit ? 'disabled' : ''}></td>
+              <td class="db-model-task-checkbox-cell"><input data-db-model-field="column-nullable" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" type="checkbox" ${column.nullable ? 'checked' : ''} ${disableSubmit ? 'disabled' : ''}></td>
+              <td><input data-db-model-field="column-name" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" value="${this.escapeHtml(String(column.name || ''))}" placeholder="Spaltenname" ${disableSubmit ? 'disabled' : ''} style="width:100%; min-width:0; box-sizing:border-box;"></td>
+              <td><div style="display:flex; align-items:center; gap:0; flex-wrap:nowrap; min-width:0; width:100%;"><select data-db-model-field="column-type" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" ${disableSubmit ? 'disabled' : ''} style="flex:1 1 0; min-width:0; width:100%; box-sizing:border-box;">${this.getDbModelTypeOptionsMarkup(columnType)}</select>${this.getDbModelColumnSizeMarkup(column, selectedTableIndex, columnIndex)}</div></td>
+              <td><input data-db-model-field="column-default" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" value="${this.escapeHtml(String(column.default ?? ''))}" placeholder="${this.escapeHtml(defaultPlaceholder)}" ${disableSubmit ? 'disabled' : ''} style="width:100%; min-width:0; box-sizing:border-box;"></td>
+              <td class="db-model-task-action-cell"><button type="button" data-db-model-action="delete-column" data-table-index="${selectedTableIndex}" data-column-index="${columnIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>✕</button></td>
+            </tr>
+          `;
+        }).join('')
+      : '<tr><td colspan="7" style="padding:8px; color:var(--text-secondary);">Noch keine Tabelle ausgewählt.</td></tr>';
+
+    const addColumnRowMarkup = selectedTable ? `
+      <tr class="db-model-task-inline-add" style="background:#f0fdf4;">
+        <td class="db-model-task-checkbox-cell"><input data-db-model-field="new-column-pk" type="checkbox" ${disableSubmit ? 'disabled' : ''} style="margin:0; width:12px; height:12px; padding:0;"></td>
+        <td class="db-model-task-checkbox-cell"><input data-db-model-field="new-column-fk" type="checkbox" ${disableSubmit ? 'disabled' : ''} style="margin:0; width:12px; height:12px; padding:0;"></td>
+        <td class="db-model-task-checkbox-cell"><input data-db-model-field="new-column-nullable" type="checkbox" checked ${disableSubmit ? 'disabled' : ''} style="margin:0; width:12px; height:12px; padding:0;"></td>
+        <td><input data-db-model-field="new-column-name" placeholder="neu..." ${disableSubmit ? 'disabled' : ''} style="width:100%; min-width:0; margin:0; border-radius:10px; border:1px dashed #86efac; background:#ffffff; padding:5px 8px; box-sizing:border-box;"></td>
+        <td><div style="display:flex; align-items:center; gap:0; flex-wrap:nowrap; min-width:0; width:100%;"><select data-db-model-field="new-column-type" ${disableSubmit ? 'disabled' : ''} style="flex:1 1 0; min-width:0; width:100%; margin:0; border-radius:10px 0 0 10px; border:1px solid var(--border); border-right:none; background:#ffffff; padding:4px 6px; box-sizing:border-box;">${this.getDbModelTypeOptionsMarkup('VARCHAR')}</select><input data-db-model-field="new-column-size" type="number" min="1" value="100" style="width:58px; flex:0 0 58px; margin:0; border-radius:0 10px 10px 0; border:1px solid var(--border); background:#ffffff; padding:4px 6px; box-sizing:border-box;" ${disableSubmit ? 'disabled' : ''}></div></td>
+        <td><input data-db-model-field="new-column-default" placeholder="Default" ${disableSubmit ? 'disabled' : ''} style="width:100%; min-width:0; margin:0; border-radius:10px; border:1px dashed #86efac; background:#ffffff; padding:4px 6px; box-sizing:border-box;"></td>
+        <td class="db-model-task-action-cell"><button type="button" data-db-model-action="add-column-inline" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''} style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; min-width:32px; border:1px solid #93c5fd; background:#2563eb; color:#ffffff; border-radius:10px; padding:0; font-size:18px; font-weight:700; box-shadow:0 1px 2px rgba(0,0,0,0.06);">+</button></td>
+      </tr>
+    ` : '';
+
+    const jsonPreview = JSON.stringify(state, null, 2);
+
+    container.innerHTML = `
+      <div class="quiz-container db-model-task-quiz">
+        <div class="db-model-task-shell">
+          <section class="db-model-task-center">
+            <div class="db-model-task-main">
+              <div class="db-model-task-design-pane">
+                <div class="db-model-task-panel-header" style="border-bottom:none; padding-bottom:0; background:transparent;">
+                  <span style="display:none;">Entwurf</span>
+                </div>
+                <div class="db-model-task-design-content">
+                  ${selectedTable ? `
+                    <div class="db-model-task-editor-card">
+                      <div class="db-model-task-editor-top">
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:16px; font-weight:700; line-height:1.1; min-width:0; flex:1 1 auto;">
+                          <span>Entwurf:</span>
+                          <span style="min-width:140px; max-width:220px; font-size:16px; font-weight:700; color:#2563eb; padding:6px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.escapeHtml(String(selectedTable.name || ''))}</span>
+                        </div>
+                        <div class="db-model-task-editor-toolbar">
+                          <button type="button" data-db-model-action="save-structure" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>Speichern</button>
+                          <button type="button" data-db-model-action="undo" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>↺</button>
+                          <button type="button" data-db-model-action="redo" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>↻</button>
+                          <button type="button" data-db-model-action="discard" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>Verwerfen</button>
+                        </div>
+                      </div>
+                      <table class="db-model-task-column-table">
+                        <thead>
+                          <tr>
+                            <th class="db-model-task-checkbox-cell" style="width:28px;">PK</th>
+                            <th class="db-model-task-checkbox-cell" style="width:28px;">FK</th>
+                            <th class="db-model-task-checkbox-cell" style="width:34px;">Null</th>
+                            <th style="width:auto;">Name</th>
+                            <th style="width:210px;">Typ</th>
+                            <th style="width:64px;">Default</th>
+                            <th class="db-model-task-action-cell" style="width:40px;"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${selectedColumnsMarkup}
+                          ${addColumnRowMarkup}
+                        </tbody>
+                      </table>
+                    </div>
+                  ` : '<div class="db-model-task-editor-card"><div class="db-model-task-empty-state">Füge oben eine Tabelle hinzu, um mit dem Entwurf zu starten.</div></div>'}
+                </div>
+              </div>
+
+              <div class="db-model-task-data-pane">
+                <div class="db-model-task-panel-header" style="border-bottom:none; padding-bottom:0; background:transparent;">
+                  <span style="display:none;">Daten</span>
+                </div>
+                <div class="db-model-task-data-content">
+                  <div class="db-model-task-editor-card">
+                    <div class="db-model-task-data-toolbar">
+                      <strong>Daten (${this.escapeHtml(String(selectedTable?.name || 'Tabelle'))})</strong>
+                      <div class="db-model-task-editor-toolbar">
+                        <input type="text" placeholder="Filter..." data-db-model-field="data-filter" data-db-model-action="data-filter" value="" style="min-width:170px; max-width:220px; padding:6px 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg);">
+                        <button type="button" data-db-model-action="save-structure" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>💾</button>
+                        <button type="button" data-db-model-action="add-row" data-table-index="${selectedTableIndex}" class="hspf-btn hspf-btn-sm" ${disableSubmit ? 'disabled' : ''}>＋</button>
+                      </div>
+                    </div>
+                    <div style="overflow:auto;">
+                      <table class="db-data-grid-table">
+                        <thead>
+                          <tr>
+                            <th style="width:42px;">#</th>
+                            ${selectedTable ? (selectedTable.columns || []).map((column) => `<th>${this.escapeHtml(String(column.name || ''))}</th>`).join('') : '<th>Spalte</th>'}
+                            <th style="width:56px;">Aktion</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${selectedTable
+                            ? `${selectedRowsMarkup}${inlineRowMarkup}`
+                            : '<tr><td colspan="3" style="padding:8px; color:var(--text-secondary);">Noch keine Tabelle ausgewählt.</td></tr>'}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="quiz-actions">
+          <button id="quiz-submit-${task.id}" class="hspf-btn hspf-btn-primary" onclick="window.QuizRenderer.submitQuiz(${task.id}, 'db_model')" ${disableSubmit ? 'disabled' : ''}>
+            Abgeben
+          </button>
+        </div>
+        <div id="quiz-feedback-${task.id}" class="quiz-feedback"></div>
+      </div>
+    `;
+
+    const previewEl = container.querySelector('[data-db-model-preview]');
+    const updatePreview = () => {
+      if (previewEl) {
+        previewEl.value = JSON.stringify(this.getDbModelTaskState(task), null, 2);
+      }
+    };
+
+    if (!container.__dbModelActionHandlerBound) {
+      container.addEventListener('click', (event) => {
+        const actionEl = event.target.closest('[data-db-model-action]');
+        if (!actionEl || !container.contains(actionEl)) return;
+        const action = actionEl.getAttribute('data-db-model-action');
+        if (!action) return;
+        event.preventDefault();
+        this.handleDbModelAction(task, action, actionEl, this.getDbModelTaskState(task), container);
+      });
+      container.__dbModelActionHandlerBound = true;
+    }
+
+    const sidebarEl = document.getElementById(`db-model-sidebar-${task.id}`);
+    if (sidebarEl) {
+      this.renderDbModelSidebar(task, sidebarEl);
+    }
+
+    container.querySelectorAll('[data-db-model-field]').forEach((input) => {
+      const updateFromField = () => {
+        const field = input.getAttribute('data-db-model-field');
+        const tableIndex = Number(input.getAttribute('data-table-index') || -1);
+        const columnIndex = Number(input.getAttribute('data-column-index') || -1);
+        if (field === 'table-name' && tableIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex]) {
+          state.tables[tableIndex].name = input.value.trim() || 'neue_tabelle';
+        } else if (field === 'column-name' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          state.tables[tableIndex].columns[columnIndex].name = input.value.trim() || 'neue_spalte';
+        } else if (field === 'column-type' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          const column = state.tables[tableIndex].columns[columnIndex];
+          column.type = String(input.value || 'VARCHAR').toUpperCase();
+          this.applyDbModelColumnTypeBehavior(column);
+          this.renderDbModel(task, container);
+        } else if (field === 'column-size' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          const sizeValue = Number(input.value);
+          state.tables[tableIndex].columns[columnIndex].size = Number.isFinite(sizeValue) && sizeValue > 0 ? Math.floor(sizeValue) : 100;
+        } else if (field === 'column-default' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          state.tables[tableIndex].columns[columnIndex].default = input.value;
+        } else if (field === 'row-value' && tableIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].rows)) {
+          const rowIndex = Number(input.getAttribute('data-row-index') || -1);
+          const columnName = String(input.getAttribute('data-column-name') || '').trim();
+          if (rowIndex >= 0 && columnName) {
+            state.tables[tableIndex].rows[rowIndex] = state.tables[tableIndex].rows[rowIndex] || {};
+            state.tables[tableIndex].rows[rowIndex][columnName] = input.value;
+            const pending = this.getDbModelRowPendingEdits(tableIndex, rowIndex);
+            pending[columnName] = input.value;
+          }
+        } else if (field === 'column-pk' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          state.tables[tableIndex].columns[columnIndex].pk = input.checked;
+        } else if (field === 'column-fk' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          state.tables[tableIndex].columns[columnIndex].fk = input.checked;
+        } else if (field === 'column-nullable' && tableIndex >= 0 && columnIndex >= 0 && Array.isArray(state.tables) && state.tables[tableIndex] && Array.isArray(state.tables[tableIndex].columns)) {
+          state.tables[tableIndex].columns[columnIndex].nullable = input.checked;
+        }
+        this.setDbModelTaskState(task, state);
+        updatePreview();
+      };
+      input.addEventListener('focusin', () => {
+        this.syncDbModelRowVisualState(container, input);
+      });
+      input.addEventListener('focusout', () => {
+        window.setTimeout(() => {
+          this.syncDbModelRowVisualState(container, container.querySelector('.db-data-grid-input:focus'));
+        }, 0);
+      });
+      input.addEventListener('input', () => {
+        updateFromField();
+        if (input.getAttribute('data-db-model-field') === 'data-filter') {
+          const filterValue = String(input.value || '').trim().toLowerCase();
+          container.querySelectorAll('.db-data-grid-row').forEach((row) => {
+            const rowText = row.textContent.toLowerCase();
+            row.style.display = rowText.includes(filterValue) ? '' : 'none';
+          });
+          return;
+        }
+        this.syncDbModelRowActionButtons(container, Number(input.getAttribute('data-table-index') || -1), Number(input.getAttribute('data-row-index') || -1), input);
+      });
+      input.addEventListener('change', updateFromField);
+      if (input.getAttribute('data-db-input') === 'row-new-value') {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            this.handleDbModelAction(task, 'add-row-inline', input, state, container);
+          }
+        });
+      }
+    });
   },
 
   renderCodeReading(task, container) {
@@ -753,6 +2277,22 @@ window.QuizRenderer = {
         return;
       }
       answer = { text_answer: text };
+    } else if (taskType === 'db_model') {
+      const state = window[`__dbModelTaskState_${taskId}`];
+      const text = state ? JSON.stringify(state) : '';
+      if (!text || text === '{}') {
+        feedbackEl.innerHTML = '<div class="error">Bitte ein DB-Modell anlegen</div>';
+        return;
+      }
+      answer = { text_answer: text };
+    } else if (taskType === 'uml') {
+      const state = window.UmlRenderer?.getState(taskId);
+      const text = state ? JSON.stringify(state) : '';
+      if (!text || text === '{}') {
+        feedbackEl.innerHTML = '<div class="error">Bitte ein UML-Diagramm anlegen</div>';
+        return;
+      }
+      answer = { text_answer: text };
     } else if (taskType === 'code_reading') {
       const input = document.getElementById(`code-reading-answer-${taskId}`);
       const value = input.value.trim();
@@ -898,7 +2438,14 @@ window.QuizRenderer = {
       }
       
       if (data.ok) {
+        const isSubmitted = data.status === 'submitted';
         const isPassed = data.is_correct;
+        const feedbackClass = isSubmitted
+          ? 'success'
+          : (isPassed ? 'success' : (data.status === 'in_progress' ? 'warning' : 'error'));
+        const feedbackTitle = isSubmitted
+          ? 'Antwort abgegeben'
+          : (isPassed ? '✓ Richtig!' : (data.status === 'in_progress' ? 'Noch nicht richtig' : '✗ Leider falsch'));
         let attemptsInfo = '';
         if (typeof data.attempts === 'number' && typeof data.max_attempts === 'number') {
           const isIterative = ['code_reading', 'code_random_complex'].includes(window.assignmentState?.currentTask?.task_type);
@@ -907,8 +2454,8 @@ window.QuizRenderer = {
         }
 
         feedbackEl.innerHTML = `
-          <div class="${isPassed ? 'success' : (data.status === 'in_progress' ? 'warning' : 'error')}">
-            ${isPassed ? '✓ Richtig!' : (data.status === 'in_progress' ? 'Noch nicht richtig' : '✗ Leider falsch')}
+          <div class="${feedbackClass}">
+            ${feedbackTitle}
             ${data.message ? `<br/>${data.message}` : ''}
             ${attemptsInfo}
           </div>
@@ -1000,7 +2547,7 @@ window.QuizRenderer = {
 
         // Heartbeat: stop on final, reset counter on continued attempts
         if (!window.testMode) {
-          if (data.status === 'passed' || data.status === 'failed') {
+          if (data.status === 'passed' || data.status === 'failed' || data.status === 'submitted') {
             window.stopActivityTracking?.(taskId);
           } else if (data.status === 'in-progress' || data.status === 'in_progress') {
             window.resetHeartbeatCounter?.(taskId);
@@ -1020,6 +2567,7 @@ window.QuizRenderer = {
         // For code_random_complex, keep feedback but re-render on success to disable form
         const taskType = window.assignmentState?.currentTask?.task_type;
         if (
+          data.status === 'submitted' ||
           data.status === 'passed' ||
           (data.status === 'failed' && data.attempts >= data.max_attempts) ||
           data.reset_values ||
@@ -1056,25 +2604,36 @@ window.QuizRenderer = {
     const maxAttempts = task && typeof task.max_attempts === 'number' ? task.max_attempts : 1;
     const attempts = window.assignmentState && task ? (window.assignmentState.taskAttempts[task.id] || 0) : 0;
     const status = window.assignmentState && task ? (window.assignmentState.taskStatuses[task.id] || '') : '';
-    const isLimitedType = ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex'].includes(task.task_type);
+    const isLimitedType = ['single_choice', 'multiple_choice', 'free_text', 'db_model', 'code_reading', 'code_random_complex'].includes(task.task_type);
     
     // Block if already passed
     if (status === 'passed') {
       return {
         blocked: true,
         isFailed: false,
-        isPassed: true
+        isPassed: true,
+        isSubmitted: false
+      };
+    }
+
+    if (status === 'submitted') {
+      return {
+        blocked: true,
+        isFailed: false,
+        isPassed: false,
+        isSubmitted: true
       };
     }
     
     if (!isLimitedType) {
-      return { blocked: false, isFailed: false, isPassed: false };
+      return { blocked: false, isFailed: false, isPassed: false, isSubmitted: false };
     }
 
     const blocked = attempts >= maxAttempts;
     const isFailed = status === 'failed';
     const isPassed = status === 'passed';
-    return { blocked, isFailed, isPassed };
+    const isSubmitted = status === 'submitted';
+    return { blocked, isFailed, isPassed, isSubmitted };
   },
 
   getCurrentIteration(task) {

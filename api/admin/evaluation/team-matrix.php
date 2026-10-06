@@ -10,9 +10,34 @@ require_once __DIR__ . '/../../auth/middleware.php';
 
 header('Content-Type: application/json');
 
+function ensureLabEvaluationTable(mysqli $conn): void {
+    $res = $conn->query("SHOW TABLES LIKE 'team_member_lab_evaluations'");
+    if ($res instanceof mysqli_result && $res->num_rows > 0) {
+        return;
+    }
+
+    $sql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS team_member_lab_evaluations (
+  user_id INT NOT NULL,
+  status ENUM('durchfuehrung','bewertung','bestanden','nachpruefung','nicht_bestanden','nicht_teilgenommen') NOT NULL DEFAULT 'durchfuehrung',
+  updated_by INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_tmlab_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_tmlab_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL;
+
+    if (!$conn->query($sql)) {
+        throw new RuntimeException('Failed to ensure lab evaluation table: ' . $conn->error);
+    }
+}
+
 try {
     $admin = requireAdmin();
     $conn = getDbConnection();
+    ensureLabEvaluationTable($conn);
 
     $teamId = isset($_GET['team_id']) ? (int)$_GET['team_id'] : 0;
     if ($teamId <= 0) {
@@ -57,7 +82,8 @@ try {
             COALESCE(ua_direct.status, ua_team.status, \'assigned\') AS raw_status,
             COALESCE(ua_direct.submitted_at, ua_team.submitted_at) AS submitted_at,
             COALESCE(ua_direct.is_late, ua_team.is_late, 0) AS is_late,
-            COALESCE(ua_direct.is_rework, ua_team.is_rework, 0) AS is_rework
+            COALESCE(ua_direct.is_rework, ua_team.is_rework, 0) AS is_rework,
+            tml.status AS lab_evaluation_status
         FROM (
             SELECT id, first_name, last_name, email FROM users WHERE team_id = ?
         ) u
@@ -71,6 +97,8 @@ try {
             ON ua_direct.assignment_id = a.id AND ua_direct.user_id = u.id
         LEFT JOIN user_assignments ua_team
             ON ua_team.assignment_id = a.id AND ua_team.team_id = ?
+        LEFT JOIN team_member_lab_evaluations tml
+            ON tml.user_id = u.id
         ORDER BY u.last_name, u.first_name, u.id, a.id
     ';
 
@@ -93,6 +121,7 @@ try {
                 'last_name'  => $row['last_name'],
                 'email'      => $row['email'],
                 'statuses'   => [],
+                'lab_evaluation_status' => $row['lab_evaluation_status'] ?: null,
             ];
         }
         $aid = (int)$row['assignment_id'];
@@ -138,12 +167,12 @@ try {
 }
 
 function mapStatus(string $raw, string $submittedAt, bool $late, bool $isRework): string {
-    if ($isRework) return 'rework';
     if ($raw === 'passed') return $late ? 'passed_delayed' : 'passed';
     if ($raw === 'rework') return 'rework';
     if ($raw === 'failed') return 'failed';
     if ($submittedAt !== '' && in_array($raw, ['assigned', 'in_progress', 'completed', 'late_completed', 'submitted'], true)) return 'submitted';
     if ($raw === 'submitted') return 'submitted';
+    if ($isRework) return 'rework';
     if (in_array($raw, ['in_progress', 'completed', 'late_completed'], true)) return 'in_progress';
     return 'assigned';
 }

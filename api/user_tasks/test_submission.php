@@ -137,7 +137,22 @@ if ($currentStatus === 'passed') {
 }
 
 // Check if max attempts reached
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex']) && $currentAttempts >= $maxAttempts) {
+if ($currentStatus === 'submitted') {
+    echo json_encode([
+        'ok' => true,
+        'is_correct' => true,
+        'status' => 'submitted',
+        'attempts' => $currentAttempts,
+        'max_attempts' => $maxAttempts,
+        'message' => 'Bereits abgegeben',
+        'current_iteration' => $isIterative ? $currentIteration : null,
+        'max_iterations' => $isIterative ? $maxIterations : null,
+        'reset_values' => false
+    ]);
+    exit;
+}
+
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'db_model', 'uml', 'code_reading', 'code_random_complex']) && $currentAttempts >= $maxAttempts) {
     echo json_encode([
         'ok' => false,
         'error' => 'Maximale Anzahl Versuche erreicht',
@@ -285,6 +300,16 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         $message = $isCorrect ? "Antwort stimmt überein" : "Antwort stimmt nicht überein";
     }
     
+} elseif ($taskType === 'db_model' || $taskType === 'uml') {
+    $textAnswer = trim($input['text_answer'] ?? '');
+    if ($textAnswer === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No answer provided']);
+        exit;
+    }
+
+    $isCorrect = true;
+    $message = 'Antwort wurde zur manuellen Bewertung eingereicht.';
 } elseif ($taskType === 'code_reading') {
     $textAnswer = trim($input['text_answer'] ?? '');
     $variableValues = $input['variable_values'] ?? [];
@@ -400,6 +425,8 @@ if ($isIterative) {
     } else {
         $status = 'in-progress';
     }
+} elseif ($taskType === 'db_model' || $taskType === 'uml') {
+    $status = 'submitted';
 }
 
 // Build response (NO DB WRITE)

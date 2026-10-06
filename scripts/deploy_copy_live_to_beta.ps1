@@ -49,6 +49,12 @@ $optionalRootFiles = @(
     "web.config"
 )
 
+# Environment-specific files must remain owned by the target installation.
+$protectedTargetFiles = @(
+    "config\database.php",
+    "config\database.beta_live.local.php"
+)
+
 foreach ($file in $optionalRootFiles) {
     $candidate = Join-Path $SourceDir $file
     if (Test-Path -LiteralPath $candidate) {
@@ -67,10 +73,21 @@ $excludeFiles = @(
     "debug_*",
     "check_*",
     "tmp_*",
-    "database.beta_live.local.php",
     "README*",
     "ROADMAP*"
 )
+
+$excludeFiles += $protectedTargetFiles | ForEach-Object { Split-Path -Leaf $_ }
+
+$protectedSnapshots = @{}
+foreach ($relativePath in $protectedTargetFiles) {
+    $targetPath = Join-Path $TargetDir $relativePath
+    $existed = Test-Path -LiteralPath $targetPath -PathType Leaf
+    $protectedSnapshots[$relativePath] = [pscustomobject]@{
+        Existed = $existed
+        Bytes = if ($existed) { [System.IO.File]::ReadAllBytes($targetPath) } else { $null }
+    }
+}
 
 Write-Step "Source: $SourceDir"
 Write-Step "Target: $TargetDir"
@@ -144,6 +161,33 @@ foreach ($dir in $liveDirs) {
     # Robocopy exit codes < 8 are success/warnings.
     if ($exitCode -ge 8) {
         throw "Robocopy failed for '$dir' with exit code $exitCode"
+    }
+}
+
+foreach ($relativePath in $protectedSnapshots.Keys) {
+    $targetPath = Join-Path $TargetDir $relativePath
+    $snapshot = $protectedSnapshots[$relativePath]
+    $existsNow = Test-Path -LiteralPath $targetPath -PathType Leaf
+
+    if (-not $snapshot.Existed) {
+        if ($existsNow) {
+            Remove-Item -LiteralPath $targetPath -Force
+            throw "Protected target file was created and removed: $relativePath"
+        }
+        continue
+    }
+
+    $currentBytes = if ($existsNow) {
+        [System.IO.File]::ReadAllBytes($targetPath)
+    } else {
+        $null
+    }
+
+    $wasModified = $null -eq $currentBytes -or
+        [Convert]::ToBase64String($snapshot.Bytes) -ne [Convert]::ToBase64String($currentBytes)
+    if ($wasModified) {
+        [System.IO.File]::WriteAllBytes($targetPath, $snapshot.Bytes)
+        throw "Protected target file was modified and restored: $relativePath"
     }
 }
 

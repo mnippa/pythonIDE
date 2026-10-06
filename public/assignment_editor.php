@@ -1072,12 +1072,9 @@ if ($displayName === '') {
   $showUser = false;
   $userInfo = [];
   
-  $displayNameEscaped = htmlspecialchars($displayName);
-  $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
-  $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
-  
+  $displayNameEscaped = htmlspecialchars($displayName ?? 'User');
   $headerActions = <<<HTML
-    <div class="toolbar">
+    <div class="toolbar" style="overflow-x:hidden;">
       <button id="dashboard-btn" onclick="window.location.href='dashboard.php'" title="Zurück">⬅</button>
       <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
       <button id="run-btn">Run</button>
@@ -1096,14 +1093,9 @@ if ($displayName === '') {
         <span>Hints <span id="submitted-hints"></span></span>
       </div>
       <div style="flex:1"></div>
-      <div class="user-bar">
-        <div class="user-info">
-          <span>{$displayNameEscaped}</span>
-          {$adminBadge}
-        </div>
-        {$adminLink}
+      <div class="user-bar" style="flex-shrink:0; white-space:nowrap;">
+        <span style="font-size:13px; font-weight:600; color:var(--text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; display:inline-block; vertical-align:middle;">{$displayNameEscaped}</span>
         <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-        <button id="logout-btn" title="Abmelden">🚪</button>
       </div>
     </div>
 HTML;
@@ -1203,8 +1195,9 @@ HTML;
   
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
+  <script src="js/uml-renderer.js?v=20260731e"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260601a"></script>
+  <script type="module" src="js/editor-setup.js?v=20260609d"></script>
 
   <script>
     // Theme Toggle
@@ -1341,7 +1334,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20260601a"></script>
+  <script type="module" src="js/assignments.js?v=20260609d"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;

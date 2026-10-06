@@ -12,15 +12,16 @@
     <p class="intro">Ergaenze die fehlenden data-Attribute und den Input fuer Groesse in cm.</p>
 
     <label for="gewicht">Gewicht (kg)</label>
-    <input id="gewicht" data-element="" type="number" step="any" placeholder="z.B. 72">
+    <input id="gewicht" data-element="gewicht" type="number" step="any" placeholder="z.B. 72">
 
-    <!-- TODO: Hier ein zweites Eingabefeld fuer Groesse in cm ergaenzen. -->
+    <label for="groesse_cm">Groesse (cm)</label>
+    <input id="groesse_cm" data-element="groesse_cm" type="number" step="any" placeholder="z.B. 180">
 
-    <button id="berechnen" data-run-python="" data-run-name="">BMI berechnen</button>
+    <button id="berechnen" data-run-python="true" data-run-name="bmi">BMI berechnen</button>
 
     <div class="result-box">
       <strong>Ergebnis:</strong>
-      <div id="ausgabe" data-element="">---</div>
+      <div id="ausgabe" data-element="ausgabe">---</div>
     </div>
   </div>
 </body>

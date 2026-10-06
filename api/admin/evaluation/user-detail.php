@@ -13,7 +13,6 @@ function formatRemainingTime(?DateTimeImmutable $deadline): ?string {
     if ($deadline === null) {
         return null;
     }
-    $hasSubmissionComment = $hasUserTasks && $columnExists($conn, 'user_tasks', 'submission_comment');
 
     $now = new DateTimeImmutable('now');
     if ($now >= $deadline) {
@@ -101,7 +100,6 @@ function calcAssignmentTiming(array $row): array {
 
 function deriveAssignmentDisplayStatus(array $row, array $timing, array $taskStats): array {
     $rawStatus = (string)($row['raw_status'] ?? 'assigned');
-        $commentSelect = $hasSubmissionComment ? ', ut.submission_comment' : '';
     $statusMap = [
         'assigned' => 'Zugewiesen',
         'in_progress' => 'In Bearbeitung',
@@ -156,6 +154,7 @@ try {
     $hasHintsRevealed = $hasUserTasks && $columnExists($conn, 'user_tasks', 'hints_revealed');
     $hasActiveSeconds = $hasUserTasks && $columnExists($conn, 'user_tasks', 'active_seconds');
     $hasSubmissionComment = $hasUserTasks && $columnExists($conn, 'user_tasks', 'submission_comment');
+    $hasManualReviewRequired = $columnExists($conn, 'tasks', 'manual_review_required');
 
     $sql = '
         SELECT
@@ -245,8 +244,9 @@ try {
         $hintsSelect = $hasHintsRevealed ? ', IFNULL(JSON_LENGTH(ut.hints_revealed), 0) AS hints_count' : ', 0 AS hints_count';
         $activeSelect = $hasActiveSeconds ? ', ut.active_seconds' : '';
         $commentSelect = $hasSubmissionComment ? ', ut.submission_comment' : '';
+        $manualSelect = $hasManualReviewRequired ? ', t.manual_review_required' : ', 0 AS manual_review_required';
         $taskSql = '
-            SELECT t.id, t.title, t.position,
+            SELECT t.id, t.title, t.position' . $manualSelect . ',
                    ut.status, ut.attempts' . $runSelect . $hintsSelect . $activeSelect . $commentSelect . '
             FROM tasks t
             LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
@@ -270,7 +270,11 @@ try {
 
     while ($row = $taskResult->fetch_assoc()) {
         $taskStatus = $hasUserTasks ? ($row['status'] ?? 'unbearbeitet') : 'unbearbeitet';
+        $isManualReviewTask = $hasManualReviewRequired && (int)($row['manual_review_required'] ?? 0) === 1;
         $taskStatusLabel = $taskStatusLabelMap[$taskStatus] ?? $taskStatus;
+        if ($taskStatus === 'submitted' && $isManualReviewTask) {
+            $taskStatusLabel = 'Manuell';
+        }
         $runCount = $hasRunCount && isset($row['run_count']) ? (int)$row['run_count'] : 0;
         $hintsCount = isset($row['hints_count']) ? (int)$row['hints_count'] : 0;
         $activeSeconds = $hasActiveSeconds && isset($row['active_seconds']) ? (int)$row['active_seconds'] : 0;
@@ -280,6 +284,7 @@ try {
             'position' => (int)$row['position'],
             'status' => $taskStatus,
             'status_label' => $taskStatusLabel,
+            'manual_review_required' => $isManualReviewTask ? 1 : 0,
             'attempts' => $hasUserTasks && $row['attempts'] !== null ? (int)$row['attempts'] : 0,
             'run_count' => $runCount,
             'hints_count' => $hintsCount,

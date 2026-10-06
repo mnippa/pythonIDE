@@ -16,7 +16,6 @@ const assignmentState = {
   taskStartTimes: {}, // Track start time for each task: { taskId: timestamp }
   taskCompletedAt: {}, // Track completion timestamp for each task: { taskId: 'YYYY-MM-DD HH:MM:SS' }
   taskSubmissionComments: {}, // Optional submit comments per task: { taskId: string }
-  taskAdminFeedbackComments: {}, // Optional admin feedback comments per task: { taskId: string }
   expandedAssignmentId: null, // Track which assignment is expanded
   hintsRevealed: {}, // Track revealed hints per task: { taskId: [1, 2, 3] }
   solutionVisible: {}, // Track solution visibility per task: { taskId: boolean }
@@ -275,144 +274,6 @@ function shouldShowTaskDownloadButton(task) {
   return !!task && String(task.task_type || '') === 'code';
 }
 
-function parseFileSubmissionAllowedTypes(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return ['zip', 'png'];
-  return text
-    .split(',')
-    .map((v) => v.trim().toLowerCase().replace(/^\./, ''))
-    .filter((v) => v.length > 0);
-}
-
-function formatFileSubmissionSizeLabel(bytes) {
-  const n = Number(bytes || 0);
-  if (!Number.isFinite(n) || n <= 0) return '100 KB';
-  if (n >= 1024 * 1024) return `${Math.round((n / (1024 * 1024)) * 10) / 10} MB`;
-  return `${Math.round(n / 1024)} KB`;
-}
-
-function getFileSubmissionMeta(taskId) {
-  return assignmentState.taskUserAnswers?.[taskId]?.variable_values?.file_submission || null;
-}
-
-function setFileSubmissionMeta(taskId, meta) {
-  if (!assignmentState.taskUserAnswers[taskId]) {
-    assignmentState.taskUserAnswers[taskId] = { selected_options: [], text_answer: '', variable_values: {} };
-  }
-  if (!assignmentState.taskUserAnswers[taskId].variable_values) {
-    assignmentState.taskUserAnswers[taskId].variable_values = {};
-  }
-  assignmentState.taskUserAnswers[taskId].variable_values.file_submission = meta || {};
-}
-
-function buildFileSubmissionDownloadUrl(taskId, disposition = 'attachment') {
-  const params = new URLSearchParams();
-  params.set('task_id', String(taskId));
-  if (window.TEST_USER_ID) {
-    params.set('test_user_id', String(window.TEST_USER_ID));
-  }
-  if (disposition === 'inline') {
-    params.set('disposition', 'inline');
-  }
-  return `${getApiBasePath()}/user_tasks/download_file_submission.php?${params.toString()}`;
-}
-
-async function uploadFileSubmission(task, file) {
-  const formData = new FormData();
-  formData.append('task_id', String(task.id));
-  formData.append('file', file);
-
-  const response = await fetch(
-    `${getApiBasePath()}/user_tasks/upload_file_submission.php${getTestUserRequestParam('?')}`,
-    {
-      method: 'POST',
-      credentials: 'include',
-      body: formData
-    }
-  );
-
-  const payload = await readJsonResponse(response, 'Upload fehlgeschlagen');
-  if (!response.ok || (payload && payload.ok === false)) {
-    throw new Error(payload?.error || 'Upload fehlgeschlagen');
-  }
-  return payload;
-}
-
-function renderFileSubmissionTask(task, quizContainer) {
-  const allowedTypes = parseFileSubmissionAllowedTypes(task.file_submission_allowed_types);
-  const maxSizeBytes = Number(task.file_submission_max_size_bytes || 102400);
-  const maxSizeLabel = formatFileSubmissionSizeLabel(maxSizeBytes);
-  const submission = getFileSubmissionMeta(task.id);
-  const hasSubmission = !!(submission && submission.stored_name);
-
-  quizContainer.innerHTML = `
-    <div class="quiz-container file-submission-container">
-      <div class="quiz-question">
-        ${task.task_text ? `<div class="question-text">${escapeHtml(task.task_text)}</div>` : ''}
-        ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Question image" />` : ''}
-      </div>
-      <div class="file-submission-box" style="padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
-          Erlaubte Dateitypen: <strong>${escapeHtml(allowedTypes.join(', '))}</strong><br />
-          Maximale Dateigröße: <strong>${escapeHtml(maxSizeLabel)}</strong>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input id="file-submission-input-${task.id}" type="file" accept="${escapeHtml(allowedTypes.map((t) => `.${t}`).join(','))}" />
-          <button id="file-submission-upload-btn-${task.id}" type="button" class="hspf-btn hspf-btn-primary">Datei hochladen</button>
-        </div>
-        <div id="file-submission-feedback-${task.id}" style="margin-top:8px;font-size:12px;"></div>
-        <div id="file-submission-current-${task.id}" style="margin-top:10px;">
-          ${hasSubmission ? `
-            <div><strong>Bereits hochgeladen:</strong></div>
-            <div>Datei: ${escapeHtml(submission.original_name || submission.stored_name)}</div>
-            <div>Größe: ${escapeHtml(formatFileSubmissionSizeLabel(Number(submission.size_bytes || 0)))}</div>
-            ${submission.uploaded_at ? `<div>Zeitpunkt: ${escapeHtml(String(submission.uploaded_at))}</div>` : ''}
-            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-              <a class="hspf-btn hspf-btn-sm" target="_blank" rel="noopener" href="${buildFileSubmissionDownloadUrl(task.id, 'attachment')}">⬇ Datei herunterladen</a>
-              <a class="hspf-btn hspf-btn-sm" target="_blank" rel="noopener" href="${buildFileSubmissionDownloadUrl(task.id, 'inline')}">👁 Datei ansehen</a>
-            </div>
-          ` : '<div style="color:var(--text-secondary);">Noch keine Datei hochgeladen.</div>'}
-        </div>
-      </div>
-    </div>
-  `;
-
-  const uploadBtn = document.getElementById(`file-submission-upload-btn-${task.id}`);
-  const input = document.getElementById(`file-submission-input-${task.id}`);
-  const feedback = document.getElementById(`file-submission-feedback-${task.id}`);
-  if (!uploadBtn || !input || !feedback) return;
-
-  uploadBtn.addEventListener('click', async () => {
-    const selected = input.files && input.files[0] ? input.files[0] : null;
-    if (!selected) {
-      feedback.textContent = 'Bitte zuerst eine Datei auswählen.';
-      feedback.style.color = '#b45309';
-      return;
-    }
-
-    uploadBtn.disabled = true;
-    feedback.textContent = 'Upload läuft...';
-    feedback.style.color = 'var(--text-secondary)';
-
-    try {
-      const payload = await uploadFileSubmission(task, selected);
-      const submissionMeta = payload?.submission || null;
-      if (submissionMeta) {
-        setFileSubmissionMeta(task.id, submissionMeta);
-      }
-      feedback.textContent = 'Datei erfolgreich hochgeladen.';
-      feedback.style.color = '#065f46';
-      renderFileSubmissionTask(task, quizContainer);
-      updateTaskStatusDisplay(task);
-    } catch (err) {
-      feedback.textContent = `Upload fehlgeschlagen: ${err?.message || err}`;
-      feedback.style.color = '#b91c1c';
-    } finally {
-      uploadBtn.disabled = false;
-    }
-  });
-}
-
 function updateSaveButtonTooltip() {
   const saveTaskBtn = $('save-task-btn');
   const saveModeIndicator = $('save-mode-indicator');
@@ -512,16 +373,7 @@ function syncAssignmentStatusInState(assignmentId, assignmentStatus) {
   row.user_status = assignmentStatus;
 }
 
-function getCurrentAdminFeedbackComment(taskId) {
-  const resolvedTaskId = Number(taskId || assignmentState.currentTaskId || assignmentState.currentTask?.id || 0);
-  const feedbackField = document.getElementById(`admin-feedback-comment-${resolvedTaskId}`);
-  if (feedbackField) {
-    return feedbackField.value || '';
-  }
-  return assignmentState.taskAdminFeedbackComments[resolvedTaskId] || '';
-}
-
-async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullReset = false, reloadEditor = false, adminFeedbackComment = undefined) {
+async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullReset = false, reloadEditor = false) {
   const task = assignmentState.currentTask;
   const assignmentId = Number(assignmentState.currentAssignmentId || window.ASSIGNMENT_ID || 0);
   const userId = Number(window.TEST_USER_ID || 0);
@@ -530,21 +382,16 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
     throw new Error('Assignment, User oder Task fehlt.');
   }
 
-  const payload = {
-    assignment_id: assignmentId,
-    user_id: userId,
-    task_id: taskId,
-    status: newStatus,
-    reset_checks: !!resetChecks,
-    full_reset: !!fullReset
-  };
-  if (adminFeedbackComment !== undefined) {
-    payload.admin_feedback_comment = adminFeedbackComment;
-  }
-
   const response = await requestJson('../api/admin/assignments/users/set-task-status.php', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      assignment_id: assignmentId,
+      user_id: userId,
+      task_id: taskId,
+      status: newStatus,
+      reset_checks: !!resetChecks,
+      full_reset: !!fullReset
+    })
   });
 
   assignmentState.taskStatuses[taskId] = response.status_effective || newStatus;
@@ -558,10 +405,6 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
 
   if (response.assignment_status) {
     syncAssignmentStatusInState(assignmentId, response.assignment_status);
-  }
-
-  if (response.admin_feedback_comment !== undefined) {
-    assignmentState.taskAdminFeedbackComments[taskId] = response.admin_feedback_comment || '';
   }
 
   if (reloadEditor) {
@@ -581,7 +424,6 @@ function refreshCurrentTaskToolbarForStatus(task) {
   const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
   const isFinalized = status === 'passed' || status === 'failed' || status === 'submitted';
   const isQuizTask = !!(task.task_type && !['code', 'code_ui'].includes(task.task_type));
-  const isFileSubmissionTask = String(task.task_type || '') === 'file_submission';
   const showDownload = shouldShowTaskDownloadButton(task);
 
   const checkBtn = $('check-btn');
@@ -643,9 +485,6 @@ function refreshCurrentTaskToolbarForStatus(task) {
       }
         if (!isAdminUserTestMode() && submitBtn) submitBtn.style.display = 'inline-block';
       if (attemptsCounter) attemptsCounter.style.display = 'inline-block';
-    } else {
-      if (checkBtn) checkBtn.style.display = 'none';
-      if (submitBtn) submitBtn.style.display = isFileSubmissionTask && !isAdminUserTestMode() ? 'inline-block' : 'none';
     }
   }
 
@@ -1290,6 +1129,164 @@ window.trackTaskActivity = function(taskId) {
 };
 
 // Display task details in left sidebar
+function renderTaskPromptIntoOutput(task) {
+  const outputEl = document.getElementById('output-container');
+  if (!outputEl) return;
+
+  if (!task || task.task_type !== 'db_model') {
+    outputEl.textContent = task ? `Task geladen: ${task.title}` : 'Task geladen';
+    return;
+  }
+
+  const title = escapeHtml(String(task.title || 'Aufgabe'));
+  const text = task.task_text ? escapeHtml(String(task.task_text)) : '';
+  const imageMarkup = task.image_url
+    ? `<img src="${task.image_url}" alt="Aufgabenbild" style="max-width:100%; border-radius:10px; border:1px solid var(--border); margin-top:10px;">`
+    : '';
+
+  outputEl.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:12px; color:var(--text-primary);">
+      <div style="font-size:15px; font-weight:700;">${title}</div>
+      ${text ? `<div style="white-space:pre-wrap; line-height:1.6;">${text.replace(/\n/g, '<br>')}</div>` : ''}
+      ${imageMarkup}
+      <div style="font-size:12px; color:var(--text-secondary);">Die Aufgabe wird in der linken Struktur und im mittleren Entwurfsbereich bearbeitet.</div>
+    </div>
+  `;
+}
+
+function parseTaskTestCases(task) {
+  if (!task || !task.test_cases) return [];
+
+  if (Array.isArray(task.test_cases)) {
+    return task.test_cases;
+  }
+
+  if (typeof task.test_cases === 'string') {
+    try {
+      const parsed = JSON.parse(task.test_cases);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (typeof task.test_cases === 'object') {
+    return [task.test_cases];
+  }
+
+  return [];
+}
+
+function detectOutputRequirement(task) {
+  const testCases = parseTaskTestCases(task);
+  return testCases.some((testCase) => String(testCase?.type || '').toLowerCase() === 'output');
+}
+
+function buildSelfCheckHint(task) {
+  const testCases = parseTaskTestCases(task);
+  const variableCase = testCases.find((testCase) => String(testCase?.type || '').toLowerCase() === 'variable' && testCase.expected_vars && typeof testCase.expected_vars === 'object');
+  const functionCase = testCases.find((testCase) => String(testCase?.type || '').toLowerCase() === 'function');
+  const intelligentCase = testCases.find((testCase) => String(testCase?.type || '').toLowerCase() === 'intelligent');
+
+  if (variableCase) {
+    const names = Object.keys(variableCase.expected_vars || {}).filter(Boolean);
+    if (names.length === 1) {
+      return `Pruefe Dein Ergebnis, indem Du ${names[0]} ausgibst.`;
+    }
+    if (names.length > 1) {
+      return `Pruefe Dein Ergebnis, indem Du die Werte von ${names.join(', ')} ausgibst.`;
+    }
+  }
+
+  if (functionCase?.function_name) {
+    return `Pruefe Dein Ergebnis, indem Du den Rueckgabewert von ${functionCase.function_name}(...) ausgibst.`;
+  }
+
+  if (intelligentCase?.mode === 'function' && intelligentCase?.function?.name) {
+    return `Pruefe Dein Ergebnis, indem Du den Rueckgabewert von ${intelligentCase.function.name}(...) ausgibst.`;
+  }
+
+  return 'Pruefe Dein Ergebnis, indem Du das Ergebnis ausgibst.';
+}
+
+function buildAutoValidationSummary(task) {
+  const rows = [];
+  const testCases = parseTaskTestCases(task);
+  const isCodeLike = task && ['code', 'code_ui', 'code_reading', 'code_random_complex'].includes(String(task.task_type || '').toLowerCase());
+  const hasOutputCheck = detectOutputRequirement(task);
+
+  rows.push({
+    label: 'Ausgabe Teil der Pruefung',
+    value: hasOutputCheck ? 'Ja' : 'Nein'
+  });
+
+  if (testCases.length === 0) {
+    if (String(task?.task_type || '').toLowerCase() === 'single_choice') {
+      rows.push({ label: 'Pruefart', value: 'Single-Choice Auswahl' });
+    } else if (String(task?.task_type || '').toLowerCase() === 'multiple_choice') {
+      rows.push({ label: 'Pruefart', value: 'Mehrfachauswahl' });
+    } else if (String(task?.task_type || '').toLowerCase() === 'free_text') {
+      rows.push({ label: 'Pruefart', value: 'Freitextantwort' });
+    }
+  }
+
+  testCases.forEach((testCase) => {
+    const type = String(testCase?.type || '').toLowerCase();
+    if (type === 'output') {
+      rows.push({ label: 'Automatische Pruefung', value: 'Programmausgabe wird verglichen' });
+    } else if (type === 'variable') {
+      const names = Object.keys(testCase.expected_vars || {});
+      rows.push({ label: 'Automatische Pruefung', value: names.length ? `Variablenwerte: ${names.join(', ')}` : 'Variablenwerte' });
+    } else if (type === 'function') {
+      const name = testCase.function_name || testCase.function?.name || 'Funktion';
+      rows.push({ label: 'Automatische Pruefung', value: `Funktionspruefung: ${name}(...)` });
+    } else if (type === 'intelligent') {
+      const mode = String(testCase.mode || '').toLowerCase();
+      const tests = Number(testCase.tests || 0);
+      if (mode === 'vars') {
+        rows.push({ label: 'Automatische Pruefung', value: `Mehrfachtests fuer Variablen (${tests || '?'} Laeufe)` });
+      } else if (mode === 'function') {
+        const name = testCase.function?.name || 'Funktion';
+        rows.push({ label: 'Automatische Pruefung', value: `Mehrfachtests fuer ${name}(...) (${tests || '?'} Laeufe)` });
+      } else {
+        rows.push({ label: 'Automatische Pruefung', value: `Intelligente Tests (${tests || '?'} Laeufe)` });
+      }
+    } else if (type === 'code_check') {
+      rows.push({ label: 'Code-Merkmale', value: 'Bestimmte Sprachmittel werden geprueft' });
+    }
+  });
+
+  if (isCodeLike && !hasOutputCheck) {
+    rows.push({ label: 'Selbstpruefung', value: buildSelfCheckHint(task) });
+  }
+
+  const seen = new Set();
+  const dedupedRows = rows.filter((row) => {
+    const key = `${row.label}::${row.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (dedupedRows.length === 0) return '';
+
+  const tableRows = dedupedRows.map((row) => `
+        <tr>
+          <td style="padding:6px 8px; border:1px solid var(--border); font-weight:600; vertical-align:top;">${escapeHtml(row.label)}</td>
+          <td style="padding:6px 8px; border:1px solid var(--border); vertical-align:top;">${escapeHtml(row.value)}</td>
+        </tr>`).join('');
+
+  return `
+      <div class="task-auto-validation" style="margin-top:12px;">
+        <h4>Reduzierte Pruefinfo</h4>
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <tbody>${tableRows}
+          </tbody>
+        </table>
+      </div>`;
+}
+
 function showTaskDetails(task, activeTab = 'details') {
   console.log('[TASK DETAILS] showTaskDetails called for task:', task.id, task.title, 'activeTab:', activeTab);
   console.log('[TASK DETAILS] window.testMode:', window.testMode, 'task_type:', task.task_type);
@@ -1380,7 +1377,7 @@ function showTaskDetails(task, activeTab = 'details') {
       'intelligent': {icon: '🧠', tooltip: 'Intelligent-Test'},
       'code_check': {icon: '🔑', tooltip: 'Keywords-Test'}
     };
-    
+
     if (sortedTypes.length > 0) {
       testTypeHtml = `<span class="test-type-indicators" style="margin-left:10px; font-weight:normal; font-variant:normal;">${sortedTypes.map(t => {
         const extraStyle = t === 'function' ? 'font-variant:normal;text-transform:none;' : '';
@@ -1429,19 +1426,11 @@ function showTaskDetails(task, activeTab = 'details') {
     </div>`;
   }
 
+  detailsHtml += buildAutoValidationSummary(task);
+
   const userTestStatusSelectId = `user-test-status-select-${task.id}`;
   const userTestResetChecksId = `user-test-reset-checks-${task.id}`;
   const userTestApplyBtnId = `user-test-status-apply-${task.id}`;
-  const userTestAdminFeedbackId = `admin-feedback-comment-${task.id}`;
-  const savedAdminFeedbackComment = assignmentState.taskAdminFeedbackComments[task.id] || '';
-
-  if (savedAdminFeedbackComment.trim() !== '') {
-    detailsHtml += `<div class="admin-feedback-section" style="margin-top:12px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#f8fafc;">
-      <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Kommentar vom Admin</div>
-      <div style="white-space:pre-wrap;line-height:1.4;">${escapeHtml(savedAdminFeedbackComment)}</div>
-    </div>`;
-  }
-
   if (isAdminUserTestMode()) {
     detailsHtml = `
       <details style="margin:0 0 12px 0; border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--panel);">
@@ -1458,8 +1447,6 @@ function showTaskDetails(task, activeTab = 'details') {
           <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary);">
             <input id="${userTestResetChecksId}" type="checkbox" checked /> Checks auf 0 setzen
           </label>
-          <label for="${userTestAdminFeedbackId}" style="font-size:12px; color:var(--text-secondary);">Admin-Kommentar (sichtbar für Studierende)</label>
-          <textarea id="${userTestAdminFeedbackId}" rows="3" placeholder="Optionales Feedback, z.B. was verbessert werden soll" style="width:100%;resize:vertical;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-primary);font:inherit;">${escapeHtml(savedAdminFeedbackComment)}</textarea>
           <button id="${userTestApplyBtnId}" type="button" class="hspf-btn hspf-btn-sm">Status übernehmen</button>
         </div>
       </details>
@@ -1556,6 +1543,9 @@ function showTaskDetails(task, activeTab = 'details') {
 
   // Build final HTML: description (with test types in h4), then tabs
   let html = descriptionHtml + tabsHtml;
+  if (task.task_type === 'db_model') {
+    html += `<div id="db-model-sidebar-${task.id}" class="db-model-sidebar-slot"></div>`;
+  }
   html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
@@ -1572,17 +1562,17 @@ function showTaskDetails(task, activeTab = 'details') {
 
   contentEl.innerHTML = html;
 
+  if (task.task_type === 'db_model' && window.QuizRenderer?.renderDbModelSidebar) {
+    const sidebarEl = contentEl.querySelector(`#db-model-sidebar-${task.id}`);
+    if (sidebarEl) {
+      window.QuizRenderer.renderDbModelSidebar(task, sidebarEl);
+    }
+  }
+
   const submissionCommentField = contentEl.querySelector('#submission-comment');
   if (submissionCommentField) {
     submissionCommentField.addEventListener('input', () => {
       assignmentState.taskSubmissionComments[task.id] = submissionCommentField.value || '';
-    });
-  }
-
-  const adminFeedbackField = contentEl.querySelector(`#${userTestAdminFeedbackId}`);
-  if (adminFeedbackField) {
-    adminFeedbackField.addEventListener('input', () => {
-      assignmentState.taskAdminFeedbackComments[task.id] = adminFeedbackField.value || '';
     });
   }
   
@@ -1688,7 +1678,7 @@ function showTaskDetails(task, activeTab = 'details') {
       applyBtn.textContent = 'Speichere...';
 
       try {
-        await setAdminUserTestTaskStatus(newStatus, !!resetChecks?.checked, false, false, adminFeedbackField ? adminFeedbackField.value : getCurrentAdminFeedbackComment(task.id));
+        await setAdminUserTestTaskStatus(newStatus, !!resetChecks?.checked);
       } catch (err) {
         alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
       } finally {
@@ -2352,9 +2342,7 @@ function renderTaskNavigation() {
     'code': '<i class="fas fa-code"></i>',
     'code_ui': '<i class="fas fa-code"></i>',
     'code_reading': '<i class="fas fa-eye"></i>',
-    'code_random_complex': '<i class="fas fa-random"></i>',
-    'file_submission': '<i class="fas fa-file-upload"></i>',
-    'db_model': '<i class="fas fa-database"></i>'
+    'code_random_complex': '<i class="fas fa-random"></i>'
   };
 
   navEl.innerHTML = tasks.map((task, idx) => {
@@ -2442,9 +2430,6 @@ async function loadSingleAssignment(assignmentId) {
           if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
             assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
           }
-          if (ut.admin_feedback_comment !== undefined) {
-            assignmentState.taskAdminFeedbackComments[ut.task_id] = ut.admin_feedback_comment || '';
-          }
           if (ut.run_count !== undefined && ut.run_count !== null) {
             assignmentState.taskRuns[ut.task_id] = ut.run_count;
           }
@@ -2513,9 +2498,6 @@ async function loadAssignments() {
               };
               if (ut.submission_comment !== undefined && ut.submission_comment !== null) {
                 assignmentState.taskSubmissionComments[ut.task_id] = ut.submission_comment || '';
-              }
-              if (ut.admin_feedback_comment !== undefined) {
-                assignmentState.taskAdminFeedbackComments[ut.task_id] = ut.admin_feedback_comment || '';
               }
               if (ut.run_count !== undefined && ut.run_count !== null) {
                 assignmentState.taskRuns[ut.task_id] = ut.run_count;
@@ -2835,12 +2817,17 @@ function openAssignmentEditor(assignmentId) {
     return;
   }
   
-  // Load specified task (if TASK_ID is set) or first task
+  // Load specified task (if TASK_ID is set), otherwise prefer a UML task, then fall back to the first task.
   let taskToLoad = tasks[0];
   if (window.TASK_ID) {
     const specifiedTask = tasks.find(t => t.id === window.TASK_ID);
     if (specifiedTask) {
       taskToLoad = specifiedTask;
+    }
+  } else {
+    const umlTask = tasks.find((task) => String(task.task_type || '').toLowerCase() === 'uml');
+    if (umlTask) {
+      taskToLoad = umlTask;
     }
   }
   loadTaskIntoEditor(assignmentId, taskToLoad.id);
@@ -3318,11 +3305,17 @@ finally:
 function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = false) {
   if (!guiContainer || !triggerElement) return;
 
+  const attrValue = (name) => {
+    const value = triggerElement.getAttribute(name);
+    return typeof value === 'string' ? value.trim() : '';
+  };
+
   const triggerName =
-    triggerElement.getAttribute('name') ||
-    triggerElement.id ||
-    triggerElement.getAttribute('data-run-name') ||
-    triggerElement.getAttribute('data-function') ||
+    attrValue('data-run-name') ||
+    attrValue('data-function') ||
+    attrValue('data-trigger-name') ||
+    attrValue('name') ||
+    (typeof triggerElement.id === 'string' ? triggerElement.id.trim() : '') ||
     '';
 
   const explicitValueAttr = triggerElement.getAttribute('value');
@@ -3330,7 +3323,8 @@ function setCodeUiTriggerContext(guiContainer, triggerElement, isEventDriven = f
     (explicitValueAttr !== null
       ? explicitValueAttr
       : (typeof triggerElement.value === 'string' ? triggerElement.value : '')) ||
-    triggerElement.getAttribute('data-run-value') ||
+    attrValue('data-run-value') ||
+    attrValue('data-trigger-value') ||
     '';
 
   let triggerInput = guiContainer.querySelector('[data-element="__trigger__"]');
@@ -3420,6 +3414,8 @@ async function renderCodeUiHtml(taskId) {
   if (assignmentState.currentTaskId !== null && Number(assignmentState.currentTaskId) !== requestedTaskId) return;
 
   const isAdminFolderMode = isAdminTaskLabMode();
+  const isSolutionScope = isAdminFolderMode && assignmentState.solutionMode === true;
+  const solutionModeParam = isSolutionScope ? '&solution_mode=1' : '';
   const testUserParam = window.TEST_USER_ID ? `&test_user_id=${window.TEST_USER_ID}` : '';
 
   const readTaskFile = async (path) => {
@@ -3429,7 +3425,7 @@ async function renderCodeUiHtml(taskId) {
     }
 
     const readEndpoint = isAdminFolderMode
-      ? `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}`
+      ? `${getApiBasePath()}/tasks/folder-manage.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${solutionModeParam}`
       : `${getApiBasePath()}/user_tasks/folder-files.php?action=read&task_id=${taskId}&path=${encodeURIComponent(path)}${testUserParam}`;
 
     const response = await fetch(readEndpoint, { credentials: 'include', cache: 'no-store' });
@@ -3447,13 +3443,24 @@ async function renderCodeUiHtml(taskId) {
     const htmlContent = await readTaskFile('index.html');
     const cssContent = await readTaskFile('style.css').catch(() => '');
 
-    // Preserve existing input values before any clear/re-render operation
+    // Preserve existing input values before any clear/re-render operation.
+    // Fallback order keeps legacy/partial templates functional: data-element -> id -> name.
     const preservedValues = {};
-    const existingInputs = guiContainer.querySelectorAll('[data-element]');
-    existingInputs.forEach(input => {
-      const name = input.getAttribute('data-element');
-      if (name && input.value !== undefined) {
-        preservedValues[name] = input.value;
+    const bindingKeyFor = (element) => {
+      if (!element || typeof element.getAttribute !== 'function') return '';
+      const dataElement = (element.getAttribute('data-element') || '').trim();
+      if (dataElement) return dataElement;
+      const elementId = typeof element.id === 'string' ? element.id.trim() : '';
+      if (elementId) return elementId;
+      const nameAttr = (element.getAttribute('name') || '').trim();
+      return nameAttr;
+    };
+    const existingInputs = guiContainer.querySelectorAll('[data-element], [id], [name]');
+    existingInputs.forEach((input) => {
+      if (!input || input.value === undefined) return;
+      const key = bindingKeyFor(input);
+      if (key) {
+        preservedValues[key] = input.value;
       }
     });
 
@@ -3478,9 +3485,10 @@ async function renderCodeUiHtml(taskId) {
     guiContainer.innerHTML = bodyHtml || '';
     guiContainer.dataset.codeUiTaskId = String(taskId);
 
-    // Restore preserved input values
+    // Restore preserved input values via the same fallback order.
     Object.entries(preservedValues).forEach(([name, value]) => {
-      const input = guiContainer.querySelector(`[data-element="${name}"]`);
+      const candidates = guiContainer.querySelectorAll('[data-element], [id], [name]');
+      const input = Array.from(candidates).find((el) => bindingKeyFor(el) === name);
       if (input && input.value !== undefined) {
         input.value = value;
       }
@@ -3582,7 +3590,6 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
 
   // Check if this is a quiz-style task
   const isQuizTask = task.task_type && !['code', 'code_ui'].includes(task.task_type);
-  const isFileSubmissionTask = task.task_type === 'file_submission';
   const isCodeUiTask = task.task_type === 'code_ui';
 
   syncAssignmentPlotUiForTask(task);
@@ -3714,9 +3721,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
       quizContainer.style.display = 'block';
       
       // Render quiz UI
-      if (isFileSubmissionTask) {
-        renderFileSubmissionTask(task, quizContainer);
-      } else if (window.QuizRenderer) {
+      if (window.QuizRenderer) {
         window.QuizRenderer.render(task, quizContainer);
       } else {
         quizContainer.innerHTML = '<p>Quiz renderer not loaded</p>';
@@ -3730,7 +3735,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     
     if (runBtn) runBtn.style.display = 'none';
     if (checkBtn) checkBtn.style.display = 'none';
-    if (submitBtn) submitBtn.style.display = isFileSubmissionTask ? 'inline-block' : 'none';
+    if (submitBtn) submitBtn.style.display = 'none';
     
   } else {
     // Handle Code Tasks - show editor
@@ -3787,10 +3792,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     fileTreeWrapper.classList.remove('active');
   }
 
-  const outputEl = document.getElementById('output-container');
-  if (outputEl) {
-    outputEl.textContent = `Task geladen: ${task.title}`;
-  }
+  renderTaskPromptIntoOutput(task);
 
   // Lock editor and hide check/submit if task already finalized (passed or failed)
   // (currentStatus and isFinalized already computed above)
@@ -5177,15 +5179,7 @@ async function submitTask() {
   }
 
   if (manualReviewTask) {
-    if (task.task_type === 'file_submission') {
-      const uploadedMeta = getFileSubmissionMeta(task.id);
-      if (!uploadedMeta || !uploadedMeta.stored_name) {
-        alert('Bitte zuerst eine Datei hochladen, bevor du die Aufgabe abgibst.');
-        return;
-      }
-    } else {
-      await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
-    }
+    await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
     if (window.TEST_MODE_NO_PERSIST !== true) {
       await requestJson(getUserTasksUpdateUrl(), {
@@ -7360,7 +7354,7 @@ function bindAssignmentsEvents() {
     if (!window.confirm(warning)) return;
     adminStatusGreyBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('unbearbeitet', true, true, true, getCurrentAdminFeedbackComment(task?.id));
+      await setAdminUserTestTaskStatus('unbearbeitet', true, true, true);
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7375,7 +7369,7 @@ function bindAssignmentsEvents() {
     const isIterative = task?.task_type === 'code_reading' || task?.task_type === 'code_random_complex';
     try {
       // For iterative tasks reload editor to show last iteration state
-      await setAdminUserTestTaskStatus('in-progress', true, false, isIterative, getCurrentAdminFeedbackComment(task?.id));
+      await setAdminUserTestTaskStatus('in-progress', true, false, isIterative);
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7387,7 +7381,7 @@ function bindAssignmentsEvents() {
     if (!isAdminUserTestMode()) return;
     adminStatusGreenBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('passed', true, false, false, getCurrentAdminFeedbackComment(assignmentState.currentTask?.id));
+      await setAdminUserTestTaskStatus('passed', true);
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {
@@ -7399,7 +7393,7 @@ function bindAssignmentsEvents() {
     if (!isAdminUserTestMode()) return;
     adminStatusRedBtn.disabled = true;
     try {
-      await setAdminUserTestTaskStatus('failed', true, false, false, getCurrentAdminFeedbackComment(assignmentState.currentTask?.id));
+      await setAdminUserTestTaskStatus('failed', true);
     } catch (err) {
       alert('Status-Update fehlgeschlagen: ' + (err?.message || err));
     } finally {

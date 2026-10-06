@@ -55,6 +55,8 @@ $hardDeadline = array_key_exists('hard_deadline', $input)
     : date('Y-m-d H:i:s', strtotime('+17 days'));
 $allowLateInput = $input['allow_late_submission'] ?? true;
 $allowLateSubmission = filter_var($allowLateInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+$lockedInput = $input['locked'] ?? false;
+$locked = filter_var($lockedInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
 
 if ($isActive === null) {
     $isActive = true;
@@ -77,6 +79,10 @@ if ($allowLateSubmission === null) {
     $allowLateSubmission = true;
 }
 
+if ($locked === null) {
+    $locked = false;
+}
+
 if (array_key_exists('available_from', $input) && $input['available_from'] !== null && $availableFrom === null) {
     jsonResponse(['ok' => false, 'error' => 'Invalid available_from datetime'], 400);
 }
@@ -94,24 +100,46 @@ if ($dueDate !== null && $hardDeadline !== null && strtotime($hardDeadline) < st
     jsonResponse(['ok' => false, 'error' => 'hard_deadline must be on/after due_date'], 400);
 }
 
-$stmt = $conn->prepare(
-    'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-);
-$stmt->bind_param(
-    'sssississsi',
-    $title,
-    $description,
-    $codeTemplate,
-    $user['id'],
-    $isActive,
-    $difficulty,
-    $timeLimit,
-    $availableFrom,
-    $dueDate,
-    $hardDeadline,
-    $allowLateSubmission
-);
+if (assignmentLockColumnExists($conn)) {
+    $stmt = $conn->prepare(
+        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission, locked)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $stmt->bind_param(
+        'sssississsii',
+        $title,
+        $description,
+        $codeTemplate,
+        $user['id'],
+        $isActive,
+        $difficulty,
+        $timeLimit,
+        $availableFrom,
+        $dueDate,
+        $hardDeadline,
+        $allowLateSubmission,
+        $locked
+    );
+} else {
+    $stmt = $conn->prepare(
+        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $stmt->bind_param(
+        'sssississsi',
+        $title,
+        $description,
+        $codeTemplate,
+        $user['id'],
+        $isActive,
+        $difficulty,
+        $timeLimit,
+        $availableFrom,
+        $dueDate,
+        $hardDeadline,
+        $allowLateSubmission
+    );
+}
 
 if ($stmt->execute()) {
     $assignmentId = $conn->insert_id;
@@ -131,6 +159,7 @@ if ($stmt->execute()) {
             'due_date' => $dueDate,
             'hard_deadline' => $hardDeadline,
             'allow_late_submission' => (bool)$allowLateSubmission,
+            'locked' => (bool)$locked,
             'created_at' => date('Y-m-d H:i:s')
         ]
     ], 201);

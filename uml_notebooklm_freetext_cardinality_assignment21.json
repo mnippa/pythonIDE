@@ -1,0 +1,79 @@
+﻿[
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "free_text",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Freitext Kardinalitaet 1",
+    "task_text": "Ein Kunde kann 0 bis viele Bestellungen haben. Jede Bestellung gehoert genau einem Kunden.\n\nGib die Kardinalitaeten in dieser Form an:\nKunde->Bestellung: ...\nBestellung->Kunde: ...",
+    "description": "Kleine Textaufgabe zur 1:n-Beziehung mit optionaler Teilnahme.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "test_cases": [
+      {
+        "expected_type": "regex",
+        "validation_mode": "contains",
+        "case_sensitive": false,
+        "expected": [
+          "kunde\\s*[-=]?>\\s*bestellung\\s*:\\s*0\\s*\\.\\.\\s*\\*",
+          "bestellung\\s*[-=]?>\\s*kunde\\s*:\\s*1"
+        ]
+      },
+      {
+        "expected_type": "regex",
+        "validation_mode": "contains",
+        "case_sensitive": false,
+        "expected": [
+          "kunde\\s*[-=]?>\\s*bestellung\\s*:\\s*\\*",
+          "bestellung\\s*[-=]?>\\s*kunde\\s*:\\s*1"
+        ]
+      }
+    ],
+    "hint1": "Lies die Beziehung in beide Richtungen.",
+    "hint2": "Viele Bestellungen pro Kunde bedeutet 0..* auf der Bestellungs-Seite.",
+    "hint3": "Genau ein Kunde pro Bestellung bedeutet 1 auf der Kunden-Seite.",
+    "stoff": "Kardinalitaeten in UML fuer 1:n-Beziehungen.",
+    "options": []
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "free_text",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Freitext Kardinalitaet 2",
+    "task_text": "Jede Klasse hat genau einen Klassenlehrer. Ein Lehrer kann Klassenlehrer von hoechstens einer Klasse sein, es gibt aber auch Lehrer ohne Klasse.\n\nGib die Kardinalitaeten in dieser Form an:\nKlasse->Lehrer: ...\nLehrer->Klasse: ...",
+    "description": "Kleine Textaufgabe zur 1:0..1-Beziehung.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "test_cases": [
+      {
+        "expected_type": "regex",
+        "validation_mode": "contains",
+        "case_sensitive": false,
+        "expected": [
+          "klasse\\s*[-=]?>\\s*lehrer\\s*:\\s*1",
+          "lehrer\\s*[-=]?>\\s*klasse\\s*:\\s*0\\s*\\.\\.\\s*1"
+        ]
+      },
+      {
+        "expected_type": "regex",
+        "validation_mode": "contains",
+        "case_sensitive": false,
+        "expected": [
+          "klasse\\s*[-=]?>\\s*lehrer\\s*:\\s*1",
+          "lehrer\\s*[-=]?>\\s*klasse\\s*:\\s*0\\.\\.1"
+        ]
+      }
+    ],
+    "hint1": "Genau ein Klassenlehrer pro Klasse bedeutet 1 in Richtung Lehrer.",
+    "hint2": "Lehrer koennen ohne Klasse existieren.",
+    "hint3": "Maximal eine Klasse pro Lehrer bedeutet 0..1 in Richtung Klasse.",
+    "stoff": "Kardinalitaeten in UML fuer 1:0..1-Beziehungen.",
+    "options": []
+  }
+]
+

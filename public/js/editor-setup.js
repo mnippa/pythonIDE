@@ -628,15 +628,42 @@ if "idegui" not in sys.modules:
     _ensure_layout()
     return _Output(None, None)
 
-  def get(name, default=""):
-    """Read value from HTML element with data-element attribute"""
+  def _resolve_element(name):
     container = _container()
     if container is None:
-      return default
+      return None
 
-    selector = f'[data-element="{name}"]'
-    element = container.querySelector(selector)
+    target = "" if name is None else str(name).strip()
+    if target == "":
+      return None
+
+    for el in container.querySelectorAll('[data-element]'):
+      if str(el.getAttribute("data-element") or "").strip() == target:
+        return el
+
+    for el in container.querySelectorAll('[id]'):
+      if str(getattr(el, "id", "") or "").strip() == target:
+        return el
+
+    for el in container.querySelectorAll('[name]'):
+      if str(el.getAttribute("name") or "").strip() == target:
+        return el
+
+    return None
+
+  def get(name, default=""):
+    """Read value from HTML element with data-element attribute"""
+    requested = "" if name is None else str(name).strip()
+    element = _resolve_element(name)
     if element is None:
+      # Keep documented trigger access stable even if the GUI was rerendered
+      # and hidden trigger inputs are no longer present in DOM.
+      if requested in ["__trigger__", "__trigger_value__"]:
+        data = getattr(js_window, "__codeUiTrigger", None)
+        if data is not None:
+          if requested == "__trigger__":
+            return _safe_js_prop(data, "name", default)
+          return _safe_js_prop(data, "value", default)
       return default
 
     value = getattr(element, "value", None)
@@ -646,12 +673,7 @@ if "idegui" not in sys.modules:
 
   def set(name, value):
     """Write value to HTML element with data-element attribute"""
-    container = _container()
-    if container is None:
-      return None
-
-    selector = f'[data-element="{name}"]'
-    element = container.querySelector(selector)
+    element = _resolve_element(name)
     if element is None:
       return None
 
@@ -674,12 +696,7 @@ if "idegui" not in sys.modules:
 
   def print_to(container_name, *args, sep=" ", end="\\n"):
     """Print text to a container element (appends like Python print)"""
-    container = _container()
-    if container is None:
-      return None
-
-    selector = f'[data-element="{container_name}"]'
-    element = container.querySelector(selector)
+    element = _resolve_element(container_name)
     if element is None:
       return None
 
@@ -707,12 +724,7 @@ if "idegui" not in sys.modules:
 
   def reset(container_name=""):
     """Clear content of a container element"""
-    container = _container()
-    if container is None:
-      return None
-
-    selector = f'[data-element="{container_name}"]'
-    element = container.querySelector(selector)
+    element = _resolve_element(container_name)
     if element is None:
       return None
 
@@ -2057,16 +2069,8 @@ compile(code, "<usercode>", "exec")
       clearTimeout(liveTimer);
 
       const currentTask = window.assignmentState?.currentTask;
-      const runFromCodeUiTrigger = window.__codeUiRunFromTrigger === true;
-      window.__codeUiRunFromTrigger = false;
       const currentProject = window.currentProject || null;
-      if (!runFromCodeUiTrigger && !currentProject && currentTask?.task_type === 'code_ui' && typeof window.renderCodeUiHtml === 'function') {
-        try {
-          await window.renderCodeUiHtml(currentTask.id);
-        } catch (codeUiRenderError) {
-          console.warn('[Run] code_ui html render failed before execution:', codeUiRenderError);
-        }
-      }
+      const isCodeUiTask = currentTask?.task_type === 'code_ui';
       const hasFolderStructure = !!currentTask && (
         currentTask.folderstructure === 1 ||
         currentTask.folderstructure === true ||
@@ -2088,6 +2092,14 @@ compile(code, "<usercode>", "exec")
         window.cacheCurrentEditorDraft();
       }
 
+      if (isCodeUiTask && currentTask?.id && typeof window.renderCodeUiHtml === 'function') {
+        try {
+          await window.renderCodeUiHtml(currentTask.id);
+        } catch (codeUiRenderError) {
+          console.warn('[Run] renderCodeUiHtml before RUN failed:', codeUiRenderError);
+        }
+      }
+
       if (runInitOnly && typeof window.syncFolderTaskFilesToPyodide === 'function') {
         const entryPath = typeof window.getFolderTaskRunEntryPath === 'function'
           ? String(window.getFolderTaskRunEntryPath(currentTask) || 'init.py')
@@ -2102,14 +2114,6 @@ compile(code, "<usercode>", "exec")
               ? String(window.getFolderTaskRunEntryPath(currentTask) || 'init.py')
               : 'init.py';
 
-            const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
-            const inSolutionMode = isTaskLabMode && window.assignmentState?.solutionMode === true;
-
-            // In admin solution mode, run virtual init.py from solution_code directly to avoid stale template drafts.
-            if (inSolutionMode && entryPath === 'init.py' && currentTask?.solution_code) {
-              code = String(currentTask.solution_code || '');
-            } else {
-
             const draftEntry = typeof window.getTaskDraftContent === 'function'
               ? window.getTaskDraftContent(currentTask.id, entryPath)
               : null;
@@ -2117,6 +2121,7 @@ compile(code, "<usercode>", "exec")
             if (draftEntry !== null && draftEntry !== undefined) {
               code = String(draftEntry || '');
             } else {
+              const isTaskLabMode = window.ADMIN_TASK_LAB_VIEW === true || (window.testMode === true && !window.TEST_USER_ID);
               if (isTaskLabMode) {
                 const solutionModeParam = window.assignmentState?.solutionMode === true ? '&solution_mode=1' : '';
                 const readResponse = await fetch(`/pythonIDE/api/tasks/folder-manage.php?action=read&task_id=${currentTask.id}&path=${encodeURIComponent(entryPath)}${solutionModeParam}`, {
@@ -2143,7 +2148,6 @@ compile(code, "<usercode>", "exec")
 
                 code = String(entryData.content || '');
               }
-            }
             }
           } else {
             code = String(projectRunContext.code || '');
@@ -2174,7 +2178,6 @@ compile(code, "<usercode>", "exec")
       }
 
       const projectType = String(currentProject?.project_type || '').toLowerCase();
-      const isCodeUiTask = currentTask?.task_type === 'code_ui';
       const isProjectCodeUiMode = projectType === 'html' || projectType === 'mixed';
       const isCodeUiMode = isCodeUiTask || isProjectCodeUiMode;
           const wantsIdeGui = /(^|\n)\s*(import\s+idegui\b|from\s+idegui\s+import\b)/m.test(code);

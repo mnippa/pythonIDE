@@ -136,6 +136,41 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
       justify-content: center;
     }
 
+    .lab-status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: var(--hspf-spacing-md);
+      border: 1px solid transparent;
+      letter-spacing: 0.03em;
+    }
+
+    .lab-status-badge.is-bestanden {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+    }
+
+    .lab-status-badge.is-nachpruefung {
+      background: #fef9c3;
+      color: #854d0e;
+      border-color: #facc15;
+      box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16);
+    }
+
+    .lab-status-badge.is-nicht-bestanden,
+    .lab-status-badge.is-nicht-teilgenommen {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #f87171;
+      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.14);
+    }
+
     .stat-item {
       text-align: center;
     }
@@ -232,6 +267,26 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
           <div class="stat-item">
             <div class="stat-value" id="assignments-progress">-</div>
             <div class="stat-label">Erledigt</div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Lab Evaluation Card -->
+      <a href="assignments.php" class="dashboard-card" id="lab-evaluation-card">
+        <div class="card-icon">🧪</div>
+        <div class="card-title">Laborbewertung</div>
+        <div class="lab-status-badge" id="lab-status-badge">Status offen</div>
+        <div class="card-description" id="lab-card-description">
+          Kurzzusammenfassung zu deinen Assignments und dem aktuellen Laborstatus.
+        </div>
+        <div class="card-stats">
+          <div class="stat-item">
+            <div class="stat-value" id="lab-assignments-total">-</div>
+            <div class="stat-label">Assignments</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="lab-assignments-success">-</div>
+            <div class="stat-label">Erfolgreich</div>
           </div>
         </div>
       </a>
@@ -358,6 +413,68 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
         console.error('Failed to load assignments stats:', err);
         document.getElementById('assignments-count').textContent = '0';
         document.getElementById('assignments-progress').textContent = '-';
+      }
+
+      try {
+        const labResponse = await requestJson('../api/user/lab-evaluation-summary.php');
+        if (labResponse.ok) {
+          const status = String(labResponse.status || (labResponse.has_team ? 'durchfuehrung' : 'nicht_teilgenommen'));
+          const statusMeta = {
+            durchfuehrung: {
+              label: 'Durchfuehrung',
+              description: 'Kurzzusammenfassung zu deinen Assignments und dem aktuellen Laborstatus.',
+              badgeClass: ''
+            },
+            bewertung: {
+              label: 'Bewertung',
+              description: 'Dein Laborstand wird aktuell bewertet.',
+              badgeClass: ''
+            },
+            bestanden: {
+              label: 'Bestanden',
+              description: 'Bestanden! Alle Anforderungen fuer das Labor wurden erfolgreich abgeschlossen.',
+              badgeClass: 'is-bestanden'
+            },
+            nachpruefung: {
+              label: 'Nachpruefung',
+              description: 'Nachpruefung erforderlich. Bitte beachte die Hinweise deiner Betreuung.',
+              badgeClass: 'is-nachpruefung'
+            },
+            nicht_bestanden: {
+              label: 'Nicht bestanden',
+              description: 'Das Labor wurde als nicht bestanden bewertet. Bitte wende dich an dein Betreuungsteam.',
+              badgeClass: 'is-nicht-bestanden'
+            },
+            nicht_teilgenommen: {
+              label: 'Nicht teilgenommen',
+              description: 'Es wurde keine Teilnahme am Labor vermerkt.',
+              badgeClass: 'is-nicht-teilgenommen'
+            }
+          };
+
+          const badge = document.getElementById('lab-status-badge');
+          const description = document.getElementById('lab-card-description');
+          const total = document.getElementById('lab-assignments-total');
+          const success = document.getElementById('lab-assignments-success');
+          const meta = statusMeta[status] || statusMeta.durchfuehrung;
+
+          if (badge) {
+            badge.textContent = meta.label;
+            badge.classList.remove('is-bestanden', 'is-nachpruefung', 'is-nicht-bestanden', 'is-nicht-teilgenommen');
+            if (meta.badgeClass) {
+              badge.classList.add(meta.badgeClass);
+            }
+          }
+          if (description) {
+            description.textContent = meta.description;
+          }
+          if (total) total.textContent = String((labResponse.counts && labResponse.counts.total) || 0);
+          if (success) success.textContent = String((labResponse.counts && labResponse.counts.success) || 0);
+        }
+      } catch (labErr) {
+        console.error('Failed to load lab evaluation summary:', labErr);
+        const badge = document.getElementById('lab-status-badge');
+        if (badge) badge.textContent = 'Nicht verfuegbar';
       }
     }
 

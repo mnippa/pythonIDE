@@ -33,6 +33,74 @@ function $(id) {
   return document.getElementById(id);
 }
 
+const ALLOWED_FILE_SUBMISSION_MAX_SIZES = [51200, 102400, 256000, 1048576, 2097152, 5242880];
+const DEFAULT_FILE_SUBMISSION_MAX_SIZE_BYTES = 102400;
+
+function normalizeFileSubmissionMaxSize(value) {
+  const parsedValue = Number.parseInt(value, 10);
+  return ALLOWED_FILE_SUBMISSION_MAX_SIZES.includes(parsedValue)
+    ? parsedValue
+    : DEFAULT_FILE_SUBMISSION_MAX_SIZE_BYTES;
+}
+
+function inferTestCaseType(testCase) {
+  if (!testCase || typeof testCase !== 'object') return null;
+  if (typeof testCase.type === 'string' && testCase.type.trim()) return testCase.type.trim();
+  if (testCase.mode) return 'intelligent';
+  if (testCase.function_name || testCase.test_cases) return 'function';
+  if (testCase.init_var_names || testCase.expected_var_names || testCase.init_vars || testCase.expected_vars) return 'variable';
+  if (Array.isArray(testCase.expected) || testCase.expected_type || testCase.validation_mode) return 'output';
+  if (Array.isArray(testCase.keywords) || Array.isArray(testCase.forbidden)) return 'code_check';
+  return null;
+}
+
+function extractTestTypes(rawTestCases) {
+  if (!rawTestCases) return [];
+
+  let parsed = rawTestCases;
+  try {
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed);
+    }
+    // Handle accidentally double-serialized payloads.
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed);
+    }
+  } catch (_err) {
+    return [];
+  }
+
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const inferredType = inferTestCaseType(parsed);
+    return inferredType ? [inferredType] : [];
+  }
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed
+    .map((tc) => inferTestCaseType(tc))
+    .filter(Boolean);
+}
+
+function taskTypeSupportsTestCases(taskType) {
+  return ['code', 'code_ui', 'free_text', 'code_reading', 'code_random_complex'].includes(taskType);
+}
+
+function mapTaskTypeToProblemType(taskType) {
+  if (['code', 'code_ui', 'code_reading', 'code_random_complex'].includes(taskType)) {
+    return 'code_completion';
+  }
+  if (taskType === 'single_choice' || taskType === 'multiple_choice') {
+    return 'multiple_choice';
+  }
+  if (taskType === 'free_text') {
+    return 'essay';
+  }
+  return null;
+}
+
 async function requestJson(url, options = {}) {
   const opts = {
     credentials: 'include',
@@ -776,7 +844,8 @@ async function loadTasks(assignmentId, assignmentTitle) {
   });
 
   filteredTasks.forEach((t) => {
-    const hasTests = t.test_cases ? '✓' : '✗';
+    const testTypes = extractTestTypes(t.test_cases);
+    const hasTests = testTypes.length > 0 ? '✓' : '✗';
     const hasSolution = t.solution_code ? '✓' : '✗';
     const fullIndex = state.tasks.findIndex((task) => task.id === t.id);
     const isFirst = fullIndex === 0;
@@ -794,23 +863,6 @@ async function loadTasks(assignmentId, assignmentTitle) {
       'intelligent': '🧠',
       'code_check': '🔑'
     };
-    let testTypes = [];
-    try {
-      if (t.test_cases) {
-        let parsed = JSON.parse(t.test_cases);
-        if (!Array.isArray(parsed)) {
-          // Single intelligent test as object (has mode field instead of type)
-          if (parsed.mode) {
-            testTypes = ['intelligent'];
-          } else {
-            parsed = [parsed];
-          }
-        }
-        if (Array.isArray(parsed)) {
-          testTypes = parsed.map(tc => tc.type).filter(Boolean);
-        }
-      }
-    } catch {}
     const testTypeIconHtml = testTypes.map(type => testTypeIcons[type] || '').join(' ');
 
     const tr = document.createElement('tr');
@@ -947,7 +999,7 @@ function resetTaskForm() {
   if ($('task-max-attempts')) $('task-max-attempts').value = '1';
   if ($('task-max-iterations')) $('task-max-iterations').value = '3';
   if ($('task-file-submission-types')) $('task-file-submission-types').value = 'zip,png';
-  if ($('task-file-submission-max-size')) $('task-file-submission-max-size').value = '102400';
+  if ($('task-file-submission-max-size')) $('task-file-submission-max-size').value = String(DEFAULT_FILE_SUBMISSION_MAX_SIZE_BYTES);
   
   // NEW: Reset quiz fields
   if ($('new-task-type')) $('new-task-type').value = 'code';
@@ -1082,6 +1134,7 @@ function continueFromPreTaskDialog() {
   updateRandomButtonVisibility();
   updateCodeOnlyOptionsVisibility();
   updateTestTypeVisibility();
+  applyDbModelTemplateDefaults('new-task');
   
   // Show task form
   $('task-create-modal').classList.add('active');
@@ -1177,7 +1230,7 @@ async function handleTaskSubmit(e) {
     folderstructure: $('task-folderstructure').checked ? 1 : 0,
     allowDownload: $('task-allowDownload').checked ? 1 : 0,
     allowCodeUiWebEdit: $('task-allowCodeUiWebEdit').checked ? 1 : 0,
-    problem_type: $('task-type').value,
+    problem_type: mapTaskTypeToProblemType(taskType) || $('task-type').value,
     task_type: taskType, // NEW: Task type (code, single_choice, etc.)
     task_difficulty: ($('task-difficulty')?.value || 'medium'),
     image_url: $('task-image-url') ? ($('task-image-url').value.trim() || null) : null,
@@ -1187,8 +1240,7 @@ async function handleTaskSubmit(e) {
     hint2: $('task-hint2').value,
     hint3: $('task-hint3').value,
     file_submission_allowed_types: $('task-file-submission-types') ? ($('task-file-submission-types').value.trim() || null) : null,
-    file_submission_max_size_bytes: $('task-file-submission-max-size') ? parseInt($('task-file-submission-max-size').value || '102400', 10) : null,
-    test_cases: $('task-test-cases').value.trim() || null,
+    file_submission_max_size_bytes: $('task-file-submission-max-size') ? normalizeFileSubmissionMaxSize($('task-file-submission-max-size').value) : null,
     solution_code: $('task-solution').value.trim() || null
   };
   
@@ -1202,6 +1254,14 @@ async function handleTaskSubmit(e) {
   
   // For all task types: use task-text (unified field)
   payload.task_text = $('task-text').value.trim();
+
+  if (taskType === 'db_model') {
+    payload.manual_review_required = 1;
+    if (!payload.task_text) {
+      alert('db_model benoetigt einen Aufgabentext.');
+      return;
+    }
+  }
   
   // Get description from TinyMCE if available, else from textarea
   const descriptionEditor = tinymce.get('task-description');
@@ -1225,8 +1285,8 @@ async function handleTaskSubmit(e) {
   }
   
   // NEW: Handle free text validation options
-  // Handle test_cases for code and free_text tasks
-  if (taskType === 'code' || taskType === 'code_ui' || taskType === 'free_text') {
+  // Handle test_cases only for task types that support them.
+  if (taskTypeSupportsTestCases(taskType)) {
     payload.test_cases = $('task-test-cases').value.trim() || null;
   }
   
@@ -1972,7 +2032,7 @@ async function openEditTaskModal(taskId) {
     $('edit-task-file-submission-types').value = task.file_submission_allowed_types || 'zip,png';
   }
   if ($('edit-task-file-submission-max-size')) {
-    $('edit-task-file-submission-max-size').value = String(task.file_submission_max_size_bytes || 102400);
+    $('edit-task-file-submission-max-size').value = String(normalizeFileSubmissionMaxSize(task.file_submission_max_size_bytes));
   }
   
   if ($('edit-task-correct-answer')) $('edit-task-correct-answer').value = task.correct_answer || '';
@@ -2082,7 +2142,7 @@ async function handleEditTaskSubmit(e) {
     allowCodeUiWebEdit: $('edit-task-allowCodeUiWebEdit').checked ? 1 : 0,
     task_type: taskType,
     task_difficulty: ($('edit-task-difficulty')?.value || 'medium'),
-    problem_type: taskType,  // Keep for backwards compatibility
+    problem_type: mapTaskTypeToProblemType(taskType),
     image_url: $('edit-task-image-url') ? ($('edit-task-image-url').value.trim() || null) : null,
     code_template: $('edit-task-template').value,
     randomizer_code: $('edit-task-randomizer-code').value.trim() || null,
@@ -2090,11 +2150,14 @@ async function handleEditTaskSubmit(e) {
     hint2: $('edit-task-hint2').value,
     hint3: $('edit-task-hint3').value,
     file_submission_allowed_types: $('edit-task-file-submission-types') ? ($('edit-task-file-submission-types').value.trim() || null) : null,
-    file_submission_max_size_bytes: $('edit-task-file-submission-max-size') ? parseInt($('edit-task-file-submission-max-size').value || '102400', 10) : null,
+    file_submission_max_size_bytes: $('edit-task-file-submission-max-size') ? normalizeFileSubmissionMaxSize($('edit-task-file-submission-max-size').value) : null,
     manual_review_required: $('edit-task-manual-review-required')?.checked ? 1 : 0,
-    test_cases: $('edit-task-test-cases').value.trim() || null,
     solution_code: $('edit-task-solution').value.trim() || null
   };
+
+  if (!payload.problem_type) {
+    delete payload.problem_type;
+  }
   
   // Get stoff from TinyMCE if available, else from textarea
   const editStoffEditor = tinymce.get('edit-task-stoff');
@@ -2106,6 +2169,14 @@ async function handleEditTaskSubmit(e) {
   
   // For all task types: use unified task_text field
   payload.task_text = $('edit-task-text').value.trim();
+
+  if (taskType === 'db_model') {
+    payload.manual_review_required = 1;
+    if (!payload.task_text) {
+      alert('db_model benoetigt einen Aufgabentext.');
+      return;
+    }
+  }
   
   // Get description from TinyMCE if available, else from textarea
   const editDescriptionEditor = tinymce.get('edit-task-description');
@@ -2120,8 +2191,8 @@ async function handleEditTaskSubmit(e) {
   payload.correct_answer = $('edit-task-correct-answer') ? $('edit-task-correct-answer').value.trim() : null;
   payload.variable_overrides = $('edit-task-var-overrides') ? $('edit-task-var-overrides').value.trim() : null;
   
-  // Handle test_cases for code and free_text tasks
-  if (taskType === 'code' || taskType === 'code_ui' || taskType === 'free_text') {
+  // Handle test_cases only for task types that support them.
+  if (taskTypeSupportsTestCases(taskType)) {
     payload.test_cases = $('edit-task-test-cases').value.trim() || null;
   }
 
@@ -2181,7 +2252,7 @@ async function handleEditTaskSubmit(e) {
   }
 
   // If builder has data, prefer it over manual JSON
-  if (Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
+  if (taskTypeSupportsTestCases(taskType) && Array.isArray(editTestCasesData) && editTestCasesData.length > 0) {
     // Special case: if single intelligent test, save as object (not array)
     if (editTestCasesData.length === 1 && editTestCasesData[0].type === 'intelligent') {
       const intelligentConfig = {...editTestCasesData[0]};
@@ -2881,6 +2952,67 @@ function updateRandomButtonVisibility() {
   // Show only for code_random_complex OR for code tasks with intelligent tests
   updateSolutionCodeVisibility();
   updateCodeOnlyOptionsVisibility();
+}
+
+function getDbModelTemplateDefaults() {
+  return {
+    taskText: [
+      'Erstelle ein relationales Datenbankmodell zur gegebenen Fachdomäne.',
+      'Definiere Tabellen mit Primär- und Fremdschlüsseln und begründe kritische Modellierungsentscheidungen.',
+      'Nutze die Abbildung/Skizze als Grundlage und dokumentiere dein Ergebnis strukturiert.'
+    ].join('\n'),
+    description: [
+      '<p><strong>Ziel:</strong> Modellierungsaufgabe mit manueller Bewertung.</p>',
+      '<p><strong>Erwartung:</strong> Tabellen, Schluessel, Beziehungen (1:1, 1:n, n:m), Datentyp-Entscheidungen.</p>',
+      '<p><strong>Hinweis:</strong> Optional kann ein SQL-DDL-Entwurf mit abgegeben werden.</p>'
+    ].join(''),
+    hint1: 'Starte mit Entitaeten und Attributen, erst danach Beziehungen und Schluessel.',
+    hint2: 'Pruefe jede Beziehung auf Kardinalitaet und Integritaetsregeln.',
+    hint3: 'Achte auf sinnvolle Datentypen und konsistente Benennung.'
+  };
+}
+
+function applyDbModelTemplateDefaults(prefix) {
+  const taskTypeId = prefix ? `${prefix}-type` : 'new-task-type';
+  const taskType = $(taskTypeId)?.value;
+  if (taskType !== 'db_model') return;
+
+  const defaults = getDbModelTemplateDefaults();
+  const isCreateForm = prefix === 'new-task' || !prefix;
+  const taskTextId = isCreateForm ? 'task-text' : `${prefix}-text`;
+  const descriptionId = isCreateForm ? 'task-description' : `${prefix}-description`;
+  const hint1Id = isCreateForm ? 'task-hint1' : `${prefix}-hint1`;
+  const hint2Id = isCreateForm ? 'task-hint2' : `${prefix}-hint2`;
+  const hint3Id = isCreateForm ? 'task-hint3' : `${prefix}-hint3`;
+  const manualReviewId = isCreateForm ? 'task-manual-review-required' : `${prefix}-manual-review-required`;
+
+  const taskTextEl = $(taskTextId);
+  if (taskTextEl && !taskTextEl.value.trim()) {
+    taskTextEl.value = defaults.taskText;
+  }
+
+  const descEditor = tinymce.get(descriptionId);
+  if (descEditor) {
+    const current = (descEditor.getContent({ format: 'text' }) || '').trim();
+    if (!current) {
+      descEditor.setContent(defaults.description);
+    }
+  } else {
+    const descEl = $(descriptionId);
+    if (descEl && !descEl.value.trim()) {
+      descEl.value = defaults.description;
+    }
+  }
+
+  const hint1El = $(hint1Id);
+  if (hint1El && !hint1El.value.trim()) hint1El.value = defaults.hint1;
+  const hint2El = $(hint2Id);
+  if (hint2El && !hint2El.value.trim()) hint2El.value = defaults.hint2;
+  const hint3El = $(hint3Id);
+  if (hint3El && !hint3El.value.trim()) hint3El.value = defaults.hint3;
+
+  const manualReviewEl = $(manualReviewId);
+  if (manualReviewEl) manualReviewEl.checked = true;
 }
 
 // ===================================================================
@@ -3979,19 +4111,10 @@ function migrateLegacyTestCases(testCases) {
     });
   }
   
-  const firstTest = testCases[0];
-  
-  // Check if already migrated (new structure has test_cases array)
-  if (firstTest.type === 'function' && Array.isArray(firstTest.test_cases)) {
-    return testCases; // Already new structure
-  }
-  
-  if (firstTest.type === 'variable' && Array.isArray(firstTest.test_cases)) {
-    return testCases; // Already new structure
-  }
-  
-  // Migrate legacy FUNCTION structure: group by function_name
-  if (firstTest.type === 'function' || firstTest.function_name) {
+  // Migrate legacy FUNCTION structure only when all entries are function-legacy entries.
+  const isLegacyFunctionEntry = (tc) => tc && (tc.type === 'function' || tc.function_name) && !Array.isArray(tc.test_cases);
+  const allLegacyFunctionEntries = testCases.every(isLegacyFunctionEntry);
+  if (allLegacyFunctionEntries) {
     const grouped = {};
     
     testCases.forEach(tc => {
@@ -4013,45 +4136,44 @@ function migrateLegacyTestCases(testCases) {
     // Return as array of grouped functions
     return Object.values(grouped);
   }
-  
-  // Migrate legacy VARIABLE structure: convert JSON objects to name/value arrays
-  if (firstTest.type === 'variable' || firstTest.init_vars || firstTest.expected_vars) {
-    // Combine all old test cases into ONE new test case with multiple test_cases
-    const allTestCases = [];
-    let initNames = [];
-    let expectedNames = [];
-    
-    testCases.forEach(tc => {
+
+  // Migrate legacy VARIABLE entries individually so mixed lists keep output/code_check tests.
+  const normalized = testCases.map((tc) => {
+    if (!tc || typeof tc !== 'object') return tc;
+
+    const isLegacyVariable = (tc.type === 'variable' || tc.init_vars || tc.expected_vars) && !Array.isArray(tc.test_cases);
+    if (isLegacyVariable) {
       const initVars = tc.init_vars || {};
       const expectedVars = tc.expected_vars || {};
-      
-      // Use names from first test case
-      if (initNames.length === 0) {
-        initNames = Object.keys(initVars);
+      const initNames = Object.keys(initVars);
+      const expectedNames = Object.keys(expectedVars);
+
+      return {
+        ...tc,
+        type: 'variable',
+        init_var_names: initNames,
+        expected_var_names: expectedNames,
+        test_cases: [{
+          init_values: initNames.map(name => initVars[name]),
+          expected_values: expectedNames.map(name => expectedVars[name])
+        }]
+      };
+    }
+
+    if (!tc.type) {
+      const inferredType = inferTestCaseType(tc);
+      if (inferredType) {
+        return {
+          ...tc,
+          type: inferredType
+        };
       }
-      if (expectedNames.length === 0) {
-        expectedNames = Object.keys(expectedVars);
-      }
-      
-      const initValues = initNames.map(name => initVars[name]);
-      const expectedValues = expectedNames.map(name => expectedVars[name]);
-      
-      allTestCases.push({
-        init_values: initValues,
-        expected_values: expectedValues
-      });
-    });
-    
-    return [{
-      type: 'variable',
-      init_var_names: initNames,
-      expected_var_names: expectedNames,
-      test_cases: allTestCases
-    }];
-  }
-  
-  // No migration needed for OUTPUT type
-  return testCases;
+    }
+
+    return tc;
+  });
+
+  return normalized;
 }
 
 // ========================================
@@ -4353,6 +4475,7 @@ document.addEventListener('DOMContentLoaded', () => {
           attemptsInput.value = '5';
         }
       }
+      applyDbModelTemplateDefaults('new-task');
       updateMaxIterationsFromBuilder('task');
       updateCodeOnlyOptionsVisibility();
     });
@@ -4597,6 +4720,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.editOptionsBuilder) {
         window.editOptionsBuilder.setTaskType(taskType);
       }
+      applyDbModelTemplateDefaults('edit-task');
       updateMaxIterationsFromBuilder('edit-task');
       updateCodeOnlyOptionsVisibility();
     });

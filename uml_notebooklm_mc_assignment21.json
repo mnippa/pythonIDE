@@ -1,0 +1,193 @@
+﻿[
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Klassenidentifikation 1",
+    "task_text": "Im Schulsystem werden Klassen verwaltet. Eine Klasse hat eine Bezeichnung. Schueler haben Vorname und Nachname und gehoeren zu genau einer Klasse.\n\nWelche Begriffe sind als Klassen im UML-Modell sinnvoll? (Mehrfachauswahl)",
+    "description": "Fokus: Klassen aus einfachem Text identifizieren (maximal 2 Klassen).",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Klasse", "is_correct": true, "image_url": "" },
+      { "text": "Schueler", "is_correct": true, "image_url": "" },
+      { "text": "Bezeichnung", "is_correct": false, "image_url": "" },
+      { "text": "Vorname", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Klassenidentifikation 2",
+    "task_text": "In einem kleinen Shop gibt es Kunden. Kunden geben Bestellungen auf. Jede Bestellung hat ein Datum.\n\nWelche Begriffe sollten als Klassen modelliert werden? (Mehrfachauswahl)",
+    "description": "Fokus: Klassen von Attributen unterscheiden.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Kunde", "is_correct": true, "image_url": "" },
+      { "text": "Bestellung", "is_correct": true, "image_url": "" },
+      { "text": "Datum", "is_correct": false, "image_url": "" },
+      { "text": "Shop-System", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Attribute finden 1",
+    "task_text": "Zu einem Buch werden titel und isbn gespeichert. Ein Autor hat vorname und nachname.\n\nWelche Attribute gehoeren zur Klasse Buch? (Mehrfachauswahl)",
+    "description": "Fokus: Attribute korrekt der richtigen Klasse zuordnen.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "titel", "is_correct": true, "image_url": "" },
+      { "text": "isbn", "is_correct": true, "image_url": "" },
+      { "text": "vorname", "is_correct": false, "image_url": "" },
+      { "text": "nachname", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Attribute finden 2",
+    "task_text": "Ein Fahrzeug hat kennzeichen und baujahr. Ein Halter hat name und adresse.\n\nWelche Attribute gehoeren zur Klasse Halter? (Mehrfachauswahl)",
+    "description": "Fokus: Attributzuordnung bei zwei Klassen.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "name", "is_correct": true, "image_url": "" },
+      { "text": "adresse", "is_correct": true, "image_url": "" },
+      { "text": "kennzeichen", "is_correct": false, "image_url": "" },
+      { "text": "baujahr", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Abgeleitete Attribute 1",
+    "task_text": "Eine Rechnung speichert nettoBetrag und mwstSatz. Der bruttoBetrag wird daraus berechnet.\n\nWelches Attribut ist abgeleitet?",
+    "description": "Fokus: abgeleitete Attribute erkennen.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "bruttoBetrag", "is_correct": true, "image_url": "" },
+      { "text": "nettoBetrag", "is_correct": false, "image_url": "" },
+      { "text": "mwstSatz", "is_correct": false, "image_url": "" },
+      { "text": "rechnungsnummer", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Abgeleitete Attribute 2",
+    "task_text": "Ein Mitarbeiter hat geburtsdatum, vorname und nachname. Das Alter kann jederzeit aus dem Geburtsdatum bestimmt werden.\n\nWelches Attribut sollte als abgeleitet markiert werden?",
+    "description": "Fokus: persistente vs. berechenbare Informationen unterscheiden.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Alter", "is_correct": true, "image_url": "" },
+      { "text": "Geburtsdatum", "is_correct": false, "image_url": "" },
+      { "text": "Vorname", "is_correct": false, "image_url": "" },
+      { "text": "Nachname", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Enumeration erkennen 1",
+    "task_text": "Ein Ticket hat einen Status. Er kann nur die Werte offen, in_bearbeitung oder geschlossen annehmen.\n\nWas sollte als Enumeration modelliert werden?",
+    "description": "Fokus: feste Wertebereiche als Enum modellieren.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Status", "is_correct": true, "image_url": "" },
+      { "text": "Ticketnummer", "is_correct": false, "image_url": "" },
+      { "text": "Beschreibung", "is_correct": false, "image_url": "" },
+      { "text": "ErstelltAm", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Enumeration erkennen 2",
+    "task_text": "Ein Produkt hat die Groesse S, M, L oder XL. Die Farbe wird frei als Text eingegeben.\n\nWas ist ein guter Kandidat fuer eine Enumeration?",
+    "description": "Fokus: nur feste, endliche Werte als Enum abbilden.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Groesse", "is_correct": true, "image_url": "" },
+      { "text": "Farbe", "is_correct": false, "image_url": "" },
+      { "text": "Produktname", "is_correct": false, "image_url": "" },
+      { "text": "Preis", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Beziehungen und Kardinalitaeten 1",
+    "task_text": "Jeder Mitarbeiter arbeitet in genau einer Abteilung. Eine Abteilung hat 0 bis viele Mitarbeiter.\n\nWelche Aussagen zu den Kardinalitaeten sind korrekt? (Mehrfachauswahl)",
+    "description": "Fokus: Kardinalitaeten in beide Richtungen korrekt lesen.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Am Ende bei Abteilung (von Mitarbeiter aus gesehen) steht 1.", "is_correct": true, "image_url": "" },
+      { "text": "Am Ende bei Mitarbeiter (von Abteilung aus gesehen) steht 0..*.", "is_correct": true, "image_url": "" },
+      { "text": "Ein Mitarbeiter kann gleichzeitig in 0..* Abteilungen arbeiten.", "is_correct": false, "image_url": "" },
+      { "text": "Eine Abteilung muss mindestens 1 Mitarbeiter haben.", "is_correct": false, "image_url": "" }
+    ]
+  },
+  {
+    "version": "3.0",
+    "assignment_id": 33,
+    "task_type": "multiple_choice",
+    "task_difficulty": "basic",
+    "manual_review_required": 0,
+    "title": "UML Beziehungen und Kardinalitaeten 2",
+    "task_text": "Ein Kunde kann 0 bis viele Bestellungen haben. Jede Bestellung gehoert genau einem Kunden.\n\nWelche Aussagen sind korrekt? (Mehrfachauswahl)",
+    "description": "Fokus: 1:n-Beziehung mit optionaler Teilnahme auf der n-Seite.",
+    "max_attempts": 2,
+    "show_solution": 1,
+    "show_solution_code": 0,
+    "options": [
+      { "text": "Am Ende bei Kunde (von Bestellung aus gesehen) steht 1.", "is_correct": true, "image_url": "" },
+      { "text": "Am Ende bei Bestellung (von Kunde aus gesehen) steht 0..*.", "is_correct": true, "image_url": "" },
+      { "text": "Eine Bestellung kann mehreren Kunden gleichzeitig zugeordnet sein.", "is_correct": false, "image_url": "" },
+      { "text": "Jeder Kunde muss mindestens eine Bestellung haben.", "is_correct": false, "image_url": "" }
+    ]
+  }
+]
+

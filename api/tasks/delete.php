@@ -30,6 +30,7 @@ if (!$taskId) {
 }
 
 requireAdminOwnedTask($conn, $taskId, $user);
+requireTaskAssignmentUnlocked($conn, $taskId);
 
 $stmt = $conn->prepare('DELETE FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);

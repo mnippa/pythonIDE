@@ -159,6 +159,19 @@ if (array_key_exists('allow_late_submission', $input)) {
     $types .= 'i';
 }
 
+if (array_key_exists('locked', $input)) {
+    if (!assignmentLockColumnExists($conn)) {
+        jsonResponse(['ok' => false, 'error' => 'Schema supports no assignment lock yet'], 400);
+    }
+    $locked = filter_var($input['locked'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($locked === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid locked value'], 400);
+    }
+    $updates[] = 'locked = ?';
+    $params[] = (int)$locked;
+    $types .= 'i';
+}
+
 if (array_key_exists('available_from', $input) || array_key_exists('due_date', $input) || array_key_exists('hard_deadline', $input)) {
     $dateStmt = $conn->prepare('SELECT available_from, due_date, hard_deadline FROM assignments WHERE id = ?');
     $dateStmt->bind_param('i', $assignmentId);

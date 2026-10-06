@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/task-code-audit.php';
 
 header('Content-Type: application/json');
 
@@ -41,6 +42,22 @@ if (!$taskId) {
 }
 
 $conn = getDbConnection();
+taskAuditEnsureTable($conn);
+
+$writeActions = [
+    'save_template',
+    'set_readonly',
+    'create_folder',
+    'create_file',
+    'upload',
+    'rename',
+    'delete',
+    'save'
+];
+
+if (in_array($action, $writeActions, true)) {
+    requireTaskAssignmentUnlocked($conn, $taskId);
+}
 
 try {
     // ============================================
@@ -52,6 +69,12 @@ try {
 
         // Reuse centralized task access validation.
         requireAdminOwnedTask($conn, $taskId, $user);
+
+        $prevStmt = $conn->prepare('SELECT code_template FROM tasks WHERE id = ? LIMIT 1');
+        $prevStmt->bind_param('i', $taskId);
+        $prevStmt->execute();
+        $prevRow = $prevStmt->get_result()->fetch_assoc();
+        $prevTemplate = (string)($prevRow['code_template'] ?? '');
 
         $stmt = $conn->prepare('UPDATE tasks SET code_template = ? WHERE id = ?');
         if (!$stmt) {
@@ -65,6 +88,19 @@ try {
 
         $affectedRows = $stmt->affected_rows;
         $stmt->close();
+
+        if ((string)$content !== $prevTemplate) {
+            taskAuditLogChange($conn, [
+                'task_id' => $taskId,
+                'field_name' => 'code_template',
+                'change_type' => 'folder_save_template',
+                'old_content' => $prevTemplate,
+                'new_content' => (string)$content,
+                'actor' => $user,
+                'source_endpoint' => '/api/tasks/folder-manage.php',
+                'meta' => ['action' => 'save_template']
+            ]);
+        }
 
         jsonResponse(['ok' => true, 'message' => 'Template saved successfully', 'affected_rows' => $affectedRows]);
     }
@@ -553,9 +589,34 @@ try {
             }
         }
 
+        $oldContent = null;
+        if (is_file($fullPath)) {
+            $oldRaw = file_get_contents($fullPath);
+            if ($oldRaw !== false) {
+                $oldContent = (string)$oldRaw;
+            }
+        }
+
         // Write content to file
         if (file_put_contents($fullPath, $content) === false) {
             jsonResponse(['ok' => false, 'error' => 'Failed to save file'], 500);
+        }
+
+        if ($oldContent === null || $oldContent !== (string)$content) {
+            taskAuditLogChange($conn, [
+                'task_id' => $taskId,
+                'field_name' => $solutionMode ? 'solution_file' : 'template_file',
+                'file_path' => $path,
+                'change_type' => 'folder_save_file',
+                'old_content' => $oldContent,
+                'new_content' => (string)$content,
+                'actor' => $user,
+                'source_endpoint' => '/api/tasks/folder-manage.php',
+                'meta' => [
+                    'action' => 'save',
+                    'solution_mode' => $solutionMode ? 1 : 0
+                ]
+            ]);
         }
 
         jsonResponse(['ok' => true, 'message' => 'File saved successfully']);

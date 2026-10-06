@@ -34,8 +34,8 @@
       fields: ['code_template', 'randomizer_code', 'variable_overrides', 'solution', 'hints', 'max_iterations', 'show-solution-code']
     },
     db_model: {
-      label: 'Datenbank-Modell',
-      fields: ['image', 'test_cases', 'hints']
+      label: 'DB-Modell (manuelle Bewertung)',
+      fields: ['image', 'hints', 'solution']
     },
     file_submission: {
       label: 'Dateiabgabe',

@@ -933,19 +933,15 @@ $isTaskLabView = true;
   $showUser = false;
   $userInfo = [];
   
-  $displayNameEscaped = htmlspecialchars($displayName);
-  $adminBadge = ($user['role'] === 'admin') ? '<span class="user-badge">Admin</span>' : '';
-  $adminLink = ($user['role'] === 'admin') ? '<a class="admin-link" href="admin.php" title="Admin Dashboard">Admin</a>' : '';
-  
+  $displayNameEscaped = htmlspecialchars($displayName ?? 'User');
   // Yellow toolbar background if testing as student
   $toolbarStyle = ($testUserId && $testUserInfo) ? ' style="background:#fbbf24; border-bottom:2px solid #f59e0b;"' : '';
-  $toolbarTextColor = ($testUserId && $testUserInfo) ? ' style="color:#78350f; font-weight:600;"' : '';
   $adminResetTaskBtnStyle = ($testUserId && $testUserInfo) ? 'display:inline-flex;' : 'display:none;';
   
   $headerActions = <<<HTML
-    <div class="toolbar"{$toolbarStyle}>
+    <div class="toolbar"{$toolbarStyle} style="overflow-x:hidden;">
       <button id="dashboard-btn" onclick="if (window.refreshStudentLiveState) { window.refreshStudentLiveState(); } else { window.location.reload(); }" title="Live-Stand aktualisieren">↻</button>
-      <button id="back-to-list-btn" onclick="location.href='assignments.php'" style="display:none;" title="Zurück">⬅</button>
+      <button id="back-to-list-btn" onclick="if (window.opener && !window.opener.closed) { window.close(); } else { window.location.href='assignments.php'; }" style="display:none;" title="Zurück">⬅</button>
       <button id="run-btn">Run</button>
       <button id="check-btn" style="background:#667eea; color:#fff; border-color:transparent;">🔍 Check (0/10)</button>
       <button id="admin-reset-task-btn" class="icon-btn" style="{$adminResetTaskBtnStyle}" title="Nur diesen Task dieses Users resetten (Status/Checks)">↺</button>
@@ -963,14 +959,9 @@ $isTaskLabView = true;
         <span>Hints <span id="submitted-hints"></span></span>
       </div>
       <div style="flex:1"></div>
-      <div class="user-bar">
-        <div class="user-info"{$toolbarTextColor}>
-          <span>{$displayNameEscaped}</span>
-          {$adminBadge}
-        </div>
-        {$adminLink}
+      <div class="user-bar" style="flex-shrink:0; white-space:nowrap;">
+        <span style="font-size:13px; font-weight:600; color:var(--text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; display:inline-block; vertical-align:middle;">{$displayNameEscaped}</span>
         <button id="theme-toggle" title="Light/Dark Mode" aria-label="Toggle theme"></button>
-        <button id="logout-btn" title="Abmelden">🚪</button>
       </div>
     </div>
 HTML;
@@ -1093,9 +1084,10 @@ HTML;
   
   <!-- Quiz Renderer -->
   <script src="js/quiz-renderer.js?v=20250224"></script>
+  <script src="js/uml-renderer.js?v=20260731e"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260601a"></script>
+  <script type="module" src="js/editor-setup.js?v=20260609d"></script>
 
   <script>
     // Theme Toggle
@@ -1267,6 +1259,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260601a"></script>
+  <script type="module" src="js/assignments.js?v=20260609d"></script>
 </body>
 </html>

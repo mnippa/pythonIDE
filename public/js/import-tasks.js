@@ -62,7 +62,7 @@ class TaskImporter {
       throw new Error(`Unsupported export version: ${version}`);
     }
 
-    const allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
+    const allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission', 'uml'];
     if (!allowedTaskTypes.includes(task.task_type)) {
       throw new Error(`Invalid task_type: ${task.task_type}`);
     }
@@ -77,7 +77,7 @@ class TaskImporter {
       throw new Error('Missing title');
     }
 
-    if (['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'code_reading', 'db_model', 'file_submission'].includes(task.task_type)) {
+    if (['single_choice', 'multiple_choice', 'free_text', 'code_random_complex', 'code_reading', 'db_model', 'file_submission', 'uml'].includes(task.task_type)) {
       if (!task.task_text || String(task.task_text).trim() === '') {
         throw new Error(`Missing task_text for ${task.task_type}`);
       }

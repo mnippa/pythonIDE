@@ -22,6 +22,10 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
+$conn = getDbConnection();
+requireAdminOwnedTask($conn, $taskId, $user);
+requireTaskAssignmentUnlocked($conn, $taskId);
+
 try {
     // Get task info first
     $stmt = $pdo->prepare('SELECT id, title, assignment_id FROM tasks WHERE id = ?');

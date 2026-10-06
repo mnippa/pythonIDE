@@ -1,7 +1,7 @@
 <?php
 /**
  * Admin: Set single user task status and keep assignment status in sync.
- * POST { assignment_id, user_id, task_id, status, attempts?, reset_checks?, admin_feedback_comment? }
+ * POST { assignment_id, user_id, task_id, status, attempts?, reset_checks? }
  */
 
 require_once __DIR__ . '/../../../../config/database.php';
@@ -43,12 +43,21 @@ try {
 
     requireAdminOwnedAssignment($conn, $assignmentId, $admin);
 
-    $allowed = ['unbearbeitet', 'in-progress', 'submitted', 'passed', 'failed', 'missed'];
+    $allowed = ['unbearbeitet', 'in-progress', 'submitted', 'manual', 'passed', 'failed', 'missed', 'rework'];
     if (!in_array($statusRequested, $allowed, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid status'], 400);
     }
 
+    if ($statusRequested === 'manual') {
+        $statusRequested = 'submitted';
+    }
+
     $statusEffective = $statusRequested === 'missed' ? 'failed' : $statusRequested;
+    if ($statusRequested === 'rework') {
+        // Rework means task needs further work; keep task-level status as failed,
+        // assignment-level rework flag is set below.
+        $statusEffective = 'failed';
+    }
 
     $taskCheck = $conn->prepare('SELECT id FROM tasks WHERE id = ? AND assignment_id = ? LIMIT 1');
     $taskCheck->bind_param('ii', $taskId, $assignmentId);
@@ -80,30 +89,18 @@ try {
         $hasSubmissionComment = true;
     }
 
-    $hasAdminFeedbackComment = false;
-    $adminFeedbackColumnCheck = $conn->query("SHOW COLUMNS FROM user_tasks LIKE 'admin_feedback_comment'");
-    if ($adminFeedbackColumnCheck && $adminFeedbackColumnCheck->num_rows > 0) {
-        $hasAdminFeedbackComment = true;
-    }
-
-    $hasAdminFeedbackInput = array_key_exists('admin_feedback_comment', $input);
-    $adminFeedbackComment = null;
-    if ($hasAdminFeedbackInput) {
-        $rawFeedback = trim((string)$input['admin_feedback_comment']);
-        $adminFeedbackComment = $rawFeedback !== '' ? $rawFeedback : null;
-    }
-
     $attemptsAfter = $setAttempts !== null ? $setAttempts : (int)($utRow['attempts'] ?? 0);
     $isFinal = in_array($statusEffective, ['submitted', 'passed', 'failed'], true);
     $now = date('Y-m-d H:i:s');
 
     if ($fullReset && $statusEffective === 'unbearbeitet') {
         // Full content reset: determine task type for targeted field clearing
-        $taskTypeStmt = $conn->prepare('SELECT task_type FROM tasks WHERE id = ? LIMIT 1');
+        $taskTypeStmt = $conn->prepare('SELECT task_type, folderstructure, code_template FROM tasks WHERE id = ? LIMIT 1');
         $taskTypeStmt->bind_param('i', $taskId);
         $taskTypeStmt->execute();
         $taskTypeRow = $taskTypeStmt->get_result()->fetch_assoc();
         $taskType = $taskTypeRow['task_type'] ?? 'code';
+        $hasFolderStructure = (int)($taskTypeRow['folderstructure'] ?? 0) === 1;
 
         $isIterative = in_array($taskType, ['code_reading', 'code_random_complex'], true);
         $isCode     = in_array($taskType, ['code', 'code_ui'], true);
@@ -137,6 +134,51 @@ try {
             if (!$upd->execute()) {
                 jsonResponse(['ok' => false, 'error' => 'Failed to reset user task'], 500);
             }
+        } else {
+            // Self-heal missing user_tasks rows so later flows don't depend on implicit fallbacks.
+            $seedStatus = 'unbearbeitet';
+            $seedAttempts = 0;
+            $seedIteration = 1;
+            $seedRunCount = 0;
+            $seedHints = '[]';
+            $seedVariableValues = null;
+            $seedCurrentCode = $isCode ? (string)($taskTypeRow['code_template'] ?? '') : null;
+            $seedStartedAt = null;
+            $seedCompletedAt = null;
+
+            $seedInsert = $conn->prepare(
+                'INSERT INTO user_tasks (user_id, task_id, status, attempts, current_iteration, run_count, current_code, hints_revealed, variable_values, started_at, completed_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $seedInsert->bind_param(
+                'iisiiisssss',
+                $userId,
+                $taskId,
+                $seedStatus,
+                $seedAttempts,
+                $seedIteration,
+                $seedRunCount,
+                $seedCurrentCode,
+                $seedHints,
+                $seedVariableValues,
+                $seedStartedAt,
+                $seedCompletedAt
+            );
+            if (!$seedInsert->execute()) {
+                jsonResponse(['ok' => false, 'error' => 'Failed to recreate missing user task'], 500);
+            }
+            $attemptsAfter = 0;
+        }
+
+        if ($hasFolderStructure) {
+            $deleteFilesStmt = $conn->prepare('DELETE FROM user_task_files WHERE user_id = ? AND task_id = ?');
+            if (!$deleteFilesStmt) {
+                jsonResponse(['ok' => false, 'error' => 'Failed to prepare folder file reset'], 500);
+            }
+            $deleteFilesStmt->bind_param('ii', $userId, $taskId);
+            if (!$deleteFilesStmt->execute()) {
+                jsonResponse(['ok' => false, 'error' => 'Failed to reset folder file overrides'], 500);
+            }
         }
         // If no row exists yet the task is already in default unbearbeitet state – nothing to do
     } elseif ($utRow) {
@@ -166,7 +208,7 @@ try {
              VALUES (?, ?, ?, ?, 1, 0, NULL, ?, NULL, ?, ?)'
         );
         $completedAt = $isFinal ? $now : null;
-        $insert->bind_param('isissss', $userId, $taskId, $statusEffective, $attemptsAfter, $hints, $startedAt, $completedAt);
+        $insert->bind_param('iisisss', $userId, $taskId, $statusEffective, $attemptsAfter, $hints, $startedAt, $completedAt);
         if (!$insert->execute()) {
             jsonResponse(['ok' => false, 'error' => 'Failed to create user task'], 500);
         }
@@ -221,11 +263,17 @@ try {
     $setRework = ($assignmentStatus === 'in_progress')
         && in_array($prevAssignmentStatus, ['submitted', 'passed', 'failed'], true);
 
+    // Explicit admin action from matrix/modal: force assignment into rework state.
+    if ($statusRequested === 'rework') {
+        $assignmentStatus = 'in_progress';
+        $setRework = true;
+    }
+
     if ($uaRow) {
         $uaId = (int)$uaRow['id'];
         if ($assignmentStatus === 'submitted') {
             // Stamp submitted_at when closing
-            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ?, submitted_at = ? WHERE id = ?');
+            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ?, submitted_at = ?, is_rework = 0 WHERE id = ?');
             $uaUpd->bind_param('ssi', $assignmentStatus, $now, $uaId);
         } elseif ($setRework) {
             // Reopening closed assignment: mark as rework
@@ -233,33 +281,17 @@ try {
             $uaUpd->bind_param('si', $assignmentStatus, $uaId);
         } else {
             // assigned / in_progress without rework: preserve existing submitted_at
-            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ? WHERE id = ?');
+            $uaUpd = $conn->prepare('UPDATE user_assignments SET status = ?, is_rework = 0 WHERE id = ?');
             $uaUpd->bind_param('si', $assignmentStatus, $uaId);
         }
         $uaUpd->execute();
     } else {
         $submittedAt = $assignmentStatus === 'submitted' ? $now : null;
+        $isRework = $setRework ? 1 : 0;
         $adminId = (int)$admin['id'];
-        $uaIns = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, assigned_by, status, submitted_at) VALUES (?, ?, ?, ?, ?)');
-        $uaIns->bind_param('iiiss', $userId, $assignmentId, $adminId, $assignmentStatus, $submittedAt);
+        $uaIns = $conn->prepare('INSERT INTO user_assignments (user_id, assignment_id, assigned_by, status, submitted_at, is_rework) VALUES (?, ?, ?, ?, ?, ?)');
+        $uaIns->bind_param('iiissi', $userId, $assignmentId, $adminId, $assignmentStatus, $submittedAt, $isRework);
         $uaIns->execute();
-    }
-
-    if ($hasAdminFeedbackComment && $hasAdminFeedbackInput) {
-        $feedbackUpd = $conn->prepare('UPDATE user_tasks SET admin_feedback_comment = ? WHERE user_id = ? AND task_id = ?');
-        $feedbackUpd->bind_param('sii', $adminFeedbackComment, $userId, $taskId);
-        if (!$feedbackUpd->execute()) {
-            jsonResponse(['ok' => false, 'error' => 'Failed to update admin feedback comment'], 500);
-        }
-    }
-
-    $adminFeedbackCommentCurrent = null;
-    if ($hasAdminFeedbackComment) {
-        $feedbackRead = $conn->prepare('SELECT admin_feedback_comment FROM user_tasks WHERE user_id = ? AND task_id = ? LIMIT 1');
-        $feedbackRead->bind_param('ii', $userId, $taskId);
-        $feedbackRead->execute();
-        $feedbackRow = $feedbackRead->get_result()->fetch_assoc();
-        $adminFeedbackCommentCurrent = $feedbackRow['admin_feedback_comment'] ?? null;
     }
 
     jsonResponse([
@@ -269,7 +301,6 @@ try {
         'task_id' => $taskId,
         'status_requested' => $statusRequested,
         'status_effective' => $statusEffective,
-        'admin_feedback_comment' => $adminFeedbackCommentCurrent,
         'attempts_after' => $attemptsAfter,
         'completed_at' => $isFinal ? $now : null,
         'assignment_status' => $assignmentStatus,

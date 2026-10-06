@@ -125,6 +125,7 @@ $existingTask = requireAdminOwnedTask($conn, $taskId, $user);
 $existingTaskType = $existingTask['task_type'] ?? null;
 $existingCodeTemplate = $existingTask['code_template'] ?? '';
 $existingOverrides = $existingTask['variable_overrides'] ?? null;
+$existingTaskText = isset($existingTask['task_text']) ? trim((string)$existingTask['task_text']) : '';
 $existingFolderstructure = (int)($existingTask['folderstructure'] ?? 0);
 $shouldCreateFolder = false;
 
@@ -314,7 +315,7 @@ if (array_key_exists('solution_code', $input)) {
 // New fields for quiz-style tasks
 if (isset($input['task_type'])) {
     $taskType = $input['task_type'];
-    $allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
+    $allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission', 'uml'];
     if (!in_array($taskType, $allowedTaskTypes, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
     }
@@ -376,6 +377,21 @@ if ($effectiveTaskType === 'file_submission') {
         $updates[] = 'manual_review_required = ?';
         $params[] = 1;
         $types .= 'i';
+    }
+}
+
+if ($effectiveTaskType === 'db_model') {
+    if (!array_key_exists('manual_review_required', $input)) {
+        $updates[] = 'manual_review_required = ?';
+        $params[] = 1;
+        $types .= 'i';
+    }
+
+    $effectiveTaskText = array_key_exists('task_text', $input)
+        ? trim((string)($input['task_text'] ?? ''))
+        : $existingTaskText;
+    if ($effectiveTaskText === '') {
+        jsonResponse(['ok' => false, 'error' => 'task_text required for db_model'], 400);
     }
 }
 
@@ -448,11 +464,12 @@ if (array_key_exists('file_submission_allowed_types', $input)) {
 }
 
 if (array_key_exists('file_submission_max_size_bytes', $input)) {
-    $maxSize = (int)$input['file_submission_max_size_bytes'];
     $allowedSizes = [51200, 102400, 256000, 1048576, 2097152, 5242880];
-    if (!in_array($maxSize, $allowedSizes, true)) {
-        jsonResponse(['ok' => false, 'error' => 'Invalid file_submission_max_size_bytes'], 400);
-    }
+    $incomingMaxSize = (int)$input['file_submission_max_size_bytes'];
+    $existingMaxSize = isset($existingTask['file_submission_max_size_bytes']) ? (int)$existingTask['file_submission_max_size_bytes'] : 102400;
+    $maxSize = in_array($incomingMaxSize, $allowedSizes, true)
+        ? $incomingMaxSize
+        : (in_array($existingMaxSize, $allowedSizes, true) ? $existingMaxSize : 102400);
     $updates[] = 'file_submission_max_size_bytes = ?';
     $params[] = $maxSize;
     $types .= 'i';

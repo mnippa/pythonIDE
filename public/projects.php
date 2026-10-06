@@ -258,6 +258,39 @@ if ($displayName === '') {
       color: var(--text-primary);
     }
 
+    #db-structure-tree {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 4px;
+      min-height: 0;
+    }
+
+    .db-tree-item {
+      padding: 6px 8px;
+      margin: 2px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .db-tree-item:hover { background: var(--panel); }
+    .db-tree-item.active {
+      background: #dbeafe;
+      color: #0c4a6e;
+      font-weight: 600;
+    }
+
+    html.dark-mode .db-tree-item.active {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+    }
+
     #project-file-tree {
       flex: 1;
       overflow-y: auto;
@@ -324,35 +357,6 @@ if ($displayName === '') {
       color: var(--text-secondary);
       min-width: 45px;
       text-align: right;
-    }
-
-    .db-table-nav-item {
-      padding: 8px 10px;
-      margin: 0;
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      border-left: 3px solid transparent;
-      color: var(--text-primary);
-    }
-    .db-table-nav-item:hover {
-      background: var(--panel);
-    }
-    .db-table-nav-item.active {
-      background: var(--panel);
-      border-left-color: #0ea5e9;
-      font-weight: 600;
-    }
-
-    #db-small-designer-panel {
-      display: none;
-      height: 100%;
-      overflow: auto;
-      padding: 12px;
-      background: var(--bg);
     }
     
     /* Project Details (bottom) */
@@ -445,6 +449,17 @@ if ($displayName === '') {
 
     #editor-container{ width:100%; flex:1; min-width:0; min-height:0; }
 
+    #db-design-container {
+      display: none;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: var(--bg);
+      color: var(--text-primary);
+      padding: 10px;
+    }
+
     .editor-bottom{
       border-top:1px solid var(--border);
       display:grid;
@@ -490,6 +505,18 @@ if ($displayName === '') {
       font-size:14px;
       line-height:1.6;
       min-width:0; min-height:0;
+    }
+
+    #db-data-container {
+      display: none;
+      padding: 8px;
+      overflow: auto;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-width: 0;
+      min-height: 0;
+      font-size: 12px;
+      border-top: 1px solid var(--border);
     }
     #help-container h1, #help-container h2, #help-container h3{
       margin:2px 0 6px 0;
@@ -558,6 +585,14 @@ if ($displayName === '') {
       flex: 0 0 auto;
     }
 
+    #right-bottom-free {
+      display: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
     .right.gui-active #gui-container.active {
       flex: 1 1 auto;
       min-height: 0;
@@ -579,6 +614,61 @@ if ($displayName === '') {
       flex: 1 1 auto;
       min-height: 100%;
       width: 100%;
+    }
+
+    body.db-mode #file-tree-wrapper .tree-header {
+      content: '🗄️ DB Struktur';
+    }
+
+    body.db-mode #project-file-tree {
+      display: none;
+    }
+
+    body.db-mode #db-structure-tree {
+      display: block;
+    }
+
+    body.db-mode #editor-container {
+      display: none;
+    }
+
+    body.db-mode #db-design-container {
+      display: block;
+    }
+
+    body.db-mode .editor-area {
+      grid-template-rows: 60% 40%;
+    }
+
+    body.db-mode .editor-bottom {
+      grid-template-columns: 1fr;
+      border-top: 1px solid var(--border);
+    }
+
+    body.db-mode #lint-container,
+    body.db-mode #help-container {
+      display: none;
+    }
+
+    body.db-mode #db-data-container {
+      display: block;
+      height: 100%;
+    }
+
+    body.db-mode #gui-container.active {
+      display: block;
+      flex: 0 0 52%;
+      max-height: none;
+      border-bottom: 1px solid var(--border);
+      padding: 8px;
+    }
+
+    body.db-mode #output-plot-section {
+      display: none;
+    }
+
+    body.db-mode #right-bottom-free {
+      display: block;
     }
 
     #output-plot-section {
@@ -873,8 +963,9 @@ HTML;
         <p style="padding:8px; margin:0; color:var(--text-secondary); font-size:12px;">Lade Projekte...</p>
       </div>
       <div id="file-tree-wrapper">
-        <div class="tree-header">📁 Dateien</div>
+        <div class="tree-header" id="left-structure-header">📁 Dateien</div>
         <div id="project-file-tree"></div>
+        <div id="db-structure-tree"></div>
       </div>
       <div class="project-details-content" id="project-details-content">
         <p>Wählen Sie ein Projekt um zu starten</p>
@@ -885,12 +976,13 @@ HTML;
     <div class="editor-area">
       <div class="editor-container-wrapper">
         <div id="editor-container"></div>
-        <div id="db-small-designer-panel"></div>
+        <div id="db-design-container"></div>
       </div>
 
       <div class="editor-bottom">
         <div id="lint-container"></div>
         <div id="help-container"></div>
+        <div id="db-data-container"></div>
       </div>
     </div>
 
@@ -909,6 +1001,7 @@ HTML;
         <div id="output-container" class="output-plot-panel active"></div>
         <div id="plot-container" class="output-plot-panel"></div>
       </div>
+      <div id="right-bottom-free"></div>
     </div>
   </div>
 
@@ -928,7 +1021,7 @@ HTML;
           <label style="display: block; margin-bottom: 8px; font-weight: 600;">Vorlage:</label>
           <select id="project-template-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);">
             <option value="empty_python" selected>Leeres Python Projekt</option>
-            <option value="db_small">Kleine DB-Integration (Tabellen + Testdaten + SQL-Export)</option>
+            <option value="db_small">DB-Projekt (db_small)</option>
             <option value="empty_python_html">Leeres Python-HTML Projekt</option>
             <option value="python_logic">Python-HTML mit Python-Logik</option>
             <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
@@ -1188,7 +1281,7 @@ HTML;
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script type="module" src="js/projects-editor.js?v=20260605s"></script>
+  <script type="module" src="js/projects-editor.js?v=20260729b"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;

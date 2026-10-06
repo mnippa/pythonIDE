@@ -46,18 +46,20 @@ class ProjectTemplates {
                                 'db_model.json' => [
                                         'content' => <<<'JSON'
 {
-    "version": 2,
+    "version": 3,
     "activeDatabaseIndex": 0,
     "databases": [
         {
+            "id": "db_1",
             "name": "Zwischenstand 1",
             "tables": [
                 {
+                    "id": "tbl_1",
                     "name": "student",
                     "columns": [
-                        { "name": "id", "type": "AUTO", "pk": true, "fk": false, "default": "" },
-                        { "name": "name", "type": "TEXT", "pk": false, "fk": false, "default": "" },
-                        { "name": "semester", "type": "AUTO", "pk": false, "fk": false, "default": "" }
+                        { "id": "col_1", "name": "id", "type": "INTEGER", "pk": true, "fk": false, "nullable": false, "default": "", "references": null },
+                        { "id": "col_2", "name": "name", "type": "TEXT", "pk": false, "fk": false, "nullable": false, "default": "", "references": null },
+                        { "id": "col_3", "name": "semester", "type": "INTEGER", "pk": false, "fk": false, "nullable": true, "default": "", "references": null }
                     ],
                     "rows": [
                         { "name": "Ada", "semester": "2" },

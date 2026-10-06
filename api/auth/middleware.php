@@ -58,6 +58,82 @@ function requireAdminOwnedAssignment(mysqli $conn, int $assignmentId, ?array $ad
 }
 
 /**
+ * Returns true when assignments.locked column exists in current schema.
+ */
+function assignmentLockColumnExists(mysqli $conn): bool {
+    static $cache = [];
+
+    $key = spl_object_id($conn);
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    $check = $conn->query("SHOW COLUMNS FROM assignments LIKE 'locked'");
+    $exists = ($check instanceof mysqli_result) && $check->num_rows > 0;
+    $cache[$key] = $exists;
+
+    return $exists;
+}
+
+/**
+ * Require assignment unlocked before mutating tasks/templates/files.
+ */
+function requireAssignmentUnlocked(mysqli $conn, int $assignmentId, ?string $errorMessage = null): void {
+    if (!assignmentLockColumnExists($conn)) {
+        return;
+    }
+
+    $stmt = $conn->prepare('SELECT locked FROM assignments WHERE id = ? LIMIT 1');
+    $stmt->bind_param('i', $assignmentId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+
+    if (!$row) {
+        jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
+    }
+
+    if ((int)($row['locked'] ?? 0) === 1) {
+        jsonResponse([
+            'ok' => false,
+            'error' => $errorMessage ?? 'Assignment ist gesperrt. Bitte zuerst entsperren.',
+            'code' => 'ASSIGNMENT_LOCKED'
+        ], 423);
+    }
+}
+
+/**
+ * Require unlocked assignment via task id for any task mutation endpoint.
+ */
+function requireTaskAssignmentUnlocked(mysqli $conn, int $taskId, ?string $errorMessage = null): void {
+    if (!assignmentLockColumnExists($conn)) {
+        return;
+    }
+
+    $stmt = $conn->prepare(
+        'SELECT a.id AS assignment_id, a.locked
+         FROM tasks t
+         INNER JOIN assignments a ON a.id = t.assignment_id
+         WHERE t.id = ?
+         LIMIT 1'
+    );
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+
+    if (!$row) {
+        jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
+    }
+
+    if ((int)($row['locked'] ?? 0) === 1) {
+        jsonResponse([
+            'ok' => false,
+            'error' => $errorMessage ?? 'Assignment ist gesperrt. Bitte zuerst entsperren.',
+            'code' => 'ASSIGNMENT_LOCKED'
+        ], 423);
+    }
+}
+
+/**
  * Require that the current admin owns the assignment of the given task.
  */
 function requireAdminOwnedTask(mysqli $conn, int $taskId, ?array $admin = null): array {

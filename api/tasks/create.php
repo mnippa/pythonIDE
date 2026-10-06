@@ -199,7 +199,7 @@ if (!in_array($problemType, $allowedTypes, true)) {
 }
 
 // Validate task_type
-$allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission'];
+$allowedTaskTypes = ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission', 'uml'];
 if (!in_array($taskType, $allowedTaskTypes, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid task_type'], 400);
 }
@@ -229,6 +229,13 @@ if ($taskType === 'file_submission') {
     $allowedSizes = [51200, 102400, 256000, 1048576, 2097152, 5242880];
     if (!in_array($fileSubmissionMaxSizeBytes, $allowedSizes, true)) {
         jsonResponse(['ok' => false, 'error' => 'Invalid file_submission_max_size_bytes'], 400);
+    }
+}
+
+if ($taskType === 'db_model') {
+    $manualReviewRequired = 1;
+    if ($taskText === '') {
+        jsonResponse(['ok' => false, 'error' => 'task_text required for db_model'], 400);
     }
 }
 

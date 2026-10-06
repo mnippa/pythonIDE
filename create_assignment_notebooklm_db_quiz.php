@@ -160,10 +160,10 @@ echo "Created Assignment #{$assignmentId}: {$assignmentTitle}\n";
 
 $taskStmt = $conn->prepare(
     'INSERT INTO tasks (
-        assignment_id, title, description, position, task_type,
+        assignment_id, title, task_text, description, position, task_type,
         question_text, code_template, solution_code, correct_answer,
         show_solution
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 if (!$taskStmt) {
     die("Prepare task failed: " . $conn->error . "\n");
@@ -182,11 +182,15 @@ foreach ($tasks as $task) {
     $solutionCode = '';
     $correctAnswer = '';
     $showSolution = 1;
+    $taskText = isset($task['task_text']) && trim((string)$task['task_text']) !== ''
+        ? (string)$task['task_text']
+        : (string)$task['question_text'];
 
     $taskStmt->bind_param(
-        'issississi',
+        'isssisssssi',
         $assignmentId,
         $task['title'],
+        $taskText,
         $task['description'],
         $task['position'],
         $task['task_type'],

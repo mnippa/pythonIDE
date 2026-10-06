@@ -188,7 +188,22 @@ if ($currentStatus === 'passed') {
     exit;
 }
 
-if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex']) && $currentAttempts >= $maxAttempts) {
+if ($currentStatus === 'submitted') {
+    echo json_encode([
+        'ok' => true,
+        'is_correct' => true,
+        'status' => 'submitted',
+        'attempts' => $currentAttempts,
+        'max_attempts' => $maxAttempts,
+        'message' => 'Bereits abgegeben',
+        'current_iteration' => $isIterative ? $currentIteration : null,
+        'max_iterations' => $isIterative ? $maxIterations : null,
+        'reset_values' => false
+    ]);
+    exit;
+}
+
+if (in_array($taskType, ['single_choice', 'multiple_choice', 'free_text', 'db_model', 'uml', 'code_reading', 'code_random_complex']) && $currentAttempts >= $maxAttempts) {
     echo json_encode([
         'ok' => false,
         'error' => 'Maximale Anzahl Versuche erreicht',
@@ -344,6 +359,16 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         }
     }
     
+} elseif ($taskType === 'db_model' || $taskType === 'uml') {
+    $textAnswer = trim($input['text_answer'] ?? '');
+    if ($textAnswer === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'No answer provided']);
+        exit;
+    }
+
+    $isCorrect = true;
+    $message = 'Antwort wurde zur manuellen Bewertung eingereicht.';
 } elseif ($taskType === 'code_reading') {
     $textAnswer = trim($input['text_answer'] ?? '');
     $variableValues = $input['variable_values'] ?? [];
@@ -520,6 +545,8 @@ if ($isIterative) {
     } else {
         $status = 'in-progress';
     }
+} elseif ($taskType === 'db_model' || $taskType === 'uml') {
+    $status = 'submitted';
 }
 
 // Create or update user_tasks entry
@@ -595,7 +622,7 @@ if ($stmt->execute()) {
         'SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("unbearbeitet", "in-progress") THEN 1 ELSE 0 END) AS open_cnt,
-            SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("passed", "failed") THEN 1 ELSE 0 END) AS done_cnt
+                SUM(CASE WHEN COALESCE(ut.status, "unbearbeitet") IN ("submitted", "passed", "failed") THEN 1 ELSE 0 END) AS done_cnt
          FROM tasks t
          LEFT JOIN user_tasks ut ON ut.task_id = t.id AND ut.user_id = ?
          WHERE t.assignment_id = ?'
