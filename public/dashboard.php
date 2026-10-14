@@ -387,7 +387,7 @@ $isAdmin = ($user['role'] ?? '') === 'admin';
 
             for (const assignment of assignments) {
               const assignmentId = assignment.assignment_id;
-              const tasksResponse = await requestJson(`../api/assignments/tasks.php?assignment_id=${assignmentId}`);
+              const tasksResponse = await requestJson(`../api/tasks/list.php?assignment_id=${assignmentId}`);
               if (tasksResponse.ok && tasksResponse.tasks) {
                 totalTasks += tasksResponse.tasks.length;
 

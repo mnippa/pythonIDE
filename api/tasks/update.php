@@ -150,6 +150,38 @@ $updates = [];
 $params = [];
 $types = '';
 $taskTypeInput = $input['task_type'] ?? null;
+$taskLockChanged = false;
+
+if (array_key_exists('locked', $input)) {
+    if (!taskLockColumnExists($conn)) {
+        jsonResponse(['ok' => false, 'error' => 'Schema supports no task lock yet'], 400);
+    }
+
+    $locked = filter_var($input['locked'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($locked === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid locked value'], 400);
+    }
+
+    // Assignment must be unlocked to change task lock state.
+    requireTaskAssignmentUnlocked($conn, $taskId);
+
+    $updates[] = 'locked = ?';
+    $params[] = (int)$locked;
+    $types .= 'i';
+    $taskLockChanged = true;
+}
+
+if ($taskLockChanged && count($input) > 2) {
+    jsonResponse([
+        'ok' => false,
+        'error' => 'Task lock update must be sent without additional task field changes'
+    ], 400);
+}
+
+// For any content mutation (template/solution/tests/files metadata), task must be effectively unlocked.
+if (!$taskLockChanged) {
+    requireTaskUnlocked($conn, $taskId);
+}
 
 if (isset($input['title'])) {
     $title = trim($input['title']);
@@ -473,6 +505,25 @@ if (array_key_exists('file_submission_max_size_bytes', $input)) {
     $updates[] = 'file_submission_max_size_bytes = ?';
     $params[] = $maxSize;
     $types .= 'i';
+}
+
+foreach (['uml_model', 'uml_solution', 'uml_template'] as $jsonColumn) {
+    if (array_key_exists($jsonColumn, $input)) {
+        $value = $input[$jsonColumn];
+        $updates[] = "{$jsonColumn} = ?";
+        $params[] = ($value === null || $value === '')
+            ? null
+            : (is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $types .= 's';
+    }
+}
+
+foreach (['hint', 'generator_code'] as $textColumn) {
+    if (array_key_exists($textColumn, $input)) {
+        $updates[] = "{$textColumn} = ?";
+        $params[] = $input[$textColumn] ?? null;
+        $types .= 's';
+    }
 }
 
 if (array_key_exists('task_difficulty', $input)) {

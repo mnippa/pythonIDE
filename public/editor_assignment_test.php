@@ -949,6 +949,7 @@ $isTaskLabView = true;
       <span id="attempts-counter" style="display:none;"></span>
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
+      <button id="task-lock-btn" class="icon-btn" style="display:none;" title="Task Lock umschalten">🔒</button>
       <button id="save-task-btn" class="icon-btn" style="display:none;" title="Speichern">💾</button>
       <span id="save-mode-indicator" class="save-mode-indicator"></span>
       <button id="download-btn" class="icon-btn" style="display:none;" title="Herunterladen">⬇</button>

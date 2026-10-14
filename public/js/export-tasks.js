@@ -51,19 +51,29 @@ class TaskExporter {
       show_solution: typeof task.show_solution === 'number' ? task.show_solution : (task.show_solution ? 1 : 0),
       show_solution_code: typeof task.show_solution_code === 'number' ? task.show_solution_code : (task.show_solution_code ? 1 : 0),
       min_keywords_required: typeof task.min_keywords_required === 'number' ? task.min_keywords_required : null,
-      question_text: task.question_text || '',
+      question_text: task.question_text ?? null,
       image_url: task.image_url || '',
-      code_template: task.code_template || '',
-      solution_code: task.solution_code || '',
-      randomizer_code: task.randomizer_code || '',
-      test_cases: task.test_cases || null,
-      hint1: task.hint1 || '',
-      hint2: task.hint2 || '',
-      hint3: task.hint3 || '',
-      stoff: task.stoff || '',
+      code_template: task.code_template ?? null,
+      solution_code: task.solution_code ?? null,
+      randomizer_code: task.randomizer_code ?? null,
+      generator_code: task.generator_code ?? null,
+      test_cases: task.test_cases ?? null,
+      expected_output: task.expected_output ?? null,
+      hint: task.hint ?? null,
+      hint1: task.hint1 ?? null,
+      hint2: task.hint2 ?? null,
+      hint3: task.hint3 ?? null,
+      stoff: task.stoff ?? null,
       correct_answer: task.correct_answer || '',
       variable_overrides: task.variable_overrides || null,
       folderstructure: task.folderstructure ? 1 : 0,
+      allowDownload: task.allowDownload ? 1 : 0,
+      allowCodeUiWebEdit: task.allowCodeUiWebEdit ? 1 : 0,
+      file_submission_allowed_types: task.file_submission_allowed_types ?? null,
+      file_submission_max_size_bytes: Number(task.file_submission_max_size_bytes || 102400),
+      uml_model: task.uml_model || null,
+      uml_solution: task.uml_solution || null,
+      uml_template: task.uml_template || null,
       options
     };
   }
@@ -74,7 +84,7 @@ class TaskExporter {
    */
   async fetchFolderFiles(taskId, solutionMode = false) {
     try {
-      const modeParam = solutionMode ? '&solution_mode=1' : '';
+      const modeParam = solutionMode ? '&solution_mode=1&solution_files_only=1' : '';
       const res = await fetch(`../api/tasks/get-folder-files.php?task_id=${taskId}&include_content=1${modeParam}`);
       if (!res.ok) return [];
       const data = await res.json();

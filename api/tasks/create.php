@@ -15,6 +15,13 @@ function getCodeUiTemplateVersion(): string {
     return '1.1.0';
 }
 
+function normalizeJsonInput($value): ?string {
+    if ($value === null || $value === '') {
+        return null;
+    }
+    return is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
 function getCodeUiDefaultCodeTemplate(): string {
     return "import idegui as ui\n\nui.title('Code UI')\nui.text('Willkommen! Passe index.html und deinen Python-Code an.')\n";
 }
@@ -146,9 +153,11 @@ error_log('=======================');
 // New fields for quiz-style tasks
 $taskType = $input['task_type'] ?? 'code';
 $taskText = trim($input['task_text'] ?? '');
-$questionText = trim($input['question_text'] ?? '');
+$questionText = array_key_exists('question_text', $input) && $input['question_text'] !== null
+    ? trim((string)$input['question_text'])
+    : null;
 // If task_text not provided, fallback to question_text for backward compatibility
-if (empty($taskText)) {
+if (empty($taskText) && $questionText !== null) {
     $taskText = $questionText;
 }
 $imageUrl = trim($input['image_url'] ?? '') ?: null;
@@ -159,10 +168,17 @@ $folderstructure = isset($input['folderstructure']) ? (int)(bool)$input['folders
 $allowDownload = isset($input['allowDownload']) ? (int)(bool)$input['allowDownload'] : 0;
 $allowCodeUiWebEdit = isset($input['allowCodeUiWebEdit']) ? (int)(bool)$input['allowCodeUiWebEdit'] : 1;
 $taskDifficulty = strtolower(trim((string)($input['task_difficulty'] ?? 'medium')));
-$fileSubmissionAllowedTypes = trim((string)($input['file_submission_allowed_types'] ?? ''));
+$fileSubmissionAllowedTypes = array_key_exists('file_submission_allowed_types', $input) && $input['file_submission_allowed_types'] !== null
+    ? trim((string)$input['file_submission_allowed_types'])
+    : null;
 $fileSubmissionMaxSizeBytes = isset($input['file_submission_max_size_bytes'])
     ? (int)$input['file_submission_max_size_bytes']
     : 102400;
+$umlModel = normalizeJsonInput($input['uml_model'] ?? null);
+$umlSolution = normalizeJsonInput($input['uml_solution'] ?? null);
+$umlTemplate = normalizeJsonInput($input['uml_template'] ?? null);
+$legacyHint = isset($input['hint']) ? (string)$input['hint'] : null;
+$generatorCode = isset($input['generator_code']) ? (string)$input['generator_code'] : null;
 
 $problemTypeMap = [
     'code' => 'code_completion',
@@ -183,6 +199,7 @@ if (!$assignmentId) {
 }
 
 requireAdminOwnedAssignment($conn, $assignmentId, $user);
+requireAssignmentUnlocked($conn, $assignmentId);
 
 if ($title === '') {
     jsonResponse(['ok' => false, 'error' => 'Title is required'], 400);
@@ -222,7 +239,7 @@ if ($taskType === 'file_submission') {
         jsonResponse(['ok' => false, 'error' => 'task_text required for file_submission'], 400);
     }
 
-    if ($fileSubmissionAllowedTypes === '') {
+    if ($fileSubmissionAllowedTypes === null || $fileSubmissionAllowedTypes === '') {
         $fileSubmissionAllowedTypes = 'zip,png';
     }
 
@@ -340,16 +357,16 @@ if ($taskType === 'code_random_complex' && !$maxIterationsInput) {
     $maxIterations = 3;
 }
 
-// Ensure all string values are strings (not null or array)
-$codeTemplate = is_string($codeTemplate) ? $codeTemplate : '';
-$expectedOutput = is_string($expectedOutput) ? $expectedOutput : '';
-$testCases = is_string($testCases) ? $testCases : '';
-$solutionCode = is_string($solutionCode) ? $solutionCode : '';
-$randomizerCode = is_string($randomizerCode) ? $randomizerCode : '';
+// Preserve SQL NULL while rejecting unsupported structured values.
+$codeTemplate = $codeTemplate === null || is_string($codeTemplate) ? $codeTemplate : '';
+$expectedOutput = $expectedOutput === null || is_string($expectedOutput) ? $expectedOutput : '';
+$testCases = $testCases === null || is_string($testCases) ? $testCases : '';
+$solutionCode = $solutionCode === null || is_string($solutionCode) ? $solutionCode : '';
+$randomizerCode = $randomizerCode === null || is_string($randomizerCode) ? $randomizerCode : '';
 
 $stmt = $conn->prepare(
-    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, file_submission_allowed_types, file_submission_max_size_bytes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, file_submission_allowed_types, file_submission_max_size_bytes, uml_model, uml_solution, uml_template, hint, generator_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
@@ -387,6 +404,7 @@ $types .= 'i';     // allow_code_ui_web_edit
 $types .= 's';     // task_difficulty
 $types .= 's';     // file_submission_allowed_types
 $types .= 'i';     // file_submission_max_size_bytes
+$types .= 'sssss'; // uml_model, uml_solution, uml_template, hint, generator_code
 
 error_log('Type string: ' . $types . ' (length: ' . strlen($types) . ')');
 
@@ -423,7 +441,12 @@ $bindResult = @$stmt->bind_param(
     $allowCodeUiWebEdit,
     $taskDifficulty,
     $fileSubmissionAllowedTypes,
-    $fileSubmissionMaxSizeBytes
+    $fileSubmissionMaxSizeBytes,
+    $umlModel,
+    $umlSolution,
+    $umlTemplate,
+    $legacyHint,
+    $generatorCode
 );
 
 if (!$bindResult) {

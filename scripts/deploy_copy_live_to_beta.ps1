@@ -191,6 +191,75 @@ foreach ($relativePath in $protectedSnapshots.Keys) {
     }
 }
 
+if (-not $DryRun) {
+    $historyFile = Join-Path $TargetDir "storage\admin-deploy-history.json"
+    $historyDir = Split-Path -Parent $historyFile
+    if (-not (Test-Path -LiteralPath $historyDir)) {
+        New-Item -ItemType Directory -Path $historyDir -Force | Out-Null
+    }
+
+    $history = @{
+        entries = @()
+        next_id = 1
+    }
+
+    if (Test-Path -LiteralPath $historyFile) {
+        try {
+            $loadedHistory = Get-Content -LiteralPath $historyFile -Raw | ConvertFrom-Json
+            if ($null -ne $loadedHistory.entries) {
+                $history.entries = @($loadedHistory.entries)
+                $history.next_id = $history.entries.Count + 1
+            }
+        } catch {
+            $history.entries = @()
+            $history.next_id = 1
+        }
+    }
+
+    $entry = [ordered]@{
+        id = [int]$history.next_id
+        kind = 'copy-beta'
+        label = 'Copy Beta'
+        target = 'beta'
+        package_id = $null
+        created_at = (Get-Date).ToString('o')
+        actor = $null
+        details = [ordered]@{
+            source_dir = $SourceDir
+            target_dir = $TargetDir
+            mirror = [bool]$Mirror
+        }
+    }
+    $history.entries += $entry
+    $history.next_id = [int]$history.next_id + 1
+
+    $historyJson = [ordered]@{
+        entries = $history.entries
+        next_id = $history.next_id
+    } | ConvertTo-Json -Depth 8
+    Set-Content -LiteralPath $historyFile -Value $historyJson -Encoding UTF8
+
+    $versionFile = Join-Path $TargetDir "storage\admin-ui-version.json"
+    $versionDir = Split-Path -Parent $versionFile
+    if (-not (Test-Path -LiteralPath $versionDir)) {
+        New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
+    }
+
+    $versionPayload = [ordered]@{
+        version = $entry.id
+        updated_at = $entry.created_at
+        reason = $entry.label
+        kind = $entry.kind
+        target = $entry.target
+        package_id = $null
+        actor = $null
+    }
+    $versionPayload | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $versionFile -Encoding UTF8
+}
+
 Write-Step "Done."
 Write-Step "Copied directories: $($liveDirs -join ', ')"
 Write-Step "Copied root files: $($rootFiles | Select-Object -Unique | Sort-Object | ForEach-Object { $_ } | Out-String)"
+if (-not $DryRun) {
+    Write-Step "Admin patch history updated with copy-beta entry #$($entry.id)"
+}

@@ -16,3 +16,6 @@ storage/help/help.json
 
 # Local-only DB helpers/secrets (never commit)
 config/database.beta_live.local.php
+
+# Generated deploy artifacts
+deploy-packages/

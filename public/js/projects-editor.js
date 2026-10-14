@@ -3754,19 +3754,36 @@ async function getProjectRunContext() {
 
   const editor = getEditorInstance();
   let code = String(editor?.getValue?.() || '');
-  let fileName = currentOpenFileName || '';
+  const resolvedOpenFileName = currentOpenFileId
+    ? (projectFileNamesById[Number(currentOpenFileId)] || currentOpenFileName || '')
+    : (currentOpenFileName || '');
+  let fileName = resolvedOpenFileName;
   const activeFolder = getActiveProjectFolderPath() || await resolveProjectDirectory(currentOpenFileId, currentOpenFileName || '');
 
   if (!isPythonFile(fileName)) {
-    const initFile = await readProjectFileByPreferredPath(currentProject.id, 'init.py', activeFolder);
-    const initFileId = Number(initFile?.fileId || initFile?.id || 0);
-    const draft = getProjectDraftContent(initFileId);
-    if (draft !== null) {
-      code = String(draft || '');
-      fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
-    } else if (initFile?.content != null) {
-      code = String(initFile.content || '');
-      fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
+    // Reuse runtime entry resolution so non-.py editor tabs still run the
+    // Python entry that matches the active tree context.
+    const runtimePayload = await getProjectPythonRuntimePayload();
+    const runtimeMainPath = String(runtimePayload?.mainPath || '');
+    const runtimeMainEntry = Array.isArray(runtimePayload?.files)
+      ? runtimePayload.files.find((entry) => String(entry?.path || '') === runtimeMainPath)
+      : null;
+
+    if (runtimeMainPath && runtimeMainEntry && runtimeMainEntry.content != null) {
+      code = String(runtimeMainEntry.content || '');
+      fileName = runtimeMainPath;
+    } else {
+      // Legacy fallback for projects that only expose init.py.
+      const initFile = await readProjectFileByPreferredPath(currentProject.id, 'init.py', activeFolder);
+      const initFileId = Number(initFile?.fileId || initFile?.id || 0);
+      const draft = getProjectDraftContent(initFileId);
+      if (draft !== null) {
+        code = String(draft || '');
+        fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
+      } else if (initFile?.content != null) {
+        code = String(initFile.content || '');
+        fileName = activeFolder ? `${activeFolder}/init.py` : 'init.py';
+      }
     }
   }
 
@@ -4894,22 +4911,31 @@ async function loadProject(projectId) {
     // Save as last opened project (DB + localStorage fallback)
     await persistLastOpenedProject(normalizedProjectId);
     
-    // Auto-open init.py after FileTreeManager is ready
+    // Keep current file selection stable after tree initialization.
+    // Previously, a delayed init.py auto-open could override a user selection.
     setTimeout(async () => {
       try {
-        const initFile = await readProjectFileByName(projectId, 'init.py');
         if (!currentProject || Number(currentProject.id) !== normalizedProjectId) {
           return;
         }
-        const initFileId = Number(initFile?.id || initFile?.fileId || 0);
-        if (initFileId) {
-          console.log('[projects-editor] Auto-opening init.py:', initFileId);
-          await openFileInEditor(initFileId, 'init.py', initFile.content || '');
-          markFileInTreeWithRetry(initFileId);
+
+        if (currentOpenFileId) {
+          markFileInTreeWithRetry(currentOpenFileId);
           setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
-        } else {
-          console.warn('[projects-editor] init.py not found');
+          return;
         }
+
+        const initFile = await readProjectFileByName(projectId, 'init.py');
+        const initFileId = Number(initFile?.id || initFile?.fileId || 0);
+        if (!initFileId) {
+          console.warn('[projects-editor] init.py not found');
+          return;
+        }
+
+        console.log('[projects-editor] Auto-opening init.py (fallback):', initFileId);
+        await openFileInEditor(initFileId, 'init.py', initFile.content || '');
+        markFileInTreeWithRetry(initFileId);
+        setTimeout(() => refreshAllProjectDirtyMarkers(), 0);
       } catch (autoOpenErr) {
         console.warn('[projects-editor] Could not auto-open init.py:', autoOpenErr);
       }

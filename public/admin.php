@@ -3,6 +3,8 @@ if (session_status() === PHP_SESSION_NONE) {
   session_start();
 }
 
+require_once __DIR__ . '/../components/admin_version.php';
+
 if (!isset($_SESSION['user_id'])) {
   header('Location: login.php');
   exit;
@@ -18,6 +20,8 @@ $displayName = trim(($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_nam
 if ($displayName === '') {
   $displayName = $_SESSION['email'] ?? 'Admin';
 }
+$adminDeployHistory = adminDeployHistorySummary(dirname(__DIR__));
+$latestDeploy = $adminDeployHistory['latest'] ?? null;
 ?>
 <!doctype html>
 <html lang="de">
@@ -562,8 +566,52 @@ if ($displayName === '') {
   ';
   include(__DIR__ . '/../components/header.php');
   ?>
+
+  <div style="position:sticky;top:0;z-index:90;background:#10233d;color:#fff;padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:.02em;border-bottom:1px solid rgba(255,255,255,.14);display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+    <span>Patch-Historie: <?= (int)($adminDeployHistory['count'] ?? 0) ?> Eintrag<?= ((int)($adminDeployHistory['count'] ?? 0) === 1) ? '' : 'e' ?></span>
+    <span>
+      <?php if (is_array($latestDeploy)): ?>
+        Letzter Stand: #<?= (int)($latestDeploy['id'] ?? 1) ?> <?= htmlspecialchars((string)($latestDeploy['label'] ?? $latestDeploy['kind'] ?? 'deployment'), ENT_QUOTES, 'UTF-8') ?>
+      <?php else: ?>
+        Noch keine Patch-Historie vorhanden
+      <?php endif; ?>
+    </span>
+  </div>
   
   <div class="admin-container">
+
+    <section class="admin-card">
+      <h2>Patch-Historie</h2>
+      <div class="admin-card-subtitle">Alle eingespielten Deployments, inklusive Promote Live.</div>
+      <?php if (!empty($adminDeployHistory['entries'])): ?>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Typ</th>
+              <th>Ziel</th>
+              <th>Patch</th>
+              <th>Zeit</th>
+              <th>Admin</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach (array_reverse($adminDeployHistory['entries']) as $entry): ?>
+              <tr>
+                <td><?= (int)($entry['id'] ?? 0) ?></td>
+                <td><?= htmlspecialchars((string)($entry['label'] ?? $entry['kind'] ?? 'deployment'), ENT_QUOTES, 'UTF-8') ?></td>
+                <td><?= htmlspecialchars((string)($entry['target'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                <td><?= htmlspecialchars((string)($entry['package_id'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                <td><?= htmlspecialchars((string)($entry['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                <td><?= htmlspecialchars((string)($entry['actor']['email'] ?? ($entry['actor']['id'] ?? '-')), ENT_QUOTES, 'UTF-8') ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php else: ?>
+        <div class="admin-card-subtitle">Noch keine Deployments protokolliert.</div>
+      <?php endif; ?>
+    </section>
 
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="projects">Meine Projekte</button>
@@ -658,6 +706,47 @@ if ($displayName === '') {
         <div class="deploy-sync-status" id="deploy-sync-status">Bereit.</div>
         <pre class="deploy-sync-output" id="deploy-sync-output">Noch keine Ausfuehrung.</pre>
       </div>
+
+      <div class="admin-card">
+        <h3>Delta-Paket einspielen</h3>
+        <div class="admin-card-subtitle">ZIP-Paket mit manifest.json pruefen und gezielt nach Beta oder Live ausrollen. Datenbank-, Storage- und lokale Konfigurationsdateien sind gesperrt.</div>
+
+        <div class="deploy-sync-grid">
+          <div class="field" style="margin-bottom: 0;">
+            <label for="delta-package-file">Paket</label>
+            <input type="file" id="delta-package-file" accept=".zip,application/zip">
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="delta-package-target">Ziel</label>
+            <select id="delta-package-target">
+              <option value="beta">Beta</option>
+              <option value="live">Live (Hotfix)</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="delta-package-trigger">Aktion</label>
+            <button class="hspf-btn hspf-btn-primary" type="button" id="delta-package-trigger">Paket pruefen</button>
+          </div>
+        </div>
+
+        <div class="deploy-sync-flags">
+          <label class="deploy-sync-flag" for="delta-package-dry-run">
+            <input type="checkbox" id="delta-package-dry-run" checked>
+            <span>Dry-Run (keine Dateien ersetzen)</span>
+          </label>
+        </div>
+
+        <div class="field" id="delta-package-confirm-field" style="display:none; margin-top: var(--hspf-spacing-md); max-width: 420px;">
+          <label for="delta-package-confirmation">Live-Sicherheitscode</label>
+          <input type="text" id="delta-package-confirmation" placeholder="APPLY LIVE HOTFIX" autocomplete="off">
+        </div>
+
+        <div class="deploy-sync-warning" id="delta-package-warning">
+          Beta-Dry-Run: Das Paket wird vollstaendig validiert, ohne Dateien zu ersetzen.
+        </div>
+        <div class="deploy-sync-status" id="delta-package-status">Bereit.</div>
+        <pre class="deploy-sync-output" id="delta-package-output">Noch kein Paket geprueft.</pre>
+      </div>
     </section>
 
     <section class="panel" id="tab-assignments">
@@ -667,8 +756,11 @@ if ($displayName === '') {
           <button class="hspf-btn hspf-btn-primary" type="button" id="open-assignment-modal">+ New Assignment</button>
         </div>
         
-        <div class="search-filter">
+        <div class="search-filter" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
           <input type="text" id="assignments-search" placeholder="Search assignments..." />
+          <select id="assignments-semester-filter" aria-label="Semester filtern">
+            <option value="all">Alle</option>
+          </select>
         </div>
         
         <div style="overflow:auto;">
@@ -679,12 +771,14 @@ if ($displayName === '') {
                 <th class="sortable" data-sort="title">Title</th>
                 <th class="sortable" data-sort="created_by_name">Owner</th>
                 <th class="sortable" data-sort="difficulty">Difficulty</th>
+                <th class="sortable" data-sort="semester">Semester</th>
                 <th class="sortable" data-sort="is_active">Active</th>
                 <th class="sortable" data-sort="available_from">Start</th>
                 <th class="sortable" data-sort="due_date">Due</th>
                 <th class="sortable" data-sort="hard_deadline">Hard</th>
                 <th class="sortable" data-sort="task_count">Tasks</th>
                 <th class="sortable" data-sort="user_count">Users</th>
+                <th class="sortable" data-sort="locked">Lock</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -728,6 +822,7 @@ if ($displayName === '') {
                 <th>Tests</th>
                 <th>Solution</th>
                 <th>Mode</th>
+                <th>Lock</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1055,6 +1150,11 @@ if ($displayName === '') {
           </select>
         </div>
         <div class="field">
+          <label for="assignment-semester">Semester</label>
+          <input id="assignment-semester" class="hspf-input" list="assignment-semester-options" placeholder="z. B. WS2627 oder SS27" autocomplete="off" />
+          <datalist id="assignment-semester-options"></datalist>
+        </div>
+        <div class="field">
           <label for="assignment-active">Active</label>
           <select id="assignment-active" class="hspf-select">
             <option value="true">true</option>
@@ -1080,9 +1180,40 @@ if ($displayName === '') {
             <option value="false">false</option>
           </select>
         </div>
+        <div class="field">
+          <label for="assignment-locked">Bearbeitung gesperrt</label>
+          <select id="assignment-locked" class="hspf-select">
+            <option value="false">false (entsperrt)</option>
+            <option value="true">true (gesperrt)</option>
+          </select>
+        </div>
         <div class="row-actions">
           <button class="hspf-btn hspf-btn-primary" type="submit">Save</button>
           <button class="hspf-btn" type="button" id="assignment-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="clone-assignment-modal" class="modal">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>Assignment klonen</h3>
+        <button id="clone-assignment-close" class="modal-close" type="button">✕</button>
+      </div>
+      <form id="clone-assignment-form">
+        <input type="hidden" id="clone-assignment-id" />
+        <div class="field">
+          <label>Quelle</label>
+          <div id="clone-assignment-source" class="hspf-input" style="background:var(--hspf-bg-muted);"></div>
+        </div>
+        <div class="field">
+          <label for="clone-assignment-semester">Zielsemester</label>
+          <input id="clone-assignment-semester" class="hspf-input" list="assignment-semester-options" placeholder="z. B. WS2627 oder SS27" autocomplete="off" required />
+        </div>
+        <div class="row-actions">
+          <button class="hspf-btn hspf-btn-primary" type="submit">Klonen</button>
+          <button class="hspf-btn" type="button" id="clone-assignment-cancel">Abbrechen</button>
         </div>
       </form>
     </div>
@@ -2017,10 +2148,10 @@ if ($displayName === '') {
 
   <script src="js/task-type-manager.js"></script>
   <script src="js/options-builder.js"></script>
-  <script src="js/export-tasks.js"></script>
-  <script src="js/import-tasks.js"></script>
+  <script src="js/export-tasks.js?v=20261008a"></script>
+  <script src="js/import-tasks.js?v=20261008a"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20260506a"></script>
+  <script src="js/admin-dashboard.js?v=20261008e"></script>
   <script src="js/admin-teams-users.js?v=20260618c"></script>
   
   <script>

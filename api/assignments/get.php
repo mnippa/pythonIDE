@@ -67,6 +67,14 @@ if (!$assignmentId) {
 }
 
 $isStudentView = isset($_GET['student_view']) && $_GET['student_view'] === '1';
+$semesterColumn = $conn->query("SHOW COLUMNS FROM assignments LIKE 'semester'");
+$semesterSelect = ($semesterColumn instanceof mysqli_result) && $semesterColumn->num_rows > 0
+    ? 'a.semester'
+    : 'NULL AS semester';
+$lockColumn = $conn->query("SHOW COLUMNS FROM assignments LIKE 'locked'");
+$lockSelect = ($lockColumn instanceof mysqli_result) && $lockColumn->num_rows > 0
+    ? 'a.locked'
+    : '0 AS locked';
 
 $sql = '
     SELECT 
@@ -82,10 +90,12 @@ $sql = '
         a.due_date,
         a.hard_deadline,
         a.allow_late_submission,
+        ' . $lockSelect . ',
         ua.user_id AS assigned_user,
         ua.due_date AS user_due_date,
         COALESCE(ua.due_date, a.due_date) AS effective_due_date,
         a.difficulty,
+        ' . $semesterSelect . ',
         a.time_limit_minutes,
         u.first_name,
         u.last_name,
@@ -140,7 +150,9 @@ jsonResponse([
         'due_date' => $assignment['due_date'],
         'hard_deadline' => $assignment['hard_deadline'],
         'allow_late_submission' => isset($assignment['allow_late_submission']) ? (bool)$assignment['allow_late_submission'] : true,
+        'locked' => isset($assignment['locked']) ? ((int)$assignment['locked'] === 1) : false,
         'difficulty' => $assignment['difficulty'],
+        'semester' => $assignment['semester'],
         'time_limit_minutes' => $assignment['time_limit_minutes'] !== null ? (int)$assignment['time_limit_minutes'] : null,
         'user_status' => $assignment['user_status']
     ]

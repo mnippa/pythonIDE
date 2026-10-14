@@ -46,6 +46,7 @@ register_shutdown_function(static function () use (&$__deploySyncFinished): void
 });
 
 require_once __DIR__ . '/../../auth/middleware.php';
+require_once __DIR__ . '/../../../components/admin_version.php';
 
 $admin = requireAdmin();
 
@@ -155,6 +156,22 @@ try {
 
     $joinedOutput = implode("\n", $output);
     $joinedOutput = preg_replace("/MYSQL_PWD='[^']*'/", "MYSQL_PWD='***'", $joinedOutput) ?? $joinedOutput;
+
+    if ($exitCode === 0 && !$dryRun) {
+        $versionTargetRoot = $mode === 'hydrate-beta' ? $betaRoot : $liveRoot;
+        appendAdminDeployHistory($versionTargetRoot, [
+            'kind' => $mode === 'promote-live' ? 'promote-live' : 'copy-beta',
+            'label' => $mode === 'promote-live' ? 'Promote Live' : 'Copy Beta',
+            'target' => $mode === 'promote-live' ? 'live' : 'beta',
+            'actor' => $admin,
+            'details' => [
+                'mode' => $mode,
+                'dry_run' => false,
+                'sync_db' => $syncDb,
+                'delete' => $delete,
+            ],
+        ]);
+    }
 
     $__deploySyncFinished = true;
 

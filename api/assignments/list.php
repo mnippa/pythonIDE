@@ -23,6 +23,7 @@ $columnExists = function (mysqli $conn, string $table, string $column): bool {
 $hasUserTeamId = $columnExists($conn, 'users', 'team_id');
 $hasAssignmentTeamId = $columnExists($conn, 'user_assignments', 'team_id');
 $hasAssignmentLocked = $columnExists($conn, 'assignments', 'locked');
+$hasAssignmentSemester = $columnExists($conn, 'assignments', 'semester');
 
 $directCountSql = '(SELECT COUNT(DISTINCT ua1.user_id)
             FROM user_assignments ua1
@@ -67,6 +68,7 @@ if ($showAll && $user['role'] === 'admin') {
             a.hard_deadline,
             a.allow_late_submission,
             a.difficulty,
+            ' . ($hasAssignmentSemester ? 'a.semester' : 'NULL AS semester') . ',
             ' . ($hasAssignmentLocked ? 'a.locked' : '0 AS locked') . ',
             u.first_name,
             u.last_name,
@@ -97,6 +99,7 @@ if ($showAll && $user['role'] === 'admin') {
             a.hard_deadline,
             a.allow_late_submission,
             a.difficulty,
+            ' . ($hasAssignmentSemester ? 'a.semester' : 'NULL AS semester') . ',
             ' . ($hasAssignmentLocked ? 'a.locked' : '0 AS locked') . ',
             u.first_name,
             u.last_name,
@@ -147,6 +150,7 @@ while ($row = $result->fetch_assoc()) {
         'allow_late_submission' => isset($row['allow_late_submission']) ? (bool)$row['allow_late_submission'] : true,
         'locked' => isset($row['locked']) ? ((int)$row['locked'] === 1) : false,
         'difficulty' => $row['difficulty'],
+        'semester' => $row['semester'],
         'task_count' => (int)$row['task_count'],
         'user_count' => (int)$row['user_count'],
         'user_status' => $row['user_status']

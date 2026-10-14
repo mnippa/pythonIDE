@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/../../components/assignment_semesters.php';
 
 header('Content-Type: application/json');
 
@@ -66,6 +67,7 @@ if (array_key_exists('propagate_matching_only', $input)) {
 $updates = [];
 $params = [];
 $types = '';
+$semesterToRegister = null;
 
 if (isset($input['title'])) {
     $title = trim($input['title']);
@@ -107,6 +109,17 @@ if (isset($input['difficulty'])) {
     $updates[] = 'difficulty = ?';
     $params[] = $difficulty;
     $types .= 's';
+}
+
+if (array_key_exists('semester', $input)) {
+    $semester = normalizeAssignmentSemester($input['semester']);
+    if ($input['semester'] !== null && trim((string)$input['semester']) !== '' && $semester === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid semester. Expected WS2627 or SS27'], 400);
+    }
+    $updates[] = 'semester = ?';
+    $params[] = $semester;
+    $types .= 's';
+    $semesterToRegister = $semester;
 }
 
 if (array_key_exists('time_limit_minutes', $input)) {
@@ -208,6 +221,8 @@ if (array_key_exists('due_date', $input) && $propagateDueDateToUsers) {
 if (empty($updates)) {
     jsonResponse(['ok' => false, 'error' => 'No fields to update'], 400);
 }
+
+registerAssignmentSemester($conn, $semesterToRegister);
 
 $params[] = $assignmentId;
 $types .= 'i';

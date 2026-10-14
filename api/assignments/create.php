@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/../../components/assignment_semesters.php';
 
 header('Content-Type: application/json');
 
@@ -40,6 +41,7 @@ $title = trim($input['title'] ?? '');
 $description = trim($input['description'] ?? '');
 $codeTemplate = $input['code_template'] ?? null;
 $difficulty = $input['difficulty'] ?? 'beginner';
+$semester = normalizeAssignmentSemester($input['semester'] ?? null);
 $timeLimit = isset($input['time_limit_minutes']) ? (int)$input['time_limit_minutes'] : null;
 $isActiveInput = $input['is_active'] ?? true;
 $isActive = filter_var($isActiveInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
@@ -71,6 +73,10 @@ if (!in_array($difficulty, $allowedDifficulties, true)) {
     jsonResponse(['ok' => false, 'error' => 'Invalid difficulty'], 400);
 }
 
+if (array_key_exists('semester', $input) && $input['semester'] !== null && trim((string)$input['semester']) !== '' && $semester === null) {
+    jsonResponse(['ok' => false, 'error' => 'Invalid semester. Expected WS2627 or SS27'], 400);
+}
+
 if ($timeLimit !== null && $timeLimit < 1) {
     jsonResponse(['ok' => false, 'error' => 'Invalid time limit'], 400);
 }
@@ -100,19 +106,22 @@ if ($dueDate !== null && $hardDeadline !== null && strtotime($hardDeadline) < st
     jsonResponse(['ok' => false, 'error' => 'hard_deadline must be on/after due_date'], 400);
 }
 
+registerAssignmentSemester($conn, $semester);
+
 if (assignmentLockColumnExists($conn)) {
     $stmt = $conn->prepare(
-        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission, locked)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, semester, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission, locked)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->bind_param(
-        'sssississsii',
+        'sssiississsii',
         $title,
         $description,
         $codeTemplate,
         $user['id'],
         $isActive,
         $difficulty,
+        $semester,
         $timeLimit,
         $availableFrom,
         $dueDate,
@@ -122,17 +131,18 @@ if (assignmentLockColumnExists($conn)) {
     );
 } else {
     $stmt = $conn->prepare(
-        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO assignments (title, description, code_template, created_by, is_active, difficulty, semester, time_limit_minutes, available_from, due_date, hard_deadline, allow_late_submission)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->bind_param(
-        'sssississsi',
+        'sssiississsi',
         $title,
         $description,
         $codeTemplate,
         $user['id'],
         $isActive,
         $difficulty,
+        $semester,
         $timeLimit,
         $availableFrom,
         $dueDate,
@@ -154,6 +164,7 @@ if ($stmt->execute()) {
             'created_by' => $user['id'],
             'is_active' => (bool)$isActive,
             'difficulty' => $difficulty,
+            'semester' => $semester,
             'time_limit_minutes' => $timeLimit,
             'available_from' => $availableFrom,
             'due_date' => $dueDate,
@@ -164,5 +175,6 @@ if ($stmt->execute()) {
         ]
     ], 201);
 } else {
+    error_log('Assignment create failed: ' . $stmt->error);
     jsonResponse(['ok' => false, 'error' => 'Failed to create assignment'], 500);
 }

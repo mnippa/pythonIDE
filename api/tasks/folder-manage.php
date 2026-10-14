@@ -56,7 +56,7 @@ $writeActions = [
 ];
 
 if (in_array($action, $writeActions, true)) {
-    requireTaskAssignmentUnlocked($conn, $taskId);
+    requireTaskUnlocked($conn, $taskId);
 }
 
 try {

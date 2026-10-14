@@ -1,5 +1,27 @@
+const ASSIGNMENTS_SEMESTER_SESSION_KEY = 'admin.assignments.semesterFilter';
+
+function getSemesterForDate(date = new Date()) {
+  const year = date.getFullYear();
+  const shortYear = String(year).slice(-2);
+  const month = date.getMonth() + 1;
+  if (month >= 10) return `WS${shortYear}${String(year + 1).slice(-2)}`;
+  if (month <= 2) return `WS${String(year - 1).slice(-2)}${shortYear}`;
+  return `SS${shortYear}`;
+}
+
+function getStoredAssignmentSemesterFilter() {
+  try {
+    const stored = sessionStorage.getItem(ASSIGNMENTS_SEMESTER_SESSION_KEY);
+    if (stored === 'all' || /^(WS\d{4}|SS\d{2})$/.test(stored || '')) return stored;
+  } catch (_error) {
+    // Session storage may be unavailable in hardened browser contexts.
+  }
+  return getSemesterForDate();
+}
+
 const state = {
   assignments: [],
+  assignmentSemesters: [],
   projects: [],
   tickets: [],
   users: [],
@@ -11,6 +33,7 @@ const state = {
   assignmentsSortBy: 'id',
   assignmentsSortDir: 'asc',
   assignmentsFilter: '',
+  assignmentsSemesterFilter: getStoredAssignmentSemesterFilter(),
   tasksFilterText: '',
   tasksFilterType: 'all',
   projectsFilterText: '',
@@ -26,11 +49,83 @@ const state = {
   ticketsFilter: '',
   ticketsLoaded: false,
   deploySyncBusy: false,
-  deploySyncPendingPayload: null
+  deploySyncPendingPayload: null,
+  deltaPackageBusy: false
 };
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function getAssignmentById(assignmentId) {
+  const numericId = Number(assignmentId || 0);
+  if (!numericId) return null;
+  return state.assignments.find((assignment) => Number(assignment.id) === numericId) || null;
+}
+
+function isAssignmentLockedById(assignmentId) {
+  const assignment = getAssignmentById(assignmentId);
+  return !!(assignment && assignment.locked === true);
+}
+
+function isCurrentAssignmentLocked() {
+  return isAssignmentLockedById(state.currentAssignmentId);
+}
+
+function isTaskEffectivelyLocked(task) {
+  if (!task) return true;
+  if (task.effective_locked === true) return true;
+  if (isCurrentAssignmentLocked()) return true;
+  return task.locked !== false;
+}
+
+function updateTasksLockUi() {
+  const hintEl = $('tasks-lock-hint');
+  const assignment = getAssignmentById(state.currentAssignmentId);
+  const isLocked = !!(assignment && assignment.locked === true);
+  const unlockedTasks = (state.tasks || []).filter((task) => task.locked === false).length;
+  const totalTasks = (state.tasks || []).length;
+
+  if (hintEl) {
+    if (isLocked) {
+      hintEl.textContent = '🔒 Assignment gesperrt: alle Tasks sind effektiv gesperrt. Erst Assignment entsperren, dann einzelne Tasks bewusst entsperren.';
+    } else if (totalTasks > 0) {
+      hintEl.textContent = `Task-Lock Status: ${unlockedTasks}/${totalTasks} Task(s) entsperrt.`;
+    } else {
+      hintEl.textContent = '';
+    }
+  }
+
+  const mutationButtonIds = ['open-task-modal', 'open-task-ai-modal', 'import-json-text-btn', 'import-task-btn'];
+  mutationButtonIds.forEach((buttonId) => {
+    const button = $(buttonId);
+    if (!button) return;
+    button.disabled = isLocked;
+    button.style.opacity = isLocked ? '0.55' : '1';
+    button.style.cursor = isLocked ? 'not-allowed' : '';
+    if (isLocked) {
+      button.title = 'Assignment ist gesperrt. Zum Bearbeiten zuerst entsperren.';
+    }
+  });
+
+  state.tasks.forEach((task) => {
+    const taskRowButtons = document.querySelectorAll(`#tasks-body button[data-task-id="${task.id}"]`);
+    const taskEffectiveLocked = isTaskEffectivelyLocked(task);
+    taskRowButtons.forEach((btn) => {
+      const action = btn.dataset.action || '';
+      if (action === 'toggle-task-lock' || action === 'view-task') {
+        return;
+      }
+      btn.disabled = taskEffectiveLocked;
+      btn.style.opacity = taskEffectiveLocked ? '0.55' : '1';
+      btn.style.cursor = taskEffectiveLocked ? 'not-allowed' : '';
+      if (taskEffectiveLocked) {
+        btn.title = isLocked
+          ? 'Assignment ist gesperrt. Erst Assignment entsperren.'
+          : 'Task ist gesperrt. Bitte Task entsperren.';
+      }
+    });
+  });
 }
 
 const ALLOWED_FILE_SUBMISSION_MAX_SIZES = [51200, 102400, 256000, 1048576, 2097152, 5242880];
@@ -303,6 +398,112 @@ function bindDeploySyncEvents() {
       }
     });
   }
+}
+
+function setDeltaPackageStatus(message, type = 'neutral') {
+  const element = $('delta-package-status');
+  if (!element) return;
+  element.classList.remove('ok', 'error');
+  if (type === 'ok') element.classList.add('ok');
+  if (type === 'error') element.classList.add('error');
+  element.textContent = message || '';
+}
+
+function setDeltaPackageOutput(text) {
+  const element = $('delta-package-output');
+  if (element) element.textContent = text && String(text).trim() ? String(text) : 'Keine Ausgabe vorhanden.';
+}
+
+function applyDeltaPackageUi() {
+  const target = $('delta-package-target')?.value || 'beta';
+  const dryRun = !!$('delta-package-dry-run')?.checked;
+  const needsConfirmation = target === 'live' && !dryRun;
+  const confirmationField = $('delta-package-confirm-field');
+  const warning = $('delta-package-warning');
+  const trigger = $('delta-package-trigger');
+
+  if (confirmationField) confirmationField.style.display = needsConfirmation ? 'block' : 'none';
+  if (warning) {
+    warning.textContent = needsConfirmation
+      ? 'Achtung: Live-Dateien werden ersetzt. Vorher wird automatisch ein Backup erstellt.'
+      : `${target === 'live' ? 'Live' : 'Beta'}-Dry-Run: Das Paket wird vollstaendig validiert, ohne Dateien zu ersetzen.`;
+  }
+  if (trigger) trigger.textContent = dryRun ? 'Paket pruefen' : `Nach ${target === 'live' ? 'Live' : 'Beta'} einspielen`;
+}
+
+async function runDeltaPackage() {
+  if (state.deltaPackageBusy) return;
+
+  const file = $('delta-package-file')?.files?.[0];
+  const target = $('delta-package-target')?.value || 'beta';
+  const dryRun = !!$('delta-package-dry-run')?.checked;
+  const confirmation = ($('delta-package-confirmation')?.value || '').trim();
+  if (!file) {
+    setDeltaPackageStatus('Bitte zuerst ein ZIP-Paket auswaehlen.', 'error');
+    return;
+  }
+  if (target === 'live' && !dryRun && confirmation !== 'APPLY LIVE HOTFIX') {
+    setDeltaPackageStatus('Fuer Live exakt APPLY LIVE HOTFIX eingeben.', 'error');
+    return;
+  }
+
+  const trigger = $('delta-package-trigger');
+  state.deltaPackageBusy = true;
+  if (trigger) {
+    trigger.disabled = true;
+    trigger.textContent = 'Paket wird verarbeitet...';
+  }
+  setDeltaPackageStatus('Paket wird hochgeladen und validiert...');
+
+  const formData = new FormData();
+  formData.append('package', file);
+  formData.append('target', target);
+  formData.append('dry_run', dryRun ? '1' : '0');
+  formData.append('confirmation', confirmation);
+
+  try {
+    const response = await fetch('../api/admin/deploy/apply-delta-package.php', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+    const raw = await response.text();
+    let result = null;
+    try {
+      result = raw ? JSON.parse(raw) : null;
+    } catch (_error) {
+      result = null;
+    }
+    if (!response.ok || !result || result.ok === false) {
+      throw new Error(result?.error || raw || `HTTP ${response.status}`);
+    }
+
+    const counts = result.counts || {};
+    const summary = `${result.dry_run ? 'Dry-Run' : 'Deploy'} erfolgreich: ${counts.new || 0} neu, ${counts.replace || 0} ersetzt, ${counts.unchanged || 0} unveraendert.`;
+    const output = (result.files || []).map(item => `[${String(item.status || '').toUpperCase()}] ${item.path}`).join('\n');
+    const backup = result.backup_directory ? `\n\nBackup: ${result.backup_directory}` : '';
+    setDeltaPackageStatus(summary, 'ok');
+    setDeltaPackageOutput(`${output || 'Keine Dateien im Plan.'}${backup}`);
+  } catch (error) {
+    setDeltaPackageStatus(`Fehler: ${error.message || 'Paket konnte nicht verarbeitet werden.'}`, 'error');
+    setDeltaPackageOutput(error.message || 'Keine zusaetzliche Fehlerausgabe.');
+  } finally {
+    state.deltaPackageBusy = false;
+    if (trigger) trigger.disabled = false;
+    applyDeltaPackageUi();
+  }
+}
+
+function bindDeltaPackageEvents() {
+  const target = $('delta-package-target');
+  const dryRun = $('delta-package-dry-run');
+  const trigger = $('delta-package-trigger');
+  if (!target || !dryRun || !trigger) return;
+
+  target.addEventListener('change', applyDeltaPackageUi);
+  dryRun.addEventListener('change', applyDeltaPackageUi);
+  trigger.addEventListener('click', runDeltaPackage);
+  applyDeltaPackageUi();
 }
 
 function toDatetimeLocalValue(dateTimeStr) {
@@ -731,7 +932,35 @@ window.openAdminProjectsForUser = async function openAdminProjectsForUser(userId
 async function loadAssignments() {
   const data = await requestJson('../api/assignments/list.php?all=1');
   state.assignments = data.assignments || [];
+  if (state.currentAssignmentId && !getAssignmentById(state.currentAssignmentId)) {
+    state.currentAssignmentId = null;
+    state.currentAssignmentTitle = null;
+  }
   renderAssignments();
+  updateTasksLockUi();
+}
+
+async function loadAssignmentSemesters() {
+  const data = await requestJson('../api/admin/semesters/list.php');
+  state.assignmentSemesters = (data.semesters || []).map((entry) => entry.code);
+
+  const filterSelect = $('assignments-semester-filter');
+  const formOptions = $('assignment-semester-options');
+  if (filterSelect) {
+    filterSelect.innerHTML = '<option value="all">Alle</option>';
+    state.assignmentSemesters.forEach((semester) => filterSelect.add(new Option(semester, semester)));
+    if (!state.assignmentSemesters.includes(state.assignmentsSemesterFilter)) {
+      state.assignmentsSemesterFilter = state.assignmentSemesters.includes(getSemesterForDate())
+        ? getSemesterForDate()
+        : 'all';
+    }
+    filterSelect.value = state.assignmentsSemesterFilter;
+  }
+  if (formOptions) {
+    formOptions.innerHTML = state.assignmentSemesters
+      .map((semester) => `<option value="${escapeHtml(semester)}"></option>`)
+      .join('');
+  }
 }
 
 function renderAssignments() {
@@ -744,6 +973,9 @@ function renderAssignments() {
       a.difficulty.toLowerCase().includes(filter) ||
       String(a.id).includes(filter)
     );
+  }
+  if (state.assignmentsSemesterFilter !== 'all') {
+    filtered = filtered.filter((assignment) => assignment.semester === state.assignmentsSemesterFilter);
   }
 
   // Sort
@@ -765,6 +997,10 @@ function renderAssignments() {
   const body = $('assignments-body');
   body.innerHTML = '';
 
+  if (page.length === 0) {
+    body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:16px;color:var(--text-secondary);">Keine Assignments fuer diesen Filter.</td></tr>';
+  }
+
   page.forEach((a) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -775,6 +1011,7 @@ function renderAssignments() {
         <div style="font-size:12px;color:var(--hspf-text-secondary);">${escapeHtml(a.created_by_email || '')}</div>
       </td>
       <td>${escapeHtml(a.difficulty)}</td>
+      <td>${escapeHtml(a.semester || '-')}</td>
       <td>${a.is_active ? '✓' : '✗'}</td>
       <td>${formatCompactDate(a.available_from)}</td>
       <td>${formatCompactDate(a.due_date)}</td>
@@ -792,7 +1029,13 @@ function renderAssignments() {
         </div>
       </td>
       <td>
+        <span class="tag" style="background:${a.locked ? '#fef3c7' : '#dcfce7'};color:${a.locked ? '#92400e' : '#166534'};border:1px solid ${a.locked ? '#fcd34d' : '#86efac'};">
+          ${a.locked ? '🔒 locked' : '🔓 open'}
+        </span>
+      </td>
+      <td>
         <div class="row-actions">
+          <button class="icon-btn" data-action="toggle-assignment-lock" data-id="${a.id}" title="${a.locked ? 'Entsperren' : 'Sperren'}">${a.locked ? '🔓' : '🔒'}</button>
           <button class="icon-btn" data-action="test-assignment" data-id="${a.id}" title="Test Assignment">🧪</button>
           <button class="icon-btn" data-action="edit-assignment" data-id="${a.id}" title="Edit">✏️</button>
           <button class="icon-btn" data-action="clone-assignment" data-id="${a.id}" title="Clone">🗐</button>
@@ -864,6 +1107,16 @@ async function loadTasks(assignmentId, assignmentTitle) {
       'code_check': '🔑'
     };
     const testTypeIconHtml = testTypes.map(type => testTypeIcons[type] || '').join(' ');
+    const assignmentLocked = isCurrentAssignmentLocked();
+    const taskLocked = t.locked !== false;
+    const effectiveLocked = assignmentLocked || taskLocked;
+    const lockTag = effectiveLocked
+      ? '<span class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🔒 locked</span>'
+      : '<span class="tag" style="background:#dcfce7;color:#166534;border:1px solid #86efac;">🔓 open</span>';
+    const lockActionTitle = assignmentLocked
+      ? 'Assignment zuerst entsperren'
+      : (taskLocked ? 'Task entsperren' : 'Task sperren');
+    const lockActionLabel = assignmentLocked ? '⛔' : (taskLocked ? '🔓' : '🔒');
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -881,17 +1134,21 @@ async function loadTasks(assignmentId, assignmentTitle) {
       <td>${hasTests}</td>
       <td>${hasSolution}</td>
       <td><span class="tag">${testTypeIconHtml}</span></td>
+      <td>${lockTag}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn" data-action="view-task" data-id="${t.id}" title="View Task">👁️</button>
-          <button class="icon-btn" data-action="edit-task" data-id="${t.id}" title="Edit">✏️</button>
-          <button class="icon-btn" data-action="clone-task" data-id="${t.id}" title="Clone">🗐</button>
-          <button class="icon-btn danger" data-action="delete-task" data-id="${t.id}" title="Delete">🗑️</button>
+          <button class="icon-btn" data-action="toggle-task-lock" data-id="${t.id}" data-task-id="${t.id}" title="${lockActionTitle}">${lockActionLabel}</button>
+          <button class="icon-btn" data-action="view-task" data-id="${t.id}" data-task-id="${t.id}" title="View Task">👁️</button>
+          <button class="icon-btn" data-action="edit-task" data-id="${t.id}" data-task-id="${t.id}" title="Edit">✏️</button>
+          <button class="icon-btn" data-action="clone-task" data-id="${t.id}" data-task-id="${t.id}" title="Clone">🗐</button>
+          <button class="icon-btn danger" data-action="delete-task" data-id="${t.id}" data-task-id="${t.id}" title="Delete">🗑️</button>
         </div>
       </td>
     `;
     body.appendChild(tr);
   });
+
+  updateTasksLockUi();
 }
 
 async function moveTask(taskId, direction) {
@@ -953,6 +1210,7 @@ function resetAssignmentForm() {
   $('assignment-title').value = '';
   $('assignment-description').value = '';
   $('assignment-difficulty').value = 'beginner';
+  $('assignment-semester').value = getSemesterForDate();
   $('assignment-active').value = 'true';
   const now = new Date();
   const due = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -961,6 +1219,7 @@ function resetAssignmentForm() {
   $('assignment-due-date').value = toDatetimeLocalValue(due);
   $('assignment-hard-deadline').value = toDatetimeLocalValue(hard);
   $('assignment-allow-late').value = 'true';
+  $('assignment-locked').value = 'false';
   const titleEl = $('assignment-modal-title');
   if (titleEl) titleEl.textContent = 'New Assignment';
 }
@@ -1061,9 +1320,48 @@ function closeAssignmentModal() {
   resetAssignmentForm();
 }
 
+function openCloneAssignmentModal(assignment) {
+  $('clone-assignment-id').value = assignment.id;
+  $('clone-assignment-source').textContent = `#${assignment.id} ${assignment.title}`;
+  $('clone-assignment-semester').value = assignment.semester || getSemesterForDate();
+  $('clone-assignment-modal').classList.add('active');
+  $('clone-assignment-semester').focus();
+}
+
+function closeCloneAssignmentModal() {
+  $('clone-assignment-modal').classList.remove('active');
+  $('clone-assignment-form').reset();
+  $('clone-assignment-id').value = '';
+  $('clone-assignment-source').textContent = '';
+}
+
+async function handleCloneAssignmentSubmit(event) {
+  event.preventDefault();
+  const assignmentId = Number.parseInt($('clone-assignment-id').value, 10);
+  const semester = $('clone-assignment-semester').value.trim().toUpperCase();
+  if (!assignmentId || !semester) return;
+
+  try {
+    const response = await requestJson('../api/admin/assignments/clone.php', {
+      method: 'POST',
+      body: JSON.stringify({ id: assignmentId, semester })
+    });
+    closeCloneAssignmentModal();
+    await loadAssignmentSemesters();
+    await loadAssignments();
+    alert(`Assignment cloned successfully!\n${response.task_count} tasks copied to ${response.semester}.`);
+  } catch (error) {
+    alert('Clone failed: ' + error.message);
+  }
+}
+
 function openNewTaskModal() {
   if (!state.currentAssignmentId) {
     alert('Select an assignment first');
+    return;
+  }
+  if (isCurrentAssignmentLocked()) {
+    alert('Dieses Assignment ist gesperrt. Bitte zuerst bewusst entsperren.');
     return;
   }
   // Open pre-task dialog instead of directly opening task form
@@ -1161,11 +1459,13 @@ async function handleAssignmentSubmit(e) {
     title: $('assignment-title').value.trim(),
     description: $('assignment-description').value.trim(),
     difficulty: $('assignment-difficulty').value,
+    semester: $('assignment-semester').value.trim().toUpperCase() || null,
     is_active: $('assignment-active').value === 'true',
     available_from: fromDatetimeLocalValue($('assignment-available-from').value),
     due_date: fromDatetimeLocalValue($('assignment-due-date').value),
     hard_deadline: fromDatetimeLocalValue($('assignment-hard-deadline').value),
-    allow_late_submission: $('assignment-allow-late').value === 'true'
+    allow_late_submission: $('assignment-allow-late').value === 'true',
+    locked: $('assignment-locked').value === 'true'
   };
 
   if (!payload.title) {
@@ -1201,6 +1501,7 @@ async function handleAssignmentSubmit(e) {
   }
 
   resetAssignmentForm();
+  await loadAssignmentSemesters();
   await loadAssignments();
   closeAssignmentModal();
 }
@@ -1215,6 +1516,11 @@ async function handleTaskSubmit(e) {
   
   if (!state.currentAssignmentId) {
     alert('Select an assignment first');
+    return;
+  }
+
+  if (isCurrentAssignmentLocked()) {
+    alert('Dieses Assignment ist gesperrt. Task-Erstellung ist erst nach Entsperren moeglich.');
     return;
   }
 
@@ -1917,6 +2223,12 @@ async function fetchFreshTaskForEdit(taskId) {
 }
 
 async function openEditTaskModal(taskId) {
+  const selectedTask = state.tasks.find((t) => Number(t.id) === Number(taskId));
+  if (isTaskEffectivelyLocked(selectedTask)) {
+    alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+    return;
+  }
+
   let task = null;
 
   // Always load a fresh snapshot before opening edit modal to avoid stale code/template values.
@@ -2128,6 +2440,12 @@ async function handleEditTaskSubmit(e) {
   const taskId = parseInt($('edit-task-id').value, 10);
   if (!taskId) return;
 
+  const selectedTask = state.tasks.find((t) => Number(t.id) === Number(taskId));
+  if (isTaskEffectivelyLocked(selectedTask)) {
+    alert('Dieser Task ist gesperrt. Task-Update ist erst nach Entsperren moeglich.');
+    return;
+  }
+
   const taskType = $('edit-task-type').value;
   
   
@@ -2307,6 +2625,7 @@ function bindEvents() {
   initTaskFormTabs('task-edit-form');
 
   $('assignment-form').addEventListener('submit', handleAssignmentSubmit);
+  $('clone-assignment-form').addEventListener('submit', handleCloneAssignmentSubmit);
   $('task-form').addEventListener('submit', handleTaskSubmit);
   $('task-edit-form').addEventListener('submit', handleEditTaskSubmit);
 
@@ -2324,6 +2643,9 @@ function bindEvents() {
   if (assignmentCancelBtn) {
     assignmentCancelBtn.addEventListener('click', closeAssignmentModal);
   }
+
+  $('clone-assignment-close').addEventListener('click', closeCloneAssignmentModal);
+  $('clone-assignment-cancel').addEventListener('click', closeCloneAssignmentModal);
 
   const openTaskBtn = $('open-task-modal');
   if (openTaskBtn) {
@@ -2552,6 +2874,11 @@ function bindEvents() {
     });
   }
 
+  const cloneAssignmentModal = $('clone-assignment-modal');
+  cloneAssignmentModal.addEventListener('click', (event) => {
+    if (event.target === cloneAssignmentModal) closeCloneAssignmentModal();
+  });
+
   const taskCreateModal = $('task-create-modal');
   if (taskCreateModal) {
     taskCreateModal.addEventListener('click', (e) => {
@@ -2567,6 +2894,7 @@ function bindEvents() {
   });
 
   bindDeploySyncEvents();
+  bindDeltaPackageEvents();
 
   const projectsSearchBtn = $('projects-search-btn');
   if (projectsSearchBtn) {
@@ -2659,28 +2987,41 @@ function bindEvents() {
       $('assignment-title').value = a.title || '';
       $('assignment-description').value = a.description || '';
       $('assignment-difficulty').value = a.difficulty || 'beginner';
+      $('assignment-semester').value = a.semester || '';
       $('assignment-active').value = a.is_active ? 'true' : 'false';
       $('assignment-available-from').value = toDatetimeLocalValue(a.available_from);
       $('assignment-due-date').value = toDatetimeLocalValue(a.due_date);
       $('assignment-hard-deadline').value = toDatetimeLocalValue(a.hard_deadline);
       $('assignment-allow-late').value = a.allow_late_submission === false ? 'false' : 'true';
+      $('assignment-locked').value = a.locked ? 'true' : 'false';
       $('assignment-modal-title').textContent = `Edit Assignment #${a.id}`;
       $('assignment-modal').classList.add('active');
     }
 
-    if (action === 'clone-assignment') {
-      if (!confirm('Clone this assignment with all tasks?')) return;
-      try {
-        const response = await requestJson(`../api/admin/assignments/clone.php?id=${id}`);
-        if (response.ok) {
-          alert(`Assignment cloned successfully!\\n${response.task_count} tasks copied.`);
-          await loadAssignments();
-        } else {
-          throw new Error(response.error);
-        }
-      } catch (err) {
-        alert('Clone failed: ' + err.message);
+    if (action === 'toggle-assignment-lock') {
+      const a = state.assignments.find((x) => x.id === id);
+      if (!a) return;
+      const nextLocked = !a.locked;
+      const confirmation = nextLocked
+        ? confirm(`Assignment "${a.title}" wirklich sperren?\n\nDanach sind Task-/Template-/Loesungs-Aenderungen blockiert.`)
+        : confirm(`Assignment "${a.title}" wirklich entsperren?\n\nDanach sind Aenderungen wieder moeglich.`);
+      if (!confirmation) return;
+
+      await requestJson('../api/assignments/update.php', {
+        method: 'POST',
+        body: JSON.stringify({ id, locked: nextLocked })
+      });
+
+      await loadAssignments();
+      if (state.currentAssignmentId === id) {
+        const selected = getAssignmentById(id);
+        await loadTasks(id, selected?.title || state.currentAssignmentTitle || a.title);
       }
+    }
+
+    if (action === 'clone-assignment') {
+      const assignment = state.assignments.find((item) => item.id === id);
+      if (assignment) openCloneAssignmentModal(assignment);
     }
 
     if (action === 'delete-assignment') {
@@ -2735,14 +3076,29 @@ function bindEvents() {
     }
 
     if (action === 'move-task-up') {
+      const selectedTask = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (isTaskEffectivelyLocked(selectedTask)) {
+        alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+        return;
+      }
       await moveTask(id, 'up');
     }
 
     if (action === 'move-task-down') {
+      const selectedTask = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (isTaskEffectivelyLocked(selectedTask)) {
+        alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+        return;
+      }
       await moveTask(id, 'down');
     }
 
     if (action === 'delete-task') {
+      const selectedTask = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (isTaskEffectivelyLocked(selectedTask)) {
+        alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+        return;
+      }
       if (!confirm('Delete task?')) return;
       await requestJson(`../api/tasks/delete.php?id=${id}`, { method: 'DELETE' });
       await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
@@ -2750,6 +3106,11 @@ function bindEvents() {
     }
 
     if (action === 'clone-task') {
+      const selectedTask = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (isTaskEffectivelyLocked(selectedTask)) {
+        alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+        return;
+      }
       if (!state.currentAssignmentId) {
         alert('No assignment selected');
         return;
@@ -2773,7 +3134,39 @@ function bindEvents() {
     }
 
     if (action === 'edit-task') {
+      const selectedTask = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (isTaskEffectivelyLocked(selectedTask)) {
+        alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
+        return;
+      }
       await openEditTaskModal(id);
+    }
+
+    if (action === 'toggle-task-lock') {
+      if (!state.currentAssignmentId) {
+        alert('Kein Assignment ausgewaehlt.');
+        return;
+      }
+
+      if (isCurrentAssignmentLocked()) {
+        alert('Assignment ist gesperrt. Erst Assignment entsperren, dann Task-Lock aendern.');
+        return;
+      }
+
+      const task = state.tasks.find((t) => Number(t.id) === Number(id));
+      if (!task) return;
+      const nextLocked = !(task.locked === true);
+      const confirmed = nextLocked
+        ? confirm(`Task "${task.title}" wirklich sperren?`)
+        : confirm(`Task "${task.title}" wirklich entsperren?`);
+      if (!confirmed) return;
+
+      await requestJson('../api/tasks/update.php', {
+        method: 'POST',
+        body: JSON.stringify({ id: task.id, locked: nextLocked })
+      });
+
+      await loadTasks(state.currentAssignmentId, state.currentAssignmentTitle);
     }
 
     if (action === 'view-task') {
@@ -2808,7 +3201,8 @@ function bindEvents() {
 async function init() {
   bindEvents();
   resetProjectFilters();
-  await Promise.all([loadAssignments()]);
+  await loadAssignmentSemesters();
+  await loadAssignments();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   if (initialTab && document.querySelector(`.tab[data-tab="${initialTab}"]`)) {
     setActiveTab(initialTab);
@@ -4762,6 +5156,20 @@ document.addEventListener('DOMContentLoaded', () => {
     searchInput.addEventListener('input', (e) => {
       state.assignmentsFilter = e.target.value;
       state.assignmentsPage = 1;
+      renderAssignments();
+    });
+  }
+
+  const semesterFilter = $('assignments-semester-filter');
+  if (semesterFilter) {
+    semesterFilter.addEventListener('change', (e) => {
+      state.assignmentsSemesterFilter = e.target.value || 'all';
+      state.assignmentsPage = 1;
+      try {
+        sessionStorage.setItem(ASSIGNMENTS_SEMESTER_SESSION_KEY, state.assignmentsSemesterFilter);
+      } catch (_error) {
+        // Filtering still works for the current page when storage is unavailable.
+      }
       renderAssignments();
     });
   }

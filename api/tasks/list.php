@@ -88,10 +88,11 @@ if (!$assignmentId) {
 }
 
 $isStudentView = isset($_GET['student_view']) && $_GET['student_view'] === '1';
+$assignmentLockSelect = assignmentLockColumnExists($conn) ? 'a.locked' : '0 AS locked';
 
 // Check assignment access
 $stmt = $conn->prepare(
-    'SELECT a.is_active, a.created_by, ua.user_id AS assigned_user,
+    'SELECT a.is_active, a.created_by, ' . $assignmentLockSelect . ', ua.user_id AS assigned_user,
             a.available_from, a.hard_deadline, a.due_date AS assignment_due_date,
             ua.due_date AS user_due_date,
             COALESCE(ua.due_date, a.due_date) AS effective_due_date
@@ -124,12 +125,15 @@ if ($isStudentView) {
 
 $includeExpected = $user['role'] === 'admin' && isset($_GET['include_expected']) && $_GET['include_expected'] === '1';
 $isTestMode = isset($_GET['test_mode']) && $_GET['test_mode'] === '1';
+$hasTaskLock = taskLockColumnExists($conn);
+$hasAssignmentLock = assignmentLockColumnExists($conn);
 
 // Build column selection dynamically so older/live schemas don't break with 500.
 $taskColumns = getTableColumns($conn, 'tasks');
 $selectColumns = implode(', ', [
     selectExpr($taskColumns, 'id', '0'),
     selectExpr($taskColumns, 'assignment_id', '0'),
+    selectExpr($taskColumns, 'locked', '1'),
     selectExpr($taskColumns, 'title', "''"),
     selectExpr($taskColumns, 'description', "''"),
     selectExpr($taskColumns, 'position', '0'),
@@ -155,9 +159,16 @@ $selectColumns = implode(', ', [
     selectExpr($taskColumns, 'allowDownload', '0'),
     selectExpr($taskColumns, 'allow_code_ui_web_edit', '0'),
     selectExpr($taskColumns, 'task_difficulty', "'medium'"),
+    selectExpr($taskColumns, 'file_submission_allowed_types', "''"),
+    selectExpr($taskColumns, 'file_submission_max_size_bytes', '102400'),
+    selectExpr($taskColumns, 'uml_model', 'NULL'),
+    selectExpr($taskColumns, 'uml_solution', 'NULL'),
+    selectExpr($taskColumns, 'uml_template', 'NULL'),
+    selectExpr($taskColumns, 'hint', 'NULL'),
     selectExpr($taskColumns, 'expected_output', 'NULL'),
     selectExpr($taskColumns, 'solution_code', 'NULL'),
-    selectExpr($taskColumns, 'randomizer_code', 'NULL')
+    selectExpr($taskColumns, 'randomizer_code', 'NULL'),
+    selectExpr($taskColumns, 'generator_code', 'NULL')
 ]);
 
 // Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
@@ -246,6 +257,9 @@ foreach ($rawTasks as $taskId => $row) {
     $task = [
         'id' => $taskId,
         'assignment_id' => (int)$row['assignment_id'],
+        'locked' => $hasTaskLock ? ((int)$row['locked'] === 1) : true,
+        'assignment_locked' => $hasAssignmentLock ? ((int)($assignment['locked'] ?? 0) === 1) : false,
+        'effective_locked' => ($hasAssignmentLock ? ((int)($assignment['locked'] ?? 0) === 1) : false) || ($hasTaskLock ? ((int)$row['locked'] === 1) : true),
         'title' => $row['title'],
         'description' => $row['description'],
         'position' => (int)$row['position'],
@@ -270,7 +284,14 @@ foreach ($rawTasks as $taskId => $row) {
         'variable_overrides' => $row['variable_overrides'],
         'folderstructure' => (int)$row['folderstructure'],
         'allowDownload' => (int)$row['allowDownload'],
-        'allowCodeUiWebEdit' => (int)$row['allow_code_ui_web_edit']
+        'allowCodeUiWebEdit' => (int)$row['allow_code_ui_web_edit'],
+        'file_submission_allowed_types' => $row['file_submission_allowed_types'],
+        'file_submission_max_size_bytes' => (int)$row['file_submission_max_size_bytes'],
+        'uml_model' => $row['uml_model'],
+        'uml_solution' => $row['uml_solution'],
+        'uml_template' => $row['uml_template'],
+        'hint' => $row['hint'],
+        'generator_code' => $row['generator_code']
     ];
 
     if (isset($row['randomizer_code'])) {
@@ -278,11 +299,12 @@ foreach ($rawTasks as $taskId => $row) {
     }
     
     // Include solution_code for testing, admin/expected views, and specific task types
-    if ($includeExpected || $isTestMode || 
-        $row['task_type'] === 'code' || $row['task_type'] === 'code_ui' || $row['task_type'] === 'code_random_complex') {
-        if (isset($row['expected_output'])) {
-            $task['expected_output'] = $row['expected_output'];
-        }
+    if (isset($row['expected_output'])) {
+        $task['expected_output'] = $row['expected_output'];
+    }
+    if ($user['role'] === 'admin' || $includeExpected || $isTestMode ||
+        $row['task_type'] === 'code' || $row['task_type'] === 'code_ui' || $row['task_type'] === 'code_random_complex' ||
+        $row['task_type'] === 'db_model' || $row['task_type'] === 'uml') {
         if (isset($row['solution_code'])) {
             $task['solution_code'] = $row['solution_code'];
         }

@@ -76,6 +76,24 @@ function assignmentLockColumnExists(mysqli $conn): bool {
 }
 
 /**
+ * Returns true when tasks.locked column exists in current schema.
+ */
+function taskLockColumnExists(mysqli $conn): bool {
+    static $cache = [];
+
+    $key = spl_object_id($conn);
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    $check = $conn->query("SHOW COLUMNS FROM tasks LIKE 'locked'");
+    $exists = ($check instanceof mysqli_result) && $check->num_rows > 0;
+    $cache[$key] = $exists;
+
+    return $exists;
+}
+
+/**
  * Require assignment unlocked before mutating tasks/templates/files.
  */
 function requireAssignmentUnlocked(mysqli $conn, int $assignmentId, ?string $errorMessage = null): void {
@@ -129,6 +147,47 @@ function requireTaskAssignmentUnlocked(mysqli $conn, int $taskId, ?string $error
             'ok' => false,
             'error' => $errorMessage ?? 'Assignment ist gesperrt. Bitte zuerst entsperren.',
             'code' => 'ASSIGNMENT_LOCKED'
+        ], 423);
+    }
+}
+
+/**
+ * Require unlocked task (and assignment) before mutating task template/solution/files.
+ */
+function requireTaskUnlocked(mysqli $conn, int $taskId, ?string $assignmentError = null, ?string $taskError = null): void {
+    if (!assignmentLockColumnExists($conn) && !taskLockColumnExists($conn)) {
+        return;
+    }
+
+    $selectTaskLock = taskLockColumnExists($conn) ? 't.locked AS task_locked' : '0 AS task_locked';
+    $stmt = $conn->prepare(
+        "SELECT a.id AS assignment_id, a.locked AS assignment_locked, {$selectTaskLock}
+         FROM tasks t
+         INNER JOIN assignments a ON a.id = t.assignment_id
+         WHERE t.id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $taskId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+
+    if (!$row) {
+        jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
+    }
+
+    if ((int)($row['assignment_locked'] ?? 0) === 1) {
+        jsonResponse([
+            'ok' => false,
+            'error' => $assignmentError ?? 'Assignment ist gesperrt. Bitte zuerst entsperren.',
+            'code' => 'ASSIGNMENT_LOCKED'
+        ], 423);
+    }
+
+    if (taskLockColumnExists($conn) && (int)($row['task_locked'] ?? 0) === 1) {
+        jsonResponse([
+            'ok' => false,
+            'error' => $taskError ?? 'Task ist gesperrt. Bitte zuerst entsperren.',
+            'code' => 'TASK_LOCKED'
         ], 423);
     }
 }

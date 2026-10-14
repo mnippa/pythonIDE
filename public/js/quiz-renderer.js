@@ -2,6 +2,11 @@
  * Quiz Task Renderer for Single-Choice, Multiple-Choice, Free-Text
  */
 
+function toMysqlLocalDateTime(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 window.QuizRenderer = {
   _lightboxInitialized: false,
 
@@ -3046,7 +3051,7 @@ __randomizer_namespace
           task_id: task.id,
           variable_values: values,
           current_iteration: currentIteration,
-          started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+          started_at: toMysqlLocalDateTime()
         };
         console.log('[CODE_RANDOM] Saving generated values - Payload:', payload);
         const response = await fetch('../api/user_tasks/update.php', {
@@ -3111,7 +3116,7 @@ __randomizer_namespace
       task_id: task.id,
       variable_values: values,
       current_iteration: currentIteration,
-      started_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+      started_at: toMysqlLocalDateTime()
     };
     console.log('[CODE_RANDOM] Saving generated values (legacy fallback) - Payload:', payload);
     const response = await fetch('../api/user_tasks/update.php', {

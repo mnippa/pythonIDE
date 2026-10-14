@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "updated_at": "2026-10-14T12:46:32+02:00",
+    "reason": "Dummy Patch Probe",
+    "kind": "promote-live",
+    "target": "live",
+    "package_id": "probe-20261014124632",
+    "actor": null
+}

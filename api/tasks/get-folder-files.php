@@ -14,6 +14,7 @@ $user = requireAuth();
 $isAdmin = (($user['role'] ?? '') === 'admin');
 $includeContent = isset($_GET['include_content']) && (string)$_GET['include_content'] === '1' && $isAdmin;
 $solutionMode = isset($_GET['solution_mode']) && (string)$_GET['solution_mode'] === '1' && $isAdmin;
+$solutionFilesOnly = $solutionMode && isset($_GET['solution_files_only']) && (string)$_GET['solution_files_only'] === '1';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
@@ -180,7 +181,10 @@ $scanDirectoryWithPolicy = function ($dir, $basePath = '') use (&$scanDirectoryW
     return $items;
 };
 
-if (is_dir($folderPath)) {
+if ($solutionFilesOnly) {
+    $realItems = $scanDirectoryWithPolicy($solutionFolderPath);
+    $files = array_merge([$files[0]], $realItems);
+} elseif (is_dir($folderPath)) {
     $realItems = $scanDirectoryWithPolicy($folderPath);
     $files = array_merge($files, $realItems);
 }
