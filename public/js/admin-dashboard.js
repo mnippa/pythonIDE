@@ -50,7 +50,8 @@ const state = {
   ticketsLoaded: false,
   deploySyncBusy: false,
   deploySyncPendingPayload: null,
-  deltaPackageBusy: false
+  deltaPackageBusy: false,
+  deltaCompareBusy: false
 };
 
 function $(id) {
@@ -414,6 +415,52 @@ function setDeltaPackageOutput(text) {
   if (element) element.textContent = text && String(text).trim() ? String(text) : 'Keine Ausgabe vorhanden.';
 }
 
+function setDeltaCompareBusy(isBusy) {
+  state.deltaCompareBusy = !!isBusy;
+  const trigger = $('delta-package-compare-trigger');
+  if (trigger) {
+    trigger.disabled = state.deltaCompareBusy || state.deltaPackageBusy;
+    trigger.textContent = state.deltaCompareBusy ? 'Vergleich laeuft...' : 'Manifest pruefen';
+  }
+}
+
+function setDeltaCompareStatus(message, type = 'neutral') {
+  const element = $('delta-package-status');
+  if (!element) return;
+  element.classList.remove('ok', 'error');
+  if (type === 'ok') element.classList.add('ok');
+  if (type === 'error') element.classList.add('error');
+  element.textContent = message || '';
+}
+
+function formatDeltaCompareOutput(result) {
+  const lines = [];
+  if (result.available === false) {
+    lines.push(result.message || 'Manifest konnte nicht gelesen werden.');
+    return lines.join('\n');
+  }
+
+  if (result.manifest_mode) {
+    lines.push(`Manifest-Modus: ${result.manifest_mode}`);
+  }
+  lines.push(`Stand: ${result.state_name || '-'}`);
+  lines.push(`Verglichene Dateien: ${result.total_files || 0}`);
+  lines.push(`Uebereinstimmend: ${result.matched_files || 0}`);
+  lines.push(`Abweichend: ${result.different_files || 0}`);
+  lines.push(`Fehlend: ${result.missing_files || 0}`);
+  lines.push(`Zusatzdateien: ${result.extra_files || 0}`);
+  const fileList = Array.isArray(result.files) && result.files.length > 0
+    ? result.files.map((item) => `  - ${item.status || 'changed'}: ${item.path}`).join('\n')
+    : '  - Keine Dateien im Vergleich gefunden.';
+  lines.push('Dateien:');
+  lines.push(fileList);
+  if (Array.isArray(result.notes) && result.notes.length > 0) {
+    lines.push('Hinweise:');
+    lines.push(result.notes.map((note) => `  - ${note}`).join('\n'));
+  }
+  return lines.join('\n');
+}
+
 function applyDeltaPackageUi() {
   const target = $('delta-package-target')?.value || 'beta';
   const dryRun = !!$('delta-package-dry-run')?.checked;
@@ -429,6 +476,52 @@ function applyDeltaPackageUi() {
       : `${target === 'live' ? 'Live' : 'Beta'}-Dry-Run: Das Paket wird vollstaendig validiert, ohne Dateien zu ersetzen.`;
   }
   if (trigger) trigger.textContent = dryRun ? 'Paket pruefen' : `Nach ${target === 'live' ? 'Live' : 'Beta'} einspielen`;
+}
+
+async function runDeltaCompare() {
+  if (state.deltaCompareBusy || state.deltaPackageBusy) return;
+  const packageFile = $('delta-package-file')?.files?.[0];
+  if (!packageFile) {
+    setDeltaCompareStatus('Bitte zuerst ein ZIP-Paket auswaehlen.', 'error');
+    return;
+  }
+
+  setDeltaCompareBusy(true);
+  setDeltaCompareStatus('Manifest wird geprueft...');
+  setDeltaPackageOutput('Vergleich laeuft...');
+
+  try {
+    const formData = new FormData();
+    formData.append('package', packageFile);
+    const response = await fetch('../api/admin/deploy/compare-file-state.php', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+    const raw = await response.text();
+    let result = null;
+    try {
+      result = raw ? JSON.parse(raw) : null;
+    } catch (_error) {
+      result = null;
+    }
+    if (!response.ok || !result || result.ok === false) {
+      throw new Error(result?.error || raw || `HTTP ${response.status}`);
+    }
+
+    const summary = result.available === false
+      ? (result.message || 'Manifest konnte nicht gelesen werden.')
+      : ((result.different_files > 0 || result.missing_files > 0 || result.extra_files > 0)
+          ? `Vergleich ok: ${result.different_files || 0} abweichend, ${result.missing_files || 0} fehlend, ${result.extra_files || 0} zusaetzlich.`
+          : 'Vergleich ok: kein Unterschied zum Manifest.');
+    setDeltaCompareStatus(summary, result.available === false ? 'neutral' : 'ok');
+    setDeltaPackageOutput(formatDeltaCompareOutput(result));
+  } catch (error) {
+    setDeltaCompareStatus(`Fehler: ${error.message || 'Manifest-Vergleich fehlgeschlagen'}`, 'error');
+    setDeltaPackageOutput(error.message || 'Keine zusaetzliche Fehlerausgabe.');
+  } finally {
+    setDeltaCompareBusy(false);
+  }
 }
 
 async function runDeltaPackage() {
@@ -494,14 +587,150 @@ async function runDeltaPackage() {
   }
 }
 
+function showChoiceModal(title, options) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.background = 'rgba(0, 0, 0, 0.55)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '2000';
+
+    const modal = document.createElement('div');
+    modal.style.background = '#fff';
+    modal.style.borderRadius = '12px';
+    modal.style.padding = '20px';
+    modal.style.width = 'min(480px, calc(100vw - 32px))';
+    modal.style.boxShadow = '0 18px 50px rgba(0,0,0,0.28)';
+    modal.style.color = '#1f2937';
+
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    heading.style.margin = '0 0 14px';
+    modal.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.style.display = 'grid';
+    list.style.gap = '8px';
+
+    options.forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = option;
+      button.style.padding = '10px 12px';
+      button.style.borderRadius = '8px';
+      button.style.border = '1px solid #d1d5db';
+      button.style.background = '#f9fafb';
+      button.style.cursor = 'pointer';
+      button.style.textAlign = 'left';
+      button.addEventListener('click', () => {
+        overlay.remove();
+        resolve(option);
+      });
+      list.appendChild(button);
+    });
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Abbrechen';
+    cancel.style.marginTop = '12px';
+    cancel.style.padding = '10px 12px';
+    cancel.style.border = 'none';
+    cancel.style.borderRadius = '8px';
+    cancel.style.background = '#e5e7eb';
+    cancel.style.cursor = 'pointer';
+    cancel.addEventListener('click', () => {
+      overlay.remove();
+      resolve(null);
+    });
+
+    modal.appendChild(list);
+    modal.appendChild(cancel);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  });
+}
+
+async function runCreateManifest() {
+  const compareSource = await showChoiceModal('Wogegen soll verglichen werden?', [
+    'Gegen lokalen Stand',
+    'Gegen Git-Stand',
+    'Keine Vergleichsbasis'
+  ]);
+  if (!compareSource) return;
+
+  const scope = await showChoiceModal('Welcher Scope?', [
+    'Voll',
+    'Entwicklungs-Scope',
+    'Punktuell'
+  ]);
+  if (!scope) return;
+
+  const payload = {
+    compare_source: compareSource,
+    scope: scope
+  };
+
+  const status = $('delta-package-status');
+  const output = $('delta-package-output');
+  if (status) {
+    status.classList.remove('ok', 'error');
+    status.textContent = 'Manifest wird erzeugt...';
+  }
+  if (output) {
+    output.textContent = 'Die Manifest-Datei wird lokal erstellt...';
+  }
+
+  try {
+    const response = await fetch('../api/admin/deploy/create-manifest.php', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result || result.ok === false) {
+      throw new Error(result?.error || 'Manifest konnte nicht erzeugt werden.');
+    }
+
+    const pathText = result.path ? `\nPfad: ${result.path}` : '';
+    if (status) {
+      status.classList.add('ok');
+      status.textContent = `Manifest erzeugt: ${result.filename || 'manifest.json'}`;
+    }
+    if (output) {
+      output.textContent = `Erzeugt: ${result.filename || 'manifest.json'}${pathText}\n\nVergleichsquelle: ${compareSource}\nScope: ${scope}`;
+    }
+  } catch (error) {
+    if (status) {
+      status.classList.remove('ok');
+      status.classList.add('error');
+      status.textContent = `Fehler: ${error.message || 'Manifest konnte nicht erzeugt werden.'}`;
+    }
+    if (output) {
+      output.textContent = error.message || 'Manifest konnte nicht erzeugt werden.';
+    }
+  }
+}
+
 function bindDeltaPackageEvents() {
   const target = $('delta-package-target');
   const dryRun = $('delta-package-dry-run');
+  const compareTrigger = $('delta-package-compare-trigger');
   const trigger = $('delta-package-trigger');
+  const manifestTrigger = $('manifest-create-trigger');
   if (!target || !dryRun || !trigger) return;
 
   target.addEventListener('change', applyDeltaPackageUi);
   dryRun.addEventListener('change', applyDeltaPackageUi);
+  if (compareTrigger) {
+    compareTrigger.addEventListener('click', runDeltaCompare);
+  }
+  if (manifestTrigger) {
+    manifestTrigger.addEventListener('click', runCreateManifest);
+  }
   trigger.addEventListener('click', runDeltaPackage);
   applyDeltaPackageUi();
 }

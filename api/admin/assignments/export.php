@@ -16,6 +16,7 @@ require_once __DIR__ . '/../../../config/database.php';
 
 // Manual authentication check
 if (session_status() === PHP_SESSION_NONE) {
+    configureApplicationSession();
     session_start();
 }
 

@@ -5,11 +5,28 @@
 
 require_once __DIR__ . '/../../config/database.php';
 
+if (!function_exists('configureApplicationSession')) {
+    function configureApplicationSession(int $ttlSeconds = 7200): void {
+        ini_set('session.gc_maxlifetime', (string) $ttlSeconds);
+        ini_set('session.cookie_lifetime', (string) $ttlSeconds);
+
+        session_set_cookie_params([
+            'lifetime' => $ttlSeconds,
+            'path' => '/',
+            'domain' => '',
+            'secure' => false,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+}
+
 /**
  * Check if user is logged in
  */
 function requireAuth() {
     if (session_status() === PHP_SESSION_NONE) {
+        configureApplicationSession();
         session_start();
     }
     
@@ -37,6 +54,12 @@ function requireAdmin() {
     }
     
     return $user;
+}
+
+if (!function_exists('requireAdminAuthenticated')) {
+    function requireAdminAuthenticated() {
+        return requireAdmin();
+    }
 }
 
 /**
@@ -221,6 +244,7 @@ function requireAdminOwnedTask(mysqli $conn, int $taskId, ?array $admin = null):
  */
 function getCurrentUser() {
     if (session_status() === PHP_SESSION_NONE) {
+        configureApplicationSession();
         session_start();
     }
     
@@ -242,6 +266,7 @@ function getCurrentUser() {
  */
 function isLoggedIn() {
     if (session_status() === PHP_SESSION_NONE) {
+        configureApplicationSession();
         session_start();
     }
     return isset($_SESSION['user_id']);
@@ -252,6 +277,7 @@ function isLoggedIn() {
  */
 function isAdmin() {
     if (session_status() === PHP_SESSION_NONE) {
+        configureApplicationSession();
         session_start();
     }
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';

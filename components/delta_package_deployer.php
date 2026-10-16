@@ -2,6 +2,17 @@
 
 declare(strict_types=1);
 
+function ends_with(string $value, string $needle): bool {
+    if ($needle === '') {
+        return true;
+    }
+    $length = strlen($needle);
+    if ($length > strlen($value)) {
+        return false;
+    }
+    return substr($value, -$length) === $needle;
+}
+
 function inspectAndApplyDeltaPackage(
     string $zipPath,
     string $targetRoot,
@@ -27,23 +38,57 @@ function inspectAndApplyDeltaPackage(
 
     try {
         $manifestRaw = $zip->getFromName('manifest.json');
-        if (!is_string($manifestRaw)) {
-            throw new RuntimeException('manifest.json is missing from package root.');
-        }
+        $manifestFiles = null;
+        $packageId = trim(pathinfo($zipPath, PATHINFO_FILENAME));
+        if (is_string($manifestRaw)) {
+            $manifest = json_decode($manifestRaw, true);
+            if (!is_array($manifest) || (int)($manifest['schema_version'] ?? 0) !== 1) {
+                throw new RuntimeException('Unsupported or invalid package manifest.');
+            }
 
-        $manifest = json_decode($manifestRaw, true);
-        if (!is_array($manifest) || (int)($manifest['schema_version'] ?? 0) !== 1) {
-            throw new RuntimeException('Unsupported or invalid package manifest.');
-        }
+            $manifestPackageId = trim((string)($manifest['package_id'] ?? ''));
+            if ($manifestPackageId !== '') {
+                $packageId = $manifestPackageId;
+            }
 
-        $packageId = trim((string)($manifest['package_id'] ?? ''));
-        if ($packageId === '' || !preg_match('/^[A-Za-z0-9._-]{1,120}$/', $packageId)) {
-            throw new RuntimeException('Invalid package_id in manifest.');
-        }
+            $manifestFiles = $manifest['files'] ?? null;
+            if (!is_array($manifestFiles) || count($manifestFiles) < 1 || count($manifestFiles) > 500) {
+                throw new RuntimeException('Manifest must contain between 1 and 500 files.');
+            }
+        } else {
+            $derivedFiles = [];
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $stat = $zip->statIndex($index);
+                if (!is_array($stat)) {
+                    continue;
+                }
+                $entryName = (string)($stat['name'] ?? '');
+                if ($entryName === '' || ends_with($entryName, '/')) {
+                    continue;
+                }
+                if ($entryName === 'manifest.json' || strpos($entryName, 'files/') !== 0) {
+                    continue;
+                }
 
-        $manifestFiles = $manifest['files'] ?? null;
-        if (!is_array($manifestFiles) || count($manifestFiles) < 1 || count($manifestFiles) > 500) {
-            throw new RuntimeException('Manifest must contain between 1 and 500 files.');
+                $relativePath = substr($entryName, strlen('files/'));
+                $contents = $zip->getFromIndex($index);
+                if (!is_string($contents)) {
+                    throw new RuntimeException("Could not read package file: {$relativePath}");
+                }
+
+                $derivedFiles[] = [
+                    'path' => $relativePath,
+                    'action' => 'replace',
+                    'size' => strlen($contents),
+                    'sha256' => hash('sha256', $contents),
+                ];
+            }
+
+            if (count($derivedFiles) < 1) {
+                throw new RuntimeException('Package without manifest must contain files/ entries.');
+            }
+
+            $manifestFiles = $derivedFiles;
         }
 
         $plan = [];

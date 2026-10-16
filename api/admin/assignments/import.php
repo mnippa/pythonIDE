@@ -26,6 +26,7 @@ try {
 
 // Manual authentication check
 if (session_status() === PHP_SESSION_NONE) {
+    configureApplicationSession();
     session_start();
 }
 

@@ -1,20 +1,45 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Git", "Recent", "Paths")]
+    [ValidateSet("Git", "Recent", "Paths", "Full", "Development")]
     [string]$Mode = "Git",
-    [string]$SourceDir = (Split-Path -Parent $PSScriptRoot),
+    [ValidateSet("None", "Git", "Local")]
+    [string]$ManifestMode = "Local",
+    [ValidateSet("Package", "ManifestOnly", "PackageAndManifest")]
+    [string]$OutputMode = "Package",
+    [string]$SourceDir = "",
     [string]$BaseRef = "HEAD",
     [ValidateRange(1, 525600)]
     [int]$SinceMinutes = 120,
     [string[]]$Paths = @(),
-    [string]$OutputDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "deploy-packages"),
+    [string]$OutputDir = "",
     [string]$PackageName = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$sourceRoot = [System.IO.Path]::GetFullPath($SourceDir).TrimEnd('\', '/')
+$resolvedSourceDir = if ([string]::IsNullOrWhiteSpace($SourceDir)) {
+    $scriptPath = @(
+        $PSScriptRoot,
+        $PSCommandPath,
+        $MyInvocation.MyCommand.Path
+    ) | Where-Object { $_ -and -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+
+    if ($scriptPath) {
+        Split-Path -Parent $scriptPath
+    } else {
+        (Get-Location).Path
+    }
+} else {
+    $SourceDir
+}
+
+$sourceRoot = [System.IO.Path]::GetFullPath($resolvedSourceDir).TrimEnd('\', '/')
+$resolvedOutputDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    Join-Path $sourceRoot "deploy-packages"
+} else {
+    $OutputDir
+}
 $allowedDirectories = @("api", "public", "config", "components")
 $allowedRootFiles = @(".htaccess", "index.php", "composer.json", "composer.lock", "web.config")
 $protectedFiles = @(
@@ -63,6 +88,89 @@ function Test-DeployablePath {
 
     $topLevel = ($RelativePath -split '/', 2)[0]
     return $allowedDirectories -contains $topLevel
+}
+
+function Get-AllDeployablePaths {
+    $all = New-Object System.Collections.Generic.List[string]
+
+    foreach ($directory in $allowedDirectories) {
+        $directoryPath = Join-Path $sourceRoot $directory
+        if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+            continue
+        }
+        Get-ChildItem -LiteralPath $directoryPath -File -Recurse | ForEach-Object {
+            $relative = Normalize-RelativePath $_.FullName
+            if (Test-DeployablePath $relative) {
+                $all.Add($relative)
+            }
+        }
+    }
+
+    foreach ($rootFile in $allowedRootFiles) {
+        $filePath = Join-Path $sourceRoot $rootFile
+        if (Test-Path -LiteralPath $filePath -PathType Leaf) {
+            $relative = Normalize-RelativePath $filePath
+            if (Test-DeployablePath $relative) {
+                $all.Add($relative)
+            }
+        }
+    }
+
+    return @($all | Sort-Object -Unique)
+}
+
+function Test-DevelopmentPath {
+    param([string]$RelativePath)
+
+    $normalized = $RelativePath.Replace('\\', '/').Trim('/').ToLowerInvariant()
+    $excludedPrefixes = @(
+        'public/vendor',
+        'public/js/vendor',
+        'public/js/lib',
+        'public/js/pyonide',
+        'public/pyonide',
+        'public/assets',
+        'public/build',
+        'public/dist'
+    )
+
+    foreach ($prefix in $excludedPrefixes) {
+        $prefixNormalized = $prefix.ToLowerInvariant()
+        if ($normalized -eq $prefixNormalized -or $normalized.StartsWith($prefixNormalized + '/')) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Get-DevelopmentPaths {
+    $all = New-Object System.Collections.Generic.List[string]
+
+    foreach ($directory in $allowedDirectories) {
+        $directoryPath = Join-Path $sourceRoot $directory
+        if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+            continue
+        }
+        Get-ChildItem -LiteralPath $directoryPath -File -Recurse | ForEach-Object {
+            $relative = Normalize-RelativePath $_.FullName
+            if ((Test-DeployablePath $relative) -and (Test-DevelopmentPath $relative)) {
+                $all.Add($relative)
+            }
+        }
+    }
+
+    foreach ($rootFile in $allowedRootFiles) {
+        $filePath = Join-Path $sourceRoot $rootFile
+        if (Test-Path -LiteralPath $filePath -PathType Leaf) {
+            $relative = Normalize-RelativePath $filePath
+            if ((Test-DeployablePath $relative) -and (Test-DevelopmentPath $relative)) {
+                $all.Add($relative)
+            }
+        }
+    }
+
+    return @($all | Sort-Object -Unique)
 }
 
 function Get-GitPaths {
@@ -119,6 +227,9 @@ $candidatePaths = switch ($Mode) {
         }
         @($Paths)
     }
+    "Full" { @(Get-AllDeployablePaths) }
+    "Development" { @(Get-DevelopmentPaths) }
+    default { @(Get-AllDeployablePaths) }
 }
 
 $deployablePaths = New-Object System.Collections.Generic.List[string]
@@ -178,7 +289,7 @@ if ([string]::IsNullOrWhiteSpace($PackageName)) {
     $PackageName += '.zip'
 }
 
-$outputRoot = [System.IO.Path]::GetFullPath($OutputDir)
+$outputRoot = [System.IO.Path]::GetFullPath($resolvedOutputDir)
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $packagePath = Join-Path $outputRoot $PackageName
 $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("pythonide-" + [Guid]::NewGuid().ToString('N'))
@@ -203,26 +314,57 @@ try {
         })
     }
 
-    $manifest = [ordered]@{
-        schema_version = 1
-        package_id = $packageId
-        created_at = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK')
-        source = [ordered]@{
-            mode = $Mode.ToLowerInvariant()
-            base_ref = if ($Mode -eq "Git") { $BaseRef } else { $null }
-            base_commit = $baseCommit
-            head_commit = $headCommit
-            since_minutes = if ($Mode -eq "Recent") { $SinceMinutes } else { $null }
+    $manifestOutputPath = Join-Path $outputRoot ("$packageId.manifest.json")
+    if ($ManifestMode -ne 'None') {
+        $manifest = [ordered]@{
+            schema_version = 1
+            package_id = $packageId
+            created_at = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK')
+            manifest_mode = $ManifestMode.ToLowerInvariant()
+            scope = $Mode.ToLowerInvariant()
+            excluded_paths = if ($Mode -eq "Development") { @(
+                'public/vendor',
+                'public/js/vendor',
+                'public/js/lib',
+                'public/js/pyonide',
+                'public/pyonide',
+                'public/assets',
+                'public/build',
+                'public/dist'
+            ) } else { @() }
+            source = [ordered]@{
+                mode = $ManifestMode.ToLowerInvariant()
+                base_ref = if ($ManifestMode -eq "Git") { $BaseRef } else { $null }
+                base_commit = if ($ManifestMode -eq "Git") { $baseCommit } else { $null }
+                head_commit = $headCommit
+                since_minutes = if ($Mode -eq "Recent") { $SinceMinutes } else { $null }
+            }
+            files = $manifestFiles
         }
-        files = $manifestFiles
+
+        $manifestJson = $manifest | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText(
+            (Join-Path $stagingRoot 'manifest.json'),
+            $manifestJson,
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+
+        if ($OutputMode -in @('ManifestOnly', 'PackageAndManifest')) {
+            [System.IO.File]::WriteAllText(
+                $manifestOutputPath,
+                $manifestJson,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+        }
     }
 
-    $manifestJson = $manifest | ConvertTo-Json -Depth 8
-    [System.IO.File]::WriteAllText(
-        (Join-Path $stagingRoot 'manifest.json'),
-        $manifestJson,
-        (New-Object System.Text.UTF8Encoding($false))
-    )
+    if ($OutputMode -eq 'ManifestOnly') {
+        Write-Host "[manifest] Created: $manifestOutputPath"
+        Write-Host "[manifest] Mode: $Mode"
+        Write-Host "[manifest] Manifest: $ManifestMode"
+        Write-Host "[manifest] Files: $($deployablePaths.Count)"
+        return
+    }
 
     if (Test-Path -LiteralPath $packagePath) {
         Remove-Item -LiteralPath $packagePath -Force
@@ -259,8 +401,14 @@ try {
     }
 }
 
+if ($OutputMode -eq 'ManifestOnly') {
+    return
+}
+
 Write-Host "[package] Created: $packagePath"
 Write-Host "[package] Mode: $Mode"
+Write-Host "[package] Scope: $Mode"
+Write-Host "[package] Manifest: $ManifestMode"
 Write-Host "[package] Files: $($deployablePaths.Count)"
 foreach ($relativePath in $deployablePaths) {
     Write-Host "  + $relativePath"

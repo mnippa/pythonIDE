@@ -3,14 +3,17 @@
  * Test list API with admin session
  */
 
-session_start();
+require_once __DIR__ . '/../config/database.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    configureApplicationSession();
+    session_start();
+}
 
 // Manually set admin session
 $_SESSION['user_id'] = 1;
 $_SESSION['email'] = 'admin@pythonide.local';
 $_SESSION['role'] = 'admin';
-
-require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 

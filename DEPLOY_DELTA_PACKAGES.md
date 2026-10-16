@@ -4,6 +4,18 @@ Delta-Pakete enthalten vollstaendige neue Versionen der geaenderten Dateien, kei
 
 ## Paket erzeugen
 
+Vollstaendiges Manifest / kompletten Soll-Stand gegen Live oder Lokal vergleichen:
+
+```powershell
+.\scripts\create_delta_package.ps1 -Mode Full
+```
+
+Entwicklungs-Scope: nur die realistisch bearbeiteten Bereiche, ohne externer Bibliotheken und Build-Artefakte:
+
+```powershell
+.\scripts\create_delta_package.ps1 -Mode Development
+```
+
 Alle Aenderungen gegen den aktuellen Git-Stand:
 
 ```powershell
@@ -25,6 +37,16 @@ Eine bekannte Liste aktuell bearbeiteter Dateien ohne Git-Vergleich:
 ```
 
 Die ZIP-Dateien werden unter `deploy-packages/` erzeugt. Der Ordner wird nicht in Git aufgenommen.
+
+### Scope-Logik
+
+- `Full`: alles deploybare Material
+- `Development`: alle normalen Projekt- und Programmierbereiche, aber ohne externe Bibliotheken / Build-Artefakte / bekannte "nie anzufassende" Bereiche
+- `Paths`: manuell gewaehlte Dateien oder Ordner
+- `Git`: Git-Stand als Sollbasis
+- `Recent`: nur geaenderte Dateien der letzten Minuten
+
+Der Manifest-Block merkt sich dabei den gewaehlten Scope in `scope`, damit die reine Manifest-Pruefung und die ZIP-Variante denselben Grundsatz nutzen.
 
 ## Paket einspielen
 

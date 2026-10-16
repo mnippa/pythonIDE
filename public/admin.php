@@ -1,5 +1,8 @@
 <?php
+require_once __DIR__ . '/../api/auth/middleware.php';
+
 if (session_status() === PHP_SESSION_NONE) {
+  configureApplicationSession();
   session_start();
 }
 
@@ -567,51 +570,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
   include(__DIR__ . '/../components/header.php');
   ?>
 
-  <div style="position:sticky;top:0;z-index:90;background:#10233d;color:#fff;padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:.02em;border-bottom:1px solid rgba(255,255,255,.14);display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-    <span>Patch-Historie: <?= (int)($adminDeployHistory['count'] ?? 0) ?> Eintrag<?= ((int)($adminDeployHistory['count'] ?? 0) === 1) ? '' : 'e' ?></span>
-    <span>
-      <?php if (is_array($latestDeploy)): ?>
-        Letzter Stand: #<?= (int)($latestDeploy['id'] ?? 1) ?> <?= htmlspecialchars((string)($latestDeploy['label'] ?? $latestDeploy['kind'] ?? 'deployment'), ENT_QUOTES, 'UTF-8') ?>
-      <?php else: ?>
-        Noch keine Patch-Historie vorhanden
-      <?php endif; ?>
-    </span>
-  </div>
-  
   <div class="admin-container">
-
-    <section class="admin-card">
-      <h2>Patch-Historie</h2>
-      <div class="admin-card-subtitle">Alle eingespielten Deployments, inklusive Promote Live.</div>
-      <?php if (!empty($adminDeployHistory['entries'])): ?>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Typ</th>
-              <th>Ziel</th>
-              <th>Patch</th>
-              <th>Zeit</th>
-              <th>Admin</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach (array_reverse($adminDeployHistory['entries']) as $entry): ?>
-              <tr>
-                <td><?= (int)($entry['id'] ?? 0) ?></td>
-                <td><?= htmlspecialchars((string)($entry['label'] ?? $entry['kind'] ?? 'deployment'), ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string)($entry['target'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string)($entry['package_id'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string)($entry['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string)($entry['actor']['email'] ?? ($entry['actor']['id'] ?? '-')), ENT_QUOTES, 'UTF-8') ?></td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      <?php else: ?>
-        <div class="admin-card-subtitle">Noch keine Deployments protokolliert.</div>
-      <?php endif; ?>
-    </section>
 
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="projects">Meine Projekte</button>
@@ -619,6 +578,8 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
       <button class="tab" data-tab="tickets">Tickets</button>
       <button class="tab" data-tab="teams">Teams</button>
       <button class="tab" data-tab="users">Users</button>
+      <button class="tab" data-tab="system">System</button>
+      <button class="tab" data-tab="patch-history">Patch-Historie</button>
     </div>
 
     <section class="panel active" id="tab-projects">
@@ -661,6 +622,9 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
         </div>
       </div>
 
+    </section>
+
+    <section class="panel" id="tab-system">
       <div class="admin-card">
         <h3>Deploy Sync (Live/Beta)</h3>
         <div class="admin-card-subtitle">Admin-Tool fuer Live/Beta-Synchronisation. Kritischer Modus <strong>Beta -> Live</strong> hat eine zusaetzliche Sicherheitsabfrage.</div>
@@ -709,12 +673,12 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
 
       <div class="admin-card">
         <h3>Delta-Paket einspielen</h3>
-        <div class="admin-card-subtitle">ZIP-Paket mit manifest.json pruefen und gezielt nach Beta oder Live ausrollen. Datenbank-, Storage- und lokale Konfigurationsdateien sind gesperrt.</div>
+        <div class="admin-card-subtitle">ZIP-Paket oder JSON-Manifest pruefen und gezielt nach Beta oder Live ausrollen. Ohne Manifest erfolgt keine Vergleichspruefung. Datenbank-, Storage- und lokale Konfigurationsdateien sind gesperrt.</div>
 
         <div class="deploy-sync-grid">
           <div class="field" style="margin-bottom: 0;">
-            <label for="delta-package-file">Paket</label>
-            <input type="file" id="delta-package-file" accept=".zip,application/zip">
+            <label for="delta-package-file">Paket oder Manifest</label>
+            <input type="file" id="delta-package-file" accept=".zip,.json,application/zip,application/json,text/plain">
           </div>
           <div class="field" style="margin-bottom: 0;">
             <label for="delta-package-target">Ziel</label>
@@ -725,7 +689,11 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
           </div>
           <div class="field" style="margin-bottom: 0;">
             <label for="delta-package-trigger">Aktion</label>
-            <button class="hspf-btn hspf-btn-primary" type="button" id="delta-package-trigger">Paket pruefen</button>
+            <div class="deploy-sync-actions" style="margin-top: 0; flex-wrap: wrap;">
+              <button class="hspf-btn hspf-btn-secondary" type="button" id="manifest-create-trigger">Manifest erzeugen</button>
+              <button class="hspf-btn hspf-btn-secondary" type="button" id="delta-package-compare-trigger">Manifest pruefen</button>
+              <button class="hspf-btn hspf-btn-primary" type="button" id="delta-package-trigger">Paket pruefen</button>
+            </div>
           </div>
         </div>
 
@@ -746,6 +714,41 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
         </div>
         <div class="deploy-sync-status" id="delta-package-status">Bereit.</div>
         <pre class="deploy-sync-output" id="delta-package-output">Noch kein Paket geprueft.</pre>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-patch-history">
+      <div class="admin-card">
+        <h2>Patch-Historie</h2>
+        <div class="admin-card-subtitle">Alle eingespielten Deployments, inklusive Promote Live.</div>
+        <?php if (!empty($adminDeployHistory['entries'])): ?>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Typ</th>
+                <th>Ziel</th>
+                <th>Patch</th>
+                <th>Zeit</th>
+                <th>Admin</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach (array_reverse($adminDeployHistory['entries']) as $entry): ?>
+                <tr>
+                  <td><?= (int)($entry['id'] ?? 0) ?></td>
+                  <td><?= htmlspecialchars((string)($entry['label'] ?? $entry['kind'] ?? 'deployment'), ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars((string)($entry['target'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars((string)($entry['package_id'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars((string)($entry['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars((string)($entry['actor']['email'] ?? ($entry['actor']['id'] ?? '-')), ENT_QUOTES, 'UTF-8') ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php else: ?>
+          <div class="admin-card-subtitle">Noch keine Deployments protokolliert.</div>
+        <?php endif; ?>
       </div>
     </section>
 

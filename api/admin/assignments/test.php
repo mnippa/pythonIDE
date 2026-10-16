@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
+    configureApplicationSession();
     session_start();
 }
 

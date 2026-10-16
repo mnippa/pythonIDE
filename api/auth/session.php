@@ -8,6 +8,7 @@ require_once __DIR__ . '/middleware.php';
 
 header('Content-Type: application/json');
 
+configureApplicationSession();
 session_start();
 
 $user = getCurrentUser();
