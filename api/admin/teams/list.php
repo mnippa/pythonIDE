@@ -7,6 +7,7 @@
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../../config/database.php';
+require_once __DIR__ . '/../../../config/session.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     configureApplicationSession();
@@ -37,6 +38,9 @@ try {
         $missingTokenResult = $conn->query("SELECT id FROM teams WHERE invite_token IS NULL OR invite_token = ''");
         if ($missingTokenResult) {
             $updateTokenStmt = $conn->prepare('UPDATE teams SET invite_token = ? WHERE id = ?');
+            if (!$updateTokenStmt) {
+                throw new RuntimeException('Failed to prepare invite token update: ' . $conn->error);
+            }
             while ($tokenRow = $missingTokenResult->fetch_assoc()) {
                 $token = bin2hex(random_bytes(16));
                 $teamId = (int)$tokenRow['id'];
@@ -46,7 +50,7 @@ try {
         }
     }
     
-    // Get all teams with user count
+    // Subquery instead of GROUP BY: compatible with ONLY_FULL_GROUP_BY (MariaDB)
     $sql = "SELECT 
                 t.id, 
                 t.name, 
@@ -54,13 +58,14 @@ try {
                 t.is_active,
                 t.created_at,
                 " . ($hasInviteToken ? "t.invite_token," : "NULL as invite_token,") . "
-                COUNT(u.id) as user_count
+                (SELECT COUNT(*) FROM users u WHERE u.team_id = t.id) as user_count
             FROM teams t
-            LEFT JOIN users u ON u.team_id = t.id
-            GROUP BY t.id
             ORDER BY t.created_at DESC";
     
     $result = $conn->query($sql);
+    if ($result === false) {
+        throw new RuntimeException('Failed to load teams: ' . $conn->error);
+    }
     $teams = [];
     
     while ($row = $result->fetch_assoc()) {
@@ -77,7 +82,7 @@ try {
     
     echo json_encode(['ok' => true, 'teams' => $teams]);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

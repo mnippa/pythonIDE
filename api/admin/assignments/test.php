@@ -5,6 +5,8 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
+require_once __DIR__ . '/../../../config/session.php';
+
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
     configureApplicationSession();

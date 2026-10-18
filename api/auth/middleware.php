@@ -4,22 +4,7 @@
  */
 
 require_once __DIR__ . '/../../config/database.php';
-
-if (!function_exists('configureApplicationSession')) {
-    function configureApplicationSession(int $ttlSeconds = 7200): void {
-        ini_set('session.gc_maxlifetime', (string) $ttlSeconds);
-        ini_set('session.cookie_lifetime', (string) $ttlSeconds);
-
-        session_set_cookie_params([
-            'lifetime' => $ttlSeconds,
-            'path' => '/',
-            'domain' => '',
-            'secure' => false,
-            'httponly' => true,
-            'samesite' => 'Lax',
-        ]);
-    }
-}
+require_once __DIR__ . '/../../config/session.php';
 
 /**
  * Check if user is logged in

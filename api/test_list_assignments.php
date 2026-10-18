@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/session.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     configureApplicationSession();

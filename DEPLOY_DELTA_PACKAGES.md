@@ -70,4 +70,6 @@ Pakete duerfen nur Anwendungscode aus `api/`, `public/`, `config/` und `componen
 - Pfade ausserhalb des Anwendungsverzeichnisses
 - Symlink-Zielpfade
 
+Hinweis: Da `config/database.php` nie mit ausgeliefert wird, darf dort kein neuer Anwendungscode (Funktionen, Helper) landen, von dem andere Dateien abhaengen. Solcher Code gehoert in eigene Dateien wie `config/session.php` (`configureApplicationSession()`), die direkt eingebunden werden.
+
 Der erste Rollout der Delta-Funktion selbst erfolgt weiterhin ueber den normalen Beta-Copy mit anschliessendem **Hydrate Beta**. Danach koennen weitere Aenderungen direkt als Delta-Paket eingespielt werden.

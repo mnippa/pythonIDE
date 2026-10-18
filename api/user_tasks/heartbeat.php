@@ -3,6 +3,7 @@
 // Receive activity heartbeat from client: accumulate active_seconds for a task
 
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../config/session.php';
 
 header('Content-Type: application/json');
 
