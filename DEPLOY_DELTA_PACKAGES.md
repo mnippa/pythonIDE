@@ -72,4 +72,6 @@ Pakete duerfen nur Anwendungscode aus `api/`, `public/`, `config/` und `componen
 
 Hinweis: Da `config/database.php` nie mit ausgeliefert wird, darf dort kein neuer Anwendungscode (Funktionen, Helper) landen, von dem andere Dateien abhaengen. Solcher Code gehoert in eigene Dateien wie `config/session.php` (`configureApplicationSession()`), die direkt eingebunden werden.
 
+`config/session.php` muss vor dem ersten Aufruf von `configureApplicationSession()` geladen sein. Eine erst danach eingebundene Auth-Middleware reicht nicht aus. Der CLI-Test `php scripts/test_clone_session_bootstrap.php` prueft die beiden Klon-Endpoints mit einer isolierten `database.php` ohne Session-Helper, ohne die lokale Konfiguration oder Datenbank zu veraendern.
+
 Der erste Rollout der Delta-Funktion selbst erfolgt weiterhin ueber den normalen Beta-Copy mit anschliessendem **Hydrate Beta**. Danach koennen weitere Aenderungen direkt als Delta-Paket eingespielt werden.

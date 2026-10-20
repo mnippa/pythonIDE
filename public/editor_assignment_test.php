@@ -1260,6 +1260,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260609d"></script>
+  <script type="module" src="js/assignments.js?v=20261018-simulator-lock2"></script>
 </body>
 </html>

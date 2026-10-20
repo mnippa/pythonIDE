@@ -8,6 +8,36 @@ This directory contains test scripts for verifying assignment editor functionali
 
 ## Test Scripts
 
+### Admin simulator versus participant progress
+
+`public/editor_assignment_test.php` is a simulator, both when opened for an
+assignment and when opened with a `task_id`. It must not load or write participant
+progress: saved answers, completion status, check counts, run counts, and activity
+heartbeats stay separate from `user_tasks`. Reopening the simulator starts fresh.
+Existing database submissions are not deleted.
+
+This is a view-specific rule, not an admin-role rule. An admin working on an
+assigned assignment in the normal participant editor still loads and saves real
+progress. The separate `editor_assignment_user_test.php` view retains its
+explicit selected-user behavior.
+
+Explicit template and solution saves in the admin task lab continue to update
+task definitions. Do not enable the blanket `TEST_MODE_NO_PERSIST` flag to fix
+progress isolation: that flag also disables these authoring operations.
+
+Task and assignment locks in this simulator block persistence, not local
+experimentation: template and solution code remain editable, Undo/Redo and
+checks remain available (subject to the check limit). Explicit read-only file
+policies still apply. Saving still requires an unlocked task and assignment,
+enforced by both the existing save guard and the backend. Participant and
+selected-user editor locking rules are unchanged.
+
+Run the isolated JavaScript regression tests without a database or browser:
+
+```powershell
+node --test scripts\test_workflows\admin_simulator_progress.test.cjs
+```
+
 ### playwright_toggle_workflow.cjs
 
 **Purpose:** Tests the exact user workflow that previously manifested race conditions during template/solution mode toggling.

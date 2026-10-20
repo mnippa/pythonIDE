@@ -6,6 +6,7 @@
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../../config/database.php';
+require_once __DIR__ . '/../../../config/session.php';
 
 // Manual authentication check
 if (session_status() === PHP_SESSION_NONE) {

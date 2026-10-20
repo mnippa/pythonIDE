@@ -263,6 +263,10 @@ function isAdminUserTestMode() {
   return window.ADMIN_USER_TEST_VIEW === true;
 }
 
+function shouldPersistTaskProgress() {
+  return !isAdminTaskLabMode() && window.TEST_MODE_NO_PERSIST !== true;
+}
+
 function isAdminAssignmentTestMode() {
   if (isAdminTaskLabMode() || isAdminUserTestMode()) return true;
   if (window.ADMIN_ASSIGNMENT_TEST === true) return true;
@@ -406,28 +410,27 @@ function applyTaskLockStateInAdminTest(task) {
   const effectiveLocked = isTaskEffectivelyLockedForEdit(task);
 
   if (editor) {
-    editor.updateOptions({ readOnly: effectiveLocked });
+    const fileReadOnly = Number(window.currentFile?.taskId) === Number(task?.id)
+      && window.currentFile?.readOnly === true;
+    editor.updateOptions({ readOnly: fileReadOnly });
   }
 
   const saveTaskBtn = $('save-task-btn');
   const undoBtn = $('undo-btn');
   const redoBtn = $('redo-btn');
-  [saveTaskBtn, undoBtn, redoBtn].forEach((btn) => {
+  if (saveTaskBtn) {
+    saveTaskBtn.disabled = effectiveLocked;
+    saveTaskBtn.style.opacity = effectiveLocked ? '0.5' : '1';
+    saveTaskBtn.style.cursor = effectiveLocked ? 'not-allowed' : 'pointer';
+  }
+  [undoBtn, redoBtn].forEach((btn) => {
     if (!btn) return;
-    btn.disabled = effectiveLocked;
-    btn.style.opacity = effectiveLocked ? '0.5' : '1';
-    btn.style.cursor = effectiveLocked ? 'not-allowed' : 'pointer';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
   });
 
-  const checkBtn = $('check-btn');
-  if (checkBtn) {
-    checkBtn.disabled = effectiveLocked;
-    checkBtn.style.opacity = effectiveLocked ? '0.6' : '1';
-    checkBtn.style.cursor = effectiveLocked ? 'not-allowed' : 'pointer';
-    if (effectiveLocked) {
-      checkBtn.title = 'Task ist gesperrt. Bitte zuerst entsperren.';
-    }
-  }
+  updateAttemptsCounter(task);
 
   updateTaskLockButton(task);
 }
@@ -989,12 +992,12 @@ async function confirmTaskSwitchWithDrafts(nextTaskId) {
 }
 
 async function requestJson(url, options = {}) {
-  const isNoPersistMode = window.TEST_MODE_NO_PERSIST === true;
+  const isNoPersistMode = !shouldPersistTaskProgress();
   if (isNoPersistMode) {
     // Intercept WRITE operations in test mode - prevent DB writes
     if (url.includes('/api/user_tasks/update.php') || url.includes('/api/user_tasks/heartbeat.php') || url.includes('/api/user_tasks/submit.php')) {
       // Just return success without writing to DB
-      return { ok: true };
+      return { ok: true, simulated: true };
     }
     // Allow READ operations to hit the real API
   }
@@ -1053,7 +1056,7 @@ function statusClass(status) {
  * Track activity on current task: updates last activity time and sends heartbeats
  */
 function startActivityTracking(taskId) {
-  if (!taskId) return;
+  if (!taskId || !shouldPersistTaskProgress()) return;
   logActivityDebug('startActivityTracking', { taskId });
 
   // Always stop any existing tracking first (removes old listeners + interval)
@@ -1167,6 +1170,7 @@ function stopActivityTracking(taskId) {
  * @param {boolean} isActive - Whether user is currently active
  */
 async function sendActivityHeartbeat(taskId, deltaSeconds, isActive) {
+  if (!shouldPersistTaskProgress()) return;
   logActivityDebug('sendActivityHeartbeat', { taskId, deltaSeconds, isActive });
   try {
     const response = await fetch(getUserTasksHeartbeatUrl(), {
@@ -2483,7 +2487,7 @@ async function loadSingleAssignment(assignmentId) {
     }
     
     // Load persisted user_tasks progress unless this view explicitly disables persistence.
-    if (window.TEST_MODE_NO_PERSIST !== true) {
+    if (shouldPersistTaskProgress()) {
       try {
         const testUserParam = getTestUserQueryParam();
         const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
@@ -2552,7 +2556,7 @@ async function loadAssignments() {
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
         // Load persisted user_tasks progress unless this view explicitly disables persistence.
-        if (window.TEST_MODE_NO_PERSIST !== true) {
+        if (shouldPersistTaskProgress()) {
           try {
             const testUserParam = getTestUserQueryParam();
             const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
@@ -3007,6 +3011,7 @@ async function loadSavedCode(taskId) {
       return normalizeLegacyEscapedCode(cachedTaskAnswer.current_code);
     }
 
+    if (!shouldPersistTaskProgress()) return null;
     const testUserParam = getTestUserQueryParam();
     const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}${testUserParam}`);
     if (response && response.task && response.task.current_code) {
@@ -4502,6 +4507,7 @@ async function incrementRunCount(taskId) {
     }
 
     console.log('[RUN_COUNT] Incrementing run count - Payload:', payload);
+    if (!shouldPersistTaskProgress()) return;
     const response = await requestJson(getUserTasksUpdateUrl(), {
       method: 'POST',
       body: JSON.stringify(payload)
@@ -5265,7 +5271,7 @@ async function submitTask() {
   if (manualReviewTask) {
     await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
-    if (window.TEST_MODE_NO_PERSIST !== true) {
+    if (shouldPersistTaskProgress()) {
       await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
         body: JSON.stringify({
@@ -5299,7 +5305,7 @@ async function submitTask() {
     await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
     // Submit task for manual review
-    if (window.TEST_MODE_NO_PERSIST !== true) {
+    if (shouldPersistTaskProgress()) {
       await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
         body: JSON.stringify({
