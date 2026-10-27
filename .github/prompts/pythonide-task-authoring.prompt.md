@@ -36,6 +36,7 @@ Starte immer mit dem aktuellen Authoring-Kontext:
 - [Test Types Doku](../../docs/test-types-documentation-final-v2.md)
 
 Arbeitsweise:
+- beachte die [allgemeinen Aufgabenregeln](../instructions/task-authoring.instructions.md): echte Umlaute in Texten, ae/oe/ue in Variablennamen und ein gemeinsames Versuchslimit über alle Iterationen
 - halte `task_text` kurz und student-facing
 - verschiebe Nebenbedingungen nach `description`
 - bevorzuge robuste Validierung mit `variable`-Tests, wenn Werte direkt pruefbar sind

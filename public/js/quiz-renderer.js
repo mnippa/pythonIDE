@@ -2790,14 +2790,31 @@ window.QuizRenderer = {
     return escaped.replace(/\n/g, '<br>').replace(/\r\n/g, '<br>');
   },
 
+  getRandomizerNamespace(task, previousIterations = null) {
+    const overrides = typeof task.variable_overrides === 'string'
+      ? JSON.parse(task.variable_overrides)
+      : task.variable_overrides;
+    if (!Array.isArray(overrides) || overrides[0]?.iteration_context !== true) {
+      return '{}';
+    }
+
+    const currentIteration = this.getCurrentIteration(task);
+    const entries = previousIterations
+      ?? (window.assignmentState?.taskUserAnswers?.[task.id]?.iteration_values || [])
+        .filter(entry => entry.iteration < currentIteration);
+    if (entries.length !== currentIteration - 1 && previousIterations === null) {
+      throw new Error('Bisherige Iterationswerte fehlen für den Generator-Kontext');
+    }
+    if (entries.some(entry => !entry.inputs || typeof entry.inputs !== 'object' || Array.isArray(entry.inputs))) {
+      throw new Error('Ungültige Iterationswerte für den Generator-Kontext');
+    }
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(entries.map(entry => entry.inputs)))));
+    return `{"__previous_inputs": __import__("json").loads(__import__("base64").b64decode("${encoded}").decode("utf-8"))}`;
+  },
+
   /**
-   * Generate input values for ALL iterations of a task and persist them to DB.
-   * For code_random_complex: runs randomizer_code N times via Pyodide.
-   * For code_reading: reads deterministic values from variable_overrides.
-   * Legacy users (current_iteration > 1, no iteration_values): past iterations
-   * get placeholder entries for code_random_complex (random values are gone),
-   * but code_reading can reconstruct all entries deterministically.
-   * Never overwrites existing iteration_values in DB (server enforces this).
+   * Generate and persist all iterations without overwriting existing values.
+   * Legacy randomized inputs cannot be reconstructed; fixed inputs can.
    */
   async initAllIterations(task) {
     const maxIterations = this.getMaxIterations(task);
@@ -2833,7 +2850,7 @@ window.QuizRenderer = {
           for (let i = currentIteration; i <= maxIterations; i++) {
             const python = `
 import sys
-__randomizer_namespace = {}
+__randomizer_namespace = ${this.getRandomizerNamespace(task, iterationValues)}
 exec("""${safeCode}""", __randomizer_namespace)
 __randomizer_namespace
 `;
@@ -2975,7 +2992,7 @@ __randomizer_namespace
           // Create an isolated namespace for the randomizer
           const python = `
 import sys
-__randomizer_namespace = {}
+__randomizer_namespace = ${this.getRandomizerNamespace(task)}
 exec("""${task.randomizer_code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
 __randomizer_namespace
 `;
@@ -3077,7 +3094,7 @@ __randomizer_namespace
 
     // NEW SCHEMA: randomizer_code creates variables directly (no 'values' dict)
     const python = `
-__randomizer_namespace = {}
+__randomizer_namespace = ${this.getRandomizerNamespace(task)}
 exec("""${code.replace(/"/g, '\\"').replace(/\n/g, '\\n')}""", __randomizer_namespace)
 __randomizer_namespace
 `;

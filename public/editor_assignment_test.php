@@ -1084,7 +1084,7 @@ HTML;
   <script src="js/code-validator.js"></script>
   
   <!-- Quiz Renderer -->
-  <script src="js/quiz-renderer.js?v=20250224"></script>
+  <script src="js/quiz-renderer.js?v=20261027"></script>
   <script src="js/uml-renderer.js?v=20260731e"></script>
   <script src="js/test-mode.js"></script>
 

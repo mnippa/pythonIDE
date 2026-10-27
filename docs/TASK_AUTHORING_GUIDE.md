@@ -116,6 +116,19 @@ Authoring safety rules:
 - Keep `code_template`, `solution_code`, and `randomizer_code` consistent whenever you edit one of them.
 - Before export/import, quickly check `code_template` still contains `values` or at least one `{placeholder}` token.
 
+### Opt-in iteration context for exact randomized quotas
+
+Only new tasks that set `"iteration_context": true` on the first entry of
+`variable_overrides` receive `__previous_inputs` in their randomizer namespace.
+This list contains the input dictionaries of earlier iterations. Choose from
+the remaining quota to enforce exact counts in a randomized order.
+
+Tasks without this explicit boolean flag retain the original empty randomizer
+namespace. Missing history for opted-in tasks is an error, not a reason to
+silently generate a different distribution. All generated inputs continue to be
+persisted in `user_tasks.iteration_values` using the existing mechanism.
+Deploy the updated quiz renderer before enabling the flag on a live task.
+
 ## Folder-based tasks
 
 Use `folderstructure = 1` only when the task really needs extra files.
@@ -186,6 +199,9 @@ Recommended:
 
 ## Writing guidance
 
+- Use real German umlauts and ß in student-facing text; retain ae/oe/ue/ss in variable names.
+- Attempt limits apply to the entire task across all iterations. Iterative quiz tasks count wrong answers, not successful iterations.
+- When exact randomized category counts are required, sample from the remaining quota rather than choosing categories independently.
 - Keep `task_text` minimal.
 - Put side conditions into `description`.
 - Name required variables explicitly.
