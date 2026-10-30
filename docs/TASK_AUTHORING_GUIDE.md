@@ -22,6 +22,26 @@ For overall platform behavior, read [CONTEXT_CURRENT.md](CONTEXT_CURRENT.md).
 5. Choose the smallest robust test strategy.
 6. Use folder structure only when extra files are genuinely part of the task.
 
+Task positions are consecutive within each assignment, starting at 1. Moving a
+task inserts it at the requested position and shifts its neighbours; it is not
+a two-request swap. Task locks protect content, while ordering requires only
+an unlocked assignment. Creation, deletion, imports and clones normalize the
+affected task list in the same transaction. Equal legacy positions are ordered
+by task ID before normalization. Direct authoring scripts must likewise use
+`components/task_order.php` inside a transaction with the assignment row locked.
+
+## Clipboard in restricted editors
+
+The existing restricted editor mode uses a page-memory clipboard rather than
+the system clipboard. Copy, cut and paste work with Ctrl/Cmd+C/X/V, Ctrl+Insert,
+Shift+Insert, Shift+Delete and a dedicated right-click menu. With no selection,
+copy/cut operates on the current line. Multiple selections and Undo/Redo are
+supported. Native paste and text drops cannot import external clipboard data.
+The internal buffer survives focus changes but is cleared on editor disposal
+or page reload. Admin test mode and the personal projects page keep their
+existing unrestricted clipboard behavior. This is a UI restriction, not a
+tamper-proof exam environment.
+
 ## Field conventions
 
 ### `title`
@@ -43,6 +63,11 @@ Good pattern:
 - Detailed explanation of requirements.
 - Use for constraints, variable names, rounding, allowed structures, and examples.
 - Also use it to explain what the automatic checks expect.
+- Keep only necessary result structure, output format, and meaningful edge cases;
+  omit solution recipes and repeated test-runtime details.
+- AutoDescr combines identical rows from fixed and intelligent tests. Its
+  Test-Anforderungen table is stored in the description; the editor does not
+  append a separate validation summary.
 
 ### UI wording rule (Title vs Details)
 
@@ -66,7 +91,68 @@ Recommended split:
 - Treat as legacy.
 - For new tasks, do not rely on it as the primary student instruction.
 
+## DB- und UML-Modellierungsaufgaben
+
+Bei Aufgaben wie „UML-Klassendiagramm in ein relationales Schema umsetzen“ ist
+die fachliche Modellierung das Lernziel, nicht das Abschreiben von Namen.
+
+- Formuliere den fachlichen Sachverhalt und den Arbeitsauftrag, aber blende
+  keine Tabellen-/Feldnamen der Musterlösung als Pflichtvorgabe ein.
+- Bewerte Tabellen/Klassen und Attribute/Felder nicht standardmäßig durch
+  exakten Zeichenkettenvergleich. Unterschiedliche, fachlich passende Namen
+  müssen grundsätzlich möglich sein.
+- Hinterlege die Referenzlösung als Rubrik mit stabilen internen Rollen, z. B.
+  „Bestellung“, „gehört zu Kunde“ oder „Positionsmenge“. Trenne diese Rollen
+  von den sichtbaren Namen in Aufgabenstellung und studentischem Modell.
+- Lege explizit fest, welche Eigenschaften fachlich entscheidend sind:
+  Elemente, Datentypen, Primär-/Fremdschlüssel, Beziehungen, Kardinalitäten
+  sowie berechnete oder gespeicherte Werte.
+- Hinterlege tolerierte Alternativen dort, wo es mehrere fachlich vertretbare
+  Lösungen gibt. Dazu gehören zum Beispiel Datentypfamilien oder die Frage,
+  ob ein abgeleiteter Wert gespeichert wird.
+- Bei nicht eindeutig zuordenbaren Studentenelementen soll die Rubrik eine
+  manuelle Prüfung erlauben, statt eine plausible Lösung automatisch als
+  falsch zu bewerten.
+- Formuliere Checks als Lernfeedback: benenne das betroffene Element aus dem
+  studentischen Modell und erkläre die verletzte Regel. Bei einer falschen
+  Kardinalität soll beispielsweise erklärt werden, welche Seite der Beziehung
+  genau ein oder mehrere Elemente zulässt. Verrate dabei keine Soll-Namen oder
+  Referenzstruktur.
+- Trenne formative Einzelchecks von der Abschlussbewertung. Ein einzelner
+  Check soll nicht automatisch als endgültiges Bestehen oder Durchfallen
+  gelten, sofern die Aufgabe das nicht ausdrücklich so festlegt.
+
 ## Validation strategy
+
+### Dictionary basics before loops
+
+Keep the input shape fixed when an exercise is intended to be solved by manual
+index/key access. Vary values, not the number of records. Reference solutions
+must not require loops or comprehensions. For construction from a fixed business
+description, specify the result variable, then compare the resulting dictionary
+rather than its source-code spelling or printed representation. Dictionary key
+order must not matter.
+
+When designing the structure is the learning goal, do not reveal the schema,
+key names or suitable types in the description. Ask for an independent first
+draft. Put the exact checking contract in optional `hint1`/`hint2`/`hint3` fields
+and explicitly ask students to reconcile their draft with it before checking.
+Be transparent that fixed-schema checks do not accept alternative key names.
+This exception overrides the general description-field advice above. Access-only
+exercises may expose their already-given input structure.
+
+The current four-task block in live Assignment 48 is defined in
+[`revise_assignment48_dictionary_basics.php`](../scripts/revise_assignment48_dictionary_basics.php):
+tasks 569/570 replace the former loop-based tasks; 571/572 add nested dictionaries
+and dictionary/list access. The earlier creation script is historical and must
+not be used to recreate the superseded tasks. Run
+`node scripts/test_dictionary_basics.js --browser-bundle <session-file>` to
+generate tests for the existing browser Python runtime.
+
+For intelligent tests in `vars` mode, set `"value_comparison": "structural"`
+when dictionary key order must not affect correctness. This opts into the
+existing recursive value comparison: list order matters, dictionary key order
+does not. Tests without this setting keep their previous comparison.
 
 Choose the simplest test type that makes the task robust.
 
@@ -128,6 +214,22 @@ namespace. Missing history for opted-in tasks is an error, not a reason to
 silently generate a different distribution. All generated inputs continue to be
 persisted in `user_tasks.iteration_values` using the existing mechanism.
 Deploy the updated quiz renderer before enabling the flag on a live task.
+
+### Two 8-bit answers separated by a semicolon
+
+New `code_random_complex` tasks can set `"answer_format": "binary_pair_8"`
+on the first `variable_overrides` entry. Both quiz submission endpoints then
+ignore whitespace, including inside the bit strings, but require exactly
+`xxxxxxxx;xxxxxxxx` with eight binary digits per value. Leading zeros remain
+mandatory. Tasks without this flag retain their existing answer comparison.
+Deploy both endpoints and `components/quiz_binary_pair.php` before enabling it.
+
+For a combined decimal-to-binary subtraction exercise, use
+`"answer_format": "binary_subtraction_steps_8"` instead. It requires five
+semicolon-separated fields: first number (8 bits), second number (8 bits),
+second number's two's complement (8 bits), difference (8 bits), and the positive
+decimal difference. Whitespace is ignored; all four binary fields require
+leading zeros. This format is independent of the existing two-field format.
 
 ## Folder-based tasks
 

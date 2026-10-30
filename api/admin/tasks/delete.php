@@ -3,13 +3,14 @@
  * Delete Task API (Admin only)
  */
 
-require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../api/auth/middleware.php';
+require_once __DIR__ . '/../../../config/database.php';
+require_once __DIR__ . '/../../auth/middleware.php';
+require_once __DIR__ . '/../../../components/task_order.php';
 
 header('Content-Type: application/json');
 
 $user = requireAdmin();
-$pdo = getPdoConnection();
+$conn = getDbConnection();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
@@ -22,31 +23,36 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
-$conn = getDbConnection();
-requireAdminOwnedTask($conn, $taskId, $user);
+$task = requireAdminOwnedTask($conn, $taskId, $user);
 requireTaskAssignmentUnlocked($conn, $taskId);
 
 try {
-    // Get task info first
-    $stmt = $pdo->prepare('SELECT id, title, assignment_id FROM tasks WHERE id = ?');
-    $stmt->execute([$taskId]);
-    $task = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$task) {
-        jsonResponse(['ok' => false, 'error' => 'Task not found'], 404);
-    }
+    $conn->begin_transaction();
+    lockAssignmentTaskOrder($conn, (int)$task['assignment_id']);
+    requireTaskAssignmentUnlocked($conn, $taskId);
     
     // Delete task
-    $deleteStmt = $pdo->prepare('DELETE FROM tasks WHERE id = ?');
-    $deleteStmt->execute([$taskId]);
+    $deleteStmt = $conn->prepare('DELETE FROM tasks WHERE id = ?');
+    $deleteStmt->bind_param('i', $taskId);
+    if (!$deleteStmt->execute()) {
+        throw new RuntimeException('Could not delete task');
+    }
     
     // Delete task options if any
-    $deleteOptionsStmt = $pdo->prepare('DELETE FROM task_options WHERE task_id = ?');
-    $deleteOptionsStmt->execute([$taskId]);
+    $deleteOptionsStmt = $conn->prepare('DELETE FROM task_options WHERE task_id = ?');
+    $deleteOptionsStmt->bind_param('i', $taskId);
+    if (!$deleteOptionsStmt->execute()) {
+        throw new RuntimeException('Could not delete task options');
+    }
     
     // Delete user attempts
-    $deleteAttemptsStmt = $pdo->prepare('DELETE FROM user_tasks WHERE task_id = ?');
-    $deleteAttemptsStmt->execute([$taskId]);
+    $deleteAttemptsStmt = $conn->prepare('DELETE FROM user_tasks WHERE task_id = ?');
+    $deleteAttemptsStmt->bind_param('i', $taskId);
+    if (!$deleteAttemptsStmt->execute()) {
+        throw new RuntimeException('Could not delete user attempts');
+    }
+    normalizeTaskPositions($conn, (int)$task['assignment_id']);
+    $conn->commit();
     
     jsonResponse([
         'ok' => true,
@@ -55,6 +61,8 @@ try {
         'assignment_id' => $task['assignment_id']
     ]);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    $conn->rollback();
+    error_log('Admin task deletion failed: ' . $e->getMessage());
     jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
 }

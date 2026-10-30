@@ -172,7 +172,7 @@ $selectColumns = implode(', ', [
 ]);
 
 // Always fetch expected/solution/randomizer columns (needed for intelligent tests in assignment editor)
-$sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC";
+$sql = "SELECT $selectColumns FROM tasks WHERE assignment_id = ? ORDER BY position ASC, id ASC";
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $assignmentId);

@@ -5,12 +5,10 @@
  */
 
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../components/quiz_binary_pair.php';
 require_once __DIR__ . '/../../config/session.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 header('Content-Type: application/json');
 
@@ -502,7 +500,13 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
             }
 
             if ($expectedValue !== null) {
-                $isCorrect = compareAnswers($textAnswer, $expectedValue);
+                if (usesBinarySubtractionStepsAnswer($task['variable_overrides'])) {
+                    $isCorrect = compareBinarySubtractionStepsAnswer($textAnswer, $expectedValue);
+                } else {
+                    $isCorrect = usesBinaryPairAnswer($task['variable_overrides'])
+                        ? compareBinaryPairAnswer($textAnswer, $expectedValue)
+                        : compareAnswers($textAnswer, $expectedValue);
+                }
                 $message = $isCorrect ? 'Richtig' : 'Falsch';
             }
         }
@@ -510,7 +514,13 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
 
     // Fallback if not structured properly
     if ($computedValue !== null && !$isCorrect && !$message) {
-        $isCorrect = compareAnswers($textAnswer, $computedValue);
+        if (usesBinarySubtractionStepsAnswer($task['variable_overrides'])) {
+            $isCorrect = compareBinarySubtractionStepsAnswer($textAnswer, $computedValue);
+        } else {
+            $isCorrect = usesBinaryPairAnswer($task['variable_overrides'])
+                ? compareBinaryPairAnswer($textAnswer, $computedValue)
+                : compareAnswers($textAnswer, $computedValue);
+        }
         $message = $isCorrect ? 'Richtig' : 'Falsch';
     }
     

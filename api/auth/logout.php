@@ -6,8 +6,7 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/middleware.php';
 
-configureApplicationSession();
-session_start();
+startApplicationSession();
 header('Content-Type: application/json');
 
 // Clear session

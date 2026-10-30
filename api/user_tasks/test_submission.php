@@ -21,6 +21,7 @@ set_error_handler(function($errno, $errstr, $errfile, $errline) {
 }, E_ALL);
 
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../components/quiz_binary_pair.php';
 
 header('Content-Type: application/json');
 
@@ -385,7 +386,13 @@ if ($taskType === 'single_choice' || $taskType === 'multiple_choice') {
         $isCorrect = false;
         $message = 'Keine Auswertung verfuegbar';
     } else {
-        $isCorrect = compareAnswers($textAnswer, $computedValue);
+        if (usesBinarySubtractionStepsAnswer($task['variable_overrides'])) {
+            $isCorrect = compareBinarySubtractionStepsAnswer($textAnswer, $computedValue);
+        } else {
+            $isCorrect = usesBinaryPairAnswer($task['variable_overrides'])
+                ? compareBinaryPairAnswer($textAnswer, $computedValue)
+                : compareAnswers($textAnswer, $computedValue);
+        }
         $message = $isCorrect ? 'Richtig' : 'Falsch';
     }
     

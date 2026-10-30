@@ -7,12 +7,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../../config/database.php';
 require_once __DIR__ . '/../../../config/session.php';
+require_once __DIR__ . '/../../../components/task_order.php';
 
 // Manual authentication check
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
     http_response_code(403);
@@ -59,6 +57,7 @@ try {
     
     // Start transaction
     $conn->begin_transaction();
+    lockAssignmentTaskOrder($conn, (int)$assignmentId);
 
     if ($hasTargetSemester) {
         registerAssignmentSemester($conn, $targetSemester);
@@ -112,7 +111,7 @@ try {
     }
     
     // Get all tasks from original assignment
-    $stmt = $conn->prepare('SELECT * FROM tasks WHERE assignment_id = ? ORDER BY position ASC');
+    $stmt = $conn->prepare('SELECT * FROM tasks WHERE assignment_id = ? ORDER BY position ASC, id ASC');
     $stmt->bind_param('i', $assignmentId);
     $stmt->execute();
     $tasksResult = $stmt->get_result();
@@ -157,6 +156,8 @@ try {
     }
 
     cloneAssignmentFiles($conn, (int)$assignmentId, $newAssignmentId, $taskIdMap);
+    lockAssignmentTaskOrder($conn, (int)$newAssignmentId);
+    normalizeTaskPositions($conn, (int)$newAssignmentId);
     
     // Commit transaction
     $conn->commit();

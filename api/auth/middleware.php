@@ -10,10 +10,7 @@ require_once __DIR__ . '/../../config/session.php';
  * Check if user is logged in
  */
 function requireAuth() {
-    if (session_status() === PHP_SESSION_NONE) {
-        configureApplicationSession();
-        session_start();
-    }
+    startApplicationSession();
     
     if (!isset($_SESSION['user_id'])) {
         jsonResponse(['ok' => false, 'error' => 'Authentication required'], 401);
@@ -228,10 +225,7 @@ function requireAdminOwnedTask(mysqli $conn, int $taskId, ?array $admin = null):
  * Get current user (if logged in)
  */
 function getCurrentUser() {
-    if (session_status() === PHP_SESSION_NONE) {
-        configureApplicationSession();
-        session_start();
-    }
+    startApplicationSession();
     
     if (!isset($_SESSION['user_id'])) {
         return null;
@@ -250,10 +244,7 @@ function getCurrentUser() {
  * Check if user is logged in (boolean)
  */
 function isLoggedIn() {
-    if (session_status() === PHP_SESSION_NONE) {
-        configureApplicationSession();
-        session_start();
-    }
+    startApplicationSession();
     return isset($_SESSION['user_id']);
 }
 
@@ -261,9 +252,6 @@ function isLoggedIn() {
  * Check if user is admin (boolean)
  */
 function isAdmin() {
-    if (session_status() === PHP_SESSION_NONE) {
-        configureApplicationSession();
-        session_start();
-    }
+    startApplicationSession();
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }

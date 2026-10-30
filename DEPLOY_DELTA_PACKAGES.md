@@ -72,6 +72,10 @@ Pakete duerfen nur Anwendungscode aus `api/`, `public/`, `config/` und `componen
 
 Hinweis: Da `config/database.php` nie mit ausgeliefert wird, darf dort kein neuer Anwendungscode (Funktionen, Helper) landen, von dem andere Dateien abhaengen. Solcher Code gehoert in eigene Dateien wie `config/session.php` (`configureApplicationSession()`), die direkt eingebunden werden.
 
-`config/session.php` muss vor dem ersten Aufruf von `configureApplicationSession()` geladen sein. Eine erst danach eingebundene Auth-Middleware reicht nicht aus. Der CLI-Test `php scripts/test_clone_session_bootstrap.php` prueft die beiden Klon-Endpoints mit einer isolierten `database.php` ohne Session-Helper, ohne die lokale Konfiguration oder Datenbank zu veraendern.
+`config/session.php` muss vor dem ersten Aufruf von `startApplicationSession()` geladen sein. Eine erst danach eingebundene Auth-Middleware reicht nicht aus. Alle Session-Einstiege verwenden diesen zentralen Start statt direkter `session_start()`-Aufrufe. Er setzt die PHP-Laufzeit auf 7200 Sekunden, prueft bei authentifizierten Anfragen das Inaktivitaetslimit und erneuert Zeitstempel sowie Cookie um 120 Minuten. Bestehende Sitzungen ohne Zeitstempel werden beim ersten Aufruf uebernommen. Login und Registrierung setzen den ersten Aktivitaetszeitstempel.
+
+`ini_set('session.gc_maxlifetime', ...)` steuert nur die PHP-Bereinigung dieses Requests. Serverweite Cronjobs oder andere Anwendungen im selben Session-Verzeichnis koennen Session-Dateien trotzdem frueher loeschen. Auf dem Server muss deshalb auch die tatsaechliche Aufbewahrung mindestens 7200 Sekunden betragen; bei vorzeitigen Logouts Session-Speicher und externe Bereinigungsregeln pruefen.
+
+Der Test `node scripts/test_session_lifetime.js` prueft Cookie-Erneuerung und Inaktivitaetsablauf mit einem isolierten PHP-Testserver. Der CLI-Test `php scripts/test_clone_session_bootstrap.php` prueft die beiden Klon-Endpoints mit einer isolierten `database.php` ohne Session-Helper, ohne die lokale Konfiguration oder Datenbank zu veraendern.
 
 Der erste Rollout der Delta-Funktion selbst erfolgt weiterhin ueber den normalen Beta-Copy mit anschliessendem **Hydrate Beta**. Danach koennen weitere Aenderungen direkt als Delta-Paket eingespielt werden.

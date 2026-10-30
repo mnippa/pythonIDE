@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/../../components/task_order.php';
 
 header('Content-Type: application/json');
 
@@ -315,14 +316,6 @@ if ($stmt->get_result()->num_rows === 0) {
     jsonResponse(['ok' => false, 'error' => 'Assignment not found'], 404);
 }
 
-if ($position === null || $position < 1) {
-    $stmt = $conn->prepare('SELECT COALESCE(MAX(position), 0) AS max_pos FROM tasks WHERE assignment_id = ?');
-    $stmt->bind_param('i', $assignmentId);
-    $stmt->execute();
-    $maxPos = (int)$stmt->get_result()->fetch_assoc()['max_pos'];
-    $position = $maxPos + 1;
-}
-
 if ($maxAttempts < 1) {
     $maxAttempts = 1;
 }
@@ -364,12 +357,20 @@ $testCases = $testCases === null || is_string($testCases) ? $testCases : '';
 $solutionCode = $solutionCode === null || is_string($solutionCode) ? $solutionCode : '';
 $randomizerCode = $randomizerCode === null || is_string($randomizerCode) ? $randomizerCode : '';
 
+$conn->begin_transaction();
+try {
+lockAssignmentTaskOrder($conn, $assignmentId);
+requireAssignmentUnlocked($conn, $assignmentId);
+$requestedPosition = $position;
+$position = count(normalizeTaskPositions($conn, $assignmentId)) + 1;
+
 $stmt = $conn->prepare(
     'INSERT INTO tasks (assignment_id, title, description, position, max_attempts, iterations_count, show_solution, show_solution_code, manual_review_required, min_keywords_required, problem_type, code_template, hint1, hint2, hint3, stoff, expected_output, test_cases, solution_code, task_type, task_text, question_text, image_url, correct_answer, variable_overrides, randomizer_code, folderstructure, allowDownload, allow_code_ui_web_edit, task_difficulty, file_submission_allowed_types, file_submission_max_size_bytes, uml_model, uml_solution, uml_template, hint, generator_code)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 if (!$stmt) {
+    $conn->rollback();
     error_log('Prepare error: ' . $conn->error);
     jsonResponse(['ok' => false, 'error' => 'Database prepare error'], 500);
 }
@@ -450,6 +451,7 @@ $bindResult = @$stmt->bind_param(
 );
 
 if (!$bindResult) {
+    $conn->rollback();
     error_log('Bind error: ' . $stmt->error . ' | Type string: ' . $types);
     jsonResponse(['ok' => false, 'error' => 'Database bind error: ' . $stmt->error], 500);
 }
@@ -494,6 +496,12 @@ if ($stmt->execute()) {
         }
     }
 
+    $positions = normalizeTaskPositions(
+        $conn, $assignmentId, $taskId,
+        $requestedPosition !== null && $requestedPosition > 0 ? $requestedPosition : $position
+    );
+    $position = $positions[$taskId];
+    $conn->commit();
     jsonResponse([
         'ok' => true,
         'id' => $taskId,
@@ -513,6 +521,12 @@ if ($stmt->execute()) {
         ]
     ], 201);
 } else {
+    $conn->rollback();
     error_log('Execute error: ' . $stmt->error);
     jsonResponse(['ok' => false, 'error' => 'Failed to create task: ' . $stmt->error], 500);
+}
+} catch (Throwable $error) {
+    $conn->rollback();
+    error_log('Task creation failed: ' . $error->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'Failed to create task'], 500);
 }

@@ -1,10 +1,7 @@
 <?php
 require_once __DIR__ . '/../api/auth/middleware.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-  configureApplicationSession();
-  session_start();
-}
+startApplicationSession();
 
 if (!isset($_SESSION['user_id'])) {
   header('Location: login.php');

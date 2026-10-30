@@ -1,13 +1,13 @@
 # DB + UML Umsetzungscheckliste (Schrittweise)
 
-Status: Arbeitsdokument
-Strategie: Erst DB Ende-zu-Ende (Projekt + Assignment), dann UML Ende-zu-Ende.
+Status: Arbeitsdokument, an den aktuellen Code- und Aufgabenstand angepasst
+Strategie: Den DB-Designer als ersten Ende-zu-Ende-Pilot für Projekte und Aufgaben absichern. UML-Projekt- und Aufgabenmodus verwenden dieselben fachlichen Prinzipien, bleiben aber getrennte Modi.
 
 ## 1) Leitlinien (fix vor Umsetzung)
 
 - Entkopplung pro Typ: `code`, `gui`, `db`, `uml` jeweils eigener Renderer/Controller.
 - Keine Cross-Mode-Logik in Einzel-Features (kein verborgenes `if html|mixed` fuer DB/UML).
-- Assignment-Typen bleiben explizit getrennt (`db_model`, spaeter `uml_model`, etc.).
+- Assignment-Typen bleiben explizit getrennt (`db_model`, `uml`).
 - Jede Phase hat ein Go/No-Go Gate mit klaren Abnahmekriterien.
 
 ---
@@ -16,10 +16,10 @@ Strategie: Erst DB Ende-zu-Ende (Projekt + Assignment), dann UML Ende-zu-Ende.
 
 1. Phase A: Architektur-Fixierung und harte Trennung der Modi
 2. Phase B: DB-Projekteditor komplett
-3. Phase C: DB-Assignments komplett
+3. Phase C: DB-Assignments mit lernorientiertem Struktur-Checker
 4. Phase D: DB-Haertung (Regression, Import/Export, UX)
-5. Phase E: UML-Projekteditor grafisch (MVP)
-6. Phase F: UML-Assignments (MVP)
+5. Phase E: UML-Projekteditor als eigener Projektmodus
+6. Phase F: UML-Assignments mit demselben Feedback-Grundprinzip
 7. Phase G: Vereinheitlichung, Doku, Betriebsreife
 
 ---
@@ -63,16 +63,17 @@ Container-Regeln (Projektmodus):
 | `code_reading` | Quiz Renderer (Code Reading) | `api/user_tasks/submit_quiz.php` | iterativ bis `passed`/`failed` | `user_tasks.text_answer`, `iteration_values` |
 | `single_choice`, `multiple_choice` | Quiz Renderer (Choice) | `api/user_tasks/submit_quiz.php` | `passed`/`failed`/`in_progress` | `selected_options` |
 | `free_text` | Quiz Renderer (Text) | `api/user_tasks/submit_quiz.php` | `passed`/`failed`/`in_progress` | `text_answer` |
-| `db_model` | Quiz Renderer (derzeit Text-MVP, spaeter DB-Canvas) | `api/user_tasks/submit_quiz.php`, `api/user_tasks/test_submission.php` | `submitted` (manual review) | `text_answer` (MVP), spaeter Struktur-JSON |
-| `uml_model` (geplant) | eigener UML Renderer | eigener Check/Submit-Flow oder Quiz-Erweiterung | vorauss. `submitted` + optional Auto-Check | `text_answer` oder `uml_model` JSON |
+| `db_model` | DB-Modell-Canvas | `api/user_tasks/submit_quiz.php`, `api/user_tasks/test_submission.php` | `submitted` (aktuell manuelle Bewertung) | JSON in `text_answer` |
+| `uml` | UML-Canvas (`UmlRenderer`) | Quiz-Submit/Test-Flow | `submitted` (aktuell manuelle Bewertung) | UML-JSON in `text_answer` |
 
 Statusregeln (Assignment):
 - `submitted` gilt als abgeschlossen fuer Assignment-Fortschritt, aber nicht als fachlich `passed`.
-- `db_model` und spaeter `uml_model` bleiben review-faehig, ohne Code/UI-Typen zu beeinflussen.
+- `db_model` und `uml` bleiben review-faehig, ohne Code/UI-Typen zu beeinflussen.
 
-Offene Architektur-Entscheidungen fuer A2/B1:
-- Ob `db_model` kurzfristig bei Text-MVP bleibt oder direkt auf Struktur-Canvas wechselt.
-- Ob `uml_model` als eigener Submit-Endpunkt kommt oder in bestehende Quiz-Submit-Logik integriert wird.
+Aktueller Stand:
+- Beide Aufgaben-Canvas existieren bereits. Die Matrix beschreibt den implementierten Einstieg, nicht die noch offene Bewertungslogik.
+- `db_model` und `uml` sind getrennte Aufgabentypen; `uml_model` ist derzeit kein eigener Aufgaben-Typ.
+- Projekt- und Aufgabenmodus duerfen neutrale Modellierungsbausteine wiederverwenden, aber weder Persistenz noch Bewertung unbemerkt miteinander koppeln.
 
 ### A2. Frontend-Struktur absichern
 - [x] Je Mode separaten Entry-Handler definieren (code/gui/db/uml)
@@ -84,6 +85,21 @@ Abnahme:
 
 Gate A -> B:
 - [x] Architektur reviewt und freigegeben.
+
+### A3. Vertrag fuer lernorientierte Modell-Checks
+- [ ] Bewertungsrubrik speichert Soll-Elemente mit stabilen internen IDs/Rollen, getrennt von den im Diagramm angezeigten Namen.
+- [ ] Namen von Klassen/Tabellen und Attributen/Feldern sind standardmaessig keine exakten Muss-Kriterien.
+- [ ] Der Checker ordnet Studentenelemente anhand von Struktur, Beziehungen, Datentypen und Schluesselrollen zu; Namen duerfen hoechstens ein konfigurierbares Zusatzsignal sein.
+- [ ] Bei mehrdeutiger Zuordnung wird kein falsches definitives Durchfallen erzeugt: Check als unklar markieren und manuelle Bewertung anbieten.
+- [ ] Feedback nennt die konkrete fehlerhafte Studentenstruktur und erklaert die fachliche Regel, ohne Soll-Namen, IDs, Referenzmodell oder Loesungswerte offenzulegen.
+- [ ] Feedback ist in unabhaengige Bereiche gegliedert: Elemente, Attribute/Felder, Datentypen, Schluessel/Referenzen, Kardinalitaeten und abgeleitete Werte.
+
+Abnahmekriterien:
+- [ ] Umbenannte, fachlich passende Tabellen/Klassen und Felder koennen bestehen.
+- [ ] Eine falsche Kardinalitaet wird an der betroffenen Beziehung lokalisiert und fachlich erklaert, z. B. welche Seite genau ein bzw. mehrere Elemente erlaubt.
+- [ ] Fehlende, zusaetzliche oder fachlich unpassende Elemente werden getrennt rueckgemeldet; Feedback verrät nicht die erwarteten Namen.
+- [ ] Gleiche Modelle mit anderer Reihenfolge oder anderen Namen erhalten bei gleicher Struktur dasselbe fachliche Ergebnis.
+- [ ] Mehrdeutige Modelle werden nachvollziehbar zur manuellen Pruefung markiert.
 
 ---
 
@@ -135,28 +151,37 @@ Smoke-Test (2026-07-28):
 ## Phase C: DB-Assignments komplett
 
 ### C1. Authoring (Admin)
-- [ ] `db_model` Task-Form finalisieren (Pflichtfelder, Vorlagen, Hinweise)
-- [ ] Sollstruktur-Regeln fuer Bewertung festlegen (was ist strikt, was tolerant)
-- [ ] Import/Export fuer `db_model` validieren
+- [ ] `db_model` Task-Form fuer eine UML-zu-relationales-Schema-Aufgabe vervollstaendigen: Aufgabenbeschreibung/Quellmodell, erlaubte Datentypfamilien, Schluesselregeln und Bewertungsrubrik.
+- [ ] Rubrikeditor von der studentischen Loesungsansicht trennen; erwartete Elemente und Rollen duerfen nicht in Feedback oder Student-API-Daten landen.
+- [ ] Pro Rubrikregel festlegen, ob sie strikt, tolerant oder manuell zu bewerten ist. Dazu gehoeren alternative Schluessel, Datentypfamilien und berechnete/gespeicherte Attribute.
+- [ ] Akzeptierte Namensvarianten optional als Lehrkraft-Metadaten pflegen; keine automatische Ablehnung allein wegen abweichender Bezeichnungen.
+- [ ] Import/Export von Aufgaben samt Rubrik validieren und gegen ungewollte Offenlegung absichern.
 
 Abnahme:
-- [ ] Lehrperson kann DB-Aufgabe ohne JSON-Handarbeit erstellen.
+- [ ] Lehrperson kann eine DB-Aufgabe samt Bewertungsrubrik ohne manuelle JSON-Bearbeitung erstellen oder gezielt eine validierte Vorlage verwenden.
 
 ### C2. Studentenansicht
-- [ ] DB-Task-Renderer finalisieren (MVP: Text + Strukturbezug oder Canvas)
-- [ ] Speichern von Zwischenstand (Draft) sichern
-- [ ] Finale Abgabe mit Statusfluss absichern
+- [ ] Vorhandenen `db_model`-Canvas fuer Tabellen, Felder, Datentypen, PK und FK als Antwort auf ein UML-Quellmodell einsetzen.
+- [ ] Studenten duerfen fachlich passende eigene Namen fuer Tabellen und Felder waehlen; Soll-Namen werden nicht als UI-Vorgabe eingeblendet.
+- [ ] Zwischenstand und erneutes Oeffnen pruefen; Abgabe bleibt bis zur Bewertung als `submitted` review-faehig.
+- [ ] Aufgabenmodus darf DB-Projektdateien und Projekt-SQL nicht veraendern.
 
 Abnahme:
-- [ ] Studierende koennen Aufgabe bearbeiten, speichern, abgeben, wieder einsehen.
+- [ ] Studierende koennen ein relationales Schema erstellen, speichern, erneut oeffnen und abgeben.
 
 ### C3. Bewertung
-- [ ] Auto-Check fuer Struktur (Tabellen/Felder/PK/FK)
-- [ ] Teilfeedback (z. B. Tabellen, Felder, Beziehungen)
-- [ ] Manueller Review-Fallback bleibt aktiv
+- [ ] Soll- und Ist-Modell anhand interner fachlicher Rollen statt exakter sichtbarer Namen abgleichen.
+- [ ] Zuordnung bei Umbenennungen deterministisch pruefen: Graphstruktur, Attribute/Feldrollen, Datentypen und Schluesselbeziehungen; Ambiguitaet explizit erkennen.
+- [ ] Beziehungen, PK/FK, Kardinalitaeten und Regelverletzungen einzeln pruefen.
+- [ ] Teilfeedback erklaert fachliche Fehler, etwa eine falsche Kardinalitaet auf der konkreten Seite der studentischen Beziehung, ohne Soll-Namen zu verraten.
+- [ ] Abgeleitete Werte wie Positions-/Gesamtsummen gemaess Rubrik als berechnet oder explizit gespeichert akzeptieren.
+- [ ] Manuellen Review-Fallback bei Mehrdeutigkeit oder fachlich vertretbarer, nicht hinterlegter Alternative beibehalten.
+- [ ] Automatische Teilchecks sind formative Rueckmeldung; erst eine explizite Abschlussregel darf den Aufgabenstatus auf `passed` oder `failed` setzen.
 
 Abnahme:
-- [ ] Ergebnis ist nachvollziehbar und reproduzierbar.
+- [ ] Gleiche Modellstruktur ergibt reproduzierbare Checks; Studentennamen und Anordnungsreihenfolge allein veraendern das Ergebnis nicht.
+- [ ] Jeder Fehler ist einer Regel und einem sichtbaren Element zugeordnet und mit einer lernfoerdernden Erklaerung versehen.
+- [ ] Kein Feedback und keine Student-Antwort enthaelt Soll-Namen oder die verdeckte Referenzloesung.
 
 Gate C -> D:
 - [ ] DB-Ende-zu-Ende (Admin + Student + Bewertung) abgeschlossen.
@@ -166,9 +191,12 @@ Gate C -> D:
 ## Phase D: DB-Haertung
 
 ### D1. Tests
-- [ ] API-Tests fuer DB-Submit/Status
-- [ ] UI-Smoke fuer Projektmodus und Assignmentmodus
-- [ ] Regressionsliste fuer bekannte Kantenfaelle
+- [ ] Checker-Tests fuer Umbenennungen, Reihenfolge, fehlende/zusaetzliche Elemente, Typvarianten, PK/FK und falsche Kardinalitaeten.
+- [ ] Negativtests fuer Feedback-Leaks (Soll-Namen, interne Rubrik-IDs und Loesungsmodell).
+- [ ] Tests fuer mehrdeutige Zuordnung und manuellen Review-Fallback.
+- [ ] API-Tests fuer Draft, Check, Abgabe und Statusfluss.
+- [ ] UI-Smoke fuer DB-Projektmodus und DB-Aufgabenmodus; sicherstellen, dass ihre Speicherungen getrennt bleiben.
+- [ ] Regressionsliste fuer bekannte Kantenfaelle.
 
 ### D2. Betrieb
 - [ ] Performance-Smoketest (groessere Modelle)
@@ -210,19 +238,19 @@ Gate E -> F:
 ## Phase F: UML-Assignments (MVP)
 
 ### F1. Tasktyp und Authoring
-- [ ] `uml_model` Tasktyp einfuehren
-- [ ] Admin-Form und Import/Export erweitern
-- [ ] Aufgaben-Vorlagen fuer typische UML-Lernszenarien
+- [ ] Vorhandenen Aufgaben-Typ `uml` in Admin-Form, Import/Export und Testmodus durchgaengig authorbar machen.
+- [ ] UML-Rubrik mit stabilen Rollen und internen IDs analog zum DB-Checker definieren; sichtbare Klassennamen bleiben tolerant.
+- [ ] Aufgaben-Vorlagen fuer typische UML-Lernszenarien inklusive Beziehungen, Multiplizitaeten und Enum-Attributen ergaenzen.
 
 ### F2. Studenten-Renderer
-- [ ] UML-Canvas im Assignment
-- [ ] Zwischenstand speichern
-- [ ] Finale Abgabe + Statusfluss
+- [x] UML-Canvas im Assignment vorhanden.
+- [ ] Zwischenstand speichern und wiederherstellen Ende-zu-Ende absichern.
+- [ ] Finale Abgabe und Statusfluss absichern.
 
 ### F3. Bewertung
-- [ ] Strukturchecker (Klassen/Beziehungen/Kardinalitaet)
-- [ ] Teilfeedback
-- [ ] Manueller Review-Fallback
+- [ ] UML-Strukturchecker fuer Klassen, Attribute, Beziehungen, Rollen und Kardinalitaeten nach demselben Check-/Feedback-Vertrag umsetzen.
+- [ ] Teilfeedback erklaert die fachliche Wirkung einer falschen Multiplizitaet, ohne Soll-Bezeichner offenzulegen.
+- [ ] Mehrdeutige Zuordnung und manuelle Bewertung unterstuetzen.
 
 Abnahme:
 - [ ] UML-Aufgabe funktioniert Ende-zu-Ende.
@@ -274,8 +302,8 @@ Abnahme:
 ## 5) Startpunkt fuer den naechsten Schritt
 
 Empfehlung fuer den direkten Start:
-1. A1 Matrix finalisieren
-2. A2 Handler-Schnitt finalisieren
-3. B1 Schema/Version fuer `db_model.json` festzurren
-
-Wenn diese drei Punkte stehen, gehen wir in B2 und arbeiten den DB-Projekteditor kontrolliert von oben nach unten ab.
+1. A3 Bewertungsvertrag und Rubrikformat fuer DB/UML festlegen.
+2. C1 Admin-Authoring so gestalten, dass Lehrkraefte fachliche Rollen und Toleranzen ohne JSON-Handarbeit definieren koennen.
+3. C3 zunaechst mit der Aufgabe „UML-Klassendiagramm in relationales Schema umsetzen“ pilotieren.
+4. D1 mit Umbenennungs-, Kardinalitaets-, Mehrdeutigkeits- und Feedback-Leak-Tests abschliessen.
+5. Erst danach den UML-Projektmodus und den UML-Aufgaben-Checker als eigene Modi vervollstaendigen.

@@ -7,12 +7,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../../config/database.php';
 require_once __DIR__ . '/../../../config/session.php';
+require_once __DIR__ . '/../../../components/task_order.php';
 
 // Manual authentication check
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
     http_response_code(403);
@@ -52,6 +50,8 @@ try {
     
     // Start transaction
     $conn->begin_transaction();
+    lockAssignmentTaskOrder($conn, (int)$assignmentId);
+    requireAssignmentUnlocked($conn, (int)$assignmentId);
     
     // Get original task
     $stmt = $conn->prepare('SELECT * FROM tasks WHERE id = ? AND assignment_id = ?');
@@ -145,6 +145,8 @@ try {
     
     $stmt->close();
     
+    $positions = normalizeTaskPositions($conn, (int)$assignmentId);
+    $nextPosition = $positions[$newTaskId];
     // Commit transaction
     $conn->commit();
     

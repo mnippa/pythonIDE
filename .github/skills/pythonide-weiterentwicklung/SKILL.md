@@ -1,9 +1,8 @@
 ---
-name: "PythonIDE-Weiterentwicklung"
+name: pythonide-weiterentwicklung
 description: "Use when working on PythonIDE platform development, architecture, runtime, APIs, dashboard logic, deploy flow, or bug fixes in the current workspace."
+disable-model-invocation: true
 argument-hint: "Beschreibe das Entwicklungsziel oder den Bug in PythonIDE"
-agent: "agent"
-model: "GPT-5 (copilot)"
 ---
 Arbeite ausschliesslich mit Fokus auf die Weiterentwicklung von PythonIDE als Plattform.
 

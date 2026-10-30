@@ -1,9 +1,8 @@
 ---
-name: "PythonIDE-Task-Authoring"
+name: pythonide-task-authoring
 description: "Use when creating, revising, exporting, importing, or validating assignments and tasks for PythonIDE, including folder tasks and test-case design."
+disable-model-invocation: true
 argument-hint: "Beschreibe die Aufgabe oder das Authoring-Ziel"
-agent: "agent"
-model: "GPT-5 (copilot)"
 ---
 Arbeite ausschliesslich mit Fokus auf Task- und Assignment-Authoring fuer PythonIDE.
 

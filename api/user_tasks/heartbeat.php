@@ -7,10 +7,7 @@ require_once __DIR__ . '/../../config/session.php';
 
 header('Content-Type: application/json');
 
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

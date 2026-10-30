@@ -15,6 +15,7 @@ $files = [
     'api/admin/tasks/clone.php',
     'api/auth/middleware.php',
     'components/assignment_semesters.php',
+    'components/task_order.php',
     'config/session.php',
 ];
 $createdFiles = [];

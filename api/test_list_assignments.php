@@ -6,10 +6,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/session.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 // Manually set admin session
 $_SESSION['user_id'] = 1;

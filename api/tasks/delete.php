@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/../../components/task_order.php';
 
 header('Content-Type: application/json');
 
@@ -29,14 +30,26 @@ if (!$taskId) {
     jsonResponse(['ok' => false, 'error' => 'Task ID required'], 400);
 }
 
-requireAdminOwnedTask($conn, $taskId, $user);
+$task = requireAdminOwnedTask($conn, $taskId, $user);
 requireTaskAssignmentUnlocked($conn, $taskId);
 
+$conn->begin_transaction();
+try {
+lockAssignmentTaskOrder($conn, (int)$task['assignment_id']);
+requireTaskAssignmentUnlocked($conn, $taskId);
 $stmt = $conn->prepare('DELETE FROM tasks WHERE id = ?');
 $stmt->bind_param('i', $taskId);
 
 if ($stmt->execute()) {
+    normalizeTaskPositions($conn, (int)$task['assignment_id']);
+    $conn->commit();
     jsonResponse(['ok' => true, 'message' => 'Task deleted']);
 } else {
+    $conn->rollback();
+    jsonResponse(['ok' => false, 'error' => 'Failed to delete task'], 500);
+}
+} catch (Throwable $error) {
+    $conn->rollback();
+    error_log('Task deletion failed: ' . $error->getMessage());
     jsonResponse(['ok' => false, 'error' => 'Failed to delete task'], 500);
 }

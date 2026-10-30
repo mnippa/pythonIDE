@@ -3,6 +3,7 @@
 // Imports
 import { initOutputPlotTabs } from './output-plot-tabs.js';
 import { guiBridge } from './gui-bridge.js';
+import { createInternalClipboard } from './editor-internal-clipboard.js?v=20261027b';
 
 function ensureInputModalStyles() {
   if (document.getElementById('pyide-input-modal-styles')) {
@@ -1048,6 +1049,8 @@ if "idegui" not in sys.modules:
     
     // Allow context menu (copy/paste) only in projects.php
     const isProjectsPage = window.location.pathname.includes('projects.php');
+    const isTestMode = window.testMode === true;
+    const internalClipboard = !isProjectsPage && !isTestMode ? createInternalClipboard() : null;
     
     const editor = monaco.editor.create(document.getElementById("editor-container"), {
       value: `# Hier Python Code`,
@@ -1056,30 +1059,9 @@ if "idegui" not in sys.modules:
       automaticLayout: true,
       lightbulb: { enabled: false }, // kein "No quick fixes available"
       contextmenu: isProjectsPage, // Allow context menu in projects.php only
-    });
+    }, internalClipboard?.services);
     
-    // Block copy/paste only in assignment_editor (student checking)
-    // Allow copy/paste in projects.php (personal projects)
-    const isTestMode = window.testMode === true;
-    
-    if (!isProjectsPage && !isTestMode) {
-      const editorDomNode = editor.getDomNode();
-      if (editorDomNode) {
-        // Block paste only - copy/cut still work
-        editorDomNode.addEventListener('paste', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }, true);
-      }
-      
-      // Also prevent paste via Monaco API
-      editor.onDidPaste(() => {
-        const model = editor.getModel();
-        if (model) {
-          editor.trigger('keyboard', 'undo', null);
-        }
-      });
-    }
+    internalClipboard?.install(editor, monaco);
     // Copy/paste fully allowed in projects.php and test mode
     
     // Store reference globally for theme changes AND external modules

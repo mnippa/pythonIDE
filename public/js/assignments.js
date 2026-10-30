@@ -263,10 +263,6 @@ function isAdminUserTestMode() {
   return window.ADMIN_USER_TEST_VIEW === true;
 }
 
-function shouldPersistTaskProgress() {
-  return !isAdminTaskLabMode() && window.TEST_MODE_NO_PERSIST !== true;
-}
-
 function isAdminAssignmentTestMode() {
   if (isAdminTaskLabMode() || isAdminUserTestMode()) return true;
   if (window.ADMIN_ASSIGNMENT_TEST === true) return true;
@@ -276,40 +272,6 @@ function isAdminAssignmentTestMode() {
 
 function shouldShowTaskDownloadButton(task) {
   return !!task && String(task.task_type || '') === 'code';
-}
-
-function isTaskEffectivelyLockedForEdit(task) {
-  if (!task) return true;
-  return !!(task.assignment_locked === true || task.locked === true || task.effective_locked === true);
-}
-
-window.isTaskEffectivelyLockedForEdit = isTaskEffectivelyLockedForEdit;
-
-function updateTaskLockButton(task) {
-  const lockBtn = $('task-lock-btn');
-  if (!lockBtn) return;
-  if (!isAdminTaskLabMode()) {
-    lockBtn.style.display = 'none';
-    return;
-  }
-
-  lockBtn.style.display = 'inline-flex';
-  const assignmentLocked = !!(task && task.assignment_locked === true);
-  const taskLocked = !!(task && task.locked === true);
-  const effectiveLocked = isTaskEffectivelyLockedForEdit(task);
-
-  if (assignmentLocked) {
-    lockBtn.textContent = '⛔';
-    lockBtn.disabled = true;
-    lockBtn.title = 'Assignment ist gesperrt. Task-Lock kann erst nach Assignment-Entsperrung geändert werden.';
-    return;
-  }
-
-  lockBtn.disabled = false;
-  lockBtn.textContent = taskLocked ? '🔒' : '🔓';
-  lockBtn.title = effectiveLocked
-    ? 'Task gesperrt - klicken zum Entsperren'
-    : 'Task entsperrt - klicken zum Sperren';
 }
 
 function updateSaveButtonTooltip() {
@@ -404,37 +366,6 @@ function applyUserTestEditorLockState(task) {
   updateUserTestLockButton();
 }
 
-function applyTaskLockStateInAdminTest(task) {
-  if (!isAdminTaskLabMode()) return;
-  const editor = window.editorInstance;
-  const effectiveLocked = isTaskEffectivelyLockedForEdit(task);
-
-  if (editor) {
-    const fileReadOnly = Number(window.currentFile?.taskId) === Number(task?.id)
-      && window.currentFile?.readOnly === true;
-    editor.updateOptions({ readOnly: fileReadOnly });
-  }
-
-  const saveTaskBtn = $('save-task-btn');
-  const undoBtn = $('undo-btn');
-  const redoBtn = $('redo-btn');
-  if (saveTaskBtn) {
-    saveTaskBtn.disabled = effectiveLocked;
-    saveTaskBtn.style.opacity = effectiveLocked ? '0.5' : '1';
-    saveTaskBtn.style.cursor = effectiveLocked ? 'not-allowed' : 'pointer';
-  }
-  [undoBtn, redoBtn].forEach((btn) => {
-    if (!btn) return;
-    btn.disabled = false;
-    btn.style.opacity = '1';
-    btn.style.cursor = 'pointer';
-  });
-
-  updateAttemptsCounter(task);
-
-  updateTaskLockButton(task);
-}
-
 function syncAssignmentStatusInState(assignmentId, assignmentStatus) {
   const row = (assignmentState.assignments || []).find((a) => Number(a.assignment_id) === Number(assignmentId));
   if (!row) return;
@@ -467,7 +398,7 @@ async function setAdminUserTestTaskStatus(newStatus, resetChecks = true, fullRes
   assignmentState.taskAttempts[taskId] = Number(response.attempts_after || 0);
 
   if (['passed', 'failed', 'submitted'].includes(String(assignmentState.taskStatuses[taskId]))) {
-    assignmentState.taskCompletedAt[taskId] = response.completed_at || toMysqlLocalDateTime();
+    assignmentState.taskCompletedAt[taskId] = response.completed_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
   } else {
     delete assignmentState.taskCompletedAt[taskId];
   }
@@ -532,7 +463,9 @@ function refreshCurrentTaskToolbarForStatus(task) {
       submittedInfo.classList.add('show');
       submittedStatus.className = `status-${status}`;
       const completedAt = assignmentState.taskCompletedAt[task.id];
-      submittedDate.textContent = completedAt ? formatMysqlLocalDateTime(completedAt) : '-';
+      submittedDate.textContent = completedAt ? new Date(completedAt).toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      }) : '-';
       updateSubmittedMeta(task);
     }
   } else {
@@ -592,19 +525,6 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
-}
-
-function toMysqlLocalDateTime(date = new Date()) {
-  const pad = value => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function formatMysqlLocalDateTime(value) {
-  const date = new Date(String(value).replace(' ', 'T'));
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('de-DE', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  });
 }
 
 /**
@@ -992,12 +912,12 @@ async function confirmTaskSwitchWithDrafts(nextTaskId) {
 }
 
 async function requestJson(url, options = {}) {
-  const isNoPersistMode = !shouldPersistTaskProgress();
+  const isNoPersistMode = window.TEST_MODE_NO_PERSIST === true;
   if (isNoPersistMode) {
     // Intercept WRITE operations in test mode - prevent DB writes
     if (url.includes('/api/user_tasks/update.php') || url.includes('/api/user_tasks/heartbeat.php') || url.includes('/api/user_tasks/submit.php')) {
       // Just return success without writing to DB
-      return { ok: true, simulated: true };
+      return { ok: true };
     }
     // Allow READ operations to hit the real API
   }
@@ -1056,7 +976,7 @@ function statusClass(status) {
  * Track activity on current task: updates last activity time and sends heartbeats
  */
 function startActivityTracking(taskId) {
-  if (!taskId || !shouldPersistTaskProgress()) return;
+  if (!taskId) return;
   logActivityDebug('startActivityTracking', { taskId });
 
   // Always stop any existing tracking first (removes old listeners + interval)
@@ -1170,7 +1090,6 @@ function stopActivityTracking(taskId) {
  * @param {boolean} isActive - Whether user is currently active
  */
 async function sendActivityHeartbeat(taskId, deltaSeconds, isActive) {
-  if (!shouldPersistTaskProgress()) return;
   logActivityDebug('sendActivityHeartbeat', { taskId, deltaSeconds, isActive });
   try {
     const response = await fetch(getUserTasksHeartbeatUrl(), {
@@ -2487,7 +2406,7 @@ async function loadSingleAssignment(assignmentId) {
     }
     
     // Load persisted user_tasks progress unless this view explicitly disables persistence.
-    if (shouldPersistTaskProgress()) {
+    if (window.TEST_MODE_NO_PERSIST !== true) {
       try {
         const testUserParam = getTestUserQueryParam();
         const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${assignmentId}${testUserParam}`);
@@ -2556,7 +2475,7 @@ async function loadAssignments() {
         assignmentState.tasksByAssignment[item.assignment_id] = tasksRes.tasks || [];
         
         // Load persisted user_tasks progress unless this view explicitly disables persistence.
-        if (shouldPersistTaskProgress()) {
+        if (window.TEST_MODE_NO_PERSIST !== true) {
           try {
             const testUserParam = getTestUserQueryParam();
             const userTasksRes = await requestJson(`../api/user_tasks/get.php?assignment_id=${item.assignment_id}${testUserParam}`);
@@ -3011,7 +2930,6 @@ async function loadSavedCode(taskId) {
       return normalizeLegacyEscapedCode(cachedTaskAnswer.current_code);
     }
 
-    if (!shouldPersistTaskProgress()) return null;
     const testUserParam = getTestUserQueryParam();
     const response = await requestJson(`../api/user_tasks/get.php?task_id=${taskId}${testUserParam}`);
     if (response && response.task && response.task.current_code) {
@@ -3100,13 +3018,9 @@ async function refreshCurrentTaskFromAPI() {
       
       console.log('[Task Refresh] Task refreshed successfully:', {
         taskId: updatedTask.id,
-        taskLocked: updatedTask.locked,
-        assignmentLocked: updatedTask.assignment_locked,
         hasSolution: !!updatedTask.solution_code,
         hasTestCases: !!updatedTask.test_cases
       });
-      applyTaskLockStateInAdminTest(updatedTask);
-      updateTaskLockButton(updatedTask);
       return true;
     }
   } catch (err) {
@@ -3661,7 +3575,6 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   const tasks = assignmentState.tasksByAssignment[assignmentId] || [];
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return;
-  updateTaskLockButton(task);
 
   const canSwitch = await confirmTaskSwitchWithDrafts(taskId);
   if (!canSwitch) {
@@ -3915,7 +3828,15 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
       // Format date: DD.MM.YYYY HH:MM
       const completedAt = assignmentState.taskCompletedAt[task.id];
       if (completedAt) {
-        submittedDate.textContent = formatMysqlLocalDateTime(completedAt);
+        const date = new Date(completedAt);
+        const formatted = date.toLocaleString('de-DE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        submittedDate.textContent = formatted;
       } else {
         submittedDate.textContent = '-';
       }
@@ -4011,8 +3932,6 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   }
 
   applyUserTestEditorLockState(task);
-  applyTaskLockStateInAdminTest(task);
-  updateTaskLockButton(task);
 }
 
 function updateAttemptsCounter(task) {
@@ -4172,14 +4091,6 @@ async function saveCode(options = {}) {
   }
 
   const code = editor.getValue();
-  if (isAdminTaskLabMode()) {
-    await refreshCurrentTaskFromAPI();
-    if (isTaskEffectivelyLockedForEdit(assignmentState.currentTask)) {
-      alert('Dieser Task ist gesperrt. Bitte zuerst entsperren.');
-      return false;
-    }
-  }
-
   const saveTaskBtn = $('save-task-btn');
   const taskId = task.id;
 
@@ -4431,7 +4342,7 @@ async function saveCode(options = {}) {
       task_id: taskId,
       current_code: code,
       hints_revealed: assignmentState.hintsRevealed[taskId] || [],
-      started_at: toMysqlLocalDateTime(new Date(assignmentState.taskStartTimes[taskId] || Date.now()))
+      started_at: new Date(assignmentState.taskStartTimes[taskId] || Date.now()).toISOString().slice(0, 19).replace('T', ' ')
     };
 
     if (setStatus) {
@@ -4507,7 +4418,6 @@ async function incrementRunCount(taskId) {
     }
 
     console.log('[RUN_COUNT] Incrementing run count - Payload:', payload);
-    if (!shouldPersistTaskProgress()) return;
     const response = await requestJson(getUserTasksUpdateUrl(), {
       method: 'POST',
       body: JSON.stringify(payload)
@@ -5271,7 +5181,7 @@ async function submitTask() {
   if (manualReviewTask) {
     await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
-    if (shouldPersistTaskProgress()) {
+    if (window.TEST_MODE_NO_PERSIST !== true) {
       await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
         body: JSON.stringify({
@@ -5286,7 +5196,7 @@ async function submitTask() {
     flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     const nowSubmitted = new Date();
-    assignmentState.taskCompletedAt[task.id] = toMysqlLocalDateTime(nowSubmitted);
+    assignmentState.taskCompletedAt[task.id] = nowSubmitted.toISOString().slice(0, 19).replace('T', ' ');
     editor.updateOptions({ readOnly: true });
     updateTaskStatusDisplay(task);
     updateSubmittedMeta(task);
@@ -5305,7 +5215,7 @@ async function submitTask() {
     await saveCode({ setStatus: false, persist: !isAdminTaskLabMode() });
     const submissionComment = getCurrentSubmissionComment(task.id);
     // Submit task for manual review
-    if (shouldPersistTaskProgress()) {
+    if (window.TEST_MODE_NO_PERSIST !== true) {
       await requestJson(getUserTasksUpdateUrl(), {
         method: 'POST',
         body: JSON.stringify({
@@ -5319,7 +5229,7 @@ async function submitTask() {
     flushHeartbeat(task.id);
     stopActivityTracking(task.id);
     const nowNoTest = new Date();
-    assignmentState.taskCompletedAt[task.id] = toMysqlLocalDateTime(nowNoTest);
+    assignmentState.taskCompletedAt[task.id] = nowNoTest.toISOString().slice(0, 19).replace('T', ' ');
     editor.updateOptions({ readOnly: true });
     [$('check-btn'), $('submit-btn'), $('save-task-btn'), $('undo-btn'), $('redo-btn'), $('attempts-counter')].forEach(el => { if (el) el.style.display = 'none'; });
     const siInfo = $('submitted-info');
@@ -7225,7 +7135,7 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
     
     // Store completion timestamp
     const now = new Date();
-    assignmentState.taskCompletedAt[task.id] = toMysqlLocalDateTime(now);
+    assignmentState.taskCompletedAt[task.id] = now.toISOString().slice(0, 19).replace('T', ' ');
 
     // Lock editor after successful submission
     const editor = window.editorInstance;
@@ -7280,7 +7190,7 @@ async function processValidationResult(result, task, outputEl, isSubmission = fa
     
     // Store completion timestamp
     const now = new Date();
-    assignmentState.taskCompletedAt[task.id] = toMysqlLocalDateTime(now);
+    assignmentState.taskCompletedAt[task.id] = now.toISOString().slice(0, 19).replace('T', ' ');
 
     // Lock editor after final failed submission
     const editor = window.editorInstance;
@@ -7376,7 +7286,6 @@ function bindAssignmentsEvents() {
   const backToListBtn = $('back-to-list-btn');
   const adminResetTaskBtn = $('admin-reset-task-btn');
   const userTestLockBtn = $('user-test-lock-btn');
-  const taskLockBtn = $('task-lock-btn');
   const adminStatusGreyBtn = $('admin-status-grey-btn');
   const adminStatusYellowBtn = $('admin-status-yellow-btn');
   const adminStatusGreenBtn = $('admin-status-green-btn');
@@ -7417,52 +7326,6 @@ function bindAssignmentsEvents() {
     userTestLockBtn.style.display = 'inline-flex';
     updateUserTestLockButton();
   }
-
-  if (taskLockBtn && isAdminTaskLabMode()) {
-    taskLockBtn.style.display = 'inline-flex';
-  }
-
-  taskLockBtn?.addEventListener('click', async () => {
-    if (!isAdminTaskLabMode()) return;
-    const task = assignmentState.currentTask;
-    if (!task) return;
-
-    if (task.assignment_locked === true) {
-      alert('Assignment ist gesperrt. Erst Assignment entsperren, dann Task entsperren.');
-      return;
-    }
-
-    const nextLocked = !(task.locked === true);
-    const confirmText = nextLocked
-      ? `Task "${task.title}" wirklich sperren?`
-      : `Task "${task.title}" wirklich entsperren?`;
-    if (!window.confirm(confirmText)) return;
-
-    taskLockBtn.disabled = true;
-    try {
-      await requestJson('../api/tasks/update.php', {
-        method: 'POST',
-        body: JSON.stringify({ id: task.id, locked: nextLocked })
-      });
-
-      task.locked = nextLocked;
-      task.effective_locked = !!(task.assignment_locked || task.locked);
-      updateTaskLockButton(task);
-      applyTaskLockStateInAdminTest(task);
-
-      const tasks = assignmentState.tasksByAssignment[assignmentState.currentAssignmentId] || [];
-      const idx = tasks.findIndex((t) => Number(t.id) === Number(task.id));
-      if (idx >= 0) {
-        tasks[idx].locked = task.locked;
-        tasks[idx].assignment_locked = task.assignment_locked;
-        tasks[idx].effective_locked = task.effective_locked;
-      }
-    } catch (err) {
-      alert('Task-Lock konnte nicht geändert werden: ' + (err?.message || err));
-    } finally {
-      taskLockBtn.disabled = false;
-    }
-  });
 
   userTestLockBtn?.addEventListener('click', () => {
     if (!isAdminUserTestMode()) return;

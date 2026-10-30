@@ -152,6 +152,6 @@ HTML;
       }
     });
   </script>
-  <script type="module" src="js/assignments.js?v=20260609d"></script>
+  <script type="module" src="js/assignments.js?v=20261027-task-details"></script>
 </body>
 </html>

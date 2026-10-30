@@ -1089,7 +1089,7 @@ HTML;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260511c"></script>
+  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
 
   <script>
     // Theme Toggle

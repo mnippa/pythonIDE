@@ -6,8 +6,7 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/middleware.php';
 
-configureApplicationSession();
-session_start();
+startApplicationSession();
 header('Content-Type: application/json');
 
 // Only allow POST
@@ -123,6 +122,7 @@ if ($stmt->execute()) {
     $_SESSION['first_name'] = $firstName;
     $_SESSION['last_name'] = $lastName;
     $_SESSION['role'] = $role;
+    renewApplicationSessionActivity();
     
     jsonResponse([
         'ok' => true,

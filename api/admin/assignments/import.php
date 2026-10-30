@@ -17,6 +17,7 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     require_once __DIR__ . '/../../../config/database.php';
     require_once __DIR__ . '/../../auth/middleware.php';
+    require_once __DIR__ . '/../../../components/task_order.php';
 } catch (Exception $e) {
     ob_end_clean();
     http_response_code(500);
@@ -25,10 +26,7 @@ try {
 }
 
 // Manual authentication check
-if (session_status() === PHP_SESSION_NONE) {
-    configureApplicationSession();
-    session_start();
-}
+startApplicationSession();
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? 'user') !== 'admin') {
     ob_end_clean();
@@ -111,6 +109,7 @@ try {
     
     // Start transaction
     $conn->begin_transaction();
+    lockAssignmentTaskOrder($conn, (int)$assignmentId);
     
     // Verify assignment access and lock state.
     requireAdminOwnedAssignment($conn, (int)$assignmentId, $admin);
@@ -174,6 +173,7 @@ try {
         exit;
     }
     
+    normalizeTaskPositions($conn, (int)$assignmentId);
     $conn->commit();
     
     // Clear buffer and send JSON

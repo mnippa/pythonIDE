@@ -1131,7 +1131,7 @@ HTML;
   <script src="js/uml-renderer.js?v=20260731e"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20260609d"></script>
+  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
 
   <script>
     // Theme Toggle
@@ -1303,6 +1303,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20260609d"></script>
+  <script type="module" src="js/assignments.js?v=20261027-task-details"></script>
 </body>
 </html>

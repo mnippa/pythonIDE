@@ -1,9 +1,8 @@
 ---
-name: "PythonIDE-Vorlesungsprojekte"
+name: pythonide-vorlesungsprojekte
 description: "Use when working on lecture projects/programs inside PythonIDE, including staged project progression, project runtime behavior, and project-folder workflows."
+disable-model-invocation: true
 argument-hint: "Beschreibe das Vorlesungsprojekt, den Entwicklungsschritt oder den Bug"
-agent: "agent"
-model: "GPT-5 (copilot)"
 ---
 Arbeite ausschliesslich mit Fokus auf Vorlesungsprojekte innerhalb von PythonIDE.
 

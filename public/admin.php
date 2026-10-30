@@ -1,10 +1,7 @@
 <?php
 require_once __DIR__ . '/../api/auth/middleware.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-  configureApplicationSession();
-  session_start();
-}
+startApplicationSession();
 
 require_once __DIR__ . '/../components/admin_version.php';
 
@@ -2154,7 +2151,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
   <script src="js/export-tasks.js?v=20261008a"></script>
   <script src="js/import-tasks.js?v=20261008a"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20261008e"></script>
+  <script src="js/admin-dashboard.js?v=20261027-task-order"></script>
   <script src="js/admin-teams-users.js?v=20260618c"></script>
   
   <script>
