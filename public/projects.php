@@ -1022,6 +1022,7 @@ HTML;
           <select id="project-template-input" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--panel); color:var(--text-primary);">
             <option value="empty_python" selected>Leeres Python Projekt</option>
             <option value="db_small">DB-Projekt (db_small)</option>
+            <option value="uml">UML-Klassendiagramm-Projekt</option>
             <option value="empty_python_html">Leeres Python-HTML Projekt</option>
             <option value="python_logic">Python-HTML mit Python-Logik</option>
             <option value="event_logic">Python-HTML mit Event-Handler-Logik</option>
@@ -1088,6 +1089,7 @@ HTML;
   <!-- File Tree -->
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
+  <script src="js/uml-renderer.js?v=20261031-uml-relation-selection1"></script>
 
   <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
 

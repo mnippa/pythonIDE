@@ -231,14 +231,20 @@ function refreshAllProjectDirtyMarkers() {
   });
 }
 
-async function readProjectFileById(projectId, fileId) {
+async function readProjectFileById(projectId, fileId, strict = false) {
   const contentResponse = await fetch(`../api/projects/files-v2.php?action=read&project_id=${projectId}&file_id=${fileId}`, {
     credentials: 'include',
     cache: 'no-store'
   });
-  if (!contentResponse.ok) return null;
+  if (!contentResponse.ok) {
+    if (strict) throw new Error(`Projektdatei konnte nicht gelesen werden (HTTP ${contentResponse.status}).`);
+    return null;
+  }
   const contentData = await contentResponse.json();
-  if (!contentData?.ok) return null;
+  if (!contentData?.ok) {
+    if (strict) throw new Error(contentData?.error || 'Projektdatei konnte nicht gelesen werden.');
+    return null;
+  }
   return {
     fileId,
     fileName: contentData.name || '',
@@ -246,20 +252,26 @@ async function readProjectFileById(projectId, fileId) {
   };
 }
 
-async function readProjectFileByName(projectId, fileName) {
+async function readProjectFileByName(projectId, fileName, strict = false) {
   const treeResponse = await fetch(`../api/projects/files-v2.php?action=tree&project_id=${projectId}`, {
     credentials: 'include',
     cache: 'reload'
   });
-  if (!treeResponse.ok) return null;
+  if (!treeResponse.ok) {
+    if (strict) throw new Error(`Projektdateien konnten nicht gelesen werden (HTTP ${treeResponse.status}).`);
+    return null;
+  }
 
   const treeData = await treeResponse.json();
+  if (strict && !treeData?.ok) {
+    throw new Error(treeData?.error || 'Projektdateien konnten nicht gelesen werden.');
+  }
   const treeNodes = Array.isArray(treeData?.tree)
     ? treeData.tree
     : (Array.isArray(treeData?.tree?.children) ? treeData.tree.children : []);
   const fileId = findFileIdByName(treeNodes, fileName);
   if (!fileId) return null;
-  return readProjectFileById(projectId, fileId);
+  return readProjectFileById(projectId, fileId, strict);
 }
 
 function findProjectFileIdByPath(nodes, targetPath, parentPath = '') {
@@ -522,6 +534,7 @@ const PROJECT_MODE = {
 const DB_MODEL_FILE_NAME = 'db_model.json';
 const DB_DATA_FILE_NAME = 'db_data.json';
 const DB_EXPORT_FILE_NAME = 'db_export.sql';
+const UML_MODEL_FILE_NAME = 'uml_model.json';
 
 const PROJECT_MODE_CONFIG = {
   [PROJECT_MODE.CODE]: {
@@ -3399,15 +3412,82 @@ async function initializeDbMode(project) {
   renderDbDesigner();
 }
 
-function initializeUmlMode(project) {
+async function initializeUmlMode(project) {
   const guiContainer = document.getElementById('gui-container');
-  if (!guiContainer) return;
-  guiContainer.innerHTML = [
-    '<div style="padding:16px; color:#333;">',
-    '<h3 style="margin:0 0 8px 0;">UML Modus</h3>',
-    '<p style="margin:0; color:#666;">UML Renderer wird in Phase E angebunden. Mode-Entkopplung ist aktiv.</p>',
-    '</div>'
-  ].join('');
+  if (!guiContainer || !window.UmlRenderer) {
+    throw new Error('UML-Designer konnte nicht geladen werden.');
+  }
+
+  guiContainer.innerHTML = `
+    <div class="uml-project-editor" style="padding:12px;">
+      <div id="uml-project-save-status" role="status" aria-live="polite" style="min-height:20px; margin-bottom:8px; color:var(--text-secondary);"></div>
+      <div id="uml-project-canvas"></div>
+    </div>
+  `;
+
+  const statusEl = document.getElementById('uml-project-save-status');
+  const canvasEl = document.getElementById('uml-project-canvas');
+  const modelFile = await readProjectFileByName(project.id, UML_MODEL_FILE_NAME, true);
+  let model = { version: 2, nodes: [], relationships: [] };
+  if (modelFile?.content) {
+    try {
+      const parsedModel = JSON.parse(modelFile.content);
+      if (!parsedModel || typeof parsedModel !== 'object' || Array.isArray(parsedModel)) {
+        throw new Error('Das Modell muss ein JSON-Objekt sein.');
+      }
+      if (Number(parsedModel.version || 1) > 2) {
+        throw new Error('Diese UML-Modellversion wird von dieser Anwendung noch nicht unterstützt.');
+      }
+      if (!Array.isArray(parsedModel.nodes) || !Array.isArray(parsedModel.relationships)) {
+        throw new Error('Im Modell fehlen Klassen oder Beziehungen.');
+      }
+      model = window.UmlRenderer.normalizeModel(parsedModel);
+    } catch (error) {
+      if (statusEl) {
+        statusEl.textContent = `UML-Modell konnte nicht gelesen werden: ${error?.message || error}`;
+      }
+      return;
+    }
+  }
+
+  let saveQueue = Promise.resolve();
+  let saveTimer = null;
+  let pendingModel = null;
+  let pendingWaiters = [];
+  const flushPendingSave = () => {
+    if (!pendingModel) return saveQueue;
+    const modelToSave = pendingModel;
+    const waiters = pendingWaiters;
+    pendingModel = null;
+    pendingWaiters = [];
+    const serialized = `${JSON.stringify(window.UmlRenderer.normalizeModel(modelToSave), null, 2)}\n`;
+    saveQueue = saveQueue.catch(() => {}).then(async () => {
+      if (Number(currentProject?.id) !== Number(project.id)) {
+        throw new Error('Das Projekt wurde gewechselt; Speichern wurde abgebrochen.');
+      }
+      await upsertProjectTextFile(project.id, UML_MODEL_FILE_NAME, serialized, 'application/json');
+    });
+    saveQueue.then(
+      () => waiters.forEach(({ resolve }) => resolve()),
+      (error) => waiters.forEach(({ reject }) => reject(error))
+    );
+    return saveQueue;
+  };
+  const persistModel = (nextModel, saveImmediately = false) => {
+    pendingModel = nextModel;
+    const result = new Promise((resolve, reject) => pendingWaiters.push({ resolve, reject }));
+    clearTimeout(saveTimer);
+    if (saveImmediately) {
+      flushPendingSave();
+    } else {
+      saveTimer = setTimeout(flushPendingSave, 450);
+    }
+    return result;
+  };
+  const setSaveStatus = (message) => {
+    if (statusEl) statusEl.textContent = message;
+  };
+  window.UmlRenderer.renderProject(project, canvasEl, model, persistModel, setSaveStatus);
 }
 
 async function initializeProjectModeRuntime(project) {
@@ -3417,7 +3497,7 @@ async function initializeProjectModeRuntime(project) {
     return;
   }
   if (mode === PROJECT_MODE.UML) {
-    initializeUmlMode(project);
+    await initializeUmlMode(project);
   }
 }
 
@@ -4744,6 +4824,13 @@ async function loadProject(projectId) {
 
   loadProjectPromise = (async () => {
   try {
+    if (
+      currentProject
+      && resolveProjectMode(currentProject) === PROJECT_MODE.UML
+      && window.UmlRenderer?.flushProject
+    ) {
+      await window.UmlRenderer.flushProject(currentProject.id);
+    }
     window.currentProject = null;
     updateWebHelpButton(null);
     setProjectsRightPanelMode(false);
@@ -4943,7 +5030,7 @@ async function loadProject(projectId) {
     
   } catch (error) {
     console.error('Error loading project:', error);
-    alert('Fehler beim Laden des Projekts');
+    alert(`Fehler beim Laden des Projekts: ${error?.message || error}`);
   }
   })();
 

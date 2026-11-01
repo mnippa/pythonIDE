@@ -1264,6 +1264,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
             <option value="code_reading">Code Reading</option>
             <option value="code_random_complex">Random Complex</option>
             <option value="db_model">DB-Modell (manuelle Bewertung)</option>
+            <option value="uml">UML-Modell (manuelle Bewertung)</option>
           </select>
         </div>
         
@@ -1307,7 +1308,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
           <div class="field">
             <label for="task-text">Aufgabe (Student-facing)</label>
             <textarea id="task-text" placeholder="Die Aufgabenstellung / Frage für den Studierenden"></textarea>
-            <div class="hint">Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
+            <div class="hint" data-task-prompt-hint>Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
           </div>
           
           <!-- Task Type Selector -->
@@ -1322,7 +1323,28 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
               <option value="db_model">DB-Modell (manuelle Bewertung)</option>
+              <option value="uml">UML-Modell (manuelle Bewertung)</option>
             </select>
+          </div>
+
+          <div class="field" data-field="uml-datatype-config">
+            <label>Im UML-Attributeditor verfügbare einfache Datentypen</label>
+            <div class="hint">Auswahl erscheint beim Tippen nach „:“ und im Datentypfeld. Strukturen und eigene Typdefinitionen sind noch nicht Teil dieses Schritts.</div>
+            <div class="uml-type-config-options">
+              <label><input type="checkbox" data-uml-simple-type="String" checked> String</label>
+              <label style="margin-left:12px;">Standardlänge <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;"></label>
+              <label><input type="checkbox" data-uml-simple-type="Integer" checked> Integer</label>
+              <label><input type="checkbox" data-uml-simple-type="Boolean" checked> Boolean</label>
+              <label><input type="checkbox" data-uml-simple-type="Float" checked> Float</label>
+              <label><input type="checkbox" data-uml-simple-type="Date" checked> Date</label>
+              <label><input type="checkbox" data-uml-simple-type="Currency" checked> Currency</label>
+              <label><input type="checkbox" data-uml-simple-type="Time" checked> Time</label>
+              <label><input type="checkbox" data-uml-simple-type="Datetime" checked> Datetime</label>
+            </div>
+            <label style="display:block; margin-top:10px;">UML-Startmodell (optional, JSON)
+              <textarea data-uml-starter-model rows="7" placeholder='{"nodes":[{"id":"kunde","name":"Kunde","type":"class","x":40,"y":40,"attributes":[{"name":"name","type":"String(30)"}]}],"relationships":[]}'></textarea>
+            </label>
+            <div class="hint">Dieses Teilmodell wird beim ersten Öffnen der Aufgabe geladen. Ein gespeicherter Lernenden-Entwurf hat immer Vorrang.</div>
           </div>
 
           <div class="field">
@@ -1396,7 +1418,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
               <button type="button" id="auto-description-btn" class="hspf-btn" style="padding: 4px 12px; font-size: 12px;">📝 Auto Desc</button>
             </div>
             <textarea id="task-description" class="tinymce-editor" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
-            <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
+            <div class="hint" data-task-details-hint>Zusätzliche Informationen, die unter „Details“ angezeigt werden</div>
           </div>
           
           <!-- Image Upload (for quiz tasks) -->
@@ -1587,7 +1609,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
           <div class="field">
             <label for="edit-task-text">Aufgabe (Student-facing)</label>
             <textarea id="edit-task-text" placeholder="Die Aufgabenstellung / Frage für den Studierenden"></textarea>
-            <div class="hint">Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
+            <div class="hint" data-task-prompt-hint>Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird</div>
           </div>
           
           <!-- Task Type Selector -->
@@ -1602,7 +1624,28 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
               <option value="code_reading">Code Reading</option>
               <option value="code_random_complex">Random Complex</option>
               <option value="db_model">DB-Modell (manuelle Bewertung)</option>
+              <option value="uml">UML-Modell (manuelle Bewertung)</option>
             </select>
+          </div>
+
+          <div class="field" data-field="uml-datatype-config">
+            <label>Im UML-Attributeditor verfügbare einfache Datentypen</label>
+            <div class="hint">Auswahl erscheint beim Tippen nach „:“ und im Datentypfeld. Strukturen und eigene Typdefinitionen sind noch nicht Teil dieses Schritts.</div>
+            <div class="uml-type-config-options">
+              <label><input type="checkbox" data-uml-simple-type="String" checked> String</label>
+              <label style="margin-left:12px;">Standardlänge <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;"></label>
+              <label><input type="checkbox" data-uml-simple-type="Integer" checked> Integer</label>
+              <label><input type="checkbox" data-uml-simple-type="Boolean" checked> Boolean</label>
+              <label><input type="checkbox" data-uml-simple-type="Float" checked> Float</label>
+              <label><input type="checkbox" data-uml-simple-type="Date" checked> Date</label>
+              <label><input type="checkbox" data-uml-simple-type="Currency" checked> Currency</label>
+              <label><input type="checkbox" data-uml-simple-type="Time" checked> Time</label>
+              <label><input type="checkbox" data-uml-simple-type="Datetime" checked> Datetime</label>
+            </div>
+            <label style="display:block; margin-top:10px;">UML-Startmodell (optional, JSON)
+              <textarea data-uml-starter-model rows="7" placeholder='{"nodes":[{"id":"kunde","name":"Kunde","type":"class","x":40,"y":40,"attributes":[{"name":"name","type":"String(30)"}]}],"relationships":[]}'></textarea>
+            </label>
+            <div class="hint">Dieses Teilmodell wird beim ersten Öffnen der Aufgabe geladen. Ein gespeicherter Lernenden-Entwurf hat immer Vorrang.</div>
           </div>
 
           <div class="field">
@@ -1673,7 +1716,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
               <button type="button" id="edit-auto-description-btn" class="hspf-btn" style="padding: 4px 12px; font-size: 12px;">📝 Auto Desc</button>
             </div>
             <textarea id="edit-task-description" class="tinymce-editor" placeholder="Optionale Zusatzinformationen (nicht die Hauptaufgabe)"></textarea>
-            <div class="hint">Für Admins: zusätzliche Dokumentation, Lernziele, Meta-Infos</div>
+            <div class="hint" data-task-details-hint>Zusätzliche Informationen, die unter „Details“ angezeigt werden</div>
           </div>
           
           <!-- Image Upload (for quiz tasks) -->
@@ -2146,12 +2189,12 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
   <!-- JSZip Library for ZIP export/import -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-  <script src="js/task-type-manager.js"></script>
+  <script src="js/task-type-manager.js?v=20261030-task-details-placement"></script>
   <script src="js/options-builder.js"></script>
   <script src="js/export-tasks.js?v=20261008a"></script>
   <script src="js/import-tasks.js?v=20261008a"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20261027-task-order"></script>
+  <script src="js/admin-dashboard.js?v=20261101-clean-rebuild1"></script>
   <script src="js/admin-teams-users.js?v=20260618c"></script>
   
   <script>

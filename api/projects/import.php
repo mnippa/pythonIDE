@@ -232,7 +232,7 @@ try {
 function normalizeProjectType($type)
 {
     $type = strtolower(trim($type));
-    if (in_array($type, ['python', 'html', 'mixed'], true)) {
+    if (in_array($type, ['python', 'html', 'mixed', 'db_small', 'uml'], true)) {
         return $type;
     }
     return null;

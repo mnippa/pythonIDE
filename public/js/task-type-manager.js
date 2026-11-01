@@ -37,6 +37,10 @@
       label: 'DB-Modell (manuelle Bewertung)',
       fields: ['image', 'hints', 'solution']
     },
+    uml: {
+      label: 'UML-Modell (manuelle Bewertung)',
+      fields: ['image', 'hints', 'solution', 'uml_datatype_config']
+    },
     file_submission: {
       label: 'Dateiabgabe',
       fields: ['image', 'file_submission_config', 'hints']
@@ -77,6 +81,7 @@
       this.hideField(form, 'max-iterations');
       this.hideField(form, 'show-solution-code');
       this.hideField(form, 'file-submission-config');
+      this.hideField(form, 'uml-datatype-config');
       
       // Show required fields
       config.fields.forEach(field => {
@@ -117,12 +122,36 @@
           case 'file_submission_config':
             this.showField(form, 'file-submission-config');
             break;
+          case 'uml_datatype_config':
+            this.showField(form, 'uml-datatype-config');
+            break;
         }
       });
       
       // Show code toggle for code_random_complex and code_reading
       if (taskType === 'code_random_complex' || taskType === 'code_reading') {
         this.showField(form, 'show-solution-code');
+      }
+
+      const manualReviewCheckbox = form.querySelector('[id$="manual-review-required"]');
+      if (manualReviewCheckbox) {
+        const requiresManualReview = taskType === 'db_model' || taskType === 'uml';
+        manualReviewCheckbox.checked = requiresManualReview || manualReviewCheckbox.checked;
+        manualReviewCheckbox.disabled = requiresManualReview;
+      }
+
+      const shortPromptHint = form.querySelector('[data-task-prompt-hint]');
+      const detailsHint = form.querySelector('[data-task-details-hint]');
+      const isModelingTask = taskType === 'db_model' || taskType === 'uml';
+      if (shortPromptHint) {
+        shortPromptHint.textContent = isModelingTask
+          ? 'Nur den knappen Gesamtauftrag eintragen. Der ausführliche Haupttext steht im Feld „Description“ und wird links unter „Details“ angezeigt.'
+          : 'Dies ist die zentrale Aufgabenbeschreibung, die dem Student angezeigt wird';
+      }
+      if (detailsHint) {
+        detailsHint.textContent = isModelingTask
+          ? 'Hier den ausführlichen Haupttext mit Fachanforderungen und Details eintragen. Studierende finden ihn links im Bereich „Details“.'
+          : 'Zusätzliche Informationen, die unter „Details“ angezeigt werden';
       }
 
       // Code Reading and Random Complex use per-iteration expected values; hide the global correct-answer field

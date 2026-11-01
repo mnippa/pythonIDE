@@ -1,7 +1,15 @@
 (function () {
-  const UML_VERSION = 1;
+  const UML_VERSION = 2;
   const NODE_WIDTH = 200;
   const NODE_HEIGHT = 120;
+  const SIMPLE_TYPE_OPTIONS = ['String', 'Integer', 'Boolean', 'Float', 'Date', 'Currency', 'Time', 'Datetime'];
+  const CARDINALITY_OPTIONS = [
+    { value: '1', label: '1' },
+    { value: '0..1', label: '0..1' },
+    { value: '1..*', label: '1..* (1:n)' },
+    { value: '0..*', label: '0..* (0:n)' }
+  ];
+  let generatedId = 0;
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -11,8 +19,51 @@
       .replace(/"/g, '&quot;');
   }
 
-  function getTypeSuggestions(nodes = []) {
-    const baseSuggestions = ['String', 'Integer', 'Float', 'Boolean', 'Date', 'List', 'Map', 'Text', 'Object'];
+  function createEntityId(kind) {
+    generatedId += 1;
+    return `uml-${kind}-${Date.now()}-${generatedId}`;
+  }
+
+  function createAttributeId() {
+    return createEntityId('attribute');
+  }
+
+  function getCardinalityOptionsMarkup(selectedValue) {
+    const selected = String(selectedValue || '');
+    const options = CARDINALITY_OPTIONS.map(({ value, label }) => (
+      `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`
+    ));
+    if (selected && !CARDINALITY_OPTIONS.some(({ value }) => value === selected)) {
+      options.unshift(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} (bisheriger Wert)</option>`);
+    }
+    return `<option value="" ${selected ? '' : 'selected'}>Bitte auswählen</option>${options.join('')}`;
+  }
+
+  function getUmlTypeConfig(task) {
+    let template = task?.uml_template;
+    if (typeof template === 'string') {
+      try {
+        template = JSON.parse(template);
+      } catch (_err) {
+        template = null;
+      }
+    }
+    const config = template?.type_config || template?.typeConfig || template;
+    const configuredTypes = Array.isArray(config?.simple_types)
+      ? config.simple_types.filter((type) => SIMPLE_TYPE_OPTIONS.includes(type))
+      : SIMPLE_TYPE_OPTIONS;
+    const parsedLength = Number.parseInt(config?.string_length, 10);
+    return {
+      simpleTypes: configuredTypes,
+      stringLength: Number.isInteger(parsedLength) && parsedLength > 0 ? parsedLength : 30
+    };
+  }
+
+  function getTypeSuggestions(nodes = [], task = null) {
+    const typeConfig = getUmlTypeConfig(task);
+    const baseSuggestions = typeConfig.simpleTypes.map((type) => (
+      type === 'String' ? `String(${typeConfig.stringLength})` : type
+    ));
     const nodeSuggestions = Array.isArray(nodes) ? nodes
       .filter((node) => node?.type === 'enum' || node?.type === 'structure')
       .map((node) => node?.name)
@@ -20,17 +71,52 @@
     return Array.from(new Set(baseSuggestions.concat(nodeSuggestions).filter(Boolean)));
   }
 
-  function normalizeAttribute(rawAttribute, index) {
+  function getUmlStarterModel(task) {
+    let template = task?.uml_template;
+    if (typeof template === 'string') {
+      try {
+        template = JSON.parse(template);
+      } catch (_err) {
+        return null;
+      }
+    }
+    const starterModel = template?.starter_model;
+    return starterModel && typeof starterModel === 'object' && Array.isArray(starterModel.nodes)
+      ? starterModel
+      : null;
+  }
+
+  function getTypeComboMarkup(value, suggestions, fieldAttributes) {
+    return `
+      <div class="uml-type-combo">
+        <div class="uml-type-combo-control">
+          <input type="text" value="${escapeHtml(value || '')}" ${fieldAttributes} autocomplete="off" spellcheck="false">
+          <button type="button" class="uml-type-combo-toggle" data-uml-type-combo-toggle aria-label="Datentypen anzeigen" title="Datentypen anzeigen">▾</button>
+        </div>
+        <div class="uml-type-combo-options" data-uml-type-combo-options role="listbox" hidden>
+          ${suggestions.map((suggestion) => `<button type="button" role="option" data-uml-type-combo-option="${escapeHtml(suggestion)}">${escapeHtml(suggestion)}</button>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function normalizeAttribute(rawAttribute, nodeIndex, index) {
+    const id = rawAttribute && typeof rawAttribute === 'object'
+      ? String(rawAttribute.id || `uml-attribute-${nodeIndex + 1}-${index + 1}`)
+      : `uml-attribute-${nodeIndex + 1}-${index + 1}`;
     if (typeof rawAttribute === 'string') {
       const value = String(rawAttribute || '').trim();
-      return value ? { name: value, type: '' } : { name: '', type: '' };
+      const derived = value.startsWith('/');
+      return { id, name: derived ? value.slice(1).trim() : value, type: '', derived };
     }
     if (rawAttribute && typeof rawAttribute === 'object') {
-      const name = String(rawAttribute.name || rawAttribute.value || '').trim();
+      const rawName = String(rawAttribute.name || rawAttribute.value || '').trim();
+      const derived = Boolean(rawAttribute.derived) || rawName.startsWith('/');
+      const name = derived && rawName.startsWith('/') ? rawName.slice(1).trim() : rawName;
       const type = String(rawAttribute.type || rawAttribute.datatype || '').trim();
-      return { name, type };
+      return { id, name, type, derived };
     }
-    return { name: '', type: '' };
+    return { id, name: '', type: '', derived: false };
   }
 
   function normalizeState(raw) {
@@ -59,36 +145,65 @@
     return {
       version: UML_VERSION,
       nodes: nodes.map((node, index) => ({
-        id: node?.id || `uml-node-${index + 1}`,
+        id: String(node?.id || `uml-node-${index + 1}`),
         type: node?.type === 'enum' ? 'enum' : node?.type === 'structure' ? 'structure' : 'class',
         name: String(node?.name || (node?.type === 'enum' ? 'Enum' : 'Klasse')),
-        attributes: Array.isArray(node?.attributes) ? node.attributes.map((attr, index) => normalizeAttribute(attr, index)).filter((attr) => attr.name || attr.type) : [],
+        attributes: Array.isArray(node?.attributes) ? node.attributes.map((attr, attributeIndex) => normalizeAttribute(attr, index, attributeIndex)).filter((attr) => attr.name || attr.type) : [],
         x: Number(node?.x) || 80 + (index * 40),
         y: Number(node?.y) || 80 + (index * 40)
       })),
       relationships: relationships.map((relation, index) => ({
-        id: relation?.id || `uml-relationship-${index + 1}`,
+        id: String(relation?.id || `uml-relationship-${index + 1}`),
         sourceId: String(relation?.sourceId || ''),
         targetId: String(relation?.targetId || ''),
         label: String(relation?.label || ''),
+        sourceCardinality: String(relation?.sourceCardinality || ''),
+        targetCardinality: String(relation?.targetCardinality || ''),
         points: Array.isArray(relation?.points) ? relation.points.map((point) => ({ x: Number(point?.x), y: Number(point?.y) })) : []
       })).filter((relation) => relation.sourceId && relation.targetId)
     };
   }
 
-  function createNode(type, index = 0) {
+  function getNewNodePosition(nodes = [], canvasWidth = 1000) {
+    const columnWidth = NODE_WIDTH + 40;
+    const rowHeight = NODE_HEIGHT + 30;
+    const columnCount = Math.max(1, Math.floor((Math.max(canvasWidth, NODE_WIDTH) - 48 + 40) / columnWidth));
+    const candidateCount = nodes.length + 1;
+
+    for (let index = 0; index <= candidateCount; index += 1) {
+      const position = {
+        x: 24 + (index % columnCount) * columnWidth,
+        y: 24 + Math.floor(index / columnCount) * rowHeight
+      };
+      const overlapsNode = nodes.some((node) => (
+        position.x < Number(node.x || 0) + NODE_WIDTH
+        && position.x + NODE_WIDTH > Number(node.x || 0)
+        && position.y < Number(node.y || 0) + NODE_HEIGHT
+        && position.y + NODE_HEIGHT > Number(node.y || 0)
+      ));
+      if (!overlapsNode) return position;
+    }
+
+    return { x: 24, y: 24 + candidateCount * rowHeight };
+  }
+
+  function createNode(type, position = { x: 24, y: 24 }) {
     return {
-      id: `uml-node-${Date.now()}-${index}`,
+      id: createEntityId('node'),
       type: type === 'enum' ? 'enum' : type === 'structure' ? 'structure' : 'class',
       name: type === 'enum' ? 'Enum' : type === 'structure' ? 'Struktur' : 'Klasse',
-      attributes: type === 'enum' ? [{ name: 'WERT_A', type: '' }, { name: 'WERT_B', type: '' }] : [{ name: 'attribute', type: 'String' }],
-      x: 80 + (index * 50),
-      y: 80 + (index * 40)
+      attributes: type === 'enum'
+        ? [{ id: createAttributeId(), name: 'WERT_A', type: '', derived: false }, { id: createAttributeId(), name: 'WERT_B', type: '', derived: false }]
+        : [{ id: createAttributeId(), name: 'attribute', type: 'String', derived: false }],
+      x: position.x,
+      y: position.y
     };
   }
 
   window.UmlRenderer = {
     _stateCache: {},
+    _renderTasks: {},
+    _saveStatusCache: {},
     _associationMode: null,
     _associationPreview: null,
     _associationDrag: null,
@@ -99,6 +214,8 @@
     _selectedRelationId: null,
     _selectedAttributePath: null,
     _editState: null,
+
+    getNewNodePosition,
 
     ensureStyles() {
       if (document.getElementById('uml-renderer-style')) return;
@@ -113,6 +230,25 @@
           border: 1px solid var(--border);
           border-radius: 12px;
           background: var(--bg-secondary);
+        }
+        .uml-task-prompt {
+          padding: 12px;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          background: var(--bg);
+          line-height: 1.5;
+        }
+        .uml-task-image {
+          display: block;
+          max-width: 100%;
+          max-height: 320px;
+          margin-top: 10px;
+          border-radius: 8px;
+        }
+        .uml-task-save-status {
+          min-height: 1.2em;
+          color: var(--text-secondary);
+          font-size: 12px;
         }
         .uml-toolbar {
           display: flex;
@@ -202,20 +338,65 @@
         }
         .uml-relationship-line {
           position: absolute;
-          height: 1px;
+          height: 12px;
           padding: 0;
           margin: 0;
-          background: #64748b;
+          background: transparent;
           border-radius: 999px;
-          transform-origin: 0 0;
+          transform-origin: 0 50%;
           pointer-events: auto;
           cursor: pointer;
           z-index: 4;
           box-sizing: border-box;
         }
+        .uml-relationship-line::before {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: #64748b;
+          transform: translateY(-50%);
+        }
         .uml-relationship-line.selected {
+          z-index: 6;
+        }
+        .uml-relationship-line.selected::before {
+          height: 3px;
           background: #ef4444;
-          height: 2px;
+        }
+        .uml-cardinality-label {
+          position: absolute;
+          z-index: 5;
+          padding: 1px 4px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.94);
+          color: #334155;
+          font: 12px ui-monospace, monospace;
+          line-height: 1.3;
+          pointer-events: none;
+          transform: translate(-50%, -50%);
+        }
+        .uml-relationship-name {
+          position: absolute;
+          z-index: 5;
+          max-width: 220px;
+          padding: 2px 6px;
+          border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.96);
+          color: #334155;
+          font-size: 12px;
+          line-height: 1.3;
+          text-align: center;
+          overflow-wrap: anywhere;
+          pointer-events: none;
+          transform: translate(-50%, -50%);
+        }
+        .uml-relationship-name.selected {
+          border-color: #ef4444;
+          color: #b91c1c;
         }
         .uml-relationship {
           pointer-events: stroke;
@@ -271,7 +452,6 @@
         .uml-node.association-target {
           border-color: #10b981;
           box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.24);
-          transform: translateY(-1px) scale(1.01);
         }
         .uml-node.association-target .uml-node-title {
           background: #d1fae5;
@@ -284,7 +464,7 @@
           padding: 8px 10px;
           font-weight: 700;
           font-size: 14px;
-          cursor: default;
+          cursor: text;
         }
         .uml-canvas-area.association-mode .uml-node-title,
         .uml-canvas-area.association-mode .uml-attr-text {
@@ -310,11 +490,93 @@
           display: flex;
           align-items: center;
           gap: 6px;
+          position: relative;
+        }
+        .uml-inline-attribute-name {
+          width: 43%;
+          min-width: 0;
+          border: 1px solid #bfdbfe;
+          border-radius: 6px;
+          padding: 4px 6px;
+          font-size: 13px;
+          font-family: inherit;
+        }
+        .uml-inline-attribute-separator {
+          font-size: 13px;
+        }
+        .uml-type-combo {
+          position: relative;
+          min-width: 0;
+          width: 100%;
+        }
+        .uml-type-combo-control {
+          display: flex;
+          width: 100%;
+        }
+        .uml-type-combo-control input {
+          min-width: 0;
+          flex: 1;
+          border: 1px solid var(--border);
+          border-radius: 6px 0 0 6px;
+          padding: 4px 6px;
+          font: inherit;
+        }
+        .uml-type-combo-toggle {
+          flex: 0 0 auto;
+          border: 1px solid var(--border);
+          border-left: 0;
+          border-radius: 0 6px 6px 0;
+          background: white;
+          padding: 2px 6px;
+          cursor: pointer;
+        }
+        .uml-type-combo-options {
+          position: absolute;
+          z-index: 30;
+          top: calc(100% + 2px);
+          left: 0;
+          right: 0;
+          max-height: 180px;
+          overflow-y: auto;
+          padding: 3px;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          background: white;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+        }
+        .uml-type-combo-options[hidden] {
+          display: none;
+        }
+        .uml-type-combo-options button {
+          display: block;
+          width: 100%;
+          border: 0;
+          border-radius: 4px;
+          padding: 5px 7px;
+          background: white;
+          text-align: left;
+          cursor: pointer;
+        }
+        .uml-type-combo-options button:hover,
+        .uml-type-combo-options button:focus {
+          background: #eff6ff;
+        }
+        .uml-node.uml-type-combo-open {
+          z-index: 10;
+          overflow: visible;
         }
         .uml-attr-text {
           flex: 1;
-          cursor: default;
+          cursor: text;
           min-height: 18px;
+          border-radius: 4px;
+          padding: 1px 4px;
+          margin: -1px -4px;
+        }
+        .uml-attr-text.selected {
+          background: #dbeafe;
+          outline: 1px solid #60a5fa;
+          color: #1e3a8a;
         }
         .uml-inline-add-btn {
           border: 1px dashed #94a3b8;
@@ -401,6 +663,10 @@
       return normalizeState(raw);
     },
 
+    normalizeModel(raw) {
+      return normalizeState(raw);
+    },
+
     getState(taskId) {
       if (this._stateCache[taskId]) {
         return JSON.parse(JSON.stringify(this._stateCache[taskId]));
@@ -408,7 +674,9 @@
 
       const taskAnswers = window.assignmentState?.taskUserAnswers?.[taskId] || {};
       const serialized = taskAnswers.current_code || taskAnswers.text_answer || '';
-      const state = this.normalizeTaskState(taskId, serialized);
+      const task = this._renderTasks[String(taskId)];
+      const starterModel = serialized ? null : getUmlStarterModel(task);
+      const state = this.normalizeTaskState(taskId, serialized || starterModel);
       this._stateCache[taskId] = state;
       return JSON.parse(JSON.stringify(state));
     },
@@ -417,10 +685,38 @@
       this._stateCache[taskId] = state;
     },
 
-    async persistState(taskId, state, skipHistoryPush = false) {
+    setSaveStatus(taskId, message) {
+      const task = this._renderTasks[String(taskId)];
+      if (task?.umlProject) {
+        task.setSaveStatus(message);
+        return;
+      }
+
+      this._saveStatusCache[String(taskId)] = message;
+      const statusElement = task?.container?.querySelector('[data-uml-save-status]');
+      if (statusElement) {
+        statusElement.textContent = message;
+      }
+    },
+
+    async persistState(taskId, state, skipHistoryPush = false, saveImmediately = false) {
       const normalizedState = this.normalizeTaskState(taskId, state);
       if (!skipHistoryPush) {
         this.pushHistory(taskId, normalizedState);
+      }
+
+      const renderTask = this._renderTasks[String(taskId)];
+      if (renderTask?.umlProject) {
+        renderTask.setSaveStatus('Speichern …');
+        try {
+          await renderTask.persistModel(normalizedState, saveImmediately);
+          renderTask.setSaveStatus('Entwurf gespeichert');
+          return true;
+        } catch (error) {
+          renderTask.setSaveStatus(`Speichern fehlgeschlagen: ${error?.message || error}`);
+          console.error('UML project model save failed:', error);
+          return false;
+        }
       }
 
       const payload = {
@@ -429,11 +725,23 @@
         status: 'in-progress'
       };
 
+      this.setSaveStatus(taskId, 'Speichern …');
       try {
-        if (!window.assignmentState?.taskUserAnswers?.[taskId]) {
+        if (!window.assignmentState) {
+          throw new Error('Aufgabenstatus ist nicht verfügbar.');
+        }
+        if (!window.assignmentState.taskUserAnswers[taskId]) {
           window.assignmentState.taskUserAnswers[taskId] = {};
         }
         window.assignmentState.taskUserAnswers[taskId].current_code = JSON.stringify(normalizedState);
+
+        if (window.testMode === true || window.TEST_MODE_NO_PERSIST === true) {
+          if (typeof TestMode !== 'undefined' && typeof TestMode.setTaskState === 'function') {
+            TestMode.setTaskState(taskId, { current_code: JSON.stringify(normalizedState) });
+          }
+          this.setSaveStatus(taskId, 'Entwurf im Testmodus gespeichert');
+          return true;
+        }
 
         const response = await fetch('../api/user_tasks/update.php', {
           method: 'POST',
@@ -441,9 +749,16 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        await response.json();
-      } catch (_err) {
-        // Fail silently for now; the editor remains usable locally.
+        const result = await response.json();
+        if (!response.ok || result?.ok !== true) {
+          throw new Error(result?.error || 'Speichern des Zwischenstands fehlgeschlagen.');
+        }
+        this.setSaveStatus(taskId, 'Entwurf gespeichert');
+        return true;
+      } catch (error) {
+        this.setSaveStatus(taskId, `Speichern fehlgeschlagen: ${error?.message || error}`);
+        console.error('UML task answer save failed:', error);
+        return false;
       }
     },
 
@@ -506,11 +821,24 @@
       this.persistState(taskId, state, true);
       const host = container || document.querySelector('.uml-editor-shell');
       if (host) {
-        this.render(window.assignmentState?.currentTask || { id: taskId }, host);
+        this.render(this.getRenderTask(taskId), host);
       }
     },
 
+    getRenderTask(taskId) {
+      return this._renderTasks[String(taskId)]
+        || (window.assignmentState?.currentTask?.id === taskId ? window.assignmentState.currentTask : null)
+        || { id: taskId };
+    },
+
     render(task, container) {
+      const previousTask = this._renderTasks[String(task.id)];
+      if (previousTask?.umlProject && !task.umlProject) {
+        task = previousTask;
+      }
+      task.container = container;
+      container.dataset.umlTaskId = String(task.id);
+      this._renderTasks[String(task.id)] = task;
       this.ensureStyles();
       const state = this.getState(task.id);
       this.setState(task.id, state);
@@ -519,6 +847,51 @@
       this.renderInspector(task, state);
       this.attachEvents(task, container, state);
       this.renderConnections(task, container, state);
+    },
+
+    refreshNodeText(taskId, container, nodeId) {
+      const state = this.getState(taskId);
+      const node = state.nodes.find((candidate) => candidate.id === nodeId);
+      if (!node || !container) return;
+      const nodeElement = Array.from(container.querySelectorAll('.uml-node'))
+        .find((element) => element.getAttribute('data-uml-node-id') === nodeId);
+      if (!nodeElement) return;
+      const title = nodeElement.querySelector('[data-uml-edit-name]');
+      if (title) title.textContent = node.name;
+
+      const body = nodeElement.querySelector('.uml-node-body');
+      if (body) {
+        const attributesMarkup = node.attributes.map((attribute, index) => `
+          <div class="uml-attr-row">
+            <div class="uml-attr-text ${this._selectedAttributePath?.nodeId === nodeId && Number(this._selectedAttributePath.index) === index ? 'selected' : ''}" data-uml-edit-attribute="${escapeHtml(nodeId)}:${index}" title="Klicken zum Auswählen, Doppelklick zum Bearbeiten" aria-selected="${this._selectedAttributePath?.nodeId === nodeId && Number(this._selectedAttributePath.index) === index}">${attribute.derived ? '/' : ''}${escapeHtml(attribute.name)}${attribute.type ? ` : ${escapeHtml(attribute.type)}` : ''}</div>
+          </div>
+        `).join('');
+        const addLabel = node.type === 'enum' ? '+ Wert' : '+ Attribut';
+        body.innerHTML = `${attributesMarkup || '<div class="uml-node-attr">(keine Attribute)</div>'}<button type="button" class="uml-inline-add-btn" data-uml-add-attribute="${escapeHtml(nodeId)}">${addLabel}</button>`;
+      }
+      this.renderConnections(this.getRenderTask(taskId), container, state);
+    },
+
+    renderProject(project, container, model, persistModel, setSaveStatus) {
+      const contextId = `project:${project.id}`;
+      const task = {
+        id: contextId,
+        umlProject: true,
+        persistModel,
+        setSaveStatus
+      };
+      this._stateCache[contextId] = this.normalizeModel(model);
+      this.render(task, container);
+    },
+
+    async flushProject(projectId) {
+      const taskId = `project:${projectId}`;
+      const task = this._renderTasks[taskId];
+      if (!task?.umlProject) return;
+      const saved = await this.persistState(taskId, this.getState(taskId), true, true);
+      if (!saved) {
+        throw new Error('Das UML-Modell konnte vor dem Projektwechsel nicht gespeichert werden.');
+      }
     },
 
     buildHtml(task, state) {
@@ -533,14 +906,10 @@
       const selectedRelation = (state.relationships || []).find((relation) => relation.id === this._selectedRelationId) || null;
       const selectedNodeName = selectedNode ? escapeHtml(selectedNode.name) : '';
       const selectedNodeType = selectedNode ? selectedNode.type : 'class';
-      const selectedAttrs = selectedNode ? selectedNode.attributes.map((attr) => attr.name || '').join('\n') : '';
       const selectedAttribute = selectedNode && this._selectedAttributePath?.nodeId === selectedNode.id
         ? selectedNode.attributes[Number(this._selectedAttributePath.index)]
         : null;
       const selectedAttributeValue = selectedAttribute ? escapeHtml(selectedAttribute.name || '') : '';
-      const selectedAttributeTypeValue = selectedAttribute ? escapeHtml(selectedAttribute.type || '') : '';
-      const typeOptions = getTypeSuggestions(nodes);
-      const typeOptionsMarkup = typeOptions.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
       const selectedRelationLabel = selectedRelation ? escapeHtml(selectedRelation.label || '') : '';
       const selectedRelationSource = selectedRelation ? escapeHtml(this.getNodeNameById(state, selectedRelation.sourceId)) : '';
       const selectedRelationTarget = selectedRelation ? escapeHtml(this.getNodeNameById(state, selectedRelation.targetId)) : '';
@@ -550,31 +919,44 @@
       const hintBoxMarkup = this._associationMode?.phase === 'awaiting-source' || this._associationMode?.phase === 'awaiting-target'
         ? `<div class="uml-association-hint-box" style="left:${hintBoxX}px; top:${hintBoxY}px;">${hintBoxText}</div>`
         : '';
+      const taskQuestion = !task.umlProject && task.task_text
+        ? `<div class="uml-task-question">${escapeHtml(task.task_text).replace(/\r\n|\n/g, '<br>')}</div>`
+        : '';
+      const taskImage = !task.umlProject && task.image_url
+        ? `<img class="uml-task-image" src="${escapeHtml(task.image_url)}" alt="Aufgabenbild">`
+        : '';
+      const taskSaveStatus = !task.umlProject
+        ? `<div class="uml-task-save-status" data-uml-save-status role="status" aria-live="polite">${escapeHtml(this._saveStatusCache[String(task.id)] || '')}</div>`
+        : '';
       const nodeMarkup = nodes.map((node) => {
         const nodeClass = `uml-node ${node.type === 'enum' ? 'enum' : ''} ${selectedNode && selectedNode.id === node.id ? 'selected' : ''} ${this._associationMode?.phase === 'awaiting-target' && this._associationMode.startNodeId === node.id ? 'association-target' : ''}`;
         const attrsMarkup = (node.attributes || []).map((attr, index) => {
           const attrName = typeof attr === 'string' ? attr : (attr?.name || '');
           const attrType = typeof attr === 'object' && attr?.type ? attr.type : '';
-          const attrInputValue = `${attrName}${attrType ? `:${attrType}` : ''}`;
           const isEditing = this._editState?.mode === 'attribute' && this._editState.nodeId === node.id && this._editState.index === index;
           if (isEditing) {
             return `
               <div class="uml-attr-row">
-                <input class="uml-inline-input" data-uml-inline-attribute="${escapeHtml(node.id)}" data-uml-attribute-index="${index}" value="${escapeHtml(attrInputValue)}" list="uml-inline-type-options" placeholder="name:String" spellcheck="false" />
+                <input class="uml-inline-attribute-name" data-uml-inline-attribute-name="${escapeHtml(node.id)}" data-uml-attribute-index="${index}" value="${escapeHtml(attrName)}" placeholder="Attributname" spellcheck="false" />
+                <span class="uml-inline-attribute-separator">:</span>
+                ${getTypeComboMarkup(attrType, getTypeSuggestions(nodes, task), `data-uml-inline-attribute-type="${escapeHtml(node.id)}" data-uml-attribute-index="${index}" placeholder="Datentyp"`)}
               </div>
             `;
           }
           const typeSuffix = (typeof attr === 'object' && attr?.type) ? ` : ${escapeHtml(attr.type)}` : '';
+          const derivedPrefix = typeof attr === 'object' && attr?.derived ? '/' : '';
+          const isSelectedAttribute = this._selectedAttributePath?.nodeId === node.id
+            && Number(this._selectedAttributePath.index) === index;
           return `
             <div class="uml-attr-row">
-              <div class="uml-attr-text" data-uml-edit-attribute="${escapeHtml(node.id)}:${index}">${escapeHtml(attrName)}${typeSuffix}</div>
+              <div class="uml-attr-text ${isSelectedAttribute ? 'selected' : ''}" data-uml-edit-attribute="${escapeHtml(node.id)}:${index}" title="Klicken zum Auswählen, Doppelklick zum Bearbeiten" aria-selected="${isSelectedAttribute}">${derivedPrefix}${escapeHtml(attrName)}${typeSuffix}</div>
             </div>
           `;
         }).join('');
         const stereoMarkup = node.type === 'enum' ? '<div class="uml-node-stereotype">«Enumeration»</div>' : '';
         const titleMarkup = this._editState?.mode === 'name' && this._editState.nodeId === node.id
           ? `<input class="uml-inline-input" data-uml-inline-name="${escapeHtml(node.id)}" value="${escapeHtml(node.name)}" />`
-          : `<div class="uml-node-title" data-uml-edit-name="${escapeHtml(node.id)}">${escapeHtml(node.name)}</div>`;
+          : `<div class="uml-node-title" data-uml-edit-name="${escapeHtml(node.id)}" title="Doppelklicken zum Bearbeiten">${escapeHtml(node.name)}</div>`;
         const addLabel = node.type === 'enum' ? '+ Wert' : '+ Attribut';
         return `
           <div class="${nodeClass}" data-uml-node-id="${escapeHtml(node.id)}" style="left:${Number(node.x || 0)}px; top:${Number(node.y || 0)}px;">
@@ -591,14 +973,17 @@
       return `
         <div class="uml-editor-shell">
           ${contextMenuMarkup}
+          ${taskQuestion || taskImage ? `<div class="uml-task-prompt">${taskQuestion}${taskImage}</div>` : ''}
+          ${taskSaveStatus}
           <div class="uml-toolbar">
             <button type="button" data-uml-action="add-class">+ Klasse</button>
             <button type="button" data-uml-action="add-enum">+ Enumeration</button>
             <button type="button" data-uml-action="add-association">Assoziation</button>
             <button type="button" data-uml-action="delete-selected">Löschen</button>
             <button type="button" data-uml-action="reset">Leeren</button>
-            <span class="uml-shortcut-hint">F2 = neues Attribut, Shift+F2 = Literal</span>
-            <span class="uml-hint">Klicken Sie zuerst auf die erste Klasse, danach auf die zweite Klasse, um eine Assoziation zu zeichnen.</span>
+            ${task.umlProject ? '<button type="button" data-uml-action="save">Speichern</button>' : ''}
+            <span class="uml-shortcut-hint">Klick: auswählen · Entf: löschen · Doppelklick: bearbeiten · F2: Attribut hinzufügen</span>
+            <span class="uml-hint">Attribut: name:Datentyp (z. B. email:String). Beziehung: Bezeichner und Kardinalitäten im Inspector festlegen.</span>
           </div>
           <div class="uml-workspace">
             <div class="uml-canvas-area${this._associationMode?.phase === 'awaiting-source' || this._associationMode?.phase === 'awaiting-target' || this._associationMode?.phase === 'drawing' ? ' association-mode' : ''}">
@@ -608,7 +993,6 @@
               <div class="uml-node-layer">${nodeMarkup}</div>
             </div>
           </div>
-          <datalist id="uml-inline-type-options">${typeOptionsMarkup}</datalist>
         </div>
       `;
     },
@@ -623,14 +1007,11 @@
       const selectedRelation = relationships.find((relation) => relation.id === this._selectedRelationId) || null;
       const selectedNodeName = selectedNode ? escapeHtml(selectedNode.name) : '';
       const selectedNodeType = selectedNode ? selectedNode.type : 'class';
-      const selectedAttrs = selectedNode ? selectedNode.attributes.map((attr) => attr.name || '').join('\n') : '';
       const selectedAttribute = selectedNode && this._selectedAttributePath?.nodeId === selectedNode.id
         ? selectedNode.attributes[Number(this._selectedAttributePath.index)]
         : null;
       const selectedAttributeValue = selectedAttribute ? escapeHtml(selectedAttribute.name || '') : '';
-      const selectedAttributeTypeValue = selectedAttribute ? escapeHtml(selectedAttribute.type || '') : '';
-      const typeOptions = getTypeSuggestions(nodes);
-      const typeOptionsMarkup = typeOptions.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+      const typeOptions = getTypeSuggestions(nodes, task);
       const selectedRelationLabel = selectedRelation ? escapeHtml(selectedRelation.label || '') : '';
       const selectedRelationSource = selectedRelation ? escapeHtml(this.getNodeNameById(state, selectedRelation.sourceId)) : '';
       const selectedRelationTarget = selectedRelation ? escapeHtml(this.getNodeNameById(state, selectedRelation.targetId)) : '';
@@ -639,7 +1020,7 @@
         <div class="uml-inspector">
           <div class="uml-section">
             <strong>Output / Eigenschaften</strong>
-            ${this._associationMode ? `<div class="uml-hint">${this._associationMode.phase === 'awaiting-target' ? 'Jetzt klicken Sie auf die zweite Klasse.' : this._associationMode.phase === 'awaiting-source' ? 'Klicken Sie zuerst auf die erste Klasse.' : 'Beziehungsmodus aktiv.'}</div>` : ''}
+            ${this._associationMode?.phase === 'awaiting-source' || this._associationMode?.phase === 'awaiting-target' ? `<div class="uml-hint">${this._associationMode.phase === 'awaiting-target' ? 'Jetzt klicken Sie auf die zweite Klasse. Esc bricht ab.' : 'Klicken Sie zuerst auf die erste Klasse. Esc bricht ab.'}</div>` : ''}
             ${selectedNode || selectedRelation ? '' : '<div class="uml-hint">Wählen Sie eine Tabelle oder Beziehung, um die Eigenschaften hier zu bearbeiten.</div>'}
           </div>
           ${selectedRelation ? `
@@ -651,10 +1032,14 @@
               </label>
               <div class="uml-hint">Klasse A: ${selectedRelationSource} · Klasse B: ${selectedRelationTarget}</div>
               <label>Linke Kardinalität
-                <input type="text" data-uml-relation-field="sourceCardinality" value="${escapeHtml(selectedRelation.sourceCardinality || '')}">
+                <select data-uml-relation-field="sourceCardinality">
+                  ${getCardinalityOptionsMarkup(selectedRelation.sourceCardinality)}
+                </select>
               </label>
               <label>Rechte Kardinalität
-                <input type="text" data-uml-relation-field="targetCardinality" value="${escapeHtml(selectedRelation.targetCardinality || '')}">
+                <select data-uml-relation-field="targetCardinality">
+                  ${getCardinalityOptionsMarkup(selectedRelation.targetCardinality)}
+                </select>
               </label>
             </div>
           ` : ''}
@@ -670,10 +1055,7 @@
               <label>Name
                 <input type="text" data-uml-editor-field="name" value="${selectedNodeName}">
               </label>
-              <label>Attribute (je Zeile)
-                <textarea data-uml-editor-field="attributes">${selectedAttrs}</textarea>
-              </label>
-              <div class="uml-hint">Die Attribute werden direkt im Diagramm angezeigt. Für Datentypen nutzen Sie das Attribut-Feld im Abschnitt unten.</div>
+              <div class="uml-hint">Attribut anklicken zum Auswählen; mit Entf oder „Löschen“ entfernen. Doppelklick öffnet die schnelle Bearbeitung.</div>
             </div>
           ` : ''}
           ${selectedNode && selectedAttribute != null ? `
@@ -683,22 +1065,66 @@
                 <input type="text" data-uml-attribute-field="name" value="${selectedAttributeValue}" placeholder="z. B. Nachname">
               </label>
               <label>Datentyp
-                <input type="text" data-uml-attribute-field="type" value="${selectedAttributeTypeValue}" list="uml-type-options" placeholder="z. B. String" spellcheck="false">
-                <datalist id="uml-type-options">${typeOptionsMarkup}</datalist>
+                ${getTypeComboMarkup(selectedAttribute.type || '', typeOptions, 'data-uml-attribute-field="type" placeholder="z. B. String"')}
               </label>
-              <div class="uml-hint">Wählen Sie einen Datentyp aus der Liste oder geben Sie einen eigenen ein.</div>
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" data-uml-attribute-field="derived" ${selectedAttribute.derived ? 'checked' : ''}>
+                Abgeleitet
+              </label>
+              <div class="uml-hint">Vorschlag auswählen oder eigenen Datentyp eingeben. Alternativ direkt in der Attributzeile als name:Datentyp, z. B. email:String.</div>
             </div>
           ` : ''}
         </div>
       `;
     },
 
+    attachInspectorEvents(task, container) {
+      const outputEl = document.getElementById('output-container');
+      if (!outputEl) return;
+      outputEl.dataset.umlTaskId = String(task.id);
+      if (outputEl.dataset.umlInspectorEventsBound) return;
+
+      const updateInspectorField = (event, renderCanvas) => {
+        const field = event.target.closest('[data-uml-editor-field], [data-uml-attribute-field], [data-uml-relation-field]');
+        if (!field) return;
+        const taskId = outputEl.dataset.umlTaskId;
+        const activeTask = this._renderTasks[taskId] || task;
+        const activeContainer = activeTask.container || container;
+        if (field.hasAttribute('data-uml-editor-field')) {
+          const shouldRender = renderCanvas && field.getAttribute('data-uml-editor-field') === 'type';
+          this.updateSelectedNodeFromInspector(taskId, activeContainer, shouldRender);
+        } else if (field.hasAttribute('data-uml-attribute-field')) {
+          const shouldRender = renderCanvas && field.type === 'checkbox';
+          this.updateSelectedAttributeFromInspector(taskId, activeContainer, shouldRender);
+        } else if (field.tagName === 'SELECT') {
+          if (event.type === 'change') {
+            this.updateSelectedRelationFromInspector(taskId, activeContainer);
+          }
+        } else {
+          this.updateSelectedRelationFromInspector(taskId, activeContainer, false);
+        }
+      };
+
+      outputEl.addEventListener('input', (event) => updateInspectorField(event, false));
+      outputEl.addEventListener('change', (event) => updateInspectorField(event, true));
+      this.attachTypeComboEvents(outputEl, () => {
+        const taskId = outputEl.dataset.umlTaskId;
+        return this._renderTasks[taskId] || task;
+      });
+      outputEl.dataset.umlInspectorEventsBound = '1';
+    },
+
     attachEvents(task, container, state) {
       const self = this;
+      this.attachInspectorEvents(task, container);
 
       container.querySelectorAll('[data-uml-action]').forEach((button) => {
         button.addEventListener('click', () => {
           const action = button.getAttribute('data-uml-action');
+          if (action === 'save' && task.umlProject) {
+            self.persistState(task.id, self.getState(task.id), true, true);
+            return;
+          }
           self.handleAction(task.id, action, container);
         });
       });
@@ -736,7 +1162,8 @@
           if (!nodeEl && !event.target.closest('.uml-canvas-area')) {
             return;
           }
-          if (event.target.closest('input, textarea, select, [data-uml-edit-name], [data-uml-edit-attribute], [data-uml-add-attribute]')) return;
+          if (event.target.closest('.uml-attr-text')) return;
+          if (event.target.closest('input, textarea, select, [data-uml-add-attribute], [data-uml-type-combo-toggle], [data-uml-type-combo-option]')) return;
           const nodeId = self.resolveNodeIdFromEvent(task.id, container, event);
           if (!nodeId) {
             self._selectedNodeId = null;
@@ -798,111 +1225,66 @@
             originX: Number(self.getState(task.id).nodes.find((node) => node.id === nodeId)?.x || 0),
             originY: Number(self.getState(task.id).nodes.find((node) => node.id === nodeId)?.y || 0)
           };
-          self.render(task, container);
-          event.preventDefault();
+          container.querySelectorAll('.uml-node.selected').forEach((selectedNode) => {
+            selectedNode.classList.remove('selected');
+          });
+          nodeEl?.classList.add('selected');
+          self.renderInspector(task, self.getState(task.id));
+        });
+        container.addEventListener('click', (event) => {
+          const addButton = event.target.closest('[data-uml-add-attribute]');
+          if (addButton) {
+            event.stopPropagation();
+            self.addAttribute(task.id, addButton.getAttribute('data-uml-add-attribute'), container);
+            return;
+          }
+          const title = event.target.closest('[data-uml-edit-name]');
+          const attribute = event.target.closest('[data-uml-edit-attribute]');
+          if (title) {
+            event.stopPropagation();
+            self._selectedNodeId = title.getAttribute('data-uml-edit-name');
+            self._selectedRelationId = null;
+            self._selectedAttributePath = null;
+          } else if (attribute) {
+            event.stopPropagation();
+            const [nodeId, index] = attribute.getAttribute('data-uml-edit-attribute').split(':');
+            self._selectedNodeId = nodeId;
+            self._selectedRelationId = null;
+            self._selectedAttributePath = { nodeId, index: Number(index || 0) };
+          } else {
+            return;
+          }
+          container.querySelectorAll('.uml-attr-text.selected').forEach((selectedAttribute) => {
+            selectedAttribute.classList.remove('selected');
+            selectedAttribute.setAttribute('aria-selected', 'false');
+          });
+          if (attribute) {
+            attribute.classList.add('selected');
+            attribute.setAttribute('aria-selected', 'true');
+          }
+          container.querySelectorAll('.uml-node.selected').forEach((selectedNode) => {
+            selectedNode.classList.remove('selected');
+          });
+          container.querySelector(`.uml-node[data-uml-node-id="${self._selectedNodeId}"]`)?.classList.add('selected');
+          self.renderInspector(task, self.getState(task.id));
+        });
+        container.addEventListener('dblclick', (event) => {
+          const title = event.target.closest('[data-uml-edit-name]');
+          const attribute = event.target.closest('[data-uml-edit-attribute]');
+          if (title) {
+            event.stopPropagation();
+            self.beginInlineEdit(task.id, 'name', title.getAttribute('data-uml-edit-name'), null, container);
+          } else if (attribute) {
+            event.stopPropagation();
+            const [nodeId, index] = attribute.getAttribute('data-uml-edit-attribute').split(':');
+            self.beginInlineEdit(task.id, 'attribute', nodeId, Number(index || 0), container);
+          }
         });
         container.dataset.umlNodeDelegationBound = '1';
       }
 
-      const inspectorHosts = [container, document.getElementById('output-container')].filter(Boolean);
-      inspectorHosts.forEach((host) => {
-        host.querySelectorAll('[data-uml-editor-field]').forEach((input) => {
-          input.addEventListener('input', () => {
-            self.updateSelectedNodeFromInspector(task.id, container);
-          });
-          input.addEventListener('change', () => {
-            self.updateSelectedNodeFromInspector(task.id, container);
-          });
-        });
-
-        host.querySelectorAll('[data-uml-attribute-field]').forEach((input) => {
-          input.addEventListener('input', () => {
-            self.updateSelectedAttributeFromInspector(task.id, container);
-          });
-          input.addEventListener('focus', () => {
-            if (input.getAttribute('data-uml-attribute-field') === 'type') {
-              input.setAttribute('list', 'uml-type-options');
-            }
-          });
-          input.addEventListener('click', () => {
-            if (input.getAttribute('data-uml-attribute-field') === 'type') {
-              input.setAttribute('list', 'uml-type-options');
-            }
-          });
-          input.addEventListener('change', () => {
-            self.updateSelectedAttributeFromInspector(task.id, container);
-          });
-        });
-
-        host.querySelectorAll('[data-uml-relation-field]').forEach((input) => {
-          input.addEventListener('input', () => {
-            self.updateSelectedRelationFromInspector(task.id, container);
-          });
-          input.addEventListener('change', () => {
-            self.updateSelectedRelationFromInspector(task.id, container);
-          });
-        });
-      });
-
-      container.querySelectorAll('[data-uml-edit-name]').forEach((element) => {
-        element.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const nodeId = element.getAttribute('data-uml-edit-name');
-          self._selectedNodeId = nodeId;
-          self._selectedRelationId = null;
-          self._selectedAttributePath = null;
-          self.render(window.assignmentState?.currentTask || { id: task.id }, container);
-        });
-        element.addEventListener('dblclick', (event) => {
-          event.stopPropagation();
-          self.beginInlineEdit(task.id, 'name', element.getAttribute('data-uml-edit-name'), null, container);
-        });
-      });
-
-      container.querySelectorAll('[data-uml-edit-attribute]').forEach((element) => {
-        element.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const parts = element.getAttribute('data-uml-edit-attribute').split(':');
-          self._selectedNodeId = parts[0];
-          self._selectedRelationId = null;
-          self._selectedAttributePath = { nodeId: parts[0], index: Number(parts[1] || 0) };
-          self.render(window.assignmentState?.currentTask || { id: task.id }, container);
-        });
-        element.addEventListener('dblclick', (event) => {
-          event.stopPropagation();
-          const parts = element.getAttribute('data-uml-edit-attribute').split(':');
-          self.beginInlineEdit(task.id, 'attribute', parts[0], Number(parts[1] || 0), container);
-        });
-      });
-
-      container.querySelectorAll('[data-uml-add-attribute]').forEach((button) => {
-        button.addEventListener('click', (event) => {
-          event.stopPropagation();
-          self.addAttribute(task.id, button.getAttribute('data-uml-add-attribute'), container);
-        });
-      });
-
-      container.querySelectorAll('[data-uml-inline-name], [data-uml-inline-attribute]').forEach((input) => {
-        input.addEventListener('input', () => {
-          input.setAttribute('list', 'uml-inline-type-options');
-          const value = input.value || '';
-          const colonIndex = value.indexOf(':');
-          if (colonIndex >= 0) {
-            const partialType = value.slice(colonIndex + 1).trim();
-            if (partialType) {
-              const suggestion = getTypeSuggestions().find((option) => option.toLowerCase().startsWith(partialType.toLowerCase()));
-              if (suggestion && suggestion.toLowerCase() !== partialType.toLowerCase()) {
-                const completedValue = `${value.slice(0, colonIndex + 1)}${suggestion}`;
-                input.value = completedValue;
-                const caretPosition = completedValue.length;
-                input.setSelectionRange(caretPosition, caretPosition);
-              }
-            }
-          }
-        });
-        input.addEventListener('focus', () => {
-          input.setAttribute('list', 'uml-inline-type-options');
-        });
+      this.attachTypeComboEvents(container, () => task);
+      container.querySelectorAll('[data-uml-inline-name], [data-uml-inline-attribute-name], [data-uml-inline-attribute-type]').forEach((input) => {
         input.addEventListener('keydown', (event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
@@ -913,7 +1295,12 @@
           }
         });
         input.addEventListener('blur', () => {
-          setTimeout(() => self.commitInlineEdit(task.id, container), 0);
+          setTimeout(() => {
+            const row = input.closest('.uml-attr-row');
+            if (!row?.contains(document.activeElement)) {
+              self.commitInlineEdit(task.id, container);
+            }
+          }, 0);
         });
       });
 
@@ -922,23 +1309,34 @@
           const undoBtn = event.target.closest('#undo-btn');
           const redoBtn = event.target.closest('#redo-btn');
           if (!undoBtn && !redoBtn) return;
-          if (window.assignmentState?.currentTask?.task_type !== 'uml') return;
+          if (!task.umlProject && window.assignmentState?.currentTask?.task_type !== 'uml') return;
           event.preventDefault();
           event.stopPropagation();
           if (undoBtn) {
-            self.undo(window.assignmentState.currentTask.id, container);
+            self.undo(task.id, container);
           } else if (redoBtn) {
-            self.redo(window.assignmentState.currentTask.id, container);
+            self.redo(task.id, container);
           }
         }, true);
         document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && !event.target.closest('input, textarea, select')
+            && (self._associationMode?.phase === 'awaiting-source' || self._associationMode?.phase === 'awaiting-target')) {
+            event.preventDefault();
+            self._associationMode = { phase: 'ready', points: [], startNodeId: null };
+            self._associationHint = '';
+            self._associationCursor = null;
+            self.render(window.assignmentState?.currentTask || { id: task.id }, container);
+            return;
+          }
           const isDelete = event.key === 'Delete' || event.key === 'Backspace';
           if (isDelete && !event.target.closest('input, textarea, select')) {
             event.preventDefault();
-            self.handleDeleteSelection(task.id, container);
+            const activeTaskId = container.dataset.umlTaskId || task.id;
+            self.handleDeleteSelection(activeTaskId, self._renderTasks[String(activeTaskId)]?.container || container);
           }
         });
         document.addEventListener('keydown', (event) => {
+          if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
           const isF2 = event.key === 'F2' || event.code === 'F2';
           if (isF2 && !event.shiftKey) {
             event.preventDefault();
@@ -961,7 +1359,11 @@
               const startPoint = self.getNodeAnchor(sourceNode, canvasPoint.x, canvasPoint.y, nodeElement);
               self._associationMode.points = [startPoint, canvasPoint];
             }
-            self.render(window.assignmentState?.currentTask || { id: task.id }, container);
+            const hintBox = container.querySelector('.uml-association-hint-box');
+            if (hintBox) {
+              hintBox.style.left = `${canvasPoint.x}px`;
+              hintBox.style.top = `${canvasPoint.y}px`;
+            }
             return;
           }
           if (self._dragState) {
@@ -973,6 +1375,11 @@
             node.x = Math.max(0, self._dragState.originX + deltaX);
             node.y = Math.max(0, self._dragState.originY + deltaY);
             self.setState(task.id, currentState);
+            const nodeElement = container.querySelector(`.uml-node[data-uml-node-id="${node.id}"]`);
+            if (nodeElement) {
+              nodeElement.style.left = `${node.x}px`;
+              nodeElement.style.top = `${node.y}px`;
+            }
             self.renderConnections(task, container, currentState);
             return;
           }
@@ -1120,6 +1527,79 @@
       }
     },
 
+    updateTypeComboOptions(input, task, open = true) {
+      const combo = input?.closest('.uml-type-combo');
+      const options = combo?.querySelector('[data-uml-type-combo-options]');
+      if (!combo || !options) return;
+      const suggestions = getTypeSuggestions(this.getState(task.id).nodes, task);
+      const query = String(input.value || '').trim().toLocaleLowerCase();
+      const matches = query
+        ? suggestions.filter((suggestion) => suggestion.toLocaleLowerCase().startsWith(query))
+        : suggestions;
+      options.innerHTML = matches.length
+        ? matches.map((suggestion) => (
+          `<button type="button" role="option" data-uml-type-combo-option="${escapeHtml(suggestion)}">${escapeHtml(suggestion)}</button>`
+        )).join('')
+        : '<div class="uml-hint">Keine passenden Vorschläge</div>';
+      options.hidden = !open;
+      combo.closest('.uml-node')?.classList.toggle('uml-type-combo-open', open);
+    },
+
+    attachTypeComboEvents(root, getTask) {
+      if (root.dataset.umlTypeComboEventsBound) return;
+      root.addEventListener('focusin', (event) => {
+        const input = event.target.closest('.uml-type-combo input');
+        if (input) this.updateTypeComboOptions(input, getTask(), true);
+      });
+      root.addEventListener('input', (event) => {
+        const input = event.target.closest('.uml-type-combo input');
+        if (input) this.updateTypeComboOptions(input, getTask(), true);
+      });
+      root.addEventListener('keydown', (event) => {
+        const input = event.target.closest('.uml-type-combo input');
+        if (!input) return;
+        if (event.key === 'Escape') {
+          this.updateTypeComboOptions(input, getTask(), false);
+        } else if (event.key === 'ArrowDown') {
+          const firstOption = input.closest('.uml-type-combo')?.querySelector('[data-uml-type-combo-option]');
+          if (firstOption) {
+            event.preventDefault();
+            firstOption.focus();
+          }
+        }
+      });
+      root.addEventListener('click', (event) => {
+        const toggle = event.target.closest('[data-uml-type-combo-toggle]');
+        if (toggle) {
+          event.preventDefault();
+          event.stopPropagation();
+          const input = toggle.closest('.uml-type-combo')?.querySelector('input');
+          const options = toggle.closest('.uml-type-combo')?.querySelector('[data-uml-type-combo-options]');
+          if (input) this.updateTypeComboOptions(input, getTask(), Boolean(options?.hidden));
+          return;
+        }
+        const option = event.target.closest('[data-uml-type-combo-option]');
+        if (option) {
+          event.preventDefault();
+          event.stopPropagation();
+          const combo = option.closest('.uml-type-combo');
+          const input = combo?.querySelector('input');
+          if (input) {
+            input.value = option.getAttribute('data-uml-type-combo-option') || '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            this.updateTypeComboOptions(input, getTask(), false);
+          }
+          return;
+        }
+        root.querySelectorAll('.uml-type-combo-options:not([hidden])').forEach((options) => {
+          options.hidden = true;
+          options.closest('.uml-type-combo')?.closest('.uml-node')?.classList.remove('uml-type-combo-open');
+        });
+      });
+      root.dataset.umlTypeComboEventsBound = '1';
+    },
+
     beginInlineEdit(taskId, mode, nodeId, index, container) {
       this._editState = { mode, nodeId, index };
       if (mode === 'name' && nodeId) {
@@ -1129,7 +1609,7 @@
       }
       this.render(window.assignmentState?.currentTask || { id: taskId }, container);
       setTimeout(() => {
-        const input = container.querySelector('[data-uml-inline-name], [data-uml-inline-attribute]');
+        const input = container.querySelector('[data-uml-inline-name], [data-uml-inline-attribute-name]');
         input?.focus();
         input?.select();
       }, 0);
@@ -1148,14 +1628,18 @@
         const input = container.querySelector('[data-uml-inline-name]');
         node.name = (input?.value || '').trim() || (node.type === 'enum' ? 'Enum' : 'Klasse');
       } else if (editState.mode === 'attribute') {
-        const input = container.querySelector(`[data-uml-inline-attribute="${editState.nodeId}"]`);
-        const value = (input?.value || '').trim();
-        const colonIndex = value.indexOf(':');
-        const name = colonIndex >= 0 ? value.slice(0, colonIndex).trim() : value;
-        const previousType = node.attributes[editState.index]?.type || '';
-        const type = colonIndex >= 0 ? value.slice(colonIndex + 1).trim() : previousType;
+        const nameInput = container.querySelector(`[data-uml-inline-attribute-name="${editState.nodeId}"]`);
+        const typeInput = container.querySelector(`[data-uml-inline-attribute-type="${editState.nodeId}"]`);
+        const name = (nameInput?.value || '').trim();
+        const previousAttribute = node.attributes[editState.index];
+        const type = (typeInput?.value || '').trim();
         if (name) {
-          node.attributes[editState.index] = { name, type };
+          node.attributes[editState.index] = {
+            id: previousAttribute?.id || createAttributeId(),
+            name,
+            type,
+            derived: Boolean(previousAttribute?.derived)
+          };
         } else {
           node.attributes = node.attributes.filter((_, attributeIndex) => attributeIndex !== editState.index);
         }
@@ -1170,7 +1654,7 @@
       const state = this.getState(taskId);
       const node = state.nodes.find((candidate) => candidate.id === nodeId);
       if (!node) return;
-      node.attributes.push({ name: '', type: '' });
+      node.attributes.push({ id: createAttributeId(), name: '', type: '' });
       this._selectedNodeId = nodeId;
       this.setState(taskId, state);
       this.persistState(taskId, state);
@@ -1184,7 +1668,7 @@
         return;
       }
       const value = useLiteral ? 'literal' : '';
-      selectedNode.attributes.push({ name: value, type: '' });
+      selectedNode.attributes.push({ id: createAttributeId(), name: value, type: '' });
       this.setState(taskId, state);
       this.persistState(taskId, state);
       this.beginInlineEdit(taskId, 'attribute', selectedNode.id, selectedNode.attributes.length - 1, container);
@@ -1319,7 +1803,7 @@
       const startAnchor = startNode ? this.getNodeAnchor(startNode, Number(targetNode?.x || 0) + NODE_WIDTH / 2, Number(targetNode?.y || 0) + NODE_HEIGHT / 2, startNodeElement) : fallbackStartAnchor;
       const targetAnchor = targetNode ? this.getNodeAnchor(targetNode, Number(startNode?.x || 0) + NODE_WIDTH / 2, Number(startNode?.y || 0) + NODE_HEIGHT / 2, targetNodeElement) : fallbackTargetAnchor;
       state.relationships.push({
-        id: `uml-rel-${Date.now()}`,
+        id: createEntityId('relationship'),
         sourceId: startNodeId,
         targetId: targetNodeId,
         label: '',
@@ -1356,19 +1840,32 @@
     handleDeleteSelection(taskId, container) {
       const state = this.getState(taskId);
       const selectedNode = state.nodes.find((node) => node.id === this._selectedNodeId);
-      if (this._selectedAttributePath && selectedNode && this._selectedAttributePath.nodeId === selectedNode.id) {
+      if (this._selectedAttributePath) {
         const index = Number(this._selectedAttributePath.index);
-        if (!Number.isNaN(index)) {
-          selectedNode.attributes = selectedNode.attributes.filter((_, attributeIndex) => attributeIndex !== index);
-          this._selectedAttributePath = null;
-        }
+        if (!selectedNode || this._selectedAttributePath.nodeId !== selectedNode.id
+          || !Number.isInteger(index) || index < 0 || index >= selectedNode.attributes.length) return;
+        selectedNode.attributes.splice(index, 1);
+        this._selectedAttributePath = null;
       } else if (this._selectedRelationId) {
+        if (!state.relationships.some((relation) => relation.id === this._selectedRelationId)) return;
         state.relationships = state.relationships.filter((relation) => relation.id !== this._selectedRelationId);
         this._selectedRelationId = null;
       } else if (this._selectedNodeId) {
+        if (!selectedNode) return;
+        const relationCount = state.relationships.filter((relation) => (
+          relation.sourceId === this._selectedNodeId || relation.targetId === this._selectedNodeId
+        )).length;
+        const relationWarning = relationCount === 1
+          ? ' Dabei wird auch eine verbundene Beziehung gelöscht.'
+          : relationCount > 1
+            ? ` Dabei werden auch ${relationCount} verbundene Beziehungen gelöscht.`
+            : '';
+        if (!window.confirm(`Klasse „${selectedNode?.name || 'Unbekannt'}“ wirklich löschen?${relationWarning}`)) return;
         state.nodes = state.nodes.filter((node) => node.id !== this._selectedNodeId);
         state.relationships = state.relationships.filter((relation) => relation.sourceId !== this._selectedNodeId && relation.targetId !== this._selectedNodeId);
         this._selectedNodeId = null;
+      } else {
+        return;
       }
       this.setState(taskId, state);
       this.persistState(taskId, state);
@@ -1380,21 +1877,28 @@
 
       if (action === 'add-class') {
         const state = this.getState(taskId);
-        const nextIndex = state.nodes.length;
-        const node = createNode('class', nextIndex);
+        const canvasWidth = container?.querySelector('.uml-canvas-area')?.clientWidth || 1000;
+        const node = createNode('class', getNewNodePosition(state.nodes, canvasWidth));
         state.nodes.push(node);
         this.setState(taskId, state);
         this.persistState(taskId, state);
         this.beginInlineEdit(taskId, 'name', node.id, null, container);
       } else if (action === 'add-enum') {
         const state = this.getState(taskId);
-        const nextIndex = state.nodes.length;
-        const node = createNode('enum', nextIndex);
+        const canvasWidth = container?.querySelector('.uml-canvas-area')?.clientWidth || 1000;
+        const node = createNode('enum', getNewNodePosition(state.nodes, canvasWidth));
         state.nodes.push(node);
         this.setState(taskId, state);
         this.persistState(taskId, state);
         this.beginInlineEdit(taskId, 'name', node.id, null, container);
       } else if (action === 'add-association') {
+        if (this._associationMode?.phase === 'awaiting-source' || this._associationMode?.phase === 'awaiting-target') {
+          this._associationMode = { phase: 'ready', points: [], startNodeId: null };
+          this._associationHint = '';
+          this._associationCursor = null;
+          this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+          return;
+        }
         this._associationMode = { phase: 'awaiting-source', points: [], startNodeId: null };
         this._associationPreview = null;
         this._associationHint = 'Klicken Sie zuerst auf die erste Klasse.';
@@ -1405,44 +1909,41 @@
       } else if (action === 'reset') {
         const state = { version: UML_VERSION, nodes: [], relationships: [] };
         this._selectedNodeId = null;
+        this._selectedRelationId = null;
+        this._selectedAttributePath = null;
+        this._associationMode = { phase: 'ready', points: [], startNodeId: null };
+        this._associationPreview = null;
+        this._associationHint = '';
+        this._associationCursor = null;
         this.setState(taskId, state);
         this.persistState(taskId, state);
         this.render(window.assignmentState?.currentTask || { id: taskId }, container);
       }
     },
 
-    updateSelectedNodeFromInspector(taskId, container) {
+    updateSelectedNodeFromInspector(taskId, container, renderCanvas = true) {
       const state = this.getState(taskId);
       const selectedNode = state.nodes.find((node) => node.id === this._selectedNodeId);
       if (!selectedNode) return;
       const inspectorHost = document.getElementById('output-container') || container;
       const typeInput = inspectorHost.querySelector('[data-uml-editor-field="type"]');
       const nameInput = inspectorHost.querySelector('[data-uml-editor-field="name"]');
-      const attributesInput = inspectorHost.querySelector('[data-uml-editor-field="attributes"]');
       if (typeInput) {
         selectedNode.type = typeInput.value === 'enum' ? 'enum' : 'class';
       }
       if (nameInput) {
         selectedNode.name = nameInput.value.trim() || (selectedNode.type === 'enum' ? 'Enum' : 'Klasse');
       }
-      if (attributesInput) {
-        selectedNode.attributes = attributesInput.value
-          .split('\n')
-          .map((attr) => attr.trim())
-          .map((attr) => {
-            const parts = attr.split(':');
-            const name = parts.shift()?.trim() || '';
-            const type = parts.join(':').trim();
-            return name ? { name, type } : null;
-          })
-          .filter(Boolean);
-      }
       this.setState(taskId, state);
       this.persistState(taskId, state);
-      this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      if (renderCanvas) {
+        this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      } else {
+        this.refreshNodeText(taskId, container, selectedNode.id);
+      }
     },
 
-    updateSelectedRelationFromInspector(taskId, container) {
+    updateSelectedRelationFromInspector(taskId, container, renderCanvas = true) {
       const state = this.getState(taskId);
       const selectedRelation = state.relationships.find((relation) => relation.id === this._selectedRelationId);
       if (!selectedRelation) return;
@@ -1461,16 +1962,21 @@
       }
       this.setState(taskId, state);
       this.persistState(taskId, state);
-      this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      if (renderCanvas) {
+        this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      } else {
+        this.renderConnections(this.getRenderTask(taskId), container, state);
+      }
     },
 
-    updateSelectedAttributeFromInspector(taskId, container) {
+    updateSelectedAttributeFromInspector(taskId, container, renderCanvas = true) {
       const state = this.getState(taskId);
       const selectedNode = state.nodes.find((node) => node.id === this._selectedNodeId);
       if (!selectedNode || !this._selectedAttributePath || this._selectedAttributePath.nodeId !== selectedNode.id) return;
       const inspectorHost = document.getElementById('output-container') || container;
       const nameInput = inspectorHost.querySelector('[data-uml-attribute-field="name"]');
       const typeInput = inspectorHost.querySelector('[data-uml-attribute-field="type"]');
+      const derivedInput = inspectorHost.querySelector('[data-uml-attribute-field="derived"]');
       const name = (nameInput?.value || '').trim();
       const type = (typeInput?.value || '').trim();
       const index = Number(this._selectedAttributePath.index);
@@ -1478,13 +1984,24 @@
       if (!name && !type) {
         selectedNode.attributes = selectedNode.attributes.filter((_, attributeIndex) => attributeIndex !== index);
       } else if (name) {
-        selectedNode.attributes[index] = { name, type };
+        selectedNode.attributes[index] = {
+          id: selectedNode.attributes[index]?.id || createAttributeId(),
+          name,
+          type,
+          derived: derivedInput instanceof HTMLInputElement
+            ? derivedInput.checked
+            : Boolean(selectedNode.attributes[index]?.derived)
+        };
       } else {
         selectedNode.attributes = selectedNode.attributes.filter((_, attributeIndex) => attributeIndex !== index);
       }
       this.setState(taskId, state);
       this.persistState(taskId, state);
-      this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      if (renderCanvas) {
+        this.render(window.assignmentState?.currentTask || { id: taskId }, container);
+      } else {
+        this.refreshNodeText(taskId, container, selectedNode.id);
+      }
     },
 
     renderConnections(task, container, state) {
@@ -1502,12 +2019,11 @@
         const line = document.createElement('div');
         line.className = `uml-relationship-line${isSelected ? ' selected' : ''}`;
         line.style.left = `${startPoint.x}px`;
-        line.style.top = `${startPoint.y}px`;
+        line.style.top = `${startPoint.y - 6}px`;
         line.style.width = `${Math.max(28, distance)}px`;
         line.style.transform = `rotate(${angle}deg)`;
         line.style.padding = '0';
         line.style.margin = '0';
-        line.style.minHeight = '2px';
         if (relationId) {
           line.setAttribute('data-uml-relation-id', relationId);
           line.addEventListener('pointerdown', (event) => {
@@ -1578,6 +2094,33 @@
         const isSelected = this._selectedRelationId === relation.id;
         const line = createConnectorLine(points[0] || sourcePoint, points[1] || targetPoint, relation.id, isSelected);
         relationshipLayer.appendChild(line);
+
+        const start = points[0] || sourcePoint;
+        const end = points[1] || targetPoint;
+        const deltaX = end.x - start.x;
+        const deltaY = end.y - start.y;
+        const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+        const labelOffset = Math.min(20, distance / 3);
+        if (relation.label) {
+          const label = document.createElement('span');
+          label.className = `uml-relationship-name${isSelected ? ' selected' : ''}`;
+          label.textContent = relation.label;
+          label.style.left = `${(start.x + end.x) / 2}px`;
+          label.style.top = `${(start.y + end.y) / 2 - 12}px`;
+          relationshipLayer.appendChild(label);
+        }
+        [
+          { value: relation.sourceCardinality, point: start, direction: 1 },
+          { value: relation.targetCardinality, point: end, direction: -1 }
+        ].forEach(({ value, point, direction }) => {
+          if (!value) return;
+          const label = document.createElement('span');
+          label.className = 'uml-cardinality-label';
+          label.textContent = value;
+          label.style.left = `${point.x + (deltaX / distance) * labelOffset * direction}px`;
+          label.style.top = `${point.y + (deltaY / distance) * labelOffset * direction}px`;
+          relationshipLayer.appendChild(label);
+        });
       });
     }
   };

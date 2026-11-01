@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../auth/middleware.php';
+require_once __DIR__ . '/../../components/task_order.php';
 
 header('Content-Type: application/json');
 
@@ -122,6 +123,61 @@ if (!$taskId) {
 }
 
 $existingTask = requireAdminOwnedTask($conn, $taskId, $user);
+
+// A lock toggle must not run type-specific content validation or side effects.
+if (array_key_exists('locked', $input)) {
+    if (!taskLockColumnExists($conn)) {
+        jsonResponse(['ok' => false, 'error' => 'Schema supports no task lock yet'], 400);
+    }
+
+    $locked = filter_var($input['locked'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($locked === null) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid locked value'], 400);
+    }
+
+    if (count($input) > 2) {
+        jsonResponse([
+            'ok' => false,
+            'error' => 'Task lock update must be sent without additional task field changes'
+        ], 400);
+    }
+
+    // Assignment must be unlocked to change task lock state.
+    requireTaskAssignmentUnlocked($conn, $taskId);
+
+    $lockStmt = $conn->prepare('UPDATE tasks SET locked = ? WHERE id = ?');
+    $lockValue = (int)$locked;
+    if (!$lockStmt || !$lockStmt->bind_param('ii', $lockValue, $taskId) || !$lockStmt->execute()) {
+        error_log('Task lock update failed: ' . ($lockStmt ? $lockStmt->error : $conn->error));
+        jsonResponse(['ok' => false, 'error' => 'Failed to update task lock'], 500);
+    }
+    jsonResponse(['ok' => true, 'message' => 'Task updated']);
+}
+
+$assignmentId = (int)$existingTask['assignment_id'];
+$position = null;
+if (array_key_exists('position', $input)) {
+    $position = filter_var($input['position'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($position === false) {
+        jsonResponse(['ok' => false, 'error' => 'Invalid position'], 400);
+    }
+}
+
+// Ordering belongs to the assignment, not to the task's protected content.
+if ($position !== null && count($input) === 2) {
+    $conn->begin_transaction();
+    try {
+        lockAssignmentTaskOrder($conn, $assignmentId);
+        requireAssignmentUnlocked($conn, $assignmentId);
+        $positions = normalizeTaskPositions($conn, $assignmentId, $taskId, $position);
+        $conn->commit();
+        jsonResponse(['ok' => true, 'message' => 'Task moved', 'position' => $positions[$taskId]]);
+    } catch (Throwable $error) {
+        $conn->rollback();
+        error_log('Task reorder failed: ' . $error->getMessage());
+        jsonResponse(['ok' => false, 'error' => 'Failed to reorder tasks'], 500);
+    }
+}
 $existingTaskType = $existingTask['task_type'] ?? null;
 $existingCodeTemplate = $existingTask['code_template'] ?? '';
 $existingOverrides = $existingTask['variable_overrides'] ?? null;
@@ -151,6 +207,9 @@ $params = [];
 $types = '';
 $taskTypeInput = $input['task_type'] ?? null;
 
+// For any content mutation (template/solution/tests/files metadata), task must be effectively unlocked.
+requireTaskUnlocked($conn, $taskId);
+
 if (isset($input['title'])) {
     $title = trim($input['title']);
     if ($title === '') {
@@ -165,16 +224,6 @@ if (isset($input['description'])) {
     $updates[] = 'description = ?';
     $params[] = trim($input['description']);
     $types .= 's';
-}
-
-if (isset($input['position'])) {
-    $position = (int)$input['position'];
-    if ($position < 1) {
-        jsonResponse(['ok' => false, 'error' => 'Invalid position'], 400);
-    }
-    $updates[] = 'position = ?';
-    $params[] = $position;
-    $types .= 'i';
 }
 
 if (isset($input['max_attempts'])) {
@@ -212,7 +261,10 @@ if (isset($input['show_solution_code'])) {
 }
 
 if (array_key_exists('manual_review_required', $input)) {
-    $manualReviewRequired = (int)(bool)$input['manual_review_required'];
+    $effectiveReviewType = $input['task_type'] ?? $existingTaskType;
+    $manualReviewRequired = $effectiveReviewType === 'uml'
+        ? 1
+        : (int)(bool)$input['manual_review_required'];
     $updates[] = 'manual_review_required = ?';
     $params[] = $manualReviewRequired;
     $types .= 'i';
@@ -380,7 +432,7 @@ if ($effectiveTaskType === 'file_submission') {
     }
 }
 
-if ($effectiveTaskType === 'db_model') {
+if ($effectiveTaskType === 'db_model' || $effectiveTaskType === 'uml') {
     if (!array_key_exists('manual_review_required', $input)) {
         $updates[] = 'manual_review_required = ?';
         $params[] = 1;
@@ -391,7 +443,7 @@ if ($effectiveTaskType === 'db_model') {
         ? trim((string)($input['task_text'] ?? ''))
         : $existingTaskText;
     if ($effectiveTaskText === '') {
-        jsonResponse(['ok' => false, 'error' => 'task_text required for db_model'], 400);
+        jsonResponse(['ok' => false, 'error' => 'task_text required for ' . $effectiveTaskType], 400);
     }
 }
 
@@ -475,6 +527,25 @@ if (array_key_exists('file_submission_max_size_bytes', $input)) {
     $types .= 'i';
 }
 
+foreach (['uml_model', 'uml_solution', 'uml_template'] as $jsonColumn) {
+    if (array_key_exists($jsonColumn, $input)) {
+        $value = $input[$jsonColumn];
+        $updates[] = "{$jsonColumn} = ?";
+        $params[] = ($value === null || $value === '')
+            ? null
+            : (is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $types .= 's';
+    }
+}
+
+foreach (['hint', 'generator_code'] as $textColumn) {
+    if (array_key_exists($textColumn, $input)) {
+        $updates[] = "{$textColumn} = ?";
+        $params[] = $input[$textColumn] ?? null;
+        $types .= 's';
+    }
+}
+
 if (array_key_exists('task_difficulty', $input)) {
     $taskDifficulty = strtolower(trim((string)$input['task_difficulty']));
     $allowedTaskDifficulties = ['basic', 'medium', 'hard'];
@@ -492,6 +563,13 @@ if (empty($updates)) {
 
 $params[] = $taskId;
 $types .= 'i';
+
+try {
+if ($position !== null) {
+    $conn->begin_transaction();
+    lockAssignmentTaskOrder($conn, $assignmentId);
+    requireTaskUnlocked($conn, $taskId);
+}
 
 $sql = 'UPDATE tasks SET ' . implode(', ', $updates) . ' WHERE id = ?';
 $stmt = $conn->prepare($sql);
@@ -544,7 +622,21 @@ if ($stmt->execute()) {
         }
     }
     
+    if ($position !== null) {
+        $positions = normalizeTaskPositions($conn, $assignmentId, $taskId, $position);
+        $conn->commit();
+    }
     jsonResponse(['ok' => true, 'message' => 'Task updated']);
 } else {
+    if ($position !== null) {
+        $conn->rollback();
+    }
     jsonResponse(['ok' => false, 'error' => 'Failed to update task: ' . $stmt->error], 500);
+}
+} catch (Throwable $error) {
+    if ($position !== null) {
+        $conn->rollback();
+    }
+    error_log('Task update failed: ' . $error->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'Failed to update task'], 500);
 }

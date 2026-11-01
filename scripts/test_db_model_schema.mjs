@@ -41,7 +41,8 @@ function run() {
 
   const migrated = normalizeDbModel(legacyV2);
   assert(Number(migrated.model.version) === 3, 'legacy model should migrate to v3');
-  assert(migrated.model.databases[0].tables[0].columns[0].type === 'INTEGER', 'AUTO should normalize to INTEGER');
+  assert(migrated.model.databases[0].tables[0].columns[0].type === 'AUTO', 'AUTO should remain an auto-increment type');
+  assert(migrated.model.databases[0].tables[0].columns[1].type === 'VARCHAR', 'TEXT should normalize to VARCHAR');
 
   const migratedValidation = validateDbModel(migrated.model);
   assert(migratedValidation.ok, 'migrated model should validate');

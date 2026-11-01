@@ -250,10 +250,10 @@ if ($taskType === 'file_submission') {
     }
 }
 
-if ($taskType === 'db_model') {
+if ($taskType === 'db_model' || $taskType === 'uml') {
     $manualReviewRequired = 1;
     if ($taskText === '') {
-        jsonResponse(['ok' => false, 'error' => 'task_text required for db_model'], 400);
+        jsonResponse(['ok' => false, 'error' => 'task_text required for ' . $taskType], 400);
     }
 }
 

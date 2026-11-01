@@ -147,6 +147,8 @@ window.QuizRenderer = {
       this.renderCodeReading(task, container);
     } else if (taskType === 'code_random_complex') {
       this.renderHiddenCode(task, container);
+    } else if (taskType === 'file_submission') {
+      this.renderFileSubmission(task, container);
     }
   },
   
@@ -190,6 +192,153 @@ window.QuizRenderer = {
         </div>
       </div>
     `;
+  },
+
+  renderFileSubmission(task, container) {
+    const configuredTypes = String(task.file_submission_allowed_types || '')
+      .split(',')
+      .map((extension) => extension.trim().toLowerCase().replace(/^\./, ''))
+      .filter((extension) => /^[a-z0-9]+$/.test(extension));
+    const allowedTypes = configuredTypes.length ? [...new Set(configuredTypes)] : ['zip', 'png', 'jpg', 'jpeg'];
+    const allowedSizes = [51200, 102400, 256000, 1048576, 2097152, 5242880];
+    const configuredSize = Number(task.file_submission_max_size_bytes) || 102400;
+    const maxSize = allowedSizes.includes(configuredSize) ? configuredSize : 102400;
+    const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
+    const submission = userAnswer?.variable_values?.file_submission;
+    const adminTaskLab = window.ADMIN_TASK_LAB_VIEW === true;
+    const persistenceDisabled = window.TEST_MODE_NO_PERSIST === true || adminTaskLab;
+    const persistenceMessage = adminTaskLab
+      ? 'Datei-Uploads sind im Admin-Testmodus deaktiviert.'
+      : 'Der Vorschau-Modus speichert keine Abgaben.';
+    const accept = allowedTypes.map((extension) => `.${extension}`).join(',');
+    const currentSubmissionHtml = submission && submission.original_name
+      ? `<div class="file-submission-current" data-file-submission-current>
+          Vorhandene Abgabe:
+          <a data-file-submission-download>${this.escapeHtml(submission.original_name)}</a>
+        </div>`
+      : '<div class="file-submission-current" data-file-submission-current></div>';
+
+    container.innerHTML = `
+      <div class="quiz-container file-submission-container">
+        <div class="quiz-question">
+          ${task.task_text ? `<div class="question-text">${this.formatText(task.task_text)}</div>` : ''}
+          ${task.image_url ? `<img src="${task.image_url}" class="question-image" alt="Aufgabenbild" />` : ''}
+        </div>
+        ${this.getTaskDetailsAndHints(task)}
+        <div class="file-submission-form">
+          <label for="file-submission-${task.id}">Datei auswählen</label>
+          <input id="file-submission-${task.id}" type="file" data-file-submission-input accept="${this.escapeHtml(accept)}" ${persistenceDisabled ? 'disabled' : ''}>
+          <div class="quiz-hint">
+            Erlaubte Dateitypen: ${this.escapeHtml(allowedTypes.join(', ') || 'zip, png, jpg, jpeg')}.
+            Maximale Dateigröße: ${this.formatFileSize(maxSize)}.
+          </div>
+          <button type="button" class="hspf-btn hspf-btn-primary" data-file-submission-upload ${persistenceDisabled ? 'disabled' : ''}>
+            Datei hochladen
+          </button>
+          <div class="file-submission-status" data-file-submission-status role="status" aria-live="polite">
+            ${persistenceDisabled ? persistenceMessage : ''}
+          </div>
+          ${currentSubmissionHtml}
+        </div>
+      </div>
+    `;
+
+    const input = container.querySelector('[data-file-submission-input]');
+    const uploadButton = container.querySelector('[data-file-submission-upload]');
+    const status = container.querySelector('[data-file-submission-status]');
+    const currentSubmission = container.querySelector('[data-file-submission-current]');
+    const downloadLink = container.querySelector('[data-file-submission-download]');
+
+    if (downloadLink) {
+      downloadLink.href = this.getFileSubmissionDownloadUrl(task.id);
+      downloadLink.target = '_blank';
+      downloadLink.rel = 'noopener';
+    }
+
+    if (!input || !uploadButton || !status || persistenceDisabled) {
+      return;
+    }
+
+    input.addEventListener('change', () => {
+      uploadButton.disabled = !input.files?.length;
+      status.textContent = '';
+    });
+    uploadButton.disabled = !input.files?.length;
+
+    uploadButton.addEventListener('click', async () => {
+      const file = input.files?.[0];
+      if (!file) {
+        status.textContent = 'Bitte zuerst eine Datei auswählen.';
+        return;
+      }
+      if (file.size > maxSize) {
+        status.textContent = `Die Datei überschreitet die maximale Größe von ${this.formatFileSize(maxSize)}.`;
+        return;
+      }
+
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      if (!allowedTypes.includes(extension)) {
+        status.textContent = `Dieser Dateityp ist nicht erlaubt. Erlaubt: ${allowedTypes.join(', ')}.`;
+        return;
+      }
+
+      uploadButton.disabled = true;
+      status.textContent = 'Datei wird hochgeladen …';
+      try {
+        const formData = new FormData();
+        formData.append('task_id', String(task.id));
+        formData.append('file', file);
+        if (window.TEST_USER_ID) {
+          formData.append('test_user_id', String(window.TEST_USER_ID));
+        }
+
+        const apiBasePath = typeof getApiBasePath === 'function' ? getApiBasePath() : '../api';
+        const response = await fetch(`${apiBasePath}/user_tasks/upload_file_submission.php`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok || !result.submission) {
+          throw new Error(result.error || 'Der Upload ist fehlgeschlagen.');
+        }
+
+        const savedSubmission = result.submission;
+        const answers = window.assignmentState?.taskUserAnswers;
+        if (answers) {
+          answers[task.id] = answers[task.id] || { variable_values: {} };
+          answers[task.id].variable_values = answers[task.id].variable_values || {};
+          answers[task.id].variable_values.file_submission = savedSubmission;
+        }
+
+        currentSubmission.innerHTML = `Vorhandene Abgabe: <a data-file-submission-download>${this.escapeHtml(savedSubmission.original_name || file.name)}</a>`;
+        const savedLink = currentSubmission.querySelector('[data-file-submission-download]');
+        savedLink.href = this.getFileSubmissionDownloadUrl(task.id);
+        savedLink.target = '_blank';
+        savedLink.rel = 'noopener';
+        status.textContent = 'Datei erfolgreich hochgeladen.';
+        input.value = '';
+        uploadButton.disabled = true;
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Der Upload ist fehlgeschlagen.';
+        uploadButton.disabled = !input.files?.length;
+      }
+    });
+  },
+
+  getFileSubmissionDownloadUrl(taskId) {
+    const apiBasePath = typeof getApiBasePath === 'function' ? getApiBasePath() : '../api';
+    const testUserParam = typeof getTestUserRequestParam === 'function'
+      ? getTestUserRequestParam('&')
+      : (window.TEST_USER_ID ? `&test_user_id=${encodeURIComponent(window.TEST_USER_ID)}` : '');
+    return `${apiBasePath}/user_tasks/download_file_submission.php?task_id=${encodeURIComponent(taskId)}${testUserParam}`;
+  },
+
+  formatFileSize(sizeBytes) {
+    if (sizeBytes >= 1048576) {
+      return `${(sizeBytes / 1048576).toFixed(sizeBytes % 1048576 === 0 ? 0 : 1)} MB`;
+    }
+    return `${Math.ceil(sizeBytes / 1024)} KB`;
   },
 
   renderChoice(task, container, isMultiple) {

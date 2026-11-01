@@ -81,6 +81,25 @@ JSON
                         ]
                 ];
         }
+
+    /**
+     * Template: Leeres UML-Klassendiagramm-Projekt
+     */
+    private static function template_uml() {
+        return [
+            'project_type' => 'uml',
+            'files' => [
+                'init.py' => [
+                    'content' => "# UML-Projekt\n# Das Klassendiagramm wird im UML-Designer erstellt.\n",
+                    'mime_type' => 'text/x-python'
+                ],
+                'uml_model.json' => [
+                    'content' => "{\n  \"version\": 2,\n  \"nodes\": [],\n  \"relationships\": []\n}\n",
+                    'mime_type' => 'application/json'
+                ]
+            ]
+        ];
+    }
     
     /**
      * Template: Leeres Python-HTML Projekt

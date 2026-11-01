@@ -120,6 +120,28 @@ return false;
       assert.deepEqual(actual.map(row => Number(row.position)), expected.map((_, i) => i + 1));
     }
     const move = (id, position, status) => post('api/tasks/update.php', { id, position }, status);
+    const beforeUnlock = rows();
+    await post('api/tasks/update.php', { id: 1, locked: false });
+    assert.deepEqual(rows(), beforeUnlock.map(row => Number(row.id) === 1 ? { ...row, locked: '0' } : row));
+    await post('api/tasks/update.php', { id: 1, locked: true });
+    assert.deepEqual(rows(), beforeUnlock);
+    await post('api/tasks/update.php', { id: 1, locked: 'invalid' }, 400);
+    await post('api/tasks/update.php', { id: 1, locked: false, title: 'Forbidden' }, 400);
+    await post('api/tasks/update.php', { id: 1, locked: false, position: 1 }, 400);
+    assert.deepEqual(rows(), beforeUnlock);
+    for (const taskType of ['code', 'code_ui', 'single_choice', 'multiple_choice', 'free_text', 'code_reading', 'code_random_complex', 'db_model', 'file_submission', 'uml']) {
+      sql(`$c->query("UPDATE tasks SET task_type='${taskType}' WHERE id=1");`);
+      const snapshot = JSON.parse(sql("echo json_encode($c->query('SELECT * FROM tasks WHERE id=1')->fetch_assoc());"));
+      await post('api/tasks/update.php', { id: 1, locked: false });
+      const unlocked = JSON.parse(sql("echo json_encode($c->query('SELECT * FROM tasks WHERE id=1')->fetch_assoc());"));
+      assert.equal(Number(unlocked.locked), 0, `${taskType} unlock must persist`);
+      delete snapshot.updated_at;
+      delete unlocked.updated_at;
+      snapshot.locked = unlocked.locked;
+      assert.deepEqual(unlocked, snapshot, `${taskType} unlock must not mutate task content`);
+      await post('api/tasks/update.php', { id: 1, locked: true });
+    }
+    sql("$c->query(\"UPDATE tasks SET task_type='code' WHERE id=1\");");
     await move(3, 1);
     order([3, 1, 2]);
     assert.ok(rows().every(row => Number(row.locked) === 1 && row.code_template === 'original'));
@@ -138,6 +160,7 @@ return false;
     await post('api/tasks/update.php', { id: 1, position: 1, title: 'Forbidden' }, 423);
     order([2, 1, 3]);
     sql("$c->query('UPDATE assignments SET locked=1 WHERE id=1');");
+    await post('api/tasks/update.php', { id: 1, locked: false }, 423);
     await move(1, 1, 423);
     order([2, 1, 3]);
     sql("$c->query('UPDATE assignments SET locked=0 WHERE id=1');");
@@ -145,7 +168,18 @@ return false;
       assignment_id: 1, title: 'Inserted', task_type: 'code', position: 2
     }, 201);
     order([2, created.id, 1, 3]);
-    sql("$c->query('UPDATE tasks SET locked=0 WHERE id=1');");
+    await post('api/tasks/update.php', { id: 1, locked: false });
+    await post('api/tasks/update.php', {
+      id: 1, uml_model: { nodes: [] }, uml_solution: { nodes: [] },
+      uml_template: { type_config: { simple_types: ['String'] } },
+      hint: 'Preserved hint', generator_code: 'values = {}'
+    });
+    const fields = JSON.parse(sql("echo json_encode($c->query('SELECT uml_model,uml_solution,uml_template,hint,generator_code FROM tasks WHERE id=1')->fetch_assoc());"));
+    assert.deepEqual(JSON.parse(fields.uml_model), { nodes: [] });
+    assert.deepEqual(JSON.parse(fields.uml_solution), { nodes: [] });
+    assert.deepEqual(JSON.parse(fields.uml_template), { type_config: { simple_types: ['String'] } });
+    assert.equal(fields.hint, 'Preserved hint');
+    assert.equal(fields.generator_code, 'values = {}');
     await post('api/tasks/update.php', { id: 1, title: 'A renamed', position: 1 });
     order([1, 2, created.id, 3]);
     const clone = await post('api/admin/tasks/clone.php', { task_id: 2, assignment_id: 1 });
@@ -223,7 +257,7 @@ foreach ([[], [9], [0, -2, 0, 100, 1], [1, 1, 1, 1], [30, 20, 10]] as $positions
     $c->rollback();
 }
 `);
-    console.log('PASS: locked-task moves, assignment/content locks, ties/gaps, create/import/clones/deletes, isolation and single-request UI');
+    console.log('PASS: persisted lock/unlock across all task types, assignment/content locks, locked-task moves, ties/gaps, create/import/clones/deletes, isolation and single-request UI');
   } catch (error) {
     throw new Error(`${error.message}\nPHP logs:\n${logs}`, { cause: error });
   } finally {
