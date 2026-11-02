@@ -137,7 +137,7 @@ function updateTasksLockUi() {
 
 const ALLOWED_FILE_SUBMISSION_MAX_SIZES = [51200, 102400, 256000, 1048576, 2097152, 5242880];
 const DEFAULT_FILE_SUBMISSION_MAX_SIZE_BYTES = 102400;
-const DEFAULT_UML_SIMPLE_TYPES = ['String', 'Integer', 'Boolean', 'Float', 'Date', 'Currency', 'Time', 'Datetime'];
+const DEFAULT_UML_PRIMITIVE_TYPES = ['String', 'Integer', 'Boolean', 'Float', 'Date', 'Currency', 'Time', 'Datetime'];
 
 function parseUmlTemplate(value) {
   if (!value) return {};
@@ -152,16 +152,35 @@ function parseUmlTemplate(value) {
   }
 }
 
-function setUmlTypeConfigForm(form, templateValue = null) {
+function setUmlTypeConfigForm(form, templateValue = null, useLegacyDefaults = false) {
   if (!form) return;
   const template = parseUmlTemplate(templateValue);
   const config = template.type_config || template.typeConfig || template;
-  const configuredTypes = Array.isArray(config.simple_types)
-    ? config.simple_types.filter((type) => DEFAULT_UML_SIMPLE_TYPES.includes(type))
-    : DEFAULT_UML_SIMPLE_TYPES;
-  form.querySelectorAll('[data-uml-simple-type]').forEach((input) => {
-    input.checked = configuredTypes.includes(input.getAttribute('data-uml-simple-type'));
+  const configuredTypes = Array.isArray(config.primitive_types)
+    ? config.primitive_types
+    : Array.isArray(config.simple_types)
+      ? config.simple_types
+      : DEFAULT_UML_PRIMITIVE_TYPES;
+  const hasLegacyTypeConfig = Array.isArray(config.primitive_types) || Array.isArray(config.simple_types);
+  form.querySelectorAll('[data-uml-type-group]').forEach((input) => {
+    const group = input.getAttribute('data-uml-type-group');
+    const configKey = `${group}_types_enabled`;
+    input.checked = typeof config[configKey] === 'boolean'
+      ? config[configKey]
+      : hasLegacyTypeConfig || useLegacyDefaults;
   });
+  const methodsEnabledInput = form.querySelector('[data-uml-methods-enabled]');
+  if (methodsEnabledInput) {
+    methodsEnabledInput.checked = config.methods_enabled === true;
+  }
+  ['structures', 'custom-simple-types', 'generalization'].forEach((feature) => {
+    const input = form.querySelector(`[data-uml-${feature}-enabled]`);
+    if (input) input.checked = config[`${feature.replace(/-/g, '_')}_enabled`] === true;
+  });
+  const primitiveTypesInput = form.querySelector('[data-uml-primitive-types]');
+  if (primitiveTypesInput) {
+    primitiveTypesInput.value = configuredTypes.join('; ');
+  }
   const lengthInput = form.querySelector('[data-uml-string-length]');
   const length = Number.parseInt(config.string_length, 10);
   if (lengthInput) {
@@ -180,11 +199,28 @@ function getUmlTypeConfigFromForm(form, templateValue = null) {
   const config = template.type_config && typeof template.type_config === 'object'
     ? { ...template.type_config }
     : {};
+  const primitiveTypesInput = form?.querySelector('[data-uml-primitive-types]');
+  const primitiveTypes = Array.from(new Set(
+    String(primitiveTypesInput?.value || '')
+      .split(';')
+      .map((type) => type.trim())
+      .filter(Boolean)
+  ));
+  config.primitive_types = primitiveTypes;
+  config.simple_types = primitiveTypes;
+  form?.querySelectorAll('[data-uml-type-group]').forEach((input) => {
+    const group = input.getAttribute('data-uml-type-group');
+    config[`${group}_types_enabled`] = input.checked;
+  });
+  const methodsEnabledInput = form?.querySelector('[data-uml-methods-enabled]');
+  config.methods_enabled = Boolean(methodsEnabledInput?.checked);
+  ['structures', 'custom-simple-types', 'generalization'].forEach((feature) => {
+    const input = form?.querySelector(`[data-uml-${feature}-enabled]`);
+    config[`${feature.replace(/-/g, '_')}_enabled`] = input ? input.checked
+      : config[`${feature.replace(/-/g, '_')}_enabled`] === true;
+  });
   const lengthInput = form?.querySelector('[data-uml-string-length]');
   const parsedLength = Number.parseInt(lengthInput?.value || '30', 10);
-  config.simple_types = Array.from(form?.querySelectorAll('[data-uml-simple-type]:checked') || [])
-    .map((input) => input.getAttribute('data-uml-simple-type'))
-    .filter((type) => DEFAULT_UML_SIMPLE_TYPES.includes(type));
   config.string_length = Number.isInteger(parsedLength) && parsedLength > 0 ? parsedLength : 30;
   const starterModelValue = form?.querySelector('[data-uml-starter-model]')?.value.trim() || '';
   if (starterModelValue) {
@@ -2620,7 +2656,7 @@ async function openEditTaskModal(taskId) {
   // Task type - use task_type if available, fallback to problem_type
   const taskType = task.task_type || task.problem_type || 'code';
   $('edit-task-type').value = taskType;
-  setUmlTypeConfigForm($('task-edit-form'), task.uml_template);
+  setUmlTypeConfigForm($('task-edit-form'), task.uml_template, true);
   if ($('edit-task-difficulty')) {
     $('edit-task-difficulty').value = task.task_difficulty || 'medium';
   }

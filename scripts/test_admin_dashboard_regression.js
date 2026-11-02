@@ -68,15 +68,25 @@ async function main() {
   element('edit-task-type').value = 'uml';
   element('edit-task-text').value = 'Modellieren Sie den Zusammenhang.';
   const form = element('task-edit-form');
+  const primitiveTypesInput = { value: 'String; Integer' };
+  const groups = [
+    { group: 'primitive', checked: true },
+    { group: 'complex', checked: false },
+    { group: 'enumeration', checked: true }
+  ].map(item => ({ ...item, getAttribute: () => item.group }));
   form.querySelector = selector => selector === '[data-uml-string-length]' ? { value: '45' }
-    : selector === '[data-uml-starter-model]' ? { value: '{"nodes":[],"relationships":[]}' } : null;
-  form.querySelectorAll = () => [{ getAttribute: () => 'String' }, { getAttribute: () => 'Integer' }];
+    : selector === '[data-uml-starter-model]' ? { value: '{"nodes":[],"relationships":[]}' }
+      : selector === '[data-uml-primitive-types]' ? primitiveTypesInput : null;
+  form.querySelectorAll = selector => selector === '[data-uml-type-group]' ? groups : [];
   await context.handleEditTaskSubmit({ preventDefault() {} });
   const saved = requests.pop();
   assert.equal(saved.url, '../api/tasks/update.php');
   assert.equal(saved.body.uml_template.custom_setting, 'preserve');
   assert.equal(saved.body.uml_template.type_config.string_length, 45);
   assert.deepEqual(saved.body.uml_template.type_config.simple_types, ['String', 'Integer']);
+  assert.equal(saved.body.uml_template.type_config.primitive_types_enabled, true);
+  assert.equal(saved.body.uml_template.type_config.complex_types_enabled, false);
+  assert.equal(saved.body.uml_template.type_config.enumeration_types_enabled, true);
   assert.deepEqual(saved.body.uml_template.starter_model.nodes, []);
   assert.equal(saved.body.manual_review_required, 1);
   assert.equal('problem_type' in saved.body, false);

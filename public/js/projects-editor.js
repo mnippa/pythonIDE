@@ -604,13 +604,13 @@ function ensureDbDesignerUiStyles() {
     #db-design-container button[data-db-action],
     #db-data-container button[data-db-action],
     #gui-container button[data-db-action],
-    #db-structure-tree .db-tree-item[data-db-action] {
+    #db-structure-tree .db-tree-item[data-db-action]:not(.active) {
       transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
       cursor: pointer;
       border: 1px solid var(--border);
-      background: var(--panel);
+      background: var(--bg);
       color: var(--text-primary);
-      border-radius: 4px;
+      border-radius: 7px;
       box-shadow: none;
       font-weight: 600;
     }
@@ -618,12 +618,10 @@ function ensureDbDesignerUiStyles() {
     #db-data-container button[data-db-action]:hover,
     #gui-container button[data-db-action]:hover,
     #db-structure-tree .db-tree-item[data-db-action]:hover {
-      transform: translateY(-1px);
-      background: var(--text-secondary) !important;
-      border-color: var(--border) !important;
-      color: var(--text-primary) !important;
-      opacity: 0.7 !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+      background: var(--bg-secondary) !important;
+      border-color: var(--accent) !important;
+      color: var(--accent) !important;
+      box-shadow: 0 2px 5px rgba(15, 23, 42, 0.1);
     }
     #db-design-container button[data-db-action]:active,
     #db-data-container button[data-db-action]:active,
@@ -633,13 +631,9 @@ function ensureDbDesignerUiStyles() {
     #db-data-container button[data-db-action]:focus-visible,
     #gui-container button[data-db-action]:focus-visible,
     #db-structure-tree .db-tree-item[data-db-action]:focus-visible {
-      transform: translateY(0);
-      background: var(--text-secondary) !important;
-      border-color: var(--border) !important;
-      color: var(--text-primary) !important;
-      opacity: 0.85 !important;
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16);
-      outline: none;
+      border-color: var(--accent) !important;
+      outline: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+      outline-offset: 1px;
     }
     .db-designer-toast {
       margin-top: 8px;
@@ -798,10 +792,13 @@ function renderNonGuiProjectPlaceholder(project) {
 
 function setProjectsBodyMode(mode) {
   if (!document?.body) return;
+  const editorView = document.getElementById('editor-view');
   if (mode === PROJECT_MODE.DB) {
     document.body.classList.add('db-mode');
+    editorView?.classList.add('db-mode');
   } else {
     document.body.classList.remove('db-mode');
+    editorView?.classList.remove('db-mode');
   }
 
   const leftHeader = document.getElementById('left-structure-header');
@@ -1826,6 +1823,7 @@ function ensureDbDesignerStateExists() {
       saveInFlight: false,
       selectedTableIndex: 0,
       sqlText: '',
+      sqlPanelCollapsed: false,
       sqlQueryResult: null,
       sqlRunInFlight: false,
       inlineRowDrafts: {},
@@ -2410,10 +2408,10 @@ function renderDbDesigner() {
     ? (activeDb.tables || []).map((table, tableIndex) => {
         const tableHasError = diagnostics.tableErrorKeys.has(String(tableIndex));
         const tableHasWarning = diagnostics.tableWarningKeys.has(String(tableIndex));
-        const icon = tableHasError ? '⚠️' : (tableHasWarning ? '⚑' : '📄');
-        return `<div class="db-tree-item ${tableIndex === selectedTableIndex ? 'active' : ''}" data-db-action="select-table" data-table-index="${tableIndex}">${icon} ${escapeHtml(String(table.name || `Tabelle ${tableIndex + 1}`))}</div>`;
+        const icon = tableHasError ? '⚠' : (tableHasWarning ? '!' : '▦');
+        return `<button type="button" class="db-tree-item ${tableIndex === selectedTableIndex ? 'active' : ''}" data-db-action="select-table" data-table-index="${tableIndex}" title="Tabelle ${escapeHtml(String(table.name || `Tabelle ${tableIndex + 1}`))}"><span class="db-tree-item-icon ${tableHasError ? 'error' : (tableHasWarning ? 'warning' : '')}" aria-hidden="true">${icon}</span><span>${escapeHtml(String(table.name || `Tabelle ${tableIndex + 1}`))}</span></button>`;
       }).join('')
-    : '<p style="padding:8px; color:#666; margin:0;">Keine Tabellen vorhanden.</p>';
+    : '<p class="db-tree-empty">Noch keine Tabellen. Erstellen Sie Ihre erste Tabelle über „Neue Tabelle“.</p>';
 
   treeContainer.innerHTML = treeMarkup;
 
@@ -2454,10 +2452,10 @@ function renderDbDesigner() {
       </tr>
     ` : '';
   designContainer.innerHTML = [
-    '<div style="color:#222; display:flex; flex-direction:column; gap:8px;">',
-    '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">',
-    `<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:16px; font-weight:700; line-height:1.1;"><span>Entwurf:</span><span style="min-width:220px; max-width:360px; font-size:16px; font-weight:700; color:#2563eb; padding:6px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(String(selectedTable?.name || ''))}</span></div>`,
-    '<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">',
+    '<div class="db-structure-panel">',
+    '<div class="db-panel-heading">',
+    `<div><span class="db-panel-eyebrow">Tabellenentwurf</span><strong>${escapeHtml(String(selectedTable?.name || 'Tabelle auswählen'))}</strong></div>`,
+    '<div class="db-structure-toolbar">',
     '<button data-db-action="save-structure" title="Entwurf speichern" aria-label="Entwurf speichern" style="width:34px; height:34px; min-width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--border); background:var(--bg); box-shadow:0 1px 2px rgba(0,0,0,0.04);">💾</button>',
     '<button data-db-action="discard" title="Aenderungen verwerfen" aria-label="Aenderungen verwerfen" style="width:34px; height:34px; min-width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--border); background:var(--bg); box-shadow:0 1px 2px rgba(0,0,0,0.04);">↺</button>',
     '<button data-db-action="undo" title="Undo" aria-label="Undo" style="width:34px; height:34px; min-width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--border); background:var(--bg); box-shadow:0 1px 2px rgba(0,0,0,0.04);">↶</button>',
@@ -2466,18 +2464,18 @@ function renderDbDesigner() {
     '<button data-db-action="add-table" title="Neue Tabelle" aria-label="Neue Tabelle" style="width:34px; height:34px; min-width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid #bfdbfe; background:#eff6ff; color:#2563eb; box-shadow:0 1px 2px rgba(0,0,0,0.04);">＋</button>',
     '</div>',
     '</div>',
-    selectedTable ? '<div style="overflow:auto; max-height: calc(100% - 118px);">' : '<div>',
+    selectedTable ? '<div class="db-structure-grid-wrap">' : '<div class="db-panel-empty">',
     selectedTable ? `
-      <table style="border-collapse:separate; border-spacing:0 1px; width:100%; min-width:0; table-layout:fixed; font-size:12px;">
+      <table class="db-structure-grid">
         <thead>
           <tr>
-            <th style="text-align:left; padding:0 1px 1px 1px; width:28px;">PK</th>
-            <th style="text-align:left; padding:0 1px 1px 1px; width:28px;">FK</th>
-            <th style="text-align:left; padding:0 1px 1px 1px; width:34px;">Null</th>
-            <th style="text-align:left; padding:0 4px 1px 4px; width:auto;">Name</th>
-            <th style="text-align:left; padding:0 2px 1px 2px; width:164px;">Typ</th>
-            <th style="text-align:left; padding:0 2px 1px 2px; width:64px;">Default</th>
-            <th style="text-align:left; padding:0 2px 1px 2px; width:40px;">Del</th>
+            <th title="Primärschlüssel">PK</th>
+            <th title="Fremdschlüssel">FK</th>
+            <th title="Wert darf leer sein">NULL</th>
+            <th>Name</th>
+            <th>Datentyp</th>
+            <th>Standard</th>
+            <th aria-label="Aktionen"></th>
           </tr>
         </thead>
         <tbody>
@@ -2515,7 +2513,7 @@ function renderDbDesigner() {
     const colName = String(c.name || '');
     const active = sortCol === colName;
     const arrow = active ? (sortDir === 'DESC' ? ' ▼' : ' ▲') : '';
-    return `<th style="text-align:left; border-bottom:1px solid #ddd; padding:4px 6px;"><button data-db-action="sort-data" data-col-name="${escapeHtml(colName)}" style="border:none; background:transparent; cursor:pointer; padding:0; color:inherit; font:inherit;">${escapeHtml(colName)}${arrow}</button></th>`;
+    return `<th><button data-db-action="sort-data" data-col-name="${escapeHtml(colName)}" title="Nach ${escapeHtml(colName)} sortieren">${escapeHtml(colName)}${arrow}</button></th>`;
   }).join('');
   const rowCells = sortedRows.map(({ row, idx: rowIndex }) => {
     const rowDirty = hasDbPendingRowEdits(selectedTableIndex, rowIndex);
@@ -2544,14 +2542,16 @@ function renderDbDesigner() {
     : '';
 
   dataContainer.innerHTML = [
-    '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">',
-    `<strong>Daten (${selectedTable ? escapeHtml(String(selectedTable.name || 'Tabelle')) : 'keine Tabelle'})</strong>`,
-    `<input data-db-input="data-filter" value="${escapeHtml(String(dbDesignerState.dataFilter || ''))}" placeholder="Filter..." style="min-width:180px; max-width:240px;">`,
-    selectedTable ? `<button data-db-action="add-row" data-table-index="${selectedTableIndex}" style="border:1px solid #bfdbfe; background:#eff6ff; color:#2563eb; border-radius:6px; font-weight:600;">+ Zeile</button>` : '',
+    '<div class="db-data-toolbar">',
+    `<div><span class="db-panel-eyebrow">Tabelleninhalt</span><strong>${selectedTable ? escapeHtml(String(selectedTable.name || 'Tabelle')) : 'Keine Tabelle ausgewählt'}</strong></div>`,
+    `<input data-db-input="data-filter" value="${escapeHtml(String(dbDesignerState.dataFilter || ''))}" placeholder="Daten filtern…" aria-label="Daten filtern">`,
+    selectedTable ? `<button data-db-action="add-row" data-table-index="${selectedTableIndex}" title="Neue Zeile" aria-label="Neue Zeile">＋ Zeile</button>` : '',
+    '<span class="db-data-toolbar-spacer"></span>',
+    selectedTable ? `<button data-db-action="save-data" data-table-index="${selectedTableIndex}" title="Daten speichern" aria-label="Daten speichern">💾 Daten speichern</button>` : '',
     '</div>',
     selectedTable
-      ? `<div style="overflow:auto; max-height:100%;"><table style="border-collapse:collapse; width:100%; min-width:560px; font-size:12px;"><thead><tr><th style="text-align:left; border-bottom:1px solid #ddd; padding:4px 6px; width:42px;">#</th>${dataHeader}<th style="text-align:left; border-bottom:1px solid #ddd; padding:4px 6px; width:120px;">Aktion</th></tr></thead><tbody>${rowCells || `<tr><td colspan="${columns.length + 2}" style="padding:8px; color:#666;">Keine Daten vorhanden.</td></tr>`}${inlineInsertRow}</tbody></table></div><div style="margin-top:6px; color:#666; font-size:11px;">Tipp: In der Inline-Zeile Enter druecken oder + klicken, um direkt einzufuegen.</div>`
-      : '<p style="margin:0; color:#666;">Waehle links eine Tabelle aus, um Daten zu bearbeiten.</p>'
+      ? `<div class="db-data-grid-wrap"><table class="db-data-grid"><thead><tr><th class="db-row-number">#</th>${dataHeader}<th class="db-row-actions">Aktionen</th></tr></thead><tbody>${rowCells || `<tr><td colspan="${columns.length + 2}" class="db-grid-empty">Noch keine Datenzeilen. Nutzen Sie „＋ Zeile“, um Beispieldaten einzutragen.</td></tr>`}${inlineInsertRow}</tbody></table></div><div class="db-learning-hint"><strong>Lernhinweis</strong> Tragen Sie Werte passend zu den Spaltentypen ein. Mit der Inline-Zeile fügen Sie einen Datensatz hinzu.</div>`
+      : '<p class="db-panel-empty">Wählen Sie links eine Tabelle, um ihre Daten und Struktur zu bearbeiten.</p>'
   ].join('');
 
   const sqlPermissions = getSqlEditorPermissions(currentProject);
@@ -2559,6 +2559,9 @@ function renderDbDesigner() {
   const sqlResult = dbDesignerState.sqlQueryResult;
   const sqlResultRows = Array.isArray(sqlResult?.rows) ? sqlResult.rows : [];
   const sqlLogEntries = Array.isArray(dbDesignerState.sqlLogEntries) ? dbDesignerState.sqlLogEntries : [];
+  const sqlPanelCollapsed = Boolean(dbDesignerState.sqlPanelCollapsed);
+  sqlContainer.classList.toggle('db-sql-collapsed', sqlPanelCollapsed);
+  document.querySelector('.app')?.classList.toggle('db-sql-collapsed', sqlPanelCollapsed);
   const sqlResultCols = Array.isArray(sqlResult?.columns) ? sqlResult.columns : [];
   const sqlResultTableHead = sqlResultCols
     .map((col) => `<th style="text-align:left; border-bottom:1px solid #ddd; padding:4px 6px;">${escapeHtml(String(col || ''))}</th>`)
@@ -2575,13 +2578,14 @@ function renderDbDesigner() {
     ? `<div class="db-sql-log-item ${latestSqlLogEntry.type === 'error' ? 'error' : (latestSqlLogEntry.type === 'success' ? 'success' : '')}">${escapeHtml(String(latestSqlLogEntry.message || ''))}</div>`
     : '<div class="db-sql-log-item">Noch keine SQL-Protokoll-Einträge.</div>';
   sqlContainer.innerHTML = [
-    '<div style="display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden;">',
-    '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; position:sticky; top:0; background:var(--bg); z-index:2; padding-bottom:4px; flex-wrap:wrap;">',
-    '<div style="font-weight:600; white-space:nowrap;">SQL Editor</div>',
-    `<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:0;">${sqlPermissions.allowRun ? '<button data-db-action="execute-sql" ' + (dbDesignerState.sqlRunInFlight ? 'disabled' : '') + ' title="SQL ausfuehren" aria-label="SQL ausfuehren" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid #16a34a; background:#ecfdf3; color:#166534; border-radius:8px; padding:0; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">▶</button>' : ''}${sqlPermissions.allowImport ? '<button data-db-action="import-sql-snippet" title="SQL-Snippet laden" aria-label="SQL-Snippet laden" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:#2563eb; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">⇩</button>' : ''}${sqlPermissions.allowExport ? '<button data-db-action="export-sql-snippet" title="SQL-Snippet exportieren" aria-label="SQL-Snippet exportieren" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:#2563eb; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">⇧</button>' : ''}</div>`,
+    '<div class="db-sql-panel">',
+    '<div class="db-panel-heading db-sql-heading">',
+    '<div class="db-sql-heading-main"><span class="db-panel-eyebrow">Abfragen</span><strong>SQL-Arbeitsbereich</strong></div>',
+    `<div class="db-sql-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:0;">${sqlPermissions.allowRun ? '<button data-db-action="execute-sql" ' + (dbDesignerState.sqlRunInFlight ? 'disabled' : '') + ' title="SQL ausfuehren" aria-label="SQL ausfuehren" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid #16a34a; background:#ecfdf3; color:#166534; border-radius:8px; padding:0; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">▶</button>' : ''}${sqlPermissions.allowImport ? '<button data-db-action="import-sql-snippet" title="SQL-Snippet laden" aria-label="SQL-Snippet laden" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:#2563eb; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">⇩</button>' : ''}${sqlPermissions.allowExport ? '<button data-db-action="export-sql-snippet" title="SQL-Snippet exportieren" aria-label="SQL-Snippet exportieren" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:#2563eb; font-size:14px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">⇧</button>' : ''}</div>`,
+    `<button data-db-action="toggle-sql-panel" aria-expanded="${!sqlPanelCollapsed}" title="${sqlPanelCollapsed ? 'SQL-Bereich einblenden' : 'SQL-Bereich einklappen'}" aria-label="${sqlPanelCollapsed ? 'SQL-Bereich einblenden' : 'SQL-Bereich einklappen'}" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text-primary); font-size:16px; line-height:1;">${sqlPanelCollapsed ? '›' : '‹'}</button>`,
     '</div>',
-    `<textarea data-db-input="sql-text" placeholder="SELECT ..." style="width:100%; min-height:110px; max-height:55%; resize:vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; background:var(--bg); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:8px;">${escapeHtml(sqlValue)}</textarea>`,
-    '<div style="margin-top:8px; font-size:12px; color:var(--text-secondary);">Abfrageergebnis</div>',
+    `<textarea data-db-input="sql-text" placeholder="SELECT * FROM tabelle;" aria-label="SQL-Abfrage">${escapeHtml(sqlValue)}</textarea>`,
+    '<div class="db-sql-result-heading">Ergebnis</div>',
     sqlResult
       ? (sqlResult.ok
           ? (sqlResult.mode === 'result-set'
@@ -2609,6 +2613,11 @@ function handleDbDesignerAction(action, buttonEl) {
   }
   if (action === 'save-data') {
     saveDbDesignerData();
+    return;
+  }
+  if (action === 'toggle-sql-panel') {
+    dbDesignerState.sqlPanelCollapsed = !dbDesignerState.sqlPanelCollapsed;
+    renderDbDesigner();
     return;
   }
   if (action === 'undo') {
@@ -3396,6 +3405,7 @@ async function initializeDbMode(project) {
     saveInFlight: false,
     selectedTableIndex: 0,
     sqlText: '',
+    sqlPanelCollapsed: false,
     sqlQueryResult: null,
     sqlRunInFlight: false,
     inlineRowDrafts: {},
@@ -3428,14 +3438,14 @@ async function initializeUmlMode(project) {
   const statusEl = document.getElementById('uml-project-save-status');
   const canvasEl = document.getElementById('uml-project-canvas');
   const modelFile = await readProjectFileByName(project.id, UML_MODEL_FILE_NAME, true);
-  let model = { version: 2, nodes: [], relationships: [] };
+  let model = { version: 3, nodes: [], relationships: [] };
   if (modelFile?.content) {
     try {
       const parsedModel = JSON.parse(modelFile.content);
       if (!parsedModel || typeof parsedModel !== 'object' || Array.isArray(parsedModel)) {
         throw new Error('Das Modell muss ein JSON-Objekt sein.');
       }
-      if (Number(parsedModel.version || 1) > 2) {
+      if (Number(parsedModel.version || 1) > 3) {
         throw new Error('Diese UML-Modellversion wird von dieser Anwendung noch nicht unterstützt.');
       }
       if (!Array.isArray(parsedModel.nodes) || !Array.isArray(parsedModel.relationships)) {

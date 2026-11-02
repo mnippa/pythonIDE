@@ -205,7 +205,7 @@ $isTaskLabView = true;
       border-right: 1px solid var(--border);
       background: var(--bg);
       display: none;
-      flex-direction: column-reverse;
+      flex-direction: column;
       min-height:0;
       overflow: hidden;
     }
@@ -1084,8 +1084,8 @@ HTML;
   <script src="js/code-validator.js"></script>
   
   <!-- Quiz Renderer -->
-  <script src="js/quiz-renderer.js?v=20261031-adminlab-upload1"></script>
-  <script src="js/uml-renderer.js?v=20261031-uml-relation-selection1"></script>
+  <script src="js/quiz-renderer.js?v=20261101-model-header-submit2"></script>
+  <script src="js/uml-renderer.js?v=20261101-uml-dark-text10"></script>
   <script src="js/test-mode.js"></script>
 
   <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
@@ -1260,6 +1260,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20261027-task-details"></script>
+  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
 </body>
 </html>

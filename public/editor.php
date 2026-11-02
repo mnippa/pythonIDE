@@ -935,6 +935,6 @@ exit;
     });
   </script>
   <script type="module" src="js/projects.js"></script>
-  <script type="module" src="js/assignments.js?v=20261027-task-details"></script>
+  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
 </body>
 </html>

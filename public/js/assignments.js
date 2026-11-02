@@ -278,6 +278,67 @@ function shouldShowTaskDownloadButton(task) {
   return !!task && String(task.task_type || '') === 'code';
 }
 
+function isModelSubmissionTask(task) {
+  return !!task && ['db_model', 'uml'].includes(String(task.task_type || ''));
+}
+
+function isDbModelTask(task) {
+  return !!task && String(task.task_type || '') === 'db_model';
+}
+
+function ensureDbModelAssignmentStyles() {
+  if (document.getElementById('db-model-assignment-styles')) return;
+
+  const style = document.createElement('style');
+  style.id = 'db-model-assignment-styles';
+  style.textContent = `
+    .task-details-content.has-db-model-structure {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .task-details-content.has-db-model-structure > .task-description-box,
+    .task-details-content.has-db-model-structure > .task-details-tabs {
+      flex: 0 0 auto;
+    }
+
+    .task-details-content.has-db-model-structure .task-details-tabs {
+      gap: 4px;
+      min-width: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+
+    .task-details-content.has-db-model-structure .task-details-tab {
+      flex: 0 0 auto;
+      padding: 6px 7px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .task-details-content.has-db-model-structure > .task-details-panel-section.active {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .task-details-content.has-db-model-structure > .task-details-panel-section[data-tab-panel="db-structure"].active {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .task-details-content.has-db-model-structure .db-model-sidebar-slot,
+    .task-details-content.has-db-model-structure .db-model-task-sidebar-panel {
+      height: 100%;
+      min-height: 0;
+      margin-top: 0;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function isTaskEffectivelyLockedForEdit(task) {
   if (!task) return true;
   return !!(task.assignment_locked === true || task.locked === true || task.effective_locked === true);
@@ -538,6 +599,12 @@ function refreshCurrentTaskToolbarForStatus(task) {
   } else {
     if (submittedInfo) submittedInfo.classList.remove('show');
     if (downloadBtn) downloadBtn.style.display = showDownload ? 'inline-block' : 'none';
+    if (checkBtn && isModelSubmissionTask(task)) checkBtn.style.display = 'none';
+    if (submitBtn) {
+      submitBtn.style.display = isModelSubmissionTask(task) && !isAdminUserTestMode()
+        ? 'inline-block'
+        : 'none';
+    }
     if (saveTaskBtn) {
       saveTaskBtn.style.display = 'inline-block';
       updateSaveButtonTooltip();
@@ -1254,6 +1321,15 @@ function showTaskDetails(task, activeTab = 'details') {
 
   panel.classList.add('active');
   if (app) app.classList.add('with-task-details');
+  const hasDbModelStructure = isDbModelTask(task);
+  const hasFolderStructure = !hasDbModelStructure && (
+    task.folderstructure === 1 ||
+    task.folderstructure === true ||
+    task.folderstructure === '1'
+  );
+  if (app) app.classList.toggle('db-model-assignment', hasDbModelStructure);
+  contentEl.classList.toggle('has-db-model-structure', hasDbModelStructure);
+  if (hasDbModelStructure) ensureDbModelAssignmentStyles();
 
   // Get status and attempts for header
   const status = assignmentState.taskStatuses[task.id] || 'unbearbeitet';
@@ -1472,8 +1548,9 @@ function showTaskDetails(task, activeTab = 'details') {
     tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'hints' ? 'active' : ''}" data-tab="hints">Hinweise <span class="task-tab-count">${revealedCount}/${totalHints}</span></button>`;
   }
   
-  // Folder structure tab (if enabled for this task)
-  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+  if (hasDbModelStructure) {
+    tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'db-structure' ? 'active' : ''}" data-tab="db-structure">🗄️ DB-Struktur</button>`;
+  } else if (hasFolderStructure) {
     tabsHtml += `<button type="button" class="task-details-tab ${activeTab === 'folders' ? 'active' : ''}" data-tab="folders">📁 Ordner</button>`;
   }
   
@@ -1489,16 +1566,19 @@ function showTaskDetails(task, activeTab = 'details') {
 
   // Build final HTML: description (with test types in h4), then tabs
   let html = descriptionHtml + tabsHtml;
-  if (task.task_type === 'db_model') {
-    html += `<div id="db-model-sidebar-${task.id}" class="db-model-sidebar-slot"></div>`;
-  }
   html += `<div class="task-details-panel-section ${activeTab === 'details' ? 'active' : ''}" data-tab-panel="details">${detailsHtml}</div>`;
   if (totalHints > 0) {
     html += `<div class="task-details-panel-section ${activeTab === 'hints' ? 'active' : ''}" data-tab-panel="hints">${hintsHtml}</div>`;
   }
+
+  if (hasDbModelStructure) {
+    html += `<div class="task-details-panel-section ${activeTab === 'db-structure' ? 'active' : ''}" data-tab-panel="db-structure">
+      <div id="db-model-sidebar-${task.id}" class="db-model-sidebar-slot"></div>
+    </div>`;
+  }
   
   // Folder structure panel (empty for now)
-  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+  if (hasFolderStructure) {
     html += `<div class="task-details-panel-section ${activeTab === 'folders' ? 'active' : ''}" data-tab-panel="folders">
       <div id="folder-panel-content-${task.id}" style="color: var(--text-secondary); font-size: 13px;">
         Lade Dateien...
@@ -1508,7 +1588,7 @@ function showTaskDetails(task, activeTab = 'details') {
 
   contentEl.innerHTML = html;
 
-  if (task.task_type === 'db_model' && window.QuizRenderer?.renderDbModelSidebar) {
+  if (hasDbModelStructure && window.QuizRenderer?.renderDbModelSidebar) {
     const sidebarEl = contentEl.querySelector(`#db-model-sidebar-${task.id}`);
     if (sidebarEl) {
       window.QuizRenderer.renderDbModelSidebar(task, sidebarEl);
@@ -1523,7 +1603,7 @@ function showTaskDetails(task, activeTab = 'details') {
   }
   
   // Load folder files if this is a folder structure task
-  if (task.folderstructure === 1 || task.folderstructure === true || task.folderstructure === '1') {
+  if (hasFolderStructure) {
     const folderPanelId = `folder-panel-content-${task.id}`;
     loadAndDisplayTaskFiles(folderPanelId, task.id);
   }
@@ -3561,7 +3641,10 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     task.folderstructure === true ||
     task.folderstructure === '1'
   );
-  showTaskDetails(task, hasFolderStructure ? 'folders' : 'details');
+  const initialDetailsTab = isDbModelTask(task)
+    ? 'db-structure'
+    : (hasFolderStructure ? 'folders' : 'details');
+  showTaskDetails(task, initialDetailsTab);
   showTaskQuestionAboveEditor(task);
   renderTaskNavigation();
   updateAttemptsCounter(task);
@@ -3687,7 +3770,11 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     
     if (runBtn) runBtn.style.display = 'none';
     if (checkBtn) checkBtn.style.display = 'none';
-    if (submitBtn) submitBtn.style.display = 'none';
+    if (submitBtn) {
+      submitBtn.style.display = isModelSubmissionTask(task) && !isAdminUserTestMode()
+        ? 'inline-block'
+        : 'none';
+    }
     
   } else {
     // Handle Code Tasks - show editor
@@ -7262,6 +7349,19 @@ function bindAssignmentsEvents() {
 
   // Submit button
   submitBtn?.addEventListener('click', () => {
+    const task = assignmentState.currentTask;
+    if (isModelSubmissionTask(task)) {
+      if (isAdminUserTestMode()) return;
+      if (typeof window.QuizRenderer?.submitQuiz !== 'function') {
+        const feedbackEl = document.getElementById(`quiz-feedback-${task.id}`);
+        const message = 'Abgabe ist momentan nicht verfügbar. Bitte laden Sie die Seite neu.';
+        console.error(message, { taskId: task.id, taskType: task.task_type });
+        if (feedbackEl) feedbackEl.textContent = message;
+        return;
+      }
+      window.QuizRenderer.submitQuiz(task.id, task.task_type);
+      return;
+    }
     submitTask();
   });
 

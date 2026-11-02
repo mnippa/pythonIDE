@@ -668,7 +668,522 @@ if ($displayName === '') {
     }
 
     body.db-mode #right-bottom-free {
+      display: none;
+    }
+
+    .app.with-project-details.db-mode {
+      grid-template-columns: minmax(250px, 280px) minmax(520px, 1fr) 5px minmax(320px, 0.72fr) !important;
+    }
+
+    .app.db-mode .editor-area {
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .app.db-mode .editor-container-wrapper {
+      grid-column: 1;
+      grid-row: 1;
+      overflow: hidden;
+    }
+
+    .app.db-mode .editor-bottom {
+      grid-column: 2;
+      grid-row: 1;
       display: block;
+      min-width: 0;
+      overflow: hidden;
+      border-top: 0;
+      border-left: 1px solid var(--border);
+    }
+
+    .app.db-mode #db-design-container,
+    .app.db-mode #db-data-container,
+    .app.db-mode #gui-container.active {
+      box-sizing: border-box;
+      background: var(--panel);
+    }
+
+    .app.db-mode #db-design-container {
+      padding: 14px;
+    }
+
+    .app.db-mode #db-data-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 100%;
+      padding: 14px;
+      border-top: 0;
+      overflow: hidden;
+    }
+
+    .app.db-mode #gui-container.active {
+      flex: 1 1 auto;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      max-height: none;
+      padding: 0;
+      border: 0;
+      overflow: hidden;
+    }
+
+    .app.db-mode .right {
+      min-width: 0;
+      padding: 12px;
+      border-left: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .app.with-project-details.db-mode.db-sql-collapsed {
+      grid-template-columns: minmax(250px, 280px) minmax(520px, 1fr) 5px 52px !important;
+    }
+
+    .app.db-mode.db-sql-collapsed #gui-container.active {
+      padding: 8px 4px;
+    }
+
+    .app.db-mode.db-sql-collapsed .right {
+      padding: 8px 4px;
+    }
+
+    .app.db-mode.db-sql-collapsed .db-sql-panel {
+      align-items: center;
+      gap: 0;
+    }
+
+    .app.db-mode.db-sql-collapsed .db-sql-heading {
+      justify-content: center;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .app.db-mode.db-sql-collapsed .db-sql-heading-main,
+    .app.db-mode.db-sql-collapsed .db-sql-actions,
+    .app.db-mode.db-sql-collapsed .db-sql-panel > :not(.db-sql-heading) {
+      display: none !important;
+    }
+
+    .app.db-mode .project-navigation {
+      flex: 0 1 30%;
+    }
+
+    .app.db-mode #file-tree-wrapper {
+      flex: 1 1 auto;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      margin: 8px;
+      background: var(--panel);
+    }
+
+    .app.db-mode #file-tree-wrapper .tree-header {
+      padding: 10px 12px;
+      background: var(--bg-secondary);
+    }
+
+    .db-structure-panel,
+    .db-sql-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      color: var(--text-primary);
+      font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .db-panel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 46px;
+      padding: 0 0 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .db-panel-heading > div:first-child {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .db-panel-heading strong {
+      overflow: hidden;
+      color: var(--text-primary);
+      font-size: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .db-panel-eyebrow {
+      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .db-structure-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .db-structure-toolbar button,
+    .db-data-toolbar button {
+      min-width: 32px;
+      min-height: 32px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--text-primary);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .db-structure-toolbar button[data-db-action="add-table"],
+    .db-data-toolbar button[data-db-action="add-row"],
+    .db-data-toolbar button[data-db-action="save-data"] {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+      color: var(--accent);
+      font-weight: 650;
+    }
+
+    .db-structure-grid-wrap,
+    .db-data-grid-wrap {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+    }
+
+    .db-structure-grid,
+    .db-data-grid {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: auto;
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+
+    .db-structure-grid th,
+    .db-data-grid th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 8px 7px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: left;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .db-structure-grid td,
+    .db-data-grid td {
+      padding: 5px 6px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+      vertical-align: middle;
+    }
+
+    .db-structure-grid tbody tr:hover,
+    .db-data-grid tbody tr:hover {
+      background: color-mix(in srgb, var(--accent) 4%, var(--bg));
+    }
+
+    .db-structure-grid input:not([type="checkbox"]),
+    .db-structure-grid select,
+    .db-data-toolbar input,
+    .db-data-grid-input {
+      min-height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--bg);
+      color: var(--text-primary);
+      font: inherit;
+    }
+
+    .db-structure-grid input:not([type="checkbox"]) {
+      width: 100% !important;
+      min-width: 48px !important;
+      max-width: none !important;
+      padding: 4px 7px !important;
+    }
+
+    .db-structure-grid select {
+      min-width: 84px;
+      padding: 4px 6px !important;
+    }
+
+    .db-structure-grid input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    .db-structure-grid button[data-db-action="delete-column"],
+    .db-data-grid button[data-db-action="delete-row"] {
+      width: 28px !important;
+      height: 28px !important;
+      min-width: 28px !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 6px !important;
+      background: var(--bg) !important;
+      color: var(--text-secondary) !important;
+      box-shadow: none !important;
+    }
+
+    .db-data-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .db-data-toolbar > div:first-child {
+      display: grid;
+      min-width: 130px;
+      gap: 2px;
+      margin-right: auto;
+    }
+
+    .db-data-toolbar > div:first-child strong {
+      color: var(--text-primary);
+      font-size: 14px;
+    }
+
+    .db-data-toolbar input {
+      width: min(220px, 100%);
+      padding: 5px 8px;
+    }
+
+    .db-data-toolbar-spacer {
+      flex: 0 1 8px;
+    }
+
+    .db-data-grid {
+      min-width: 520px;
+    }
+
+    .db-data-grid th button {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+
+    .db-data-grid-input {
+      width: 100%;
+      padding: 3px 6px;
+    }
+
+    .db-row-number,
+    .db-row-actions {
+      width: 58px;
+    }
+
+    .db-grid-empty {
+      padding: 18px !important;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    .db-learning-hint {
+      padding: 9px 11px;
+      border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--accent) 5%, var(--bg));
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .db-learning-hint strong {
+      margin-right: 5px;
+      color: var(--accent);
+    }
+
+    .db-panel-empty,
+    .db-tree-empty {
+      margin: 0;
+      padding: 16px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .db-sql-panel {
+      overflow: hidden;
+    }
+
+    .db-sql-heading-main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .db-sql-heading > div:first-child {
+      margin-right: auto;
+    }
+
+    .db-sql-panel textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 140px;
+      max-height: 45%;
+      resize: vertical;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--text-primary);
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .db-sql-result-heading {
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #db-structure-tree .db-tree-item {
+      width: 100%;
+      min-height: 34px;
+      padding: 6px 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      text-align: left;
+    }
+
+    #db-structure-tree .db-tree-item.active {
+      border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+      background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+      color: var(--accent);
+    }
+
+    .db-tree-item-icon {
+      display: inline-flex;
+      width: 18px;
+      height: 18px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      background: var(--bg-secondary);
+      color: var(--accent);
+      font-size: 12px;
+    }
+
+    .db-tree-item-icon.error {
+      background: #fff1f2;
+      color: #b42318;
+    }
+
+    .db-tree-item-icon.warning {
+      background: #fffbeb;
+      color: #a16207;
+    }
+
+    @media (max-width: 1100px) {
+      .app.with-project-details.db-mode {
+        grid-template-columns: 220px minmax(0, 1fr) 5px 300px !important;
+      }
+
+      .app.with-project-details.db-mode.db-sql-collapsed {
+        grid-template-columns: 220px minmax(0, 1fr) 5px 52px !important;
+      }
+
+      .app.db-mode .editor-area {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(260px, 1fr) minmax(220px, 0.8fr);
+      }
+
+      .app.db-mode .editor-container-wrapper {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      .app.db-mode .editor-bottom {
+        grid-column: 1;
+        grid-row: 2;
+        border-left: 0;
+        border-top: 1px solid var(--border);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .app.with-project-details.db-mode {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: 132px minmax(420px, 1fr) minmax(280px, 45vh);
+        height: auto;
+        min-height: 100%;
+        overflow: visible;
+      }
+
+      .app.db-mode #project-list-panel {
+        display: flex !important;
+        grid-column: 1;
+        grid-row: 1;
+        min-height: 0;
+      }
+
+      .app.db-mode .project-navigation {
+        display: none;
+      }
+
+      .app.db-mode #file-tree-wrapper {
+        margin: 4px;
+      }
+
+      .app.db-mode .editor-area {
+        grid-column: 1;
+        grid-row: 2;
+        grid-template-rows: minmax(240px, 1fr) minmax(220px, 0.9fr);
+      }
+
+      .app.db-mode .right {
+        display: flex;
+        grid-column: 1;
+        grid-row: 3;
+        min-height: 280px;
+      }
+
+      .app.db-mode .right,
+      .app.db-mode .column-splitter {
+        border-left: 0;
+      }
+
+      .app.db-mode .column-splitter { display: none; }
+    }
+
+    @media (max-width: 768px) {
+      .app.with-project-details.db-mode.db-sql-collapsed {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: 132px minmax(420px, 1fr) 56px;
+      }
+
+      .app.db-mode.db-sql-collapsed .right {
+        min-height: 0;
+      }
     }
 
     #output-plot-section {
@@ -1089,7 +1604,7 @@ HTML;
   <!-- File Tree -->
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
-  <script src="js/uml-renderer.js?v=20261031-uml-relation-selection1"></script>
+  <script src="js/uml-renderer.js?v=20261101-uml-dark-text10"></script>
 
   <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
 
@@ -1283,7 +1798,7 @@ HTML;
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script type="module" src="js/projects-editor.js?v=20260729b"></script>
+  <script type="module" src="js/projects-editor.js?v=20261102-uml-model-v3"></script>
   <script>
     // Set project editor mode for editor-setup.js
     window.PROJECT_EDITOR_MODE = true;

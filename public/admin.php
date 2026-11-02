@@ -1328,19 +1328,23 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
           </div>
 
           <div class="field" data-field="uml-datatype-config">
-            <label>Im UML-Attributeditor verfügbare einfache Datentypen</label>
-            <div class="hint">Auswahl erscheint beim Tippen nach „:“ und im Datentypfeld. Strukturen und eigene Typdefinitionen sind noch nicht Teil dieses Schritts.</div>
+            <label>Im UML-Attributeditor verfügbare Datentypen</label>
+            <div class="hint">Die Gruppen werden im Attributeditor als Vorschläge angeboten. Primitive Datentypen können mit Semikolon getrennt frei gepflegt werden.</div>
             <div class="uml-type-config-options">
-              <label><input type="checkbox" data-uml-simple-type="String" checked> String</label>
-              <label style="margin-left:12px;">Standardlänge <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;"></label>
-              <label><input type="checkbox" data-uml-simple-type="Integer" checked> Integer</label>
-              <label><input type="checkbox" data-uml-simple-type="Boolean" checked> Boolean</label>
-              <label><input type="checkbox" data-uml-simple-type="Float" checked> Float</label>
-              <label><input type="checkbox" data-uml-simple-type="Date" checked> Date</label>
-              <label><input type="checkbox" data-uml-simple-type="Currency" checked> Currency</label>
-              <label><input type="checkbox" data-uml-simple-type="Time" checked> Time</label>
-              <label><input type="checkbox" data-uml-simple-type="Datetime" checked> Datetime</label>
+              <label><input type="checkbox" data-uml-type-group="primitive"> Primitive Datentypen</label>
+              <label><input type="checkbox" data-uml-type-group="complex"> Komplexe Datentypen</label>
+              <label><input type="checkbox" data-uml-type-group="enumeration"> Enumerationen</label>
+              <label><input type="checkbox" data-uml-methods-enabled> Methoden</label>
+              <label><input type="checkbox" data-uml-structures-enabled> Strukturen erstellen (ohne Methoden)</label>
+              <label><input type="checkbox" data-uml-custom-simple-types-enabled> Eigene einfache Datentypen erstellen</label>
+              <label><input type="checkbox" data-uml-generalization-enabled> Generalisierung und abstrakte Superklassen</label>
             </div>
+            <label>Primitive Datentypen (Semikolon getrennt)
+              <input type="text" data-uml-primitive-types value="String; Integer; Boolean; Float; Date; Currency; Time; Datetime" placeholder="z. B. String; Integer; Decimal">
+            </label>
+            <label>Standardlänge für String
+              <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;">
+            </label>
             <label style="display:block; margin-top:10px;">UML-Startmodell (optional, JSON)
               <textarea data-uml-starter-model rows="7" placeholder='{"nodes":[{"id":"kunde","name":"Kunde","type":"class","x":40,"y":40,"attributes":[{"name":"name","type":"String(30)"}]}],"relationships":[]}'></textarea>
             </label>
@@ -1629,19 +1633,23 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
           </div>
 
           <div class="field" data-field="uml-datatype-config">
-            <label>Im UML-Attributeditor verfügbare einfache Datentypen</label>
-            <div class="hint">Auswahl erscheint beim Tippen nach „:“ und im Datentypfeld. Strukturen und eigene Typdefinitionen sind noch nicht Teil dieses Schritts.</div>
+            <label>Im UML-Attributeditor verfügbare Datentypen</label>
+            <div class="hint">Die Gruppen werden im Attributeditor als Vorschläge angeboten. Primitive Datentypen können mit Semikolon getrennt frei gepflegt werden.</div>
             <div class="uml-type-config-options">
-              <label><input type="checkbox" data-uml-simple-type="String" checked> String</label>
-              <label style="margin-left:12px;">Standardlänge <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;"></label>
-              <label><input type="checkbox" data-uml-simple-type="Integer" checked> Integer</label>
-              <label><input type="checkbox" data-uml-simple-type="Boolean" checked> Boolean</label>
-              <label><input type="checkbox" data-uml-simple-type="Float" checked> Float</label>
-              <label><input type="checkbox" data-uml-simple-type="Date" checked> Date</label>
-              <label><input type="checkbox" data-uml-simple-type="Currency" checked> Currency</label>
-              <label><input type="checkbox" data-uml-simple-type="Time" checked> Time</label>
-              <label><input type="checkbox" data-uml-simple-type="Datetime" checked> Datetime</label>
+              <label><input type="checkbox" data-uml-type-group="primitive"> Primitive Datentypen</label>
+              <label><input type="checkbox" data-uml-type-group="complex"> Komplexe Datentypen</label>
+              <label><input type="checkbox" data-uml-type-group="enumeration"> Enumerationen</label>
+              <label><input type="checkbox" data-uml-methods-enabled> Methoden</label>
+              <label><input type="checkbox" data-uml-structures-enabled> Strukturen erstellen (ohne Methoden)</label>
+              <label><input type="checkbox" data-uml-custom-simple-types-enabled> Eigene einfache Datentypen erstellen</label>
+              <label><input type="checkbox" data-uml-generalization-enabled> Generalisierung und abstrakte Superklassen</label>
             </div>
+            <label>Primitive Datentypen (Semikolon getrennt)
+              <input type="text" data-uml-primitive-types value="String; Integer; Boolean; Float; Date; Currency; Time; Datetime" placeholder="z. B. String; Integer; Decimal">
+            </label>
+            <label>Standardlänge für String
+              <input type="number" data-uml-string-length min="1" max="65535" value="30" style="width:90px;">
+            </label>
             <label style="display:block; margin-top:10px;">UML-Startmodell (optional, JSON)
               <textarea data-uml-starter-model rows="7" placeholder='{"nodes":[{"id":"kunde","name":"Kunde","type":"class","x":40,"y":40,"attributes":[{"name":"name","type":"String(30)"}]}],"relationships":[]}'></textarea>
             </label>
@@ -2194,7 +2202,7 @@ $latestDeploy = $adminDeployHistory['latest'] ?? null;
   <script src="js/export-tasks.js?v=20261008a"></script>
   <script src="js/import-tasks.js?v=20261008a"></script>
   <script src="js/task-ai-generator.js"></script>
-  <script src="js/admin-dashboard.js?v=20261101-clean-rebuild1"></script>
+  <script src="js/admin-dashboard.js?v=20261101-uml-datatypes-generalization2"></script>
   <script src="js/admin-teams-users.js?v=20260618c"></script>
   
   <script>

@@ -1787,6 +1787,8 @@ window.QuizRenderer = {
 
     const attemptsInfo = this.getAttemptsInfo(task);
     const disableSubmit = attemptsInfo.blocked;
+    const headerSubmitBtn = document.getElementById('submit-btn');
+    const showInlineSubmit = !headerSubmitBtn || getComputedStyle(headerSubmitBtn).display === 'none';
 
     const userAnswer = window.assignmentState?.taskUserAnswers?.[task.id];
     const userTextAnswer = userAnswer?.text_answer || '';
@@ -1985,11 +1987,11 @@ window.QuizRenderer = {
           </section>
         </div>
 
-        <div class="quiz-actions">
+        ${showInlineSubmit ? `<div class="quiz-actions">
           <button id="quiz-submit-${task.id}" class="hspf-btn hspf-btn-primary" onclick="window.QuizRenderer.submitQuiz(${task.id}, 'db_model')" ${disableSubmit ? 'disabled' : ''}>
             Abgeben
           </button>
-        </div>
+        </div>` : ''}
         <div id="quiz-feedback-${task.id}" class="quiz-feedback"></div>
       </div>
     `;
