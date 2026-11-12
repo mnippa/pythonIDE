@@ -4,6 +4,7 @@
 import { initOutputPlotTabs } from './output-plot-tabs.js';
 import { guiBridge } from './gui-bridge.js';
 import { createInternalClipboard } from './editor-internal-clipboard.js?v=20261027b';
+import { pythonInputBridgeSource, supportsWorkerInput } from './python-input-bridge.js?v=20261110-input-bridge1';
 
 function ensureInputModalStyles() {
   if (document.getElementById('pyide-input-modal-styles')) {
@@ -13,13 +14,6 @@ function ensureInputModalStyles() {
   const style = document.createElement('style');
   style.id = 'pyide-input-modal-styles';
   style.textContent = `
-    #help-container.pyide-input-host,
-    #editor-container.pyide-input-host,
-    .editor-area.pyide-input-host,
-    .editor-quiz-wrapper.pyide-input-host {
-      position: relative;
-    }
-
     .pyide-editor-inactive {
       position: relative;
       pointer-events: none;
@@ -44,35 +38,60 @@ function ensureInputModalStyles() {
       z-index: 3;
     }
 
-    .pyide-input-help-modal {
-      position: absolute;
-      inset: 0;
-      display: none;
-      align-items: stretch;
-      justify-content: stretch;
-      z-index: 1002;
-      background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.16));
-      padding: 10px;
-      animation: fadeIn 0.2s;
-    }
-
-    .pyide-input-help-modal .pyide-input-dialog {
-      width: 100%;
-      height: 100%;
-      max-width: none;
-      border-radius: 10px;
-      border: 1px solid var(--border, #e5e7eb);
-      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
-      background: var(--bg, #fff);
-      color: var(--text-primary, #000);
+    .pyide-input-dialog {
+      max-height: 100%;
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
 
-    .pyide-input-help-modal .pyide-input-dialog-body {
+    .pyide-input-dialog-header,
+    .pyide-input-dialog-footer {
+      flex: 0 0 auto;
+    }
+
+    .pyide-input-dialog-body {
       flex: 1 1 auto;
+      min-height: 0;
       overflow: auto;
+    }
+
+    .pyide-input-modal {
+      box-sizing: border-box;
+    }
+
+    .pyide-input-modal.pyide-input-modal--compact {
+      padding: 4px;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog {
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog-header {
+      padding: 6px 12px !important;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog-header h3 {
+      font-size: 16px !important;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog-body {
+      padding: 8px 12px !important;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog-footer {
+      padding: 0 12px 8px !important;
+      gap: 8px !important;
+    }
+
+    .pyide-input-modal--compact .pyide-input-dialog-footer button {
+      padding: 6px 12px !important;
+    }
+
+    .pyide-input-modal--compact #python-input-batch-field {
+      min-height: 64px !important;
     }
   `;
   document.head.appendChild(style);
@@ -80,22 +99,28 @@ function ensureInputModalStyles() {
 
 function getInputModalHost() {
   ensureInputModalStyles();
-  const host = document.getElementById('help-container')
-    || document.getElementById('editor-container')
-    || document.querySelector('.editor-area')
-    || document.querySelector('.editor-quiz-wrapper')
-    || document.body;
-  if (host && host !== document.body) {
-    host.classList.add('pyide-input-host');
-  }
-  return host;
+  return document.body;
 }
 
-function getInputModalPositionStyle(host) {
-  if (host === document.body) {
-    return 'position: fixed; top: 0; left: 0; right: 0; bottom: 0;';
-  }
-  return 'position: absolute; inset: 0;';
+function syncInputModalViewport(modal) {
+  const viewport = window.visualViewport;
+  const updatePosition = () => {
+    const height = viewport?.height || window.innerHeight;
+    modal.classList.toggle('pyide-input-modal--compact', height <= 460);
+    modal.style.top = `${viewport?.offsetTop || 0}px`;
+    modal.style.left = `${viewport?.offsetLeft || 0}px`;
+    modal.style.width = `${viewport?.width || window.innerWidth}px`;
+    modal.style.height = `${height}px`;
+  };
+
+  updatePosition();
+  viewport?.addEventListener('resize', updatePosition);
+  viewport?.addEventListener('scroll', updatePosition);
+
+  return () => {
+    viewport?.removeEventListener('resize', updatePosition);
+    viewport?.removeEventListener('scroll', updatePosition);
+  };
 }
 
 function setInputUiState(active) {
@@ -122,23 +147,23 @@ window.pythonInput = function(prompt) {
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'python-input-modal';
-      modal.className = host !== document.body ? 'pyide-input-help-modal' : '';
-      modal.style.cssText = host === document.body ? `
-        ${getInputModalPositionStyle(host)}
+      modal.className = 'pyide-input-modal';
+      modal.style.cssText = `
+        position: fixed; inset: 0;
         background: rgba(0, 0, 0, 0.38); display: none;
         align-items: center; justify-content: center; z-index: 1001;
         animation: fadeIn 0.2s;
         padding: 16px;
-      ` : '';
+      `;
       
       modal.innerHTML = `
         <div class="pyide-input-dialog" style="
           background: var(--bg, #fff); color: var(--text-primary, #000);
-          border-radius: 12px; max-width: 400px; width: 90%;
+          border-radius: 12px; max-width: 400px; width: 90%; min-height: 0;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
           animation: slideUp 0.3s;
         ">
-          <div style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
+          <div class="pyide-input-dialog-header" style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
             <h3 style="margin: 0; font-size: 18px;" id="python-input-prompt">Eingabe</h3>
           </div>
           <div class="pyide-input-dialog-body" style="padding: 20px;">
@@ -149,7 +174,7 @@ window.pythonInput = function(prompt) {
               font-family: monospace;
             " autocomplete="off">
           </div>
-          <div style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
+          <div class="pyide-input-dialog-footer" style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
             <button id="python-input-cancel" style="
               padding: 8px 16px; border: 1px solid var(--border, #e5e7eb);
               border-radius: 6px; background: var(--panel, #f5f5f5);
@@ -168,20 +193,7 @@ window.pythonInput = function(prompt) {
     if (modal.parentElement !== host) {
       host.appendChild(modal);
     }
-    if (host === document.body) {
-      modal.className = '';
-      modal.style.cssText = `
-        ${getInputModalPositionStyle(host)}
-        background: rgba(0, 0, 0, 0.38); display: none;
-        align-items: center; justify-content: center; z-index: 1001;
-        animation: fadeIn 0.2s;
-        padding: 16px;
-      `;
-    } else {
-      modal.className = 'pyide-input-help-modal';
-      modal.style.cssText = '';
-    }
-    
+
     // Set prompt and show modal
     const promptEl = document.getElementById('python-input-prompt');
     const inputField = document.getElementById('python-input-field');
@@ -191,6 +203,7 @@ window.pythonInput = function(prompt) {
     promptEl.textContent = prompt || 'Eingabe:';
     inputField.value = '';
     modal.style.display = 'flex';
+    const stopViewportSync = syncInputModalViewport(modal);
     setInputUiState(true);
     
     // Focus input field
@@ -200,6 +213,7 @@ window.pythonInput = function(prompt) {
     const handleSubmit = () => {
       const value = inputField.value;
       modal.style.display = 'none';
+      stopViewportSync();
       setInputUiState(false);
       resolve(value);
     };
@@ -207,6 +221,7 @@ window.pythonInput = function(prompt) {
     // Handle cancel
     const handleCancel = () => {
       modal.style.display = 'none';
+      stopViewportSync();
       setInputUiState(false);
       resolve(''); // Return empty string on cancel
     };
@@ -246,35 +261,35 @@ window.pythonInputBatch = function(prompt, hint) {
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'python-input-batch-modal';
-      modal.className = host !== document.body ? 'pyide-input-help-modal' : '';
-      modal.style.cssText = host === document.body ? `
-        ${getInputModalPositionStyle(host)}
+      modal.className = 'pyide-input-modal';
+      modal.style.cssText = `
+        position: fixed; inset: 0;
         background: rgba(0, 0, 0, 0.38); display: none;
         align-items: center; justify-content: center; z-index: 1002;
         animation: fadeIn 0.2s;
         padding: 16px;
-      ` : '';
+      `;
 
       modal.innerHTML = `
         <div class="pyide-input-dialog" style="
           background: var(--bg, #fff); color: var(--text-primary, #000);
-          border-radius: 12px; max-width: 560px; width: 92%;
+          border-radius: 12px; max-width: 560px; width: 92%; min-height: 0;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
           animation: slideUp 0.3s;
         ">
-          <div style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
+          <div class="pyide-input-dialog-header" style="padding: 20px; border-bottom: 1px solid var(--border, #e5e7eb);">
             <h3 style="margin: 0; font-size: 18px;" id="python-input-batch-prompt">Mehrfacheingabe</h3>
           </div>
           <div class="pyide-input-dialog-body" style="padding: 20px;">
             <p id="python-input-batch-hint" style="margin: 0 0 10px; color: var(--text-secondary, #4b5563); font-size: 13px;">Eine Zeile pro input()-Aufruf.</p>
             <textarea id="python-input-batch-field" style="
-              width: 100%; min-height: 160px; padding: 10px; font-size: 14px;
+              width: 100%; padding: 10px; font-size: 14px;
               border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
               background: var(--bg, #fff); color: var(--text-primary, #000);
               font-family: monospace; resize: vertical;
             " spellcheck="false"></textarea>
           </div>
-          <div style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
+          <div class="pyide-input-dialog-footer" style="padding: 0 20px 20px; display: flex; gap: 10px; justify-content: flex-end;">
             <button id="python-input-batch-cancel" style="
               padding: 8px 16px; border: 1px solid var(--border, #e5e7eb);
               border-radius: 6px; background: var(--panel, #f5f5f5);
@@ -293,19 +308,6 @@ window.pythonInputBatch = function(prompt, hint) {
     if (modal.parentElement !== host) {
       host.appendChild(modal);
     }
-    if (host === document.body) {
-      modal.className = '';
-      modal.style.cssText = `
-        ${getInputModalPositionStyle(host)}
-        background: rgba(0, 0, 0, 0.38); display: none;
-        align-items: center; justify-content: center; z-index: 1002;
-        animation: fadeIn 0.2s;
-        padding: 16px;
-      `;
-    } else {
-      modal.className = 'pyide-input-help-modal';
-      modal.style.cssText = '';
-    }
 
     const promptEl = document.getElementById('python-input-batch-prompt');
     const hintEl = document.getElementById('python-input-batch-hint');
@@ -317,6 +319,7 @@ window.pythonInputBatch = function(prompt, hint) {
     hintEl.textContent = hint || 'Eine Zeile pro input()-Aufruf.';
     fieldEl.value = '';
     modal.style.display = 'flex';
+    const stopViewportSync = syncInputModalViewport(modal);
     setInputUiState(true);
 
     setTimeout(() => fieldEl.focus(), 50);
@@ -324,12 +327,14 @@ window.pythonInputBatch = function(prompt, hint) {
     const handleSubmit = () => {
       const value = fieldEl.value;
       modal.style.display = 'none';
+      stopViewportSync();
       setInputUiState(false);
       resolve(value);
     };
 
     const handleCancel = () => {
       modal.style.display = 'none';
+      stopViewportSync();
       setInputUiState(false);
       resolve('');
     };
@@ -1179,7 +1184,7 @@ if "idegui" not in sys.modules:
       }
     }
 
-    function consumePreparedInput(promptText = '') {
+    function consumePreparedInput(promptText = '', synchronous = false) {
       if (preparedInputQueue.length > 0) {
         const value = String(preparedInputQueue.shift() ?? '');
         window.__pyideLastConsumedInput = {
@@ -1192,6 +1197,17 @@ if "idegui" not in sys.modules:
         return value;
       }
 
+      if (synchronous) {
+        const value = window.prompt(String(promptText));
+        window.__pyideLastConsumedInput = {
+          source: 'browser-dialog',
+          prompt: String(promptText),
+          value,
+          remaining: preparedInputQueue.length,
+          ts: Date.now(),
+        };
+        return value;
+      }
       return requestOverlayInput(promptText);
     }
 
@@ -1408,6 +1424,7 @@ if "idegui" not in sys.modules:
     window.clearPreparedInputQueue = clearPreparedInputQueue;
     window.getPreparedInputQueue = () => preparedInputQueue.slice();
     window.__pyideConsumeInput = consumePreparedInput;
+    window.__pyideConsumeSyncInput = prompt => consumePreparedInput(prompt, true);
     window.__pyideOutputClear = outputClear;
     window.__pyideOutputWrite = outputWrite;
     window.__pyideOutputFlush = outputFlush;
@@ -1508,7 +1525,7 @@ if "idegui" not in sys.modules:
 
     function ensureWorkerRunner() {
       if (!workerRunner) {
-        const workerUrl = new URL('./python-runner.worker.js', import.meta.url);
+        const workerUrl = new URL('./python-runner.worker.js?v=20261110-input-bridge1', import.meta.url);
         workerRunner = new Worker(workerUrl, { type: 'module' });
       }
       return workerRunner;
@@ -2014,6 +2031,7 @@ compile(code, "<usercode>", "exec")
       }
 
       runInProgress = true;
+      window.notifyDetectiveRunStarted?.();
       activeRunMode = 'main';
       setRunButtonState(true, 'main');
 
@@ -2027,6 +2045,7 @@ compile(code, "<usercode>", "exec")
             let runPerfWorkerTimings = null;
 
       let code = '';
+      const detectiveTaskId = window.assignmentState?.currentTask?.id;
 
       try {
           if (window.incrementTaskRunCount && window.assignmentState?.currentTask?.id) {
@@ -2170,7 +2189,8 @@ compile(code, "<usercode>", "exec")
             ? 'js-dom-interop-detected'
             : (usesGeneralJsInterop ? 'js-interop-detected' : '');
               const workerCircuitOpen = isWorkerCircuitOpen();
-              const canUseWorkerRunner = workerRunnerEnabled && !workerCircuitOpen && !isCodeUiMode && !wantsIdeGui && !workerRiskReason;
+              const workerInputUnsupported = !supportsWorkerInput() && (usesBlockingInput || !!currentProject || hasFolderStructure);
+              const canUseWorkerRunner = workerRunnerEnabled && !workerCircuitOpen && !isCodeUiMode && !wantsIdeGui && !workerRiskReason && !workerInputUnsupported;
 
           if (!canUseWorkerRunner) {
             if (!workerRunnerEnabled) {
@@ -2183,12 +2203,17 @@ compile(code, "<usercode>", "exec")
               runPerfReason = 'idegui-detected';
             } else if (workerRiskReason) {
               runPerfReason = workerRiskReason;
+            } else if (workerInputUnsupported) {
+              runPerfReason = 'browser-input-bridge-main';
             }
           }
 
           if (workerRunnerEnabled && !isCodeUiMode) {
-            if (usesBlockingInput) {
+            if (usesBlockingInput && canUseWorkerRunner) {
               console.info('[Run] input() detected - worker input bridge active');
+            }
+            if (workerInputUnsupported) {
+              console.info('[Run] browser lacks stack switching - using synchronous main-thread input');
             }
             if (wantsIdeGui) {
               console.info('[Run] idegui import detected - using main-thread runner for compatibility');
@@ -2306,6 +2331,7 @@ importlib.invalidate_caches()
               } else {
                     recordWorkerRunSuccess();
                 setLintOk();
+                window.notifyDetectiveRunCompleted?.(detectiveTaskId, code);
               }
 
               const currentPath = String(window.currentFile?.path || '');
@@ -2356,20 +2382,7 @@ import types
 
 warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
 
-_original_input = builtins.input
-def _custom_input(prompt=''):
-    prompt_str = str(prompt) if prompt else ''
-    result = js_window.__pyideConsumeInput(prompt_str)
-    try:
-        if result is not None and hasattr(result, "then"):
-            import asyncio
-            result = asyncio.get_event_loop().run_until_complete(result)
-    except Exception:
-        # Keep input() robust if promise bridging is unavailable.
-        pass
-    return '' if result is None else str(result)
-
-builtins.input = _custom_input
+${pythonInputBridgeSource('js_window.__pyideConsumeInput', 'js_window.__pyideConsumeSyncInput')}
 
 def outputClear():
     js_window.__pyideOutputClear()
@@ -2720,6 +2733,7 @@ finally:
         setLintOk();
 
         // After successful RUN: sync Draft to Snapshot to prevent false "unsaved changes" warnings
+        window.notifyDetectiveRunCompleted?.(detectiveTaskId, code);
         // RUN doesn't modify code, so the draft state should match the snapshot (saved) state
         const currentPath = String(window.currentFile?.path || '');
         if (currentTask?.id && currentPath && typeof window.setTaskSavedSnapshot === 'function') {

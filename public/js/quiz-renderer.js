@@ -2564,14 +2564,8 @@ window.QuizRenderer = {
         ...answer
       };
       
-      // In test mode, include current state from TestMode
-      if (isTestMode && typeof TestMode !== 'undefined') {
-        const taskState = TestMode.getTaskState(taskId);
-        if (taskState) {
-          payload.current_attempts = taskState.attempts || 0;
-          payload.current_iteration = taskState.current_iteration || 1;
-          payload.current_status = taskState.status || 'unbearbeitet';
-        }
+      if (isTestMode) {
+        Object.assign(payload, this.getTestSubmissionState(taskId));
       }
 
       // Flush partial seconds to DB at the moment of submission
@@ -2790,6 +2784,19 @@ window.QuizRenderer = {
     const isPassed = status === 'passed';
     const isSubmitted = status === 'submitted';
     return { blocked, isFailed, isPassed, isSubmitted };
+  },
+
+  getTestSubmissionState(taskId) {
+    const testTaskState = typeof TestMode !== 'undefined'
+      ? TestMode.getTaskState(taskId)
+      : null;
+    const assignmentState = window.assignmentState;
+
+    return {
+      current_attempts: testTaskState?.attempts ?? assignmentState?.taskAttempts?.[taskId] ?? 0,
+      current_iteration: testTaskState?.current_iteration ?? assignmentState?.taskIterations?.[taskId] ?? 1,
+      current_status: testTaskState?.status ?? assignmentState?.taskStatuses?.[taskId] ?? 'unbearbeitet'
+    };
   },
 
   getCurrentIteration(task) {

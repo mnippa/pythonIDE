@@ -1,5 +1,9 @@
 ﻿// assignments.js - Assigned tasks panel for logged-in users
 
+import { installSolutionDetective } from './solution-detective.js?v=20261103-detective5';
+
+let solutionDetective = null;
+
 const assignmentState = {
   assignments: [],
   tasksByAssignment: {},
@@ -3633,6 +3637,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
   assignmentState.currentTask = task;
   assignmentState.currentAssignmentId = assignmentId;
   assignmentState.currentTaskId = taskId;
+  solutionDetective?.refresh();
   if (isAdminUserTestMode()) {
     assignmentState.userTestEditorUnlockedByTask[taskId] = false;
   }
@@ -3656,6 +3661,7 @@ async function loadTaskIntoEditor(assignmentId, taskId) {
     try {
       await waitForEditor(80, 100);
       if (isStaleLoad()) return;
+      solutionDetective?.refresh();
       assignmentState.editorInitRetryByTask[taskId] = 0;
     } catch (err) {
       const retryCount = Number(assignmentState.editorInitRetryByTask[taskId] || 0);
@@ -5024,6 +5030,7 @@ async function checkTask() {
   // Get code from editor
   const code = editor.getValue();
   const activeFileType = detectEditorFileType();
+  solutionDetective?.started();
 
   // Run code in Pyodide
   if (outputEl) {
@@ -5130,6 +5137,7 @@ async function checkTask() {
     // Display results (pass admin mode flag)
     const isAdminMode = isAdminAssignmentTestMode();
     displayTestResults(allResults, testCases, outputEl, isAdminMode);
+    solutionDetective?.completed(task.id, code, allResults.every(r => r.passed));
     
     // Create result object
     const result = {
@@ -5873,7 +5881,7 @@ function compareIntelligentValue(actual, expected, type, tolerance) {
   return compareValues(actual, expected);
 }
 
-async function runIntelligentTests(pyodide, code, testCases, solutionCode, randomizerCode) {
+async function runIntelligentTests(pyodide, code, testCases, solutionCode, randomizerCode, fixedValues = null) {
   const results = [];
   const testSpec = testCases[0];
   if (!testSpec) return results;
@@ -5956,12 +5964,14 @@ async function runIntelligentTests(pyodide, code, testCases, solutionCode, rando
   const testOutputs = await pyodide.runPythonAsync(`
 import copy
 import json
+import ast
 
 user_code = ${JSON.stringify(code)}
 solution_code = ${JSON.stringify(effectiveSolutionCode)}
 randomizer_code = ${JSON.stringify(effectiveRandomizerCode)}
 mode = ${JSON.stringify(mode)}
 tests_count = ${testsCount}
+fixed_values = json.loads(${JSON.stringify(JSON.stringify(fixedValues))})
 function_name = ${JSON.stringify(functionName)}
 params = ${JSON.stringify(params)}
 inputs = ${JSON.stringify(inputs)}
@@ -5979,6 +5989,8 @@ def safe_value(value):
 
 def run_randomizer():
     """Execute randomizer code and extract values dict"""
+    if fixed_values is not None:
+        return {"values": copy.deepcopy(fixed_values.pop(0))}
     namespace = {}
     try:
         exec(compile(randomizer_code, "<randomizer>", "exec"), namespace)
@@ -6052,6 +6064,20 @@ def run_vars_mode(code, values_dict, output_names):
             # Code after INIT block
             calculation_code = code[init_block_end + len("#INIT END"):].strip()
             if calculation_code.strip():
+                init_prefix = code[:init_block_end + len("#INIT END")]
+                try:
+                    init_tree = ast.parse(init_prefix)
+                    init_input_count = sum(
+                        1
+                        for node in ast.walk(init_tree)
+                        if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == 'input'
+                    )
+                except SyntaxError:
+                    init_input_count = 0
+                # The INIT input values were consumed before the calculation-only rerun.
+                input_queue = [str(v) for _, v in input_items[init_input_count:]]
                 try:
                     exec(compile(calculation_code, "<calculation>", "exec"), namespace)
                 except Exception as e:
@@ -7325,11 +7351,63 @@ function updateTaskStatusDisplay(task) {
   updateRunEntryIndicator(task);
 }
 
+async function resetAdminUserTaskUsage(usage, button) {
+  if (!isAdminUserTestMode()) return;
+  const task = assignmentState.currentTask;
+  const taskId = Number(task?.id || 0);
+  const assignmentId = Number(assignmentState.currentAssignmentId || 0);
+  const userId = Number(window.TEST_USER_ID || 0);
+  if (!taskId || !assignmentId || !userId) {
+    alert('Reset nicht möglich: Assignment, Task oder Test-User fehlt.');
+    return;
+  }
+  const label = window.TEST_USER_INFO?.name || window.TEST_USER_INFO?.email || `#${userId}`;
+  const detail = usage === 'checks'
+    ? 'Nur die Checks werden auf 0 gesetzt.'
+    : 'Die Detektiv-Nutzungen und gespeicherten Analysen des Studierenden werden gelöscht. Danach sind wieder zwei Analysen verfügbar. Admin-Testanalysen bleiben unbegrenzt.';
+  if (!window.confirm(`Teilnehmer: ${label}\nTask: ${task.title}\n\n${detail}\nCode und Status bleiben unverändert.`)) return;
+  button.disabled = true;
+  try {
+    await requestJson('../api/admin/assignments/users/reset-task-usage.php', {
+      method: 'POST',
+      body: JSON.stringify({ assignment_id: assignmentId, user_id: userId, task_id: taskId, usage })
+    });
+    if (usage === 'checks') {
+      assignmentState.taskAttempts[taskId] = 0;
+      if (Number(assignmentState.currentTask?.id) === taskId) {
+        updateAttemptsCounter(task);
+        updateSubmittedMeta(task);
+        refreshCurrentTaskToolbarForStatus(task);
+      }
+    }
+    alert(usage === 'checks' ? 'Checks zurückgesetzt.' : 'Detektiv-Nutzungen des Studierenden zurückgesetzt.');
+  } catch (err) {
+    alert('Reset fehlgeschlagen: ' + (err?.message || err));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function bindAssignmentsEvents() {
+  solutionDetective = installSolutionDetective({
+    getTask: () => assignmentState.currentTask,
+    getEditor: () => window.editorInstance,
+    isSolution: () => assignmentState.solutionMode === true,
+    isAdminTest: isAdminAssignmentTestMode,
+    runtimeSource: () => [
+      migrateLegacyTestCases, runOutputTests, runFunctionTests, runVariableTests,
+      runIntelligentTests, runCodeCheck, removePythonComments, compareVariableValue,
+      compareValues, compareTestOutput, matchesPattern, patternToRegex
+    ].map(fn => fn.toString()).join('\n')
+  });
+  window.notifyDetectiveRunStarted = () => solutionDetective?.started();
+  window.notifyDetectiveRunCompleted = (taskId, code) => solutionDetective?.completed(taskId, code);
   const checkBtn = $('check-btn');
   const submitBtn = $('submit-btn');
   const backToListBtn = $('back-to-list-btn');
   const adminResetTaskBtn = $('admin-reset-task-btn');
+  const adminResetDetectiveBtn = $('admin-reset-detective-btn');
+  adminResetDetectiveBtn?.addEventListener('click', () => resetAdminUserTaskUsage('detective', adminResetDetectiveBtn));
   const userTestLockBtn = $('user-test-lock-btn');
   const taskLockBtn = $('task-lock-btn');
   const adminStatusGreyBtn = $('admin-status-grey-btn');
@@ -7507,6 +7585,10 @@ function bindAssignmentsEvents() {
   });
 
   adminResetTaskBtn?.addEventListener('click', async () => {
+    if (isAdminUserTestMode()) {
+      await resetAdminUserTaskUsage('checks', adminResetTaskBtn);
+      return;
+    }
     const assignmentId = Number(assignmentState.currentAssignmentId || window.ASSIGNMENT_ID || 0);
     const taskId = Number(assignmentState.currentTaskId || window.TASK_ID || 0);
     const userId = Number(window.TEST_USER_ID || 0);

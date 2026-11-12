@@ -118,6 +118,12 @@ $isTaskLabView = false;
     .toolbar button{ padding:6px 10px; font-size:13px; cursor:pointer; background:var(--panel); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; transition:background 0.2s; white-space: nowrap; }
     .toolbar button:hover{ background:var(--text-secondary); opacity:0.7; }
     .toolbar .icon-btn{ padding:6px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:16px; }
+    .hspf-header-left{ flex:0 1 260px !important; }
+    .hspf-header-right{ flex:1 1 0 !important; }
+    .toolbar{ flex:1 1 0; min-width:0; }
+    .toolbar > *{ flex-shrink:0; }
+    .toolbar #admin-reset-task-btn,
+    .toolbar #admin-reset-detective-btn{ width:auto; min-width:36px; padding:6px 8px; font-size:12px; }
     .toolbar .icon-btn.status-current-symbol{
       background: transparent !important;
       border: none !important;
@@ -988,7 +994,8 @@ $isTaskLabView = false;
       <span id="admin-status-green-indicator" class="status-icon-current" title="Aktueller Status: bestanden">🟢</span>
       <button id="admin-status-red-btn" class="icon-btn" style="display:none; background:#ef4444; color:#fff; border-color:#dc2626;" title="Status: failed">🔴</button>
       <span id="admin-status-red-indicator" class="status-icon-current" title="Aktueller Status: nicht bestanden">🔴</span>
-      <button id="admin-reset-task-btn" class="icon-btn" style="{$adminResetTaskBtnStyle}" title="Nur die Checks dieses Tasks dieses Users auf 0 setzen">↺</button>
+      <button id="admin-reset-task-btn" class="icon-btn" style="{$adminResetTaskBtnStyle}" title="Nur die Checks dieses Tasks dieses Users auf 0 setzen">↺ Checks</button>
+      <button id="admin-reset-detective-btn" class="icon-btn" title="Detektiv-Nutzungen und gespeicherte Analysen dieses Tasks dieses Studierenden zurücksetzen">↺ Detektiv</button>
       <span id="attempts-counter" style="display:none;"></span>
       <button id="undo-btn" class="icon-btn" style="display:none;" title="Rückgängig">↶</button>
       <button id="redo-btn" class="icon-btn" style="display:none;" title="Wiederherstellen">↷</button>
@@ -1127,11 +1134,11 @@ HTML;
   <script src="js/code-validator.js"></script>
   
   <!-- Quiz Renderer -->
-  <script src="js/quiz-renderer.js?v=20261101-model-header-submit2"></script>
+  <script src="js/quiz-renderer.js?v=20261103-test-iteration-fallback1"></script>
   <script src="js/uml-renderer.js?v=20261101-uml-dark-text10"></script>
   <script src="js/test-mode.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
+  <script type="module" src="js/editor-setup.js?v=20261110-input-bridge1"></script>
 
   <script>
     // Theme Toggle
@@ -1303,6 +1310,6 @@ HTML;
     <?php endif; ?>
   </script>
 
-  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
+  <script type="module" src="js/assignments.js?v=20261103-detective5"></script>
 </body>
 </html>

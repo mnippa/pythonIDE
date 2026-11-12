@@ -152,6 +152,6 @@ HTML;
       }
     });
   </script>
-  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
+  <script type="module" src="js/assignments.js?v=20261103-detective5"></script>
 </body>
 </html>

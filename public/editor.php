@@ -874,7 +874,7 @@ exit;
   <script src="js/file-tree-manager.js"></script>
   <script src="js/code-validator.js"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
+  <script type="module" src="js/editor-setup.js?v=20261110-input-bridge1"></script>
 
   <script>
     // Theme Toggle
@@ -935,6 +935,6 @@ exit;
     });
   </script>
   <script type="module" src="js/projects.js"></script>
-  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
+  <script type="module" src="js/assignments.js?v=20261103-detective5"></script>
 </body>
 </html>

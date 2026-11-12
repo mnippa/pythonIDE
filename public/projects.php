@@ -53,14 +53,15 @@ if ($displayName === '') {
     }
     
     *{ box-sizing:border-box; }
-    html { height: 100vh; overflow: hidden; }
+    html { height: 100vh; height: 100dvh; overflow: hidden; }
     body{ 
       margin:0; 
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; 
       background:var(--bg); 
       color:var(--text-primary); 
       transition:background 0.2s, color 0.2s; 
-      height: 100vh; 
+      height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       display: grid;
       grid-template-rows: auto 1fr;
@@ -1606,7 +1607,7 @@ HTML;
   <script src="js/code-validator.js"></script>
   <script src="js/uml-renderer.js?v=20261101-uml-dark-text10"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
+  <script type="module" src="js/editor-setup.js?v=20261110-input-bridge1"></script>
 
   <script>
     // Theme Toggle

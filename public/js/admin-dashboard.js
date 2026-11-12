@@ -58,6 +58,10 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function hasCodeRandomComplexTemplate(template) {
+  return typeof template === 'string' && template.trim() !== '';
+}
+
 function getAssignmentById(assignmentId) {
   const numericId = Number(assignmentId || 0);
   if (!numericId) return null;
@@ -1975,11 +1979,9 @@ async function handleTaskSubmit(e) {
       alert('code_random_complex benoetigt Randomizer-Code.');
       return;
     }
-    const templateValue = ($('task-template')?.value || '').trim();
-    const hasValuesDict = /\bvalues\b/.test(templateValue);
-    const hasPlaceholders = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(templateValue);
-    if (!templateValue || (!hasValuesDict && !hasPlaceholders)) {
-      alert('code_random_complex benoetigt Code-Template mit values-Dict oder {placeholder}-Syntax.');
+    const templateValue = $('task-template')?.value || '';
+    if (!hasCodeRandomComplexTemplate(templateValue)) {
+      alert('code_random_complex benötigt ein Code-Template.');
       return;
     }
     payload.variable_overrides = overridesPayload;
@@ -2896,11 +2898,9 @@ async function handleEditTaskSubmit(e) {
       alert('code_random_complex benoetigt Randomizer-Code.');
       return;
     }
-    const templateValue = ($('edit-task-template')?.value || '').trim();
-    const hasValuesDict = /\bvalues\b/.test(templateValue);
-    const hasPlaceholders = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(templateValue);
-    if (!templateValue || (!hasValuesDict && !hasPlaceholders)) {
-      alert('code_random_complex benoetigt Code-Template mit values-Dict oder {placeholder}-Syntax.');
+    const templateValue = $('edit-task-template')?.value || '';
+    if (!hasCodeRandomComplexTemplate(templateValue)) {
+      alert('code_random_complex benötigt ein Code-Template.');
       return;
     }
     payload.variable_overrides = overridesPayload;
@@ -4960,6 +4960,15 @@ function generateAutoDescription(testCasesData, descFieldId) {
   
   let tableRows = '';
   const seenTypes = new Set();
+  const requiredKeywords = new Set();
+  const alternativeKeywords = new Set();
+  const forbiddenKeywords = new Set();
+  const describeKeyword = keyword => {
+    const match = keyword.match(/^(?:\\b)?(?:\(\?:([A-Za-z_]\w*(?:\|[A-Za-z_]\w*)+)\)|([A-Za-z_]\w*))(?:\\b)?(\\s\*\\\(|\\\()?$/);
+    if (!match) return [keyword];
+    const names = (match[1] || match[2]).split('|');
+    return names.map(name => match[3] ? `${name}()` : name);
+  };
   const seenRows = new Set();
   const addRow = (label, value) => {
     const key = JSON.stringify([label, value]);
@@ -5052,16 +5061,32 @@ function generateAutoDescription(testCasesData, descFieldId) {
       addRow('OUTPUT', outputDescription);
     }
     
-    if (testCase.type === 'code_check' && !seenTypes.has('code_check')) {
-      seenTypes.add('code_check');
-      
-      const keywords = testCase.keywords || [];
-      const forbidden = testCase.forbidden || [];
-      
-      addRow('Erforderliche Keywords', keywords.join(', ') || 'keine');
-      addRow('Verbotene Keywords', forbidden.join(', ') || 'keine');
+    if (testCase.type === 'code_check') {
+      const keywords = Array.isArray(testCase.keywords)
+        ? testCase.keywords.filter(keyword => typeof keyword === 'string' && keyword.trim())
+        : [];
+      const operator = testCase.operator || 'AND';
+      if (operator === 'NOT') {
+        keywords.flatMap(describeKeyword).forEach(keyword => forbiddenKeywords.add(keyword));
+      } else if (operator === 'OR' && keywords.length > 0) {
+        alternativeKeywords.add(`mindestens eines: ${keywords.flatMap(describeKeyword).join(', ')}`);
+      } else if (operator === 'AND') {
+        keywords.forEach(keyword => {
+          const names = describeKeyword(keyword);
+          if (names.length === 1) requiredKeywords.add(names[0]);
+          else alternativeKeywords.add(`mindestens eines: ${names.join(', ')}`);
+        });
+      }
     }
   });
+
+  const required = [Array.from(requiredKeywords).join(', '), ...alternativeKeywords].filter(Boolean);
+  if (required.length > 0) {
+    addRow('Erforderliche Keywords', required.join('; '));
+  }
+  if (forbiddenKeywords.size > 0) {
+    addRow('Verbotene Keywords', [...forbiddenKeywords].join(', '));
+  }
   
   // Build single table with all rows
   let description = '';

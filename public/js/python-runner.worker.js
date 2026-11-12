@@ -1,4 +1,5 @@
 import { loadPyodide } from '../pyodide/pyodide.mjs';
+import { pythonInputBridgeSource } from './python-input-bridge.js?v=20261110-input-bridge1';
 
 let pyodide = null;
 const loadedPackages = new Set();
@@ -165,21 +166,7 @@ import base64
 code = ${JSON.stringify(code)}
 project_runtime = json.loads(${JSON.stringify(JSON.stringify(projectRuntime ?? null))})
 
-_original_input = builtins.input
-
-def _worker_input(prompt=''):
-    prompt_str = str(prompt) if prompt else ''
-    try:
-      result = __pyideWorkerInput(prompt_str)
-      if result is not None and hasattr(result, 'then'):
-        import asyncio
-        result = asyncio.get_event_loop().run_until_complete(result)
-      return '' if result is None else str(result)
-    except Exception:
-      # Keep deterministic fallback on bridge failures.
-      return ''
-
-builtins.input = _worker_input
+${pythonInputBridgeSource('__pyideWorkerInput')}
 
 def outputClear():
   # Call JavaScript function to clear DOM output

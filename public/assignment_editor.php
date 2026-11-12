@@ -1194,10 +1194,10 @@ HTML;
   <script src="js/code-validator.js"></script>
   
   <!-- Quiz Renderer -->
-  <script src="js/quiz-renderer.js?v=20261101-model-header-submit2"></script>
+  <script src="js/quiz-renderer.js?v=20261103-test-iteration-fallback1"></script>
   <script src="js/uml-renderer.js?v=20261101-uml-dark-text10"></script>
 
-  <script type="module" src="js/editor-setup.js?v=20261027-internal-clipboard2"></script>
+  <script type="module" src="js/editor-setup.js?v=20261110-input-bridge1"></script>
 
   <script>
     // Theme Toggle
@@ -1334,7 +1334,7 @@ HTML;
       document.addEventListener('pointercancel', stopDragging);
     })();
   </script>
-  <script type="module" src="js/assignments.js?v=20261101-model-assignment-tabs3"></script>
+  <script type="module" src="js/assignments.js?v=20261103-detective5"></script>
   <script>
     // Auto-load assignment from URL parameter
     window.EDITOR_MODE = true;
